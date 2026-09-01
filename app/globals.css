@@ -65,6 +65,7 @@ button:disabled {
   cursor: not-allowed;
   filter: none;
   transform: none;
+  opacity: 0.55;
   background: #dbe3ec !important;
   border-color: #64748b !important;
   color: #475569 !important;

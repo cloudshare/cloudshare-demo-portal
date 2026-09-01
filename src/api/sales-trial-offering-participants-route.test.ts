@@ -10,6 +10,7 @@ const {
   mockCreateOfferingRepository,
   mockCreateEnrollmentRepository,
   mockCreateCloudShareSalesDelivery,
+  mockHandleEndSalesTrialOffering,
 } = vi.hoisted(() => ({
   mockCookies: vi.fn(),
   mockGetServices: vi.fn(),
@@ -17,6 +18,7 @@ const {
   mockCreateOfferingRepository: vi.fn(),
   mockCreateEnrollmentRepository: vi.fn(),
   mockCreateCloudShareSalesDelivery: vi.fn(),
+  mockHandleEndSalesTrialOffering: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({
@@ -52,6 +54,10 @@ vi.mock("@/integrations/cloudshare/sales-delivery", async () => {
 
 vi.mock("@/api/portal-auth", () => ({
   PORTAL_SESSION_COOKIE: "portal_session",
+}));
+
+vi.mock("@/api/sales-trial-offerings", () => ({
+  handleEndSalesTrialOffering: mockHandleEndSalesTrialOffering,
 }));
 
 import { GET } from "../../app/api/sales/trial-offerings/[id]/participants/route";
@@ -90,7 +96,12 @@ describe("Sales Trial offering participants route", () => {
       }),
     });
     mockCreateEnrollmentRepository.mockReturnValue({
+      save: vi.fn().mockResolvedValue(undefined),
       listByOffering: vi.fn().mockResolvedValue([]),
+    });
+    mockHandleEndSalesTrialOffering.mockResolvedValue({
+      status: 200,
+      body: { offering: { id: "offering-1", status: "ended" } },
     });
   });
 
@@ -104,6 +115,7 @@ describe("Sales Trial offering participants route", () => {
       workspace: "sales",
     });
     mockCreateEnrollmentRepository.mockReturnValue({
+      save: vi.fn().mockResolvedValue(undefined),
       listByOffering: vi.fn().mockResolvedValue([
         {
           id: "enrollment-1",
@@ -157,11 +169,24 @@ describe("Sales Trial offering participants route", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
+      offering: {
+        id: "offering-1",
+        status: "published",
+      },
+      observation: {
+        freshness: "live",
+        source: "cloudshare_v4_sales_participant_roster",
+        observedAt: expect.any(String),
+      },
       participants: [
         expect.objectContaining({
           id: "enrollment-1",
           email: "visitor@example.test",
+          envStatus: "Ready",
+          environment: expect.objectContaining({
+            observedAt: expect.any(String),
+          }),
         }),
       ],
       correlationId: expect.any(String),
@@ -234,6 +259,108 @@ describe("Sales Trial offering participants route", () => {
         outcome: "failure",
       }),
     );
+  });
+
+  it("keeps participant monitoring available when the route-end reconciliation moves an offering from ending to ended", async () => {
+    mockGetPortalAdminSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      customerId: "customer-certalis",
+      userId: "admin-1",
+      email: "sales-admin@certalis.demo",
+      role: "admin",
+      workspace: "sales",
+    });
+    const findById = vi.fn()
+      .mockResolvedValueOnce({
+        id: "offering-1",
+        customerId: "customer-certalis",
+        name: "Trial 1",
+        status: "ending",
+        cloudShareSalesExperienceId: "sales-1",
+        start: "2026-08-30T08:00:00.000Z",
+        end: "2026-08-30T18:00:00.000Z",
+        timeZone: "UTC",
+        createdAt: new Date("2026-08-30T08:00:00.000Z"),
+        updatedAt: new Date("2026-08-30T08:00:00.000Z"),
+      })
+      .mockResolvedValueOnce({
+        id: "offering-1",
+        customerId: "customer-certalis",
+        name: "Trial 1",
+        status: "ended",
+        cloudShareSalesExperienceId: "sales-1",
+        start: "2026-08-30T08:00:00.000Z",
+        end: "2026-08-30T18:00:00.000Z",
+        timeZone: "UTC",
+        createdAt: new Date("2026-08-30T08:00:00.000Z"),
+        updatedAt: new Date("2026-08-30T18:01:00.000Z"),
+      });
+    mockCreateOfferingRepository.mockReturnValue({ findById });
+    mockCreateEnrollmentRepository.mockReturnValue({
+      save: vi.fn().mockResolvedValue(undefined),
+      listByOffering: vi.fn().mockResolvedValue([
+        {
+          id: "enrollment-1",
+          customerId: "customer-certalis",
+          salesTrialOfferingId: "offering-1",
+          portalUserId: "trial-user-1",
+          email: "visitor@example.test",
+          firstName: "Ari",
+          lastName: "Visitor",
+          cloudShareParticipantId: "remote-1",
+          participationStatus: "pending",
+          cloudShareRosterEnvironmentReference: "env-1",
+          environmentStatus: "Ready",
+          firstJoined: "2026-08-30T10:05:00.000Z",
+          status: "active",
+          attentionReason: null,
+          lastLaunchedAt: new Date("2026-08-30T10:05:00.000Z"),
+          lastReconciledAt: new Date("2026-08-30T10:05:00.000Z"),
+          createdAt: new Date("2026-08-30T09:00:00.000Z"),
+          updatedAt: new Date("2026-08-30T10:05:00.000Z"),
+        },
+      ]),
+    });
+    mockCreateCloudShareSalesDelivery.mockReturnValue({
+      listParticipants: vi.fn().mockResolvedValue({
+        participants: [
+          {
+            id: "remote-1",
+            firstName: "Ari",
+            lastName: "Visitor",
+            email: "visitor@example.test",
+            invitationStatus: "notSent",
+            invitedBy: null,
+            participationStatus: "inProgress",
+            firstJoined: "2026-08-30T10:05:00.000Z",
+            environmentId: "env-1",
+            envStatus: "Ready",
+            customProperties: {
+              certalisSalesTrialEnrollmentId: "enrollment-1",
+              certalisSalesTrialParticipantUserId: "trial-user-1",
+            },
+          },
+        ],
+        request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } },
+        response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+      }),
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T10:09:00.000Z"));
+    const response = await GET(
+      new Request("http://localhost:3025/api/sales/trial-offerings/offering-1/participants"),
+      { params: Promise.resolve({ id: "offering-1" }) },
+    );
+    vi.useRealTimers();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      offering: { status: "ended" },
+      participants: [expect.objectContaining({ id: "enrollment-1" })],
+    });
+    expect(findById).toHaveBeenCalledTimes(2);
+    expect(mockHandleEndSalesTrialOffering).toHaveBeenCalledOnce();
   });
 
   it("rejects a non-sales admin session", async () => {

@@ -3,7 +3,10 @@ import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import type { SalesTrialOffering } from "@/domain/sales-trial-offering";
 import type { SalesTrialEnrollment, SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
-import { CloudShareTransportError } from "@/integrations/cloudshare/errors";
+import {
+  CloudShareRequestError,
+  CloudShareTransportError,
+} from "@/integrations/cloudshare/errors";
 import {
   handleEnterSalesTrialOffering,
   handleListSalesTrialOfferingParticipants,
@@ -647,7 +650,7 @@ describe("Sales Trial offering entry", () => {
           participationStatus: "inProgress",
           firstJoined: "2026-08-30T10:05:00.000Z",
           environmentId: "env-1",
-          envStatus: "Ready",
+          envStatus: "FutureAllocationScheduled",
           customProperties: {
             certalisSalesTrialEnrollmentId: "enrollment-1",
             certalisSalesTrialParticipantUserId: "trial-user-1",
@@ -1423,6 +1426,145 @@ describe("Sales Trial offering entry", () => {
 });
 
 describe("Sales Trial offering monitoring", () => {
+  it("fails closed when the roster has duplicate exact correlations", async () => {
+    const { deps, enrollments, audit, listParticipants } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",
+      email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: null,
+      participationStatus: "pending", cloudShareRosterEnvironmentReference: null, environmentStatus: null, firstJoined: null,
+      status: "active", attentionReason: null, lastLaunchedAt: null, lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"), updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: ["remote-1", "remote-2"].map((id) => ({
+        id, firstName: "Ari", lastName: "Visitor", email: "visitor@example.test", invitationStatus: "notSent",
+        invitedBy: null, participationStatus: "inProgress", firstJoined: null, environmentId: null, envStatus: null,
+        customProperties: { certalisSalesTrialEnrollmentId: "enrollment-1", certalisSalesTrialParticipantUserId: "trial-user-1" },
+      })),
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }, { id: "remote-2" }] } },
+    });
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1", offeringId: "offering-1", actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: { error: "Sales Trial participant monitoring is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      action: "sales_trial.offering.monitoring.read_participants", outcome: "failure",
+    }));
+  });
+
+  it("does not mask an ambiguous live roster with stale ended-offering history", async () => {
+    const { deps, enrollments, audit, listParticipants } = createDeps({
+      offerings: {
+        findById: vi.fn().mockResolvedValue(
+          createOffering({ status: "ended", unpublishedAt: new Date("2026-08-30T17:05:00.000Z") }),
+        ),
+      },
+    });
+    await enrollments.save({
+      id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",
+      email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: null,
+      participationStatus: "pending", cloudShareRosterEnvironmentReference: null, environmentStatus: null, firstJoined: null,
+      status: "active", attentionReason: null, lastLaunchedAt: null, lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"), updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: ["remote-1", "remote-2"].map((id) => ({
+        id, firstName: "Ari", lastName: "Visitor", email: "visitor@example.test", invitationStatus: "notSent",
+        invitedBy: null, participationStatus: "inProgress", firstJoined: null, environmentId: null, envStatus: null,
+        customProperties: { certalisSalesTrialEnrollmentId: "enrollment-1", certalisSalesTrialParticipantUserId: "trial-user-1" },
+      })),
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }, { id: "remote-2" }] } },
+    });
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1", offeringId: "offering-1", actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: { error: "Sales Trial participant monitoring is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      action: "sales_trial.offering.monitoring.read_participants", outcome: "failure",
+    }));
+  });
+
+  it("contains roster reconciliation persistence failures in the supportable monitoring response", async () => {
+    const { deps, enrollments, audit, listParticipants } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",
+      email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: null,
+      participationStatus: "pending", cloudShareRosterEnvironmentReference: null, environmentStatus: null, firstJoined: null,
+      status: "active", attentionReason: null, lastLaunchedAt: null, lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"), updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [{
+        id: "remote-1", firstName: "Ari", lastName: "Visitor", email: "visitor@example.test", invitationStatus: "notSent",
+        invitedBy: null, participationStatus: "inProgress", firstJoined: null, environmentId: null, envStatus: null,
+        customProperties: { certalisSalesTrialEnrollmentId: "enrollment-1", certalisSalesTrialParticipantUserId: "trial-user-1" },
+      }],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+    vi.spyOn(enrollments, "save").mockRejectedValueOnce(new Error("database unavailable"));
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1", offeringId: "offering-1", actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: { error: "Sales Trial participant monitoring is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      action: "sales_trial.offering.monitoring.read_participants", outcome: "failure",
+    }));
+  });
+
+  it("reports a roster environment with no projectable status as not observed", async () => {
+    const { deps, enrollments, listParticipants } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",
+      email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: null,
+      participationStatus: "pending", cloudShareRosterEnvironmentReference: null, environmentStatus: null, firstJoined: null,
+      status: "active", attentionReason: null, lastLaunchedAt: null, lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"), updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [{
+        id: "remote-1", firstName: "Ari", lastName: "Visitor", email: "visitor@example.test", invitationStatus: "notSent",
+        invitedBy: null, participationStatus: "inProgress", firstJoined: null, environmentId: "env-1", envStatus: null,
+        customProperties: { certalisSalesTrialEnrollmentId: "enrollment-1", certalisSalesTrialParticipantUserId: "trial-user-1" },
+      }],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1", offeringId: "offering-1", actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+
+    expect(result).toMatchObject({
+      status: 200,
+      body: {
+        participants: [
+          expect.objectContaining({
+            invitationStatus: "notSent",
+            environment: expect.objectContaining({ source: "not_observed", value: null }),
+          }),
+        ],
+      },
+    });
+  });
+
   it("projects enrolled participants for admin monitoring without provider ids or login URLs", async () => {
     const { deps, enrollments, listParticipants } = createDeps();
     await enrollments.save({
@@ -1434,6 +1576,197 @@ describe("Sales Trial offering monitoring", () => {
       firstName: "Ari",
       lastName: "Visitor",
       cloudShareParticipantId: "remote-1",
+      participationStatus: "pending",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "CreationFailed",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:06:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:06:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [
+        {
+          id: "remote-1",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          invitedBy: null,
+          participationStatus: "inProgress",
+          firstJoined: "2026-08-30T10:05:00.000Z",
+          environmentId: "env-1",
+          envStatus: "FutureAllocationScheduled",
+          customProperties: {
+            certalisSalesTrialEnrollmentId: "enrollment-1",
+            certalisSalesTrialParticipantUserId: "trial-user-1",
+          },
+        },
+      ],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T10:09:00.000Z"));
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    vi.useRealTimers();
+
+    expect(result.body).toEqual({
+      offering: {
+        id: "offering-1",
+        status: "published",
+      },
+      observation: {
+        freshness: "live",
+        source: "cloudshare_v4_sales_participant_roster",
+        observedAt: "2026-08-30T10:09:00.000Z",
+      },
+      participants: [
+        {
+          id: "enrollment-1",
+          subject: {
+            type: "sales_trial_enrollment",
+            id: "enrollment-1",
+          },
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          participationStatus: "inProgress",
+          observation: {
+            freshness: "live",
+            source: "cloudshare_v4_sales_participant_roster",
+            observedAt: "2026-08-30T10:09:00.000Z",
+          },
+          firstJoined: "2026-08-30T10:05:00.000Z",
+          envStatus: "FutureAllocationScheduled",
+          environment: {
+            dimension: "cloudshare_environment",
+            value: "Future allocation scheduled",
+            source: "cloudshare_v4_sales_participant_roster",
+            observedAt: "2026-08-30T10:09:00.000Z",
+          },
+        },
+      ],
+      correlationId: expect.any(String),
+    });
+    expect(JSON.stringify(result.body)).not.toContain("remote-1");
+    expect(JSON.stringify(result.body)).not.toContain("loginUrl");
+  });
+
+  it("keeps retained participant monitoring visible after an offering reconciles from ending to ended in the same request", async () => {
+    const offeringReads = vi.fn()
+      .mockResolvedValueOnce(
+        createOffering({
+          status: "ending",
+          end: "2026-08-30T17:00",
+          endingCalculatedEnd: "2026-08-30T17:00",
+          endingLastReconciledAt: new Date("2026-08-30T10:06:00.000Z"),
+        }),
+      )
+      .mockResolvedValueOnce(
+        createOffering({
+          status: "ended",
+          end: "2026-08-30T17:00",
+          unpublishedAt: new Date("2026-08-30T17:05:00.000Z"),
+        }),
+      );
+    const reconcileEnding = vi.fn().mockResolvedValue(undefined);
+    const { deps, enrollments, listParticipants } = createDeps({
+      offerings: { findById: offeringReads },
+      reconcileEnding,
+    });
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "CreationFailed",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:06:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:06:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [
+        {
+          id: "remote-1",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          invitedBy: null,
+          participationStatus: "inProgress",
+          firstJoined: "2026-08-30T10:05:00.000Z",
+          environmentId: "env-1",
+          envStatus: "FutureAllocationScheduled",
+          customProperties: {
+            certalisSalesTrialEnrollmentId: "enrollment-1",
+            certalisSalesTrialParticipantUserId: "trial-user-1",
+          },
+        },
+      ],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+
+    expect(reconcileEnding).toHaveBeenCalledWith({
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    expect(result).toMatchObject({
+      status: 200,
+      body: {
+        offering: { status: "ended" },
+        observation: {
+          freshness: "live",
+          source: "cloudshare_v4_sales_participant_roster",
+        },
+        participants: [
+          expect.objectContaining({
+            id: "enrollment-1",
+            subject: { type: "sales_trial_enrollment", id: "enrollment-1" },
+          }),
+        ],
+      },
+    });
+  });
+
+  it("marks unmatched retained rows as locally reconciled history when a live roster read returns only a partial match", async () => {
+    const { deps, enrollments, listParticipants } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      participationStatus: "inProgress",
       cloudShareRosterEnvironmentReference: "env-1",
       environmentStatus: "Ready",
       firstJoined: "2026-08-30T10:05:00.000Z",
@@ -1443,6 +1776,26 @@ describe("Sales Trial offering monitoring", () => {
       lastReconciledAt: new Date("2026-08-30T10:06:00.000Z"),
       createdAt: new Date("2026-08-30T10:00:00.000Z"),
       updatedAt: new Date("2026-08-30T10:06:00.000Z"),
+    });
+    await enrollments.save({
+      id: "enrollment-2",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-2",
+      email: "second@example.test",
+      firstName: "Bea",
+      lastName: "Retained",
+      cloudShareParticipantId: "remote-2",
+      participationStatus: "concluded",
+      cloudShareRosterEnvironmentReference: "env-2",
+      environmentStatus: "Suspended",
+      firstJoined: "2026-08-30T10:01:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:02:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
     });
     listParticipants.mockResolvedValue({
       participants: [
@@ -1467,33 +1820,571 @@ describe("Sales Trial offering monitoring", () => {
       response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
     });
 
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T10:09:00.000Z"));
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    vi.useRealTimers();
+
+    expect(result).toMatchObject({
+      status: 200,
+      body: {
+        observation: {
+          freshness: "live",
+          source: "cloudshare_v4_sales_participant_roster",
+          observedAt: "2026-08-30T10:09:00.000Z",
+        },
+        participants: [
+          expect.objectContaining({
+            id: "enrollment-1",
+            observation: {
+              freshness: "live",
+              source: "cloudshare_v4_sales_participant_roster",
+              observedAt: "2026-08-30T10:09:00.000Z",
+            },
+          }),
+          expect.objectContaining({
+            id: "enrollment-2",
+            participationStatus: "concluded",
+            observation: {
+              freshness: "stale",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
+            environment: expect.objectContaining({
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            }),
+          }),
+        ],
+      },
+    });
+  });
+
+  it("persists fresh roster participation state so stale monitoring retains concluded history", async () => {
+    const offeringReads = vi.fn()
+      .mockResolvedValueOnce(createOffering({ status: "published" }))
+      .mockResolvedValueOnce(
+        createOffering({
+          status: "ended",
+          unpublishedAt: new Date("2026-08-30T17:05:00.000Z"),
+        }),
+      );
+    const { deps, enrollments, listParticipants } = createDeps({
+      offerings: { findById: offeringReads },
+    });
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      participationStatus: "inProgress",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Ready",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:06:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:06:00.000Z"),
+    });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T10:09:00.000Z"));
+    listParticipants.mockResolvedValueOnce({
+      participants: [
+        {
+          id: "remote-1",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          invitedBy: null,
+          participationStatus: "concluded",
+          firstJoined: "2026-08-30T10:05:00.000Z",
+          environmentId: "env-1",
+          envStatus: "FutureAllocationScheduled",
+          customProperties: {
+            certalisSalesTrialEnrollmentId: "enrollment-1",
+            certalisSalesTrialParticipantUserId: "trial-user-1",
+          },
+        },
+      ],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+
+    const fresh = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    listParticipants.mockRejectedValueOnce(
+      new CloudShareTransportError("participant roster timed out", {
+        method: "GET",
+        path: "/sales/sales-1/participants",
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+      }),
+    );
+    const stale = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    vi.useRealTimers();
+
+    expect(fresh).toMatchObject({
+      status: 200,
+      body: {
+        observation: {
+          freshness: "live",
+          observedAt: "2026-08-30T10:09:00.000Z",
+        },
+        participants: [
+          expect.objectContaining({
+            participationStatus: "concluded",
+            envStatus: "FutureAllocationScheduled",
+            environment: expect.objectContaining({
+              value: "Future allocation scheduled",
+              observedAt: "2026-08-30T10:09:00.000Z",
+            }),
+          }),
+        ],
+      },
+    });
+    expect(stale).toMatchObject({
+      status: 200,
+      body: {
+        observation: {
+          freshness: "stale",
+          observedAt: "2026-08-30T10:09:00.000Z",
+        },
+        participants: [
+          expect.objectContaining({
+            participationStatus: "concluded",
+            envStatus: "FutureAllocationScheduled",
+            environment: expect.objectContaining({
+              value: "Future allocation scheduled",
+              observedAt: "2026-08-30T10:09:00.000Z",
+            }),
+          }),
+        ],
+      },
+    });
+  });
+
+  it("passes the customer-scoped reconciliation request object before reading ending history", async () => {
+    const reconcileEnding = vi.fn().mockResolvedValue(undefined);
+    const offeringReads = vi.fn()
+      .mockResolvedValueOnce(createOffering({ status: "ending" }))
+      .mockResolvedValueOnce(createOffering({ status: "unpublished" }));
+    const { deps } = createDeps({
+      offerings: { findById: offeringReads },
+      reconcileEnding,
+    });
+
+    await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-9", email: "sales-admin@example.test" },
+    });
+
+    expect(reconcileEnding).toHaveBeenCalledWith({
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-9", email: "sales-admin@example.test" },
+    });
+  });
+
+  it.each([
+    {
+      label: "the roster request times out",
+      error: new CloudShareTransportError("participant roster timed out", {
+        method: "GET",
+        path: "/sales/sales-1/participants",
+        requestQuery: { offset: "0", limit: "100" },
+        requestHeaders: { authorization: "Bearer secret", "x-request-id": "req-1" },
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+      }),
+    },
+    {
+      label: "CloudShare no longer exposes the ended roster",
+      error: new CloudShareRequestError("participant roster was not found", 404, {
+        method: "GET",
+        path: "/sales/sales-1/participants",
+      }),
+    },
+  ])("falls back to the last locally reconciled participant state with explicit timestamp and source when $label", async ({ error }) => {
+    const { deps, enrollments, diagnosticRepository, audit, listParticipants } = createDeps({
+      offerings: {
+        findById: vi.fn().mockResolvedValue(
+          createOffering({
+            status: "ended",
+            unpublishedAt: new Date("2026-08-30T17:05:00.000Z"),
+          }),
+        ),
+      },
+    });
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      participationStatus: "concluded",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "CreationFailed",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    listParticipants.mockRejectedValue(error);
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "failure",
+    });
+
+    expect(result).toEqual({
+      status: 200,
+      body: {
+        offering: { id: "offering-1", status: "ended" },
+        observation: {
+          freshness: "stale",
+          source: "certalis_sales_trial_enrollment_reconciliation",
+          observedAt: "2026-08-30T10:07:00.000Z",
+          warning: "CloudShare could not refresh the participant roster; showing the last locally reconciled participant state.",
+        },
+        participants: [
+          {
+            id: "enrollment-1",
+            subject: {
+              type: "sales_trial_enrollment",
+              id: "enrollment-1",
+            },
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          participationStatus: "concluded",
+            observation: {
+              freshness: "stale",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
+            firstJoined: "2026-08-30T10:05:00.000Z",
+            envStatus: "CreationFailed",
+            environment: {
+              dimension: "cloudshare_environment",
+              value: "Creation Failed",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
+          },
+        ],
+        correlationId: expect.any(String),
+      },
+    });
+    expect(failure).toMatchObject({
+      correlationId: result.body.correlationId,
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales.participants",
+        attemptedOperation: "list_participants",
+      }),
+    });
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales_trial.offering.monitoring.read_participants",
+        correlationId: result.body.correlationId,
+        outcome: "failure",
+      }),
+    );
+  });
+
+  it("retains unpublished offering history instead of returning the misleading not-found response", async () => {
+    const { deps, enrollments, listParticipants, diagnosticRepository } = createDeps({
+      offerings: {
+        findById: vi.fn().mockResolvedValue(
+          createOffering({
+            status: "unpublished",
+            unpublishedAt: new Date("2026-08-30T17:05:00.000Z"),
+          }),
+        ),
+      },
+    });
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Ready",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    listParticipants.mockRejectedValue(
+      new CloudShareTransportError("participant roster timed out", {
+        method: "GET",
+        path: "/sales/sales-1/participants",
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+      }),
+    );
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "failure",
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      offering: { id: "offering-1", status: "unpublished" },
+      observation: {
+        freshness: "stale",
+        source: "certalis_sales_trial_enrollment_reconciliation",
+        observedAt: "2026-08-30T10:07:00.000Z",
+      },
+      participants: [expect.objectContaining({ id: "enrollment-1" })],
+      correlationId: expect.any(String),
+    });
+    expect(JSON.stringify(result.body)).not.toContain("Sales Trial Offering was not found");
+    expect(failure).toBeTruthy();
+  });
+
+  it("does not present stale history while an ending offering roster cannot be refreshed", async () => {
+    const { deps, enrollments, listParticipants, diagnosticRepository } = createDeps({
+      offerings: {
+        findById: vi.fn().mockResolvedValue(
+          createOffering({
+            status: "ending",
+            endingCalculatedEnd: "2026-08-30T17:00",
+            endingLastReconciledAt: new Date("2026-08-30T10:08:00.000Z"),
+          }),
+        ),
+      },
+    });
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Suspended",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    listParticipants.mockRejectedValue(
+      new CloudShareTransportError("participant roster timed out", {
+        method: "GET",
+        path: "/sales/sales-1/participants",
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+      }),
+    );
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "failure",
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: { error: "Sales Trial participant monitoring is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(failure).toBeTruthy();
+  });
+
+  it("treats a missing CloudShare connection as stale roster unavailability for retained ended history", async () => {
+    const { deps, enrollments } = createDeps({
+      offerings: {
+        findById: vi.fn().mockResolvedValue(
+          createOffering({
+            status: "ended",
+            unpublishedAt: new Date("2026-08-30T17:05:00.000Z"),
+          }),
+        ),
+      },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue(null) },
+    });
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      participationStatus: "concluded",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "CreationFailed",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+
     const result = await handleListSalesTrialOfferingParticipants(deps, {
       customerId: "customer-1",
       offeringId: "offering-1",
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
 
-    expect(result.body).toEqual({
-      participants: [
-        {
-          id: "enrollment-1",
+    expect(result).toEqual({
+      status: 200,
+      body: {
+        offering: { id: "offering-1", status: "ended" },
+        observation: {
+          freshness: "stale",
+          source: "certalis_sales_trial_enrollment_reconciliation",
+          observedAt: "2026-08-30T10:07:00.000Z",
+          warning:
+            "CloudShare could not refresh the participant roster; showing the last locally reconciled participant state.",
+        },
+        participants: [
+          {
+            id: "enrollment-1",
+            subject: {
+              type: "sales_trial_enrollment",
+              id: "enrollment-1",
+            },
           firstName: "Ari",
           lastName: "Visitor",
           email: "visitor@example.test",
-          participationStatus: "inProgress",
-          firstJoined: "2026-08-30T10:05:00.000Z",
-          envStatus: "Ready",
-          environment: {
-            dimension: "cloudshare_environment",
-            value: "Ready",
-            source: "cloudshare_v4_sales_participant_roster",
+          invitationStatus: "notSent",
+          participationStatus: "concluded",
+            observation: {
+              freshness: "stale",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
+            firstJoined: "2026-08-30T10:05:00.000Z",
+            envStatus: "CreationFailed",
+            environment: {
+              dimension: "cloudshare_environment",
+              value: "Creation Failed",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
           },
-        },
-      ],
-      correlationId: expect.any(String),
+        ],
+        correlationId: expect.any(String),
+      },
     });
-    expect(JSON.stringify(result.body)).not.toContain("remote-1");
-    expect(JSON.stringify(result.body)).not.toContain("loginUrl");
+  });
+
+  it("records the current live roster read time even when the provider roster is empty", async () => {
+    const { deps, listParticipants, enrollments } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      participationStatus: "concluded",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "CreationFailed",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [] } },
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T10:11:00.000Z"));
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    vi.useRealTimers();
+
+    expect(result).toMatchObject({
+      status: 200,
+      body: {
+        observation: {
+          freshness: "live",
+          source: "cloudshare_v4_sales_participant_roster",
+          observedAt: "2026-08-30T10:11:00.000Z",
+        },
+        participants: [
+          expect.objectContaining({
+            id: "enrollment-1",
+            observation: {
+              freshness: "stale",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
+          }),
+        ],
+      },
+    });
   });
 
   it("returns a safe monitoring failure while recording protected provider evidence and audit", async () => {

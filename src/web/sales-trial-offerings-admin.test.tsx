@@ -48,12 +48,18 @@ describe("Sales Trial Offerings admin monitoring", () => {
       }
       if (url === "/api/sales/trial-offerings/offering-1/participants") {
         return json({
+          observation: {
+            freshness: "live",
+            source: "cloudshare_v4_sales_participant_roster",
+            observedAt: "2026-08-30T10:06:00.000Z",
+          },
           participants: [
             {
               id: "enrollment-1",
               firstName: "Ari",
               lastName: "Visitor",
               email: "visitor@example.test",
+              invitationStatus: "notSent",
               participationStatus: "inProgress",
               firstJoined: "2026-08-30T10:05:00.000Z",
               envStatus: "Ready",
@@ -77,6 +83,9 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(await screen.findByText("Participant monitoring")).toBeTruthy();
     expect(screen.getByText("Ari Visitor")).toBeTruthy();
     expect(screen.getByText("visitor@example.test")).toBeTruthy();
+    expect(screen.getByText("Not sent")).toBeTruthy();
+    expect(screen.getByText("In progress")).toBeTruthy();
+    expect(screen.getByText("Observed from CloudShare participant roster · 2026-08-30T10:06:00.000Z")).toBeTruthy();
     expect(screen.getByText("Ready")).toBeTruthy();
     expect(screen.queryByText("remote-1")).toBeNull();
   });
@@ -99,6 +108,221 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(await screen.findByText(/scheduled to remain available until 2026-09-01T14:35/)).toBeTruthy();
     expect(screen.getByText("Last reconciled: 2026-08-31T12:00:00.000Z")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open monitoring" })).toBeTruthy();
+  });
+
+  it("keeps monitoring visible for an ended offering and labels stale retained history when the roster cannot be refreshed", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") {
+        return json({
+          offerings: [
+            {
+              id: "offering-1",
+              title: "Helios Trial",
+              description: "Shared trial",
+              itemId: "item-1",
+              start: "2026-08-30T09:00",
+              end: "2026-08-30T17:00",
+              timeZone: "UTC",
+              salesProEmail: "owner@example.test",
+              salesProDisplayName: "Owner",
+              status: "ended",
+              attentionReason: null,
+            },
+          ],
+        });
+      }
+      if (url === "/api/sales/trial-offerings/offering-1/participants") {
+        return json({
+          offering: { id: "offering-1", status: "ended" },
+          observation: {
+            freshness: "stale",
+            source: "certalis_sales_trial_enrollment_reconciliation",
+            observedAt: "2026-08-30T10:07:00.000Z",
+            warning: "CloudShare could not refresh the participant roster; showing the last locally reconciled participant state.",
+          },
+        participants: [
+          {
+            id: "enrollment-1",
+            subject: { type: "sales_trial_enrollment", id: "enrollment-1" },
+            firstName: "Ari",
+            lastName: "Visitor",
+            email: "visitor@example.test",
+            participationStatus: "inProgress",
+            observation: {
+              freshness: "stale",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
+            firstJoined: "2026-08-30T10:05:00.000Z",
+            envStatus: "Suspended",
+            environment: {
+                dimension: "cloudshare_environment",
+                value: "Suspended",
+                source: "certalis_sales_trial_enrollment_reconciliation",
+                observedAt: "2026-08-30T10:07:00.000Z",
+              },
+            },
+          ],
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open monitoring" }));
+
+    expect(await screen.findByText("Participant monitoring")).toBeTruthy();
+    expect(screen.getByText("Ari Visitor")).toBeTruthy();
+    expect(screen.getByText("Suspended")).toBeTruthy();
+    expect(screen.getByText("CloudShare could not refresh the participant roster; showing the last locally reconciled participant state.")).toBeTruthy();
+    expect(screen.getByText("In progress")).toBeTruthy();
+    expect(screen.getByText("Observed from locally reconciled history · 2026-08-30T10:07:00.000Z")).toBeTruthy();
+    expect(screen.getByText("Participant state from locally reconciled history · stale · 2026-08-30T10:07:00.000Z")).toBeTruthy();
+  });
+
+  it("renders mixed live and retained participant rows with their own source metadata", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") {
+        return json({
+          offerings: [
+            {
+              id: "offering-1",
+              title: "Helios Trial",
+              description: "Shared trial",
+              itemId: "item-1",
+              start: "2026-08-30T09:00",
+              end: "2026-08-30T17:00",
+              timeZone: "UTC",
+              salesProEmail: "owner@example.test",
+              salesProDisplayName: "Owner",
+              status: "published",
+              attentionReason: null,
+            },
+          ],
+        });
+      }
+      if (url === "/api/sales/trial-offerings/offering-1/participants") {
+        return json({
+          observation: {
+            freshness: "live",
+            source: "cloudshare_v4_sales_participant_roster",
+            observedAt: "2026-08-30T10:09:00.000Z",
+          },
+          participants: [
+            {
+              id: "enrollment-1",
+              subject: { type: "sales_trial_enrollment", id: "enrollment-1" },
+              firstName: "Ari",
+              lastName: "Visitor",
+              email: "visitor@example.test",
+              participationStatus: "inProgress",
+              observation: {
+                freshness: "live",
+                source: "cloudshare_v4_sales_participant_roster",
+                observedAt: "2026-08-30T10:09:00.000Z",
+              },
+              firstJoined: "2026-08-30T10:05:00.000Z",
+              envStatus: "Ready",
+              environment: {
+                dimension: "cloudshare_environment",
+                value: "Ready",
+                source: "cloudshare_v4_sales_participant_roster",
+                observedAt: "2026-08-30T10:09:00.000Z",
+              },
+            },
+            {
+              id: "enrollment-2",
+              subject: { type: "sales_trial_enrollment", id: "enrollment-2" },
+              firstName: "Bea",
+              lastName: "Retained",
+              email: "second@example.test",
+              participationStatus: "concluded",
+              observation: {
+                freshness: "stale",
+                source: "certalis_sales_trial_enrollment_reconciliation",
+                observedAt: "2026-08-30T10:07:00.000Z",
+              },
+              firstJoined: "2026-08-30T10:01:00.000Z",
+              envStatus: "Suspended",
+              environment: {
+                dimension: "cloudshare_environment",
+                value: "Suspended",
+                source: "certalis_sales_trial_enrollment_reconciliation",
+                observedAt: "2026-08-30T10:07:00.000Z",
+              },
+            },
+          ],
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open monitoring" }));
+
+    expect(await screen.findByText("Participant monitoring")).toBeTruthy();
+    expect(screen.getByText("Observed from CloudShare participant roster · 2026-08-30T10:09:00.000Z")).toBeTruthy();
+    expect(screen.getByText("Participant state from CloudShare participant roster · live · 2026-08-30T10:09:00.000Z")).toBeTruthy();
+    expect(screen.getByText("Participant state from locally reconciled history · stale · 2026-08-30T10:07:00.000Z")).toBeTruthy();
+  });
+
+  it("shows monitoring controls for an unpublished offering so retained history stays reachable after unpublish", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") {
+        return json({
+          offerings: [
+            {
+              id: "offering-1",
+              title: "Helios Trial",
+              description: "Shared trial",
+              itemId: "item-1",
+              start: "2026-08-30T09:00",
+              end: "2026-08-30T17:00",
+              timeZone: "UTC",
+              salesProEmail: "owner@example.test",
+              salesProDisplayName: "Owner",
+              status: "unpublished",
+              attentionReason: null,
+            },
+          ],
+        });
+      }
+      if (url === "/api/sales/trial-offerings/offering-1/participants") {
+        return json({
+          offering: { id: "offering-1", status: "unpublished" },
+          observation: {
+            freshness: "stale",
+            source: "certalis_sales_trial_enrollment_reconciliation",
+            observedAt: "2026-08-30T10:07:00.000Z",
+            warning: "CloudShare could not refresh the participant roster; showing the last locally reconciled participant state.",
+          },
+          participants: [],
+          correlationId: "corr-unpublished-1",
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open monitoring" }));
+
+    expect(await screen.findByText("CloudShare could not refresh the participant roster; showing the last locally reconciled participant state.")).toBeTruthy();
+    expect(screen.queryByText("Sales Trial Offering was not found")).toBeNull();
   });
 
   it("renders monitoring inside an overflow-safe constrained-width container", async () => {

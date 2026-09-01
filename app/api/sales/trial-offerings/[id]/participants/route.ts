@@ -26,13 +26,6 @@ export async function GET(
 
   const offeringId = (await params).id;
   const offeringRepository = createPrismaSalesTrialOfferingRepository(services.prisma);
-  if ((await offeringRepository.findById(session.customerId, offeringId))?.status === "ending") {
-    await handleEndSalesTrialOffering(salesTrialEndingDeps(services), {
-      customerId: session.customerId,
-      id: offeringId,
-      actor: { type: "admin", id: session.userId, email: session.email },
-    });
-  }
   const result = await handleListSalesTrialOfferingParticipants(
     {
       offerings: offeringRepository,
@@ -46,6 +39,13 @@ export async function GET(
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,
+      reconcileEnding: async ({ customerId, offeringId, actor }) => {
+        await handleEndSalesTrialOffering(salesTrialEndingDeps(services), {
+          customerId,
+          id: offeringId,
+          actor,
+        });
+      },
     },
     {
       customerId: session.customerId,

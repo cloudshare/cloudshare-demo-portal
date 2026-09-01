@@ -85,11 +85,12 @@ export async function GET(
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,
-      reconcileEnding: (id) => handleEndSalesTrialOffering(salesTrialEndingDeps(services), {
-        customerId: session.customerId,
-        id,
-        actor: { type: "sales_trial_participant", id: session.userId, email: session.email },
-      }).then(() => undefined),
+      reconcileEnding: ({ customerId, offeringId, actor }) =>
+        handleEndSalesTrialOffering(salesTrialEndingDeps(services), {
+          customerId,
+          id: offeringId,
+          actor,
+        }).then(() => undefined),
     },
     {
       customerId: session.customerId,

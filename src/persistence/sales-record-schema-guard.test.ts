@@ -17,4 +17,15 @@ describe("Sales record tenant-aware database relations", () => {
     expect(migration).toContain('ADD COLUMN "archivedAt" DATETIME');
     expect(migration).not.toContain("DROP");
   });
+
+  it("keeps Sales Trial roster-status defaults aligned with the shipped migrations", () => {
+    const schema = readFileSync("prisma/schema.prisma", "utf8");
+    const participationMigration = readFileSync(
+      "prisma/migrations/20260831225000_add_sales_trial_enrollment_participation_status/migration.sql",
+      "utf8",
+    );
+
+    expect(schema).toContain('participationStatus                String   @default("pending")');
+    expect(participationMigration).toContain("DEFAULT 'pending'");
+  });
 });

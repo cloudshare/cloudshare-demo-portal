@@ -3,8 +3,7 @@ import { closeSync, existsSync, openSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 export default function setup() {
-  const prismaDir = join(process.cwd(), "prisma");
-  const dbPath = join(prismaDir, "test.db");
+  const dbPath = join(process.cwd(), "prisma", "test.db");
   const journalPath = `${dbPath}-journal`;
 
   if (existsSync(dbPath)) {
@@ -21,6 +20,7 @@ export default function setup() {
     prismaCliPath,
     "db",
     "push",
+    "--accept-data-loss",
     "--skip-generate",
   ], {
     cwd: process.cwd(),

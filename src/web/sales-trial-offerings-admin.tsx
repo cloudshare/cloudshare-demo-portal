@@ -1,6 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import type {
+  SalesTrialMonitoringObservation,
+  SalesTrialMonitoringParticipant,
+  SalesTrialOfferingMonitoringResponseBody,
+} from "@/api/sales-trial-enrollment";
 import { isAdminSessionExpiredError } from "./admin-authenticated-request";
 import { disabledButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
@@ -20,18 +25,6 @@ type DraftPayload = {
   salesProEmail: string;
 };
 type DraftFormField = "title" | "description" | "itemId" | "start" | "end" | "timeZone" | "salesProEmail";
-type MonitoringParticipant = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  participationStatus: "pending" | "inProgress" | "concluded";
-  firstJoined: string | null;
-  envStatus: string | null;
-  environment: { dimension: "cloudshare_environment"; value: string | null; source: string };
-  needsAttention?: boolean;
-  monitoringMessage?: string;
-};
 type Offering = {
   id: string;
   title: string;
@@ -71,6 +64,40 @@ const disabledControlStyle = {
   cursor: "not-allowed",
 };
 
+function formatMonitoringObservationSource(
+  source: SalesTrialMonitoringObservation["source"] | null | undefined,
+): string | null {
+  if (source === "cloudshare_v4_sales_participant_roster") {
+    return "CloudShare participant roster";
+  }
+  if (source === "certalis_sales_trial_enrollment_reconciliation") {
+    return "locally reconciled history";
+  }
+  return null;
+}
+
+function formatMonitoringObservationFreshness(
+  freshness: SalesTrialMonitoringObservation["freshness"] | null | undefined,
+): string | null {
+  if (freshness === "live") return "live";
+  if (freshness === "stale") return "stale";
+  return null;
+}
+
+function formatMonitoringParticipationStatus(
+  status: SalesTrialMonitoringParticipant["participationStatus"],
+): string {
+  if (status === "inProgress") return "In progress";
+  if (status === "concluded") return "Concluded";
+  return "Pending";
+}
+
+function formatMonitoringInvitationStatus(
+  status: SalesTrialMonitoringParticipant["invitationStatus"],
+): string {
+  return status === "sent" ? "Sent" : "Not sent";
+}
+
 export function SalesTrialOfferingsAdmin({
   email,
   fetchAdmin = fetch,
@@ -90,7 +117,8 @@ export function SalesTrialOfferingsAdmin({
   const [messageCorrelationId, setMessageCorrelationId] = useState<string | null>(null);
   const [latestSupportByOfferingId, setLatestSupportByOfferingId] = useState<Record<string, string | null>>({});
   const [monitoringOfferingId, setMonitoringOfferingId] = useState<string | null>(null);
-  const [monitoringParticipants, setMonitoringParticipants] = useState<MonitoringParticipant[]>([]);
+  const [monitoringParticipants, setMonitoringParticipants] = useState<SalesTrialMonitoringParticipant[]>([]);
+  const [monitoringObservation, setMonitoringObservation] = useState<SalesTrialMonitoringObservation | null>(null);
   const [monitoringLoading, setMonitoringLoading] = useState(false);
   const [monitoringError, setMonitoringError] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -250,6 +278,7 @@ export function SalesTrialOfferingsAdmin({
     if (monitoringOfferingId === id) {
       setMonitoringOfferingId(null);
       setMonitoringParticipants([]);
+      setMonitoringObservation(null);
       setMonitoringError(null);
       return;
     }
@@ -260,16 +289,17 @@ export function SalesTrialOfferingsAdmin({
       const response = await fetchAdmin(
         `/api/sales/trial-offerings/${encodeURIComponent(id)}/participants`,
       );
-      const body = (await response.json()) as {
-        participants?: MonitoringParticipant[];
+      const body = (await response.json()) as SalesTrialOfferingMonitoringResponseBody & {
         error?: string;
       };
       if (!response.ok) {
         throw new Error(body.error ?? "Could not load participant monitoring.");
       }
-      setMonitoringParticipants(body.participants ?? []);
+      setMonitoringParticipants([...(body.participants ?? [])]);
+      setMonitoringObservation(body.observation ?? null);
     } catch (error) {
       setMonitoringParticipants([]);
+      setMonitoringObservation(null);
       setMonitoringError(
         error instanceof Error ? error.message : "Could not load participant monitoring.",
       );
@@ -354,21 +384,24 @@ export function SalesTrialOfferingsAdmin({
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
             <button type="button" style={offering.status !== "draft" ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
             <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => { if (window.confirm("End this Trial Offering now and unpublish it from the portal?")) void lifecycle(offering.id, "end"); }}>End trial</button>
-            {offering.status === "published" || offering.status === "ending" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
+            {offering.status === "published" || offering.status === "ending" || offering.status === "ended" || offering.status === "unpublished" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
           </div>
           {monitoringOfferingId === offering.id ? <section aria-label="Participant monitoring" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem", overflowX: "auto", width: "100%" }}>
             <div style={{ display: "grid", gap: "0.25rem" }}>
               <strong>Participant monitoring</strong>
               <span style={{ color: "#52606d" }}>CloudShare visibility derived from the reconciled Trial enrollment roster.</span>
+              {monitoringObservation?.warning ? <span style={{ color: "#52606d" }}>{monitoringObservation.warning}</span> : null}
+              {formatMonitoringObservationSource(monitoringObservation?.source) ? <span style={{ color: "#52606d" }}>{`Observed from ${formatMonitoringObservationSource(monitoringObservation?.source)}${monitoringObservation?.observedAt ? ` · ${monitoringObservation.observedAt}` : ""}`}</span> : null}
             </div>
             {monitoringLoading ? <p style={{ margin: 0 }}>Refreshing participant monitoring…</p> : null}
             {monitoringError ? <div role="alert" style={alertPanelStyle.danger}>{monitoringError}</div> : null}
             {!monitoringLoading && !monitoringError && monitoringParticipants.length === 0 ? <p style={{ margin: 0, color: "#52606d" }}>No enrolled participants are currently visible for this Trial Offering.</p> : null}
-            {!monitoringLoading && !monitoringError && monitoringParticipants.length > 0 ? <table style={{ width: "100%", minWidth: "42rem", borderCollapse: "collapse" }}>
+            {!monitoringLoading && !monitoringError && monitoringParticipants.length > 0 ? <table style={{ width: "100%", minWidth: "48rem", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>Participant</th>
                   <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>First joined</th>
+                  <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>Invitation</th>
                   <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>Participation</th>
                   <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>Environment</th>
                 </tr>
@@ -377,7 +410,18 @@ export function SalesTrialOfferingsAdmin({
                 {monitoringParticipants.map((participant) => <tr key={participant.id}>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}><strong>{participant.firstName} {participant.lastName}</strong><br /><span>{participant.email}</span>{participant.needsAttention ? <><br /><small style={{ color: "#9a3412" }}>{participant.monitoringMessage}</small></> : null}</td>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.firstJoined ?? "—"}</td>
-                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.participationStatus}</td>
+                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{formatMonitoringInvitationStatus(participant.invitationStatus)}</td>
+                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>
+                    {formatMonitoringParticipationStatus(participant.participationStatus)}
+                    {formatMonitoringObservationSource(participant.observation?.source) && formatMonitoringObservationFreshness(participant.observation?.freshness) ? (
+                      <>
+                        <br />
+                        <small style={{ color: "#52606d" }}>
+                          {`Participant state from ${formatMonitoringObservationSource(participant.observation.source)} · ${formatMonitoringObservationFreshness(participant.observation.freshness)}${participant.observation.observedAt ? ` · ${participant.observation.observedAt}` : ""}`}
+                        </small>
+                      </>
+                    ) : null}
+                  </td>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.environment.value ?? participant.envStatus ?? "Not assigned"}</td>
                 </tr>)}
               </tbody>
