@@ -79,6 +79,22 @@ export function createPrismaSalesTrialEnrollmentRepository(
       });
       return reserved.count === 1;
     },
+    async releaseExtensionReservation(customerId, enrollmentId, update) {
+      const released = await prisma.salesTrialEnrollment.updateMany({
+        where: {
+          customerId,
+          id: enrollmentId,
+          status: "needs_attention",
+          attentionReason: update.expectedAttentionReason,
+        },
+        data: {
+          status: "active",
+          attentionReason: null,
+          updatedAt: update.updatedAt,
+        },
+      });
+      return released.count === 1;
+    },
     async findByOfferingAndPortalUser(customerId, salesTrialOfferingId, portalUserId) {
       const row = await prisma.salesTrialEnrollment.findUnique({
         where: {

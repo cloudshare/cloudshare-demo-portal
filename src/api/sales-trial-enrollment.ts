@@ -650,6 +650,8 @@ export async function handleExtendSalesTrialOfferingParticipant(
   }
 
   let reconcileOnly = isPendingExtensionReconciliation(enrollment);
+  let claimedExtensionReservation = false;
+  let providerMutationAttempted = false;
   if (!reconcileOnly && deps.enrollments.reserveForExtension) {
     const claimed = await deps.enrollments.reserveForExtension(
       request.customerId,
@@ -660,6 +662,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
       },
     );
     if (claimed) {
+      claimedExtensionReservation = true;
       enrollment = {
         ...enrollment,
         status: "needs_attention",
@@ -886,6 +889,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
 
     let extension;
     try {
+      providerMutationAttempted = true;
       extension = await environments.extendById(preflight.environmentId);
     } catch (error) {
       return extensionFailure(
@@ -1038,6 +1042,18 @@ export async function handleExtendSalesTrialOfferingParticipant(
         undefined,
         error.reason,
       );
+    }
+    if (
+      claimedExtensionReservation &&
+      !providerMutationAttempted &&
+      deps.enrollments.releaseExtensionReservation
+    ) {
+      await Promise.allSettled([
+        deps.enrollments.releaseExtensionReservation(request.customerId, enrollment.id, {
+          updatedAt: now,
+          expectedAttentionReason: EXTEND_PENDING_RECONCILIATION,
+        }),
+      ]);
     }
     return extensionFailure(
       deps,
@@ -1641,16 +1657,11 @@ function hasEstablishedExtensionOutcome(
   if (!after.environmentStatus) {
     return false;
   }
-  if (before.status !== "needs_attention") {
-    return true;
-  }
-  if (!isRetryBlockedByPendingOutcome(after)) {
-    return true;
-  }
-  if (before.observedExpirationTime === null) {
-    return false;
-  }
-  return didExtensionChangeOutcome(before, after);
+  return (
+    before.observedExpirationTime !== null &&
+    after.observedExpirationTime !== null &&
+    before.observedExpirationTime !== after.observedExpirationTime
+  );
 }
 
 function isRetryBlockedByPendingOutcome(
