@@ -75,6 +75,10 @@ describe("Sales diagnostics HTTP isolation", () => {
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(9, expect.anything(), {
       customerId: "customer-certalis",
+      query: { operation: "account.created", source: "sales-trial-enrollment", limit: "101", offset: "0" },
+    });
+    expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(10, expect.anything(), {
+      customerId: "customer-certalis",
       query: { source: "sales-items", operation: "item.resource_read" },
     });
   });
@@ -98,6 +102,55 @@ describe("Sales diagnostics HTTP isolation", () => {
     expect(body.entries[0].response.body).toEqual({ loginUrl: "https://cloudshare.example.test/private-provider-url", passphrase: "provider-passphrase" });
     expect(body.entries[0]).toMatchObject({ correlationId: "corr-launch-1", outcome: "success", response: { status: 200, body: { loginUrl: "https://cloudshare.example.test/private-provider-url" } } });
     expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), { customerId: "customer-certalis", query: { source: "sales-participant-launch", correlationId: "corr-launch-1", subjectId: "participant-1" } });
+  });
+
+  it("retrieves Customer-scoped Sales Trial extension correlations through the Sales diagnostics source", async () => {
+    mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
+    const protectedEntry = {
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "failure",
+      correlationId: "corr-trial-extend-1",
+      subject: { type: "sales_trial_enrollment", id: "enrollment-1" },
+      request: {
+        method: "PUT",
+        path: "/api/v3/envs/actions/extend",
+        query: { envId: "opaque-v3-env-1" },
+        headers: { authorization: "cs_sha1 private-auth", "x-request-id": "req-extend-1" },
+      },
+      response: { transport: "tcp" },
+      externalIds: { offeringId: "offering-1", salesTrialEnrollmentId: "enrollment-1", environmentId: "opaque-v3-env-1" },
+      details: {
+        integrationSurface: "cloudshare.v3.environments",
+        attemptedOperation: "extend_environment",
+        failureMode: "transport_failure",
+        httpExchanges: [
+          {
+            request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+            response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+          },
+        ],
+      },
+    };
+    mockHandleGetDiagnosticLog.mockResolvedValueOnce({ status: 200, body: { entries: [protectedEntry], page: { hasMore: false, nextOffset: null } } });
+
+    const response = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=sales-trial-enrollment&correlationId=corr-trial-extend-1&subjectId=enrollment-1"));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.entries[0]).toMatchObject({
+      source: "sales-trial-enrollment",
+      correlationId: "corr-trial-extend-1",
+      externalIds: { environmentId: "opaque-v3-env-1" },
+      details: { attemptedOperation: "extend_environment" },
+    });
+    expect(body.entries[0].request.headers.authorization).toBe("[REDACTED]");
+    expect(body.entries[0].request.query).toEqual({ envId: "opaque-v3-env-1" });
+    expect(JSON.stringify(body)).not.toContain("private-auth");
+    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), {
+      customerId: "customer-certalis",
+      query: { source: "sales-trial-enrollment", correlationId: "corr-trial-extend-1", subjectId: "enrollment-1" },
+    });
   });
 
   it("applies the same bearer-safe projection to aggregate Sales diagnostics", async () => {

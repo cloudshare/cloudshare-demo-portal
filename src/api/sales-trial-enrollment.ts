@@ -884,7 +884,20 @@ export async function handleExtendSalesTrialOfferingParticipant(
       );
     }
 
-    const extension = await environments.extendById(preflight.environmentId);
+    let extension;
+    try {
+      extension = await environments.extendById(preflight.environmentId);
+    } catch (error) {
+      return extensionFailure(
+        deps,
+        request,
+        correlationId,
+        error,
+        preflight.exchanges,
+        pendingExtension.id,
+        preflight.environmentId,
+      );
+    }
     let observed;
     try {
       observed = await environments.observeById(preflight.environmentId);

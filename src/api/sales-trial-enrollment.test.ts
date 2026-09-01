@@ -3116,6 +3116,126 @@ describe("Sales Trial participant environment extension", () => {
     });
   });
 
+  it("retains preflight exchanges and canonical env id when the direct extend PUT rejects", async () => {
+    const { deps, enrollments, diagnosticRepository, observe, extendById, observeById } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      invitationStatus: "sent",
+      participationStatus: "inProgress",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Archived",
+      observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    observe.mockResolvedValueOnce({
+      environmentId: "opaque-v3-env-1",
+      statusCode: 4,
+      expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+      exchanges: [
+        {
+          request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+          response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+        },
+        {
+          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
+          response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
+        },
+      ],
+    });
+    extendById.mockRejectedValueOnce(
+      new CloudShareTransportError("extend timed out", {
+        method: "PUT",
+        path: "/api/v3/envs/actions/extend",
+        requestQuery: { envId: "opaque-v3-env-1" },
+        requestHeaders: { authorization: "cs_sha1 secret", "x-request-id": "req-extend-1" },
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+      }),
+    );
+
+    const result = await handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    const unresolved = await enrollments.findById?.("customer-1", "enrollment-1");
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "failure",
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: {
+        error: "Sales Trial environment extension could not be confirmed.",
+        correlationId: expect.any(String),
+      },
+    });
+    expect(extendById).toHaveBeenCalledWith("opaque-v3-env-1");
+    expect(observeById).not.toHaveBeenCalled();
+    expect(unresolved).toMatchObject({
+      status: "needs_attention",
+      attentionReason:
+        "The previous Sales Trial extension outcome is still unconfirmed. Certalis must reconcile the current CloudShare state before another extension can be requested.",
+      observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+    });
+    expect(failure).toMatchObject({
+      correlationId: result.body.correlationId,
+      request: expect.objectContaining({
+        method: "PUT",
+        path: "/api/v3/envs/actions/extend",
+        query: { envId: "opaque-v3-env-1" },
+        headers: { authorization: "[REDACTED]", "x-request-id": "req-extend-1" },
+      }),
+      externalIds: expect.objectContaining({
+        environmentId: "opaque-v3-env-1",
+      }),
+      details: expect.objectContaining({
+        attemptedOperation: "extend_environment",
+        failureMode: "transport_failure",
+        httpExchanges: [
+          expect.objectContaining({
+            request: expect.objectContaining({
+              method: "GET",
+              path: "/api/v3/envs",
+              query: { ownerEmail: "visitor@example.test", brief: "false" },
+            }),
+          }),
+          expect.objectContaining({
+            request: expect.objectContaining({
+              method: "GET",
+              path: "/api/v3/envs/actions/getextended",
+              query: { envId: "opaque-v3-env-1" },
+            }),
+          }),
+          expect.objectContaining({
+            request: expect.objectContaining({
+              method: "PUT",
+              path: "/api/v3/envs/actions/extend",
+              query: { envId: "opaque-v3-env-1" },
+            }),
+          }),
+        ],
+      }),
+    });
+    expect(JSON.stringify(result.body)).not.toContain("opaque-v3-env-1");
+  });
+
   it("does not record success on a reconcile-only retry when CloudShare now reports the environment as terminal", async () => {
     const { deps, enrollments, diagnosticRepository, observe, extendById } = createDeps();
     await enrollments.save({
