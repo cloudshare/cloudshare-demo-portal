@@ -488,6 +488,9 @@ export async function handleListSalesTrialOfferingParticipants(
       "Sales Trial participant monitoring is unavailable.",
       error,
     );
+    if (isParticipantRosterAmbiguity(error)) {
+      return failure;
+    }
     const retained = await deps.enrollments.listByOffering(
       request.customerId,
       request.offeringId,
@@ -699,8 +702,12 @@ function isOfferingOpen(
 }
 
 function classifyAttentionReason(error: unknown): string | null {
+  return isParticipantRosterAmbiguity(error) ? NEEDS_ATTENTION_REASON : null;
+}
+
+function isParticipantRosterAmbiguity(error: unknown): boolean {
   if (!(error instanceof Error) || !("context" in error)) {
-    return null;
+    return false;
   }
   const failureMode = (error as { context?: { failureMode?: unknown } }).context?.failureMode;
   return typeof failureMode === "string" &&
@@ -711,9 +718,7 @@ function classifyAttentionReason(error: unknown): string | null {
       failureMode.includes("correlated") ||
       failureMode.includes("propertyless") ||
       failureMode.includes("same_email")
-    )
-    ? NEEDS_ATTENTION_REASON
-    : null;
+    );
 }
 
 function isLaunchableProviderSession(
