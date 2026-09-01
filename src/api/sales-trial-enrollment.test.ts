@@ -3434,6 +3434,107 @@ describe("Sales Trial participant environment extension", () => {
     expect(extendById).not.toHaveBeenCalled();
   });
 
+  it("classifies resolution persistence save failures without polluting protected external ids", async () => {
+    const backing = createEnrollmentRepository();
+    await backing.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      invitationStatus: "sent",
+      participationStatus: "inProgress",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Archived",
+      observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    const save = vi.fn(async (enrollment: SalesTrialEnrollment) => {
+      if (
+        enrollment.status === "needs_attention" &&
+        enrollment.attentionReason ===
+          "Certalis could not resolve exactly one retained CloudShare environment for this participant. Support reconciliation is required before another extension can be requested."
+      ) {
+        throw new Error("write conflict");
+      }
+      await backing.save(enrollment);
+    });
+    const { deps, diagnosticRepository, extendById, observe } = createDeps({
+      enrollments: {
+        ...backing,
+        save,
+      },
+    });
+    observe.mockRejectedValueOnce(
+      new SalesEnvironmentResolutionError("environment_ambiguous_for_project", [
+        {
+          request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+          response: {
+            status: 200,
+            body: [
+              { id: "opaque-v3-env-1", projectId: "project-1" },
+              { id: "opaque-v3-env-2", projectId: "project-1" },
+            ],
+          },
+        },
+      ]),
+    );
+
+    const result = await handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "failure",
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: {
+        error: "Sales Trial environment extension could not be confirmed.",
+        correlationId: expect.any(String),
+      },
+    });
+    expect(extendById).not.toHaveBeenCalled();
+    expect(failure).toMatchObject({
+      correlationId: result.body.correlationId,
+      request: expect.objectContaining({
+        method: "GET",
+        path: "/api/v3/envs",
+        query: { ownerEmail: "visitor@example.test", brief: "false" },
+      }),
+      details: expect.objectContaining({
+        attemptedOperation: "resolve_environment_for_project",
+        failureMode: "persistence_failure",
+        httpExchanges: [
+          expect.objectContaining({
+            request: expect.objectContaining({
+              method: "GET",
+              path: "/api/v3/envs",
+              query: { ownerEmail: "visitor@example.test", brief: "false" },
+            }),
+          }),
+        ],
+      }),
+    });
+    expect(failure.externalIds).not.toHaveProperty("environmentId");
+    expect(JSON.stringify(failure.externalIds)).not.toContain("persistence_failure");
+    expect(JSON.stringify(result.body)).not.toContain("opaque-v3-env-1");
+  });
+
   it("records safe guard-denied diagnostics when the retained mapping is unavailable before any provider call", async () => {
     const { deps, enrollments, diagnosticRepository, audit, extendById } = createDeps();
     await enrollments.save({

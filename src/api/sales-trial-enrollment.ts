@@ -957,6 +957,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
           saveError,
           error.exchanges,
           unresolved.id,
+          undefined,
           "persistence_failure",
           "Sales Trial extension state could not be persisted after CloudShare environment resolution.",
         );
