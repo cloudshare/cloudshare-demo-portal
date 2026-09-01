@@ -160,7 +160,9 @@ describe("Sales Trial Offerings admin monitoring", () => {
 
     const button = await screen.findByRole("button", { name: "Extend environment for Ari Visitor" });
     expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("aria-describedby")).toBe("extend-reason-enrollment-1");
     expect(button.getAttribute("title")).toContain("retained CloudShare environment mapping");
+    expect(screen.getByText("A retained CloudShare environment mapping is required before Certalis can request an extension.")).toBeTruthy();
   });
 
   it("shows an in-flight extend action, refreshes monitoring after success, and preserves a safe response surface", async () => {

@@ -468,25 +468,40 @@ export function SalesTrialOfferingsAdmin({
                     ) : null}
                   </td>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>
+                    {(() => {
+                      const extendReasonId = participant.extend?.reason
+                        ? `extend-reason-${participant.id}`
+                        : undefined;
+                      return (
                     <div style={{ display: "grid", gap: "0.5rem", justifyItems: "start" }}>
                       <span>{participant.environment.value ?? participant.envStatus ?? "Not assigned"}</span>
                       {participant.extend ? (
-                        <button
-                          type="button"
-                          aria-label={`Extend environment for ${participant.firstName} ${participant.lastName}`}
-                          title={participant.extend.reason ?? undefined}
-                          style={
-                            !participant.extend.enabled || extendingParticipantId === participant.id
-                              ? { ...secondaryButtonStyle, ...disabledButtonStyle }
-                              : secondaryButtonStyle
-                          }
-                          disabled={!participant.extend.enabled || extendingParticipantId === participant.id}
-                          onClick={() => void extendEnvironment(offering.id, participant)}
-                        >
-                          {extendingParticipantId === participant.id ? "Extending…" : "Extend environment"}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            aria-label={`Extend environment for ${participant.firstName} ${participant.lastName}`}
+                            aria-describedby={extendReasonId}
+                            title={participant.extend.reason ?? undefined}
+                            style={
+                              !participant.extend.enabled || extendingParticipantId === participant.id
+                                ? { ...secondaryButtonStyle, ...disabledButtonStyle }
+                                : secondaryButtonStyle
+                            }
+                            disabled={!participant.extend.enabled || extendingParticipantId === participant.id}
+                            onClick={() => void extendEnvironment(offering.id, participant)}
+                          >
+                            {extendingParticipantId === participant.id ? "Extending…" : "Extend environment"}
+                          </button>
+                          {participant.extend.reason ? (
+                            <small id={extendReasonId} style={{ color: "#52606d", maxWidth: "20rem" }}>
+                              {participant.extend.reason}
+                            </small>
+                          ) : null}
+                        </>
                       ) : null}
                     </div>
+                      );
+                    })()}
                   </td>
                 </tr>)}
               </tbody>

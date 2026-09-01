@@ -14,6 +14,7 @@ const enrollment = {
   participationStatus: "pending" as const,
   cloudShareRosterEnvironmentReference: null,
   environmentStatus: null,
+  observedExpirationTime: null,
   firstJoined: null,
   status: "provisioning" as const,
   attentionReason: null,

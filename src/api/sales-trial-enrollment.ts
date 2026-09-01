@@ -47,6 +47,8 @@ const EXTEND_MAPPING_REQUIRED =
   "A retained CloudShare environment mapping is required before Certalis can request an extension.";
 const EXTEND_ACTIVE_PARTICIPANT_REQUIRED =
   "Only active Sales Trial participants can extend their environment.";
+const EXTEND_PENDING_RECONCILIATION =
+  "The previous Sales Trial extension outcome is still unconfirmed. Certalis must reconcile the current CloudShare state before another extension can be requested.";
 
 type Actor = {
   readonly type: "sales_trial_participant";
@@ -605,7 +607,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
   }
 
   const extendState = buildExtendState(enrollment);
-  if (!extendState.enabled) {
+  if (!extendState.enabled && !isPendingExtensionReconciliation(enrollment)) {
     return {
       status: 409,
       body: {
@@ -632,77 +634,158 @@ export async function handleExtendSalesTrialOfferingParticipant(
   }
 
   try {
+    const preflight = await environments.observeById(
+      enrollment.cloudShareRosterEnvironmentReference!,
+    );
+    const preflightEnrollment = applyEnvironmentObservation(enrollment, preflight, now);
+
+    if (isPendingExtensionReconciliation(enrollment)) {
+      if (hasEstablishedExtensionOutcome(enrollment, preflightEnrollment)) {
+        const reconciled = {
+          ...preflightEnrollment,
+          status: "active" as const,
+          attentionReason: null,
+        };
+        await deps.enrollments.save(reconciled);
+        await recordExtensionSuccess(
+          deps,
+          request,
+          correlationId,
+          reconciled,
+          preflight.expirationTime,
+          undefined,
+          [preflight.exchanges[0]!],
+        );
+        return {
+          status: 200,
+          body: {
+            participant: projectTrialMonitoringParticipant(reconciled),
+            correlationId,
+          },
+        };
+      }
+
+      const unresolved = {
+        ...preflightEnrollment,
+        status: "needs_attention" as const,
+        attentionReason: EXTEND_PENDING_RECONCILIATION,
+      };
+      await deps.enrollments.save(unresolved);
+      return {
+        status: 409,
+        body: {
+          error: EXTEND_UNAVAILABLE,
+          reason: EXTEND_PENDING_RECONCILIATION,
+          correlationId,
+        },
+      };
+    }
+
+    if (!isExtendEligibleEnvironmentStatus(preflight.statusCode)) {
+      const ineligible = {
+        ...preflightEnrollment,
+        status: "active" as const,
+        attentionReason: null,
+      };
+      await deps.enrollments.save(ineligible);
+      return {
+        status: 409,
+        body: {
+          error: EXTEND_UNAVAILABLE,
+          reason: ineligibleReasonForStatus(preflight.statusCode),
+          correlationId,
+        },
+      };
+    }
+
     const extension = await environments.extendById(
       enrollment.cloudShareRosterEnvironmentReference!,
     );
-    const observed = await environments.observeById(
-      enrollment.cloudShareRosterEnvironmentReference!,
-    );
-    const nextStatus =
-      statusCodeToPersistedEnvironmentStatus(observed.statusCode) ??
-      enrollment.environmentStatus;
-    const updatedEnrollment: SalesTrialEnrollment = {
-      ...enrollment,
-      status: "active",
-      attentionReason: null,
-      environmentStatus: nextStatus,
-      lastReconciledAt: now,
-      updatedAt: now,
-    };
-    await deps.enrollments.save(updatedEnrollment);
+    let observed;
+    try {
+      observed = await environments.observeById(
+        enrollment.cloudShareRosterEnvironmentReference!,
+      );
+    } catch (error) {
+      const unresolved = {
+        ...preflightEnrollment,
+        status: "needs_attention" as const,
+        attentionReason: EXTEND_PENDING_RECONCILIATION,
+      };
+      await saveBestEffortEnrollment(deps, unresolved);
+      return extensionFailure(
+        deps,
+        request,
+        correlationId,
+        error,
+        [preflight.exchanges[0]!, extension.exchange],
+      );
+    }
 
-    await Promise.allSettled([
-      deps.diagnostics?.record({
-        source: "sales-trial-enrollment",
-        operation: "sales_trial.offering.environment.extend",
-        outcome: "success",
-        customerId: request.customerId,
-        actor: request.actor,
-        subject: { type: "sales_trial_enrollment", id: updatedEnrollment.id },
+    const updatedEnrollment = applyEnvironmentObservation(preflightEnrollment, observed, now);
+    if (!isExtendEligibleEnvironmentStatus(observed.statusCode)) {
+      const ineligible = {
+        ...updatedEnrollment,
+        status: "active" as const,
+        attentionReason: null,
+      };
+      await deps.enrollments.save(ineligible);
+      await recordExtensionFailure(
+        deps,
+        request,
         correlationId,
-        message: "Sales Trial environment extension confirmed from CloudShare.",
-        externalIds: {
-          offeringId: request.offeringId,
-          salesTrialEnrollmentId: updatedEnrollment.id,
-          environmentId: extension.environmentId,
+        EXTEND_UNAVAILABLE,
+        ineligibleReasonForStatus(observed.statusCode),
+        [preflight.exchanges[0]!, extension.exchange, ...observed.exchanges],
+        ineligible.id,
+      );
+      return {
+        status: 409,
+        body: {
+          error: EXTEND_UNAVAILABLE,
+          reason: ineligibleReasonForStatus(observed.statusCode),
+          correlationId,
         },
-        request: extension.exchange.request as unknown as Record<string, unknown>,
-        response: extension.exchange.response as unknown as Record<string, unknown>,
-        details: {
-          integrationSurface: "cloudshare.v3.environments",
-          attemptedOperation: "extend_environment",
-          expirationTime: observed.expirationTime,
-          httpExchanges: [
-            extension.exchange,
-            ...observed.exchanges,
-          ],
-        },
-      }),
-      deps.audit?.write({
-        id: randomUUID(),
-        occurredAt: now,
-        customerId: request.customerId,
-        actorType: request.actor.type,
-        actorId: request.actor.id,
-        actorEmail: request.actor.email,
-        action: "sales_trial.offering.environment.extend",
-        subjectType: "sales_trial_enrollment",
-        subjectId: updatedEnrollment.id,
-        outcome: "success",
+      };
+    }
+    if (!didExtensionChangeOutcome(preflightEnrollment, updatedEnrollment)) {
+      const unresolved = {
+        ...updatedEnrollment,
+        status: "needs_attention" as const,
+        attentionReason: EXTEND_PENDING_RECONCILIATION,
+      };
+      await deps.enrollments.save(unresolved);
+      return extensionFailure(
+        deps,
+        request,
         correlationId,
-        details: {
-          offeringId: request.offeringId,
-          expirationTime: observed.expirationTime,
-          attemptedOperation: "extend_environment",
-          integrationSurface: "cloudshare.v3.environments",
-        },
-      }),
-    ]);
+        undefined,
+        [preflight.exchanges[0]!, extension.exchange, ...observed.exchanges],
+        unresolved.id,
+      );
+    }
+
+    const reconciled = {
+      ...updatedEnrollment,
+      status: "active" as const,
+      attentionReason: null,
+    };
+    await deps.enrollments.save(reconciled);
+
+    await recordExtensionSuccess(
+      deps,
+      request,
+      correlationId,
+      reconciled,
+      observed.expirationTime,
+      extension.exchange,
+      [preflight.exchanges[0]!, extension.exchange, ...observed.exchanges],
+    );
 
     return {
       status: 200,
       body: {
-        participant: projectTrialMonitoringParticipant(updatedEnrollment),
+        participant: projectTrialMonitoringParticipant(reconciled),
         correlationId,
       },
     };
@@ -712,6 +795,8 @@ export async function handleExtendSalesTrialOfferingParticipant(
       request,
       correlationId,
       error,
+      [],
+      enrollment.id,
     );
   }
 }
@@ -734,6 +819,7 @@ function createEnrollment(
     participationStatus: "pending",
     cloudShareRosterEnvironmentReference: null,
     environmentStatus: null,
+    observedExpirationTime: null,
     firstJoined: null,
     status: "provisioning",
     attentionReason: null,
@@ -1102,6 +1188,12 @@ function buildExtendState(
   enrollment: SalesTrialEnrollment,
   participationStatus = enrollment.participationStatus ?? "pending",
 ): NonNullable<SalesTrialMonitoringParticipant["extend"]> {
+  if (isPendingExtensionReconciliation(enrollment)) {
+    return {
+      enabled: false,
+      reason: EXTEND_PENDING_RECONCILIATION,
+    };
+  }
   if (enrollment.status === "needs_attention") {
     return {
       enabled: false,
@@ -1230,6 +1322,88 @@ function statusCodeToPersistedEnvironmentStatus(
   if (statusCode === 8) return "Preparing";
   if (statusCode === 9) return "CreationFailed";
   return null;
+}
+
+function applyEnvironmentObservation(
+  enrollment: SalesTrialEnrollment,
+  observation: Pick<
+    NonNullable<Awaited<ReturnType<NonNullable<SalesEnvironmentSource["observeById"]>>>>,
+    "statusCode" | "expirationTime"
+  >,
+  observedAt: Date,
+): SalesTrialEnrollment {
+  return {
+    ...enrollment,
+    environmentStatus:
+      statusCodeToPersistedEnvironmentStatus(observation.statusCode) ??
+      enrollment.environmentStatus,
+    observedExpirationTime: observation.expirationTime,
+    lastReconciledAt: observedAt,
+    updatedAt: observedAt,
+  };
+}
+
+function isExtendEligibleEnvironmentStatus(statusCode: number): boolean {
+  return statusCode === 2 || statusCode === 3 || statusCode === 4 || statusCode === 8;
+}
+
+function ineligibleReasonForStatus(statusCode: number): string {
+  if (statusCode === 5 || statusCode === 9) {
+    return "CloudShare now reports this retained environment as terminal and not extendable.";
+  }
+  return "CloudShare does not currently report this retained environment as eligible for extension.";
+}
+
+function didExtensionChangeOutcome(
+  before: Pick<SalesTrialEnrollment, "observedExpirationTime" | "environmentStatus">,
+  after: Pick<SalesTrialEnrollment, "observedExpirationTime" | "environmentStatus">,
+): boolean {
+  return (
+    (before.observedExpirationTime ?? null) !== (after.observedExpirationTime ?? null) ||
+    (before.environmentStatus ?? null) !== (after.environmentStatus ?? null)
+  );
+}
+
+function hasEstablishedExtensionOutcome(
+  before: Pick<SalesTrialEnrollment, "observedExpirationTime" | "environmentStatus">,
+  after: Pick<SalesTrialEnrollment, "observedExpirationTime" | "environmentStatus">,
+): boolean {
+  if (!after.environmentStatus) {
+    return false;
+  }
+  return !isRetryBlockedByPendingOutcome(after) || didExtensionChangeOutcome(before, after);
+}
+
+function isRetryBlockedByPendingOutcome(
+  enrollment: Pick<SalesTrialEnrollment, "environmentStatus" | "observedExpirationTime">,
+): boolean {
+  const normalizedStatus = enrollment.environmentStatus?.trim().toLowerCase() ?? null;
+  const stillEligible =
+    normalizedStatus === "ready" ||
+    normalizedStatus === "suspended" ||
+    normalizedStatus === "archived" ||
+    normalizedStatus === "preparing";
+  return Boolean(stillEligible && enrollment.observedExpirationTime);
+}
+
+function isPendingExtensionReconciliation(
+  enrollment: Pick<SalesTrialEnrollment, "status" | "attentionReason">,
+): boolean {
+  return (
+    enrollment.status === "needs_attention" &&
+    enrollment.attentionReason === EXTEND_PENDING_RECONCILIATION
+  );
+}
+
+async function saveBestEffortEnrollment(
+  deps: SalesTrialEnrollmentDeps,
+  enrollment: SalesTrialEnrollment,
+): Promise<void> {
+  try {
+    await deps.enrollments.save(enrollment);
+  } catch {
+    // Preserve the provider failure as the primary error.
+  }
 }
 
 function isUnavailableParticipantRoster(error: unknown): boolean {
@@ -1473,60 +1647,47 @@ async function monitoringFailure(
   };
 }
 
-async function extensionFailure(
+async function recordExtensionSuccess(
   deps: SalesTrialEnrollmentDeps,
   request: SalesTrialParticipantEnvironmentExtendRequest,
   correlationId: string,
-  error: unknown,
-): Promise<SalesTrialParticipantEnvironmentExtendResponse> {
-  const context =
-    error instanceof Error && "context" in error
-      ? (error as { context?: Record<string, unknown> }).context
-      : undefined;
-  const attemptedOperation =
-    typeof context?.path === "string" && context.path.includes("/getextended")
-      ? "observe_extended_environment"
-      : "extend_environment";
+  enrollment: SalesTrialEnrollment,
+  expirationTime: string,
+  primaryExchange:
+    | {
+        readonly request: unknown;
+        readonly response: unknown;
+      }
+    | undefined,
+  httpExchanges: readonly {
+    readonly request: unknown;
+    readonly response: unknown;
+  }[],
+): Promise<void> {
   await Promise.allSettled([
     deps.diagnostics?.record({
       source: "sales-trial-enrollment",
       operation: "sales_trial.offering.environment.extend",
-      outcome: "failure",
-      level: "warn",
+      outcome: "success",
       customerId: request.customerId,
       actor: request.actor,
-      subject: { type: "sales_trial_enrollment", id: request.enrollmentId },
+      subject: { type: "sales_trial_enrollment", id: enrollment.id },
       correlationId,
-      message: EXTEND_UNCONFIRMED,
+      message: "Sales Trial environment extension confirmed from CloudShare.",
       externalIds: {
         offeringId: request.offeringId,
-        salesTrialEnrollmentId: request.enrollmentId,
+        salesTrialEnrollmentId: enrollment.id,
+        ...(enrollment.cloudShareRosterEnvironmentReference
+          ? { environmentId: enrollment.cloudShareRosterEnvironmentReference }
+          : {}),
       },
-      ...(context
-        ? {
-            request: {
-              method: context.method,
-              path: context.path,
-              query: context.requestQuery,
-              headers: context.requestHeaders,
-              body: context.requestBody,
-            },
-            response: {
-              status: context.responseStatus ?? context.status,
-              headers: context.responseHeaders,
-              body: context.responseBody,
-              transport: context.transport,
-              network: context.network,
-              tls: context.tls,
-            },
-          }
-        : {}),
+      request: primaryExchange?.request as Record<string, unknown> | undefined,
+      response: primaryExchange?.response as Record<string, unknown> | undefined,
       details: {
         integrationSurface: "cloudshare.v3.environments",
-        attemptedOperation,
-        failureMode:
-          context?.failureMode ??
-          ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure"),
+        attemptedOperation: primaryExchange ? "extend_environment" : "observe_extended_environment",
+        expirationTime,
+        httpExchanges,
       },
     }),
     deps.audit?.write({
@@ -1538,7 +1699,163 @@ async function extensionFailure(
       actorEmail: request.actor.email,
       action: "sales_trial.offering.environment.extend",
       subjectType: "sales_trial_enrollment",
-      subjectId: request.enrollmentId,
+      subjectId: enrollment.id,
+      outcome: "success",
+      correlationId,
+      details: {
+        offeringId: request.offeringId,
+        expirationTime,
+        attemptedOperation: primaryExchange ? "extend_environment" : "observe_extended_environment",
+        integrationSurface: "cloudshare.v3.environments",
+      },
+    }),
+  ]);
+}
+
+async function recordExtensionFailure(
+  deps: SalesTrialEnrollmentDeps,
+  request: SalesTrialParticipantEnvironmentExtendRequest,
+  correlationId: string,
+  error: string,
+  reason: string,
+  httpExchanges: readonly {
+    readonly request: unknown;
+    readonly response: unknown;
+  }[],
+  subjectId: string,
+): Promise<void> {
+  const lastRequest = httpExchanges[httpExchanges.length - 1]?.request as
+    | Record<string, unknown>
+    | undefined;
+  await Promise.allSettled([
+    deps.diagnostics?.record({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "failure",
+      level: "warn",
+      customerId: request.customerId,
+      actor: request.actor,
+      subject: { type: "sales_trial_enrollment", id: subjectId },
+      correlationId,
+      message: error,
+      externalIds: {
+        offeringId: request.offeringId,
+        salesTrialEnrollmentId: subjectId,
+      },
+      request: httpExchanges[httpExchanges.length - 1]?.request as Record<string, unknown> | undefined,
+      response: httpExchanges[httpExchanges.length - 1]?.response as Record<string, unknown> | undefined,
+      details: {
+        integrationSurface: "cloudshare.v3.environments",
+        attemptedOperation: salesTrialAttemptedOperationForPath(lastRequest?.path),
+        failureMode: reason,
+        httpExchanges,
+      },
+    }),
+    deps.audit?.write({
+      id: randomUUID(),
+      occurredAt: (deps.now ?? (() => new Date()))(),
+      customerId: request.customerId,
+      actorType: request.actor.type,
+      actorId: request.actor.id,
+      actorEmail: request.actor.email,
+      action: "sales_trial.offering.environment.extend",
+      subjectType: "sales_trial_enrollment",
+      subjectId,
+      outcome: "failure",
+      correlationId,
+      details: {
+        offeringId: request.offeringId,
+        integrationSurface: "cloudshare.v3.environments",
+        attemptedOperation: salesTrialAttemptedOperationForPath(lastRequest?.path),
+        failureMode: reason,
+      },
+      error,
+    }),
+  ]);
+}
+
+async function extensionFailure(
+  deps: SalesTrialEnrollmentDeps,
+  request: SalesTrialParticipantEnvironmentExtendRequest,
+  correlationId: string,
+  error: unknown,
+  completedExchanges: readonly {
+    readonly request: unknown;
+    readonly response: unknown;
+  }[] = [],
+  subjectId = request.enrollmentId,
+): Promise<SalesTrialParticipantEnvironmentExtendResponse> {
+  const context =
+    error instanceof Error && "context" in error
+      ? (error as { context?: Record<string, unknown> }).context
+      : undefined;
+  const attemptedOperation =
+    typeof context?.path === "string" && context.path.includes("/getextended")
+      ? "observe_extended_environment"
+      : "extend_environment";
+  const requestExchange = context
+    ? {
+        request: {
+          method: context.method,
+          path: context.path,
+          query: context.requestQuery,
+          headers: context.requestHeaders,
+          body: context.requestBody,
+        },
+        response: {
+          status: context.responseStatus ?? context.status,
+          headers: context.responseHeaders,
+          body: context.responseBody,
+          transport: context.transport,
+          network: context.network,
+          tls: context.tls,
+        },
+      }
+    : null;
+  const httpExchanges = requestExchange
+    ? [...completedExchanges, requestExchange]
+    : completedExchanges;
+
+  await Promise.allSettled([
+    deps.diagnostics?.record({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "failure",
+      level: "warn",
+      customerId: request.customerId,
+      actor: request.actor,
+      subject: { type: "sales_trial_enrollment", id: subjectId },
+      correlationId,
+      message: EXTEND_UNCONFIRMED,
+      externalIds: {
+        offeringId: request.offeringId,
+        salesTrialEnrollmentId: subjectId,
+      },
+      ...(requestExchange
+        ? {
+            request: requestExchange.request,
+            response: requestExchange.response,
+          }
+        : {}),
+      details: {
+        integrationSurface: "cloudshare.v3.environments",
+        attemptedOperation,
+        failureMode:
+          context?.failureMode ??
+          ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure"),
+        httpExchanges,
+      },
+    }),
+    deps.audit?.write({
+      id: randomUUID(),
+      occurredAt: (deps.now ?? (() => new Date()))(),
+      customerId: request.customerId,
+      actorType: request.actor.type,
+      actorId: request.actor.id,
+      actorEmail: request.actor.email,
+      action: "sales_trial.offering.environment.extend",
+      subjectType: "sales_trial_enrollment",
+      subjectId,
       outcome: "failure",
       correlationId,
       details: {

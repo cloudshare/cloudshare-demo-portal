@@ -17,6 +17,7 @@ export interface SalesTrialEnrollment {
   readonly participationStatus?: "pending" | "inProgress" | "concluded";
   readonly cloudShareRosterEnvironmentReference: string | null;
   readonly environmentStatus: string | null;
+  readonly observedExpirationTime?: string | null;
   readonly firstJoined: string | null;
   readonly status: SalesTrialEnrollmentStatus;
   readonly attentionReason: string | null;

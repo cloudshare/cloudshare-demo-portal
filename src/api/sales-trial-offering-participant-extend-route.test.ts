@@ -106,6 +106,7 @@ describe("Sales Trial participant extend route", () => {
         participationStatus: "inProgress",
         cloudShareRosterEnvironmentReference: "env-1",
         environmentStatus: "Archived",
+        observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
         firstJoined: "2026-08-30T10:05:00.000Z",
         status: "active",
         attentionReason: null,
@@ -123,17 +124,30 @@ describe("Sales Trial participant extend route", () => {
           response: { status: 200, body: "" },
         },
       }),
-      observeById: vi.fn().mockResolvedValue({
-        environmentId: "env-1",
-        statusCode: 4,
-        expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
-        exchanges: [
-          {
-            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
-            response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
-          },
-        ],
-      }),
+      observeById: vi
+        .fn()
+        .mockResolvedValueOnce({
+          environmentId: "env-1",
+          statusCode: 4,
+          expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+          exchanges: [
+            {
+              request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+              response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          environmentId: "env-1",
+          statusCode: 4,
+          expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
+          exchanges: [
+            {
+              request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+              response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
+            },
+          ],
+        }),
     });
   });
 
@@ -181,16 +195,29 @@ describe("Sales Trial participant extend route", () => {
           response: { status: 200, body: "" },
         },
       }),
-      observeById: vi.fn().mockRejectedValue(
-        new CloudShareTransportError("getextended timed out", {
-          method: "GET",
-          path: "/api/v3/envs/actions/getextended",
-          requestQuery: { envId: "env-1" },
-          requestHeaders: { authorization: "cs_sha1 secret", "x-request-id": "req-1" },
-          cause: "ETIMEDOUT",
-          transport: "tcp",
-        }),
-      ),
+      observeById: vi
+        .fn()
+        .mockResolvedValueOnce({
+          environmentId: "env-1",
+          statusCode: 4,
+          expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+          exchanges: [
+            {
+              request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+              response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
+            },
+          ],
+        })
+        .mockRejectedValueOnce(
+          new CloudShareTransportError("getextended timed out", {
+            method: "GET",
+            path: "/api/v3/envs/actions/getextended",
+            requestQuery: { envId: "env-1" },
+            requestHeaders: { authorization: "cs_sha1 secret", "x-request-id": "req-1" },
+            cause: "ETIMEDOUT",
+            transport: "tcp",
+          }),
+        ),
     });
 
     const response = await POST(
@@ -221,8 +248,78 @@ describe("Sales Trial participant extend route", () => {
       }),
       details: expect.objectContaining({
         attemptedOperation: "observe_extended_environment",
+        httpExchanges: [
+          expect.objectContaining({
+            request: expect.objectContaining({
+              method: "GET",
+              path: "/api/v3/envs/actions/getextended",
+              query: { envId: "env-1" },
+            }),
+          }),
+          expect.objectContaining({
+            request: expect.objectContaining({
+              method: "PUT",
+              path: "/api/v3/envs/actions/extend",
+              query: { envId: "env-1" },
+            }),
+          }),
+          expect.objectContaining({
+            request: expect.objectContaining({
+              method: "GET",
+              path: "/api/v3/envs/actions/getextended",
+              query: { envId: "env-1" },
+            }),
+          }),
+        ],
       }),
     });
+  });
+
+  it("rejects an unauthenticated or participant caller before any provider access", async () => {
+    mockGetPortalAdminSession.mockResolvedValue(null);
+
+    const response = await POST(
+      new Request("http://localhost:3025/api/sales/trial-offerings/offering-1/participants/enrollment-1/extend", {
+        method: "POST",
+      }),
+      { params: Promise.resolve({ id: "offering-1", participantId: "enrollment-1" }) },
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: "unauthorized" });
+    expect(mockCreateCloudShareSalesEnvironmentSource).not.toHaveBeenCalled();
+  });
+
+  it("fails closed for a customer-scoped enrollment mismatch without disclosing provider identifiers", async () => {
+    mockGetPortalAdminSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      customerId: "customer-certalis",
+      userId: "admin-1",
+      email: "sales-admin@certalis.demo",
+      role: "admin",
+      workspace: "sales",
+    });
+    mockCreateEnrollmentRepository.mockReturnValue({
+      save: vi.fn().mockResolvedValue(undefined),
+      findById: vi.fn().mockResolvedValue(null),
+      listByOffering: vi.fn().mockResolvedValue([]),
+    });
+
+    const response = await POST(
+      new Request("http://localhost:3025/api/sales/trial-offerings/offering-1/participants/enrollment-1/extend", {
+        method: "POST",
+      }),
+      { params: Promise.resolve({ id: "offering-1", participantId: "enrollment-1" }) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body).toEqual({
+      error: "This Sales Trial environment cannot be extended.",
+      correlationId: expect.any(String),
+    });
+    expect(JSON.stringify(body)).not.toContain("env-1");
+    expect(mockCreateCloudShareSalesEnvironmentSource).not.toHaveBeenCalled();
   });
 
   it("rejects a non-sales admin session", async () => {
