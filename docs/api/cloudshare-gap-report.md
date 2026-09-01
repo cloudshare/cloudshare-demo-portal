@@ -2124,6 +2124,41 @@ only one worker owns each reconciliation pass.
 
 ---
 
+## GAP-35 — Live default extension outcome awaits an eligible retained Trial Environment
+
+| Field | Detail |
+|---|---|
+| **Status** | Live-provider confirmation incomplete |
+| **Verified live** | Partial — authenticated v3 connectivity and the Certalis Sales-Pro preflight read passed on 2026-09-01; the Sales Admin Trial Offerings UI contained no Offering or retained enrollment eligible for a safe extension. |
+
+**Observed behaviour**
+
+The Certalis Sales Admin browser flow loaded against the live Customer connection and showed an
+empty Trial Offering catalogue. The focused live checks also confirmed a real signed v3 `ping` and
+the v3 Project-member preflight used by the Sales UI. No archived or otherwise explicitly eligible
+retained Trial Environment was available to invoke the extension operation, so Certalis did not
+send a speculative `PUT /api/v3/envs/actions/extend` request and did not assert a provider default
+duration, response status, or expiry transition.
+
+**Impact on Certalis Sales Trial use**
+
+The portal remains fail-closed: it only enables the one-time extension when an exact
+Customer-scoped owner-email and Project observation resolves an eligible v3 Environment and the
+post-operation readback proves that its expiration changed. Until a disposable eligible retained
+Environment is available, the live default extension result is an explicit deployment/QA gap, not
+a documented CloudShare behaviour.
+
+**Action required (if applicable):**
+
+Provision or identify a disposable retained Trial Environment owned by the configured Customer,
+then run the Sales Admin UI flow once and record the protected preflight, `PUT`, and expiry-change
+readback evidence without exposing provider identifiers or sponsored links.
+
+**Code reference:** `src/integrations/cloudshare/sales-environment.ts`,
+`src/api/sales-trial-enrollment.ts`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
@@ -2151,5 +2186,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-08-31 (updated GAP-34 with live sponsored-link boundary and deferred-end mitigation).
+*Last updated: 2026-09-01 (added GAP-35 with the bounded live extension-verification result).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
