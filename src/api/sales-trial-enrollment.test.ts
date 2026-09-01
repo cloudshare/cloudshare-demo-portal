@@ -72,6 +72,24 @@ function createEnrollmentRepository(): SalesTrialEnrollmentRepository {
       rows.set(enrollment.id, enrollment);
       return { enrollment, created: true, reclaimed: false } as const;
     },
+    async reserveForExtension(customerId, enrollmentId, update) {
+      const existing = rows.get(enrollmentId) ?? null;
+      if (
+        !existing ||
+        existing.customerId !== customerId ||
+        existing.status !== "active" ||
+        existing.attentionReason !== null
+      ) {
+        return false;
+      }
+      rows.set(enrollmentId, {
+        ...existing,
+        status: "needs_attention",
+        attentionReason: update.attentionReason,
+        updatedAt: update.updatedAt,
+      });
+      return true;
+    },
     async findByOfferingAndPortalUser(customerId, salesTrialOfferingId, portalUserId) {
       return (
         [...rows.values()].find(
@@ -3179,6 +3197,124 @@ describe("Sales Trial participant environment extension", () => {
       }),
     });
     expect(successes).toHaveLength(0);
+  });
+
+  it("allows only one concurrent extend request to claim the pending fence before any PUT", async () => {
+    const enrollments = createEnrollmentRepository();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      invitationStatus: "sent",
+      participationStatus: "inProgress",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Archived",
+      observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    const firstClaimGate: { release?: () => void } = {};
+    const firstClaim = new Promise<void>((resolve) => {
+      firstClaimGate.release = resolve;
+    });
+    const reserveForExtension = vi.fn(async (customerId: string, enrollmentId: string, update: { updatedAt: Date; attentionReason: string }) => {
+      const existing = await enrollments.findById?.(customerId, enrollmentId);
+      if (
+        !existing ||
+        existing.status !== "active" ||
+        existing.attentionReason !== null
+      ) {
+        return false;
+      }
+      await enrollments.save({
+        ...existing,
+        status: "needs_attention",
+        attentionReason: update.attentionReason,
+        updatedAt: update.updatedAt,
+      });
+      await firstClaim;
+      return true;
+    });
+    const extendById = vi.fn().mockResolvedValue({
+      environmentId: "opaque-v3-env-1",
+      exchange: {
+        request: { method: "PUT", path: "/api/v3/envs/actions/extend", query: { envId: "opaque-v3-env-1" } },
+        response: { status: 200, body: "" },
+      },
+    });
+    const observe = vi.fn().mockResolvedValue({
+      environmentId: "opaque-v3-env-1",
+      statusCode: 4,
+      expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+      exchanges: [
+        {
+          request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+          response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+        },
+        {
+          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
+          response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
+        },
+      ],
+    });
+    const { deps } = createDeps({
+      enrollments: {
+        ...enrollments,
+        reserveForExtension,
+      },
+      salesEnvironmentFactory: {
+        forConnection: vi.fn().mockReturnValue({
+          observe,
+          observeById: vi.fn().mockResolvedValue({
+            environmentId: "opaque-v3-env-1",
+            statusCode: 4,
+            expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
+            exchanges: [
+              {
+                request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
+                response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
+              },
+            ],
+          }),
+          extendById,
+        }),
+      },
+    });
+
+    const firstPromise = handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    await Promise.resolve();
+    const secondPromise = handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    await Promise.resolve();
+    firstClaimGate.release?.();
+    const [first, second] = await Promise.all([firstPromise, secondPromise]);
+
+    expect(extendById).toHaveBeenCalledTimes(1);
+    expect(reserveForExtension).toHaveBeenCalledTimes(2);
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
+    expect([first.body.correlationId, second.body.correlationId]).toEqual([
+      expect.any(String),
+      expect.any(String),
+    ]);
   });
 
   it("keeps the durable no-replay fence when post-mutation reconciliation persistence fails, then blocks a second PUT", async () => {

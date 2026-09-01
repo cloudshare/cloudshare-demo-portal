@@ -36,6 +36,14 @@ export interface SalesTrialEnrollmentRepository {
     readonly created: boolean;
     readonly reclaimed: boolean;
   }>;
+  reserveForExtension?(
+    customerId: string,
+    enrollmentId: string,
+    update: {
+      readonly updatedAt: Date;
+      readonly attentionReason: string;
+    },
+  ): Promise<boolean>;
   findByOfferingAndPortalUser(
     customerId: string,
     salesTrialOfferingId: string,

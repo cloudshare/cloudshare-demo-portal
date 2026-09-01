@@ -601,7 +601,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
     };
   }
 
-  const enrollment =
+  let enrollment =
     (await deps.enrollments.findById?.(request.customerId, request.enrollmentId)) ??
     (await deps.enrollments.listByOffering(request.customerId, request.offeringId)).find(
       (value) => value.id === request.enrollmentId,
@@ -648,6 +648,41 @@ export async function handleExtendSalesTrialOfferingParticipant(
       body: { error: EXTEND_UNAVAILABLE, correlationId },
     };
   }
+
+  let reconcileOnly = isPendingExtensionReconciliation(enrollment);
+  if (!reconcileOnly && deps.enrollments.reserveForExtension) {
+    const claimed = await deps.enrollments.reserveForExtension(
+      request.customerId,
+      enrollment.id,
+      {
+        updatedAt: now,
+        attentionReason: EXTEND_PENDING_RECONCILIATION,
+      },
+    );
+    if (claimed) {
+      enrollment = {
+        ...enrollment,
+        status: "needs_attention",
+        attentionReason: EXTEND_PENDING_RECONCILIATION,
+        updatedAt: now,
+      };
+    } else {
+      enrollment =
+        (await deps.enrollments.findById?.(request.customerId, request.enrollmentId)) ??
+        (await deps.enrollments.listByOffering(request.customerId, request.offeringId)).find(
+          (value) => value.id === request.enrollmentId,
+        ) ??
+        null;
+      if (!enrollment || enrollment.salesTrialOfferingId !== request.offeringId) {
+        await recordExtensionGuardDenied(deps, request, correlationId, 404, EXTEND_UNAVAILABLE);
+        return {
+          status: 404,
+          body: { error: EXTEND_UNAVAILABLE, correlationId },
+        };
+      }
+      reconcileOnly = true;
+    }
+  }
   const environments = deps.salesEnvironmentFactory.forConnection(connection);
 
   try {
@@ -657,7 +692,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
     });
     const preflightEnrollment = applyEnvironmentObservation(enrollment, preflight, now);
 
-    if (isPendingExtensionReconciliation(enrollment)) {
+    if (reconcileOnly) {
       if (!isExtendEligibleEnvironmentStatus(preflight.statusCode)) {
         const ineligible = {
           ...preflightEnrollment,
@@ -1563,11 +1598,14 @@ function didExtensionChangeOutcome(
 }
 
 function hasEstablishedExtensionOutcome(
-  before: Pick<SalesTrialEnrollment, "observedExpirationTime" | "environmentStatus">,
+  before: Pick<SalesTrialEnrollment, "status" | "observedExpirationTime" | "environmentStatus">,
   after: Pick<SalesTrialEnrollment, "observedExpirationTime" | "environmentStatus">,
 ): boolean {
   if (!after.environmentStatus) {
     return false;
+  }
+  if (before.status !== "needs_attention") {
+    return true;
   }
   return !isRetryBlockedByPendingOutcome(after) || didExtensionChangeOutcome(before, after);
 }
