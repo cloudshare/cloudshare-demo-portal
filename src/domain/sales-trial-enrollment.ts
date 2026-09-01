@@ -40,6 +40,10 @@ export interface SalesTrialEnrollmentRepository {
     salesTrialOfferingId: string,
     portalUserId: string,
   ): Promise<SalesTrialEnrollment | null>;
+  findById?(
+    customerId: string,
+    enrollmentId: string,
+  ): Promise<SalesTrialEnrollment | null>;
   listByOffering(
     customerId: string,
     salesTrialOfferingId: string,

@@ -24,6 +24,14 @@ export interface SalesEnvironmentObservation {
   readonly exchanges: readonly { readonly request: CloudShareRequestDiagnostics; readonly response: CloudShareResponseDiagnostics }[];
 }
 
+export interface SalesEnvironmentExtensionResult {
+  readonly environmentId: string;
+  readonly exchange: {
+    readonly request: CloudShareRequestDiagnostics;
+    readonly response: CloudShareResponseDiagnostics;
+  };
+}
+
 export class SalesEnvironmentResolutionError extends Error {
   constructor(
     readonly reason: "environment_not_found_for_project" | "environment_ambiguous_for_project",
@@ -39,6 +47,7 @@ export class SalesEnvironmentResolutionError extends Error {
 export interface SalesEnvironmentSource {
   observe(input: { readonly ownerEmail: string; readonly projectId: string }): Promise<SalesEnvironmentObservation>;
   observeById?(environmentId: string): Promise<SalesEnvironmentObservation>;
+  extendById?(environmentId: string): Promise<SalesEnvironmentExtensionResult>;
 }
 
 export function createCloudShareSalesEnvironmentSource(client: CloudShareClient): SalesEnvironmentSource {
@@ -65,5 +74,24 @@ export function createCloudShareSalesEnvironmentSource(client: CloudShareClient)
       return { ...observation, exchanges: [...exchanges, ...observation.exchanges] };
     },
     observeById,
+    async extendById(environmentId: string): Promise<SalesEnvironmentExtensionResult> {
+      const extendSpec = { method: "PUT", path: "/envs/actions/extend", query: { envId: environmentId } } as const;
+      const extended = client.requestV3TextDetailed
+        ? await client.requestV3TextDetailed(extendSpec)
+        : {
+            data: await client.requestV3Text(extendSpec),
+            request: { method: "PUT" as const, path: "/api/v3/envs/actions/extend", query: extendSpec.query },
+            response: { status: 200, body: undefined },
+            host: "",
+            integrationSurface: "cloudshare.v3",
+          };
+      return {
+        environmentId,
+        exchange: {
+          request: extended.request,
+          response: extended.response,
+        },
+      };
+    },
   };
 }

@@ -121,6 +121,7 @@ export function SalesTrialOfferingsAdmin({
   const [monitoringObservation, setMonitoringObservation] = useState<SalesTrialMonitoringObservation | null>(null);
   const [monitoringLoading, setMonitoringLoading] = useState(false);
   const [monitoringError, setMonitoringError] = useState<string | null>(null);
+  const [extendingParticipantId, setExtendingParticipantId] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -274,14 +275,7 @@ export function SalesTrialOfferingsAdmin({
     onNavigate?.({ tab: "support", ...intent });
   }
 
-  async function toggleMonitoring(id: string) {
-    if (monitoringOfferingId === id) {
-      setMonitoringOfferingId(null);
-      setMonitoringParticipants([]);
-      setMonitoringObservation(null);
-      setMonitoringError(null);
-      return;
-    }
+  async function loadMonitoring(id: string) {
     setMonitoringLoading(true);
     setMonitoringOfferingId(id);
     setMonitoringError(null);
@@ -305,6 +299,57 @@ export function SalesTrialOfferingsAdmin({
       );
     } finally {
       setMonitoringLoading(false);
+    }
+  }
+
+  async function toggleMonitoring(id: string) {
+    if (monitoringOfferingId === id) {
+      setMonitoringOfferingId(null);
+      setMonitoringParticipants([]);
+      setMonitoringObservation(null);
+      setMonitoringError(null);
+      return;
+    }
+    await loadMonitoring(id);
+  }
+
+  async function extendEnvironment(
+    offeringId: string,
+    participant: SalesTrialMonitoringParticipant,
+  ) {
+    setMessage(null);
+    setMessageCorrelationId(null);
+    setExtendingParticipantId(participant.id);
+    try {
+      const response = await fetchAdmin(
+        `/api/sales/trial-offerings/${encodeURIComponent(offeringId)}/participants/${encodeURIComponent(participant.id)}/extend`,
+        { method: "POST" },
+      );
+      const body = (await response.json()) as {
+        error?: string;
+        reason?: string;
+        correlationId?: string;
+      };
+      if (!response.ok) {
+        setMessageTone("error");
+        setMessage(body.reason ?? body.error ?? "Could not extend Sales Trial environment.");
+        setMessageCorrelationId(body.correlationId ?? null);
+        return;
+      }
+      await loadMonitoring(offeringId);
+      setMessageTone("success");
+      setMessage("Sales Trial environment extended.");
+      setMessageCorrelationId(null);
+    } catch (error) {
+      if (isAdminSessionExpiredError(error)) return;
+      setMessageTone("error");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not extend Sales Trial environment.",
+      );
+    } finally {
+      setExtendingParticipantId(null);
     }
   }
 
@@ -422,7 +467,27 @@ export function SalesTrialOfferingsAdmin({
                       </>
                     ) : null}
                   </td>
-                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.environment.value ?? participant.envStatus ?? "Not assigned"}</td>
+                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>
+                    <div style={{ display: "grid", gap: "0.5rem", justifyItems: "start" }}>
+                      <span>{participant.environment.value ?? participant.envStatus ?? "Not assigned"}</span>
+                      {participant.extend ? (
+                        <button
+                          type="button"
+                          aria-label={`Extend environment for ${participant.firstName} ${participant.lastName}`}
+                          title={participant.extend.reason ?? undefined}
+                          style={
+                            !participant.extend.enabled || extendingParticipantId === participant.id
+                              ? { ...secondaryButtonStyle, ...disabledButtonStyle }
+                              : secondaryButtonStyle
+                          }
+                          disabled={!participant.extend.enabled || extendingParticipantId === participant.id}
+                          onClick={() => void extendEnvironment(offering.id, participant)}
+                        >
+                          {extendingParticipantId === participant.id ? "Extending…" : "Extend environment"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
                 </tr>)}
               </tbody>
             </table> : null}

@@ -63,6 +63,10 @@ describe("Sales Trial Offerings admin monitoring", () => {
               participationStatus: "inProgress",
               firstJoined: "2026-08-30T10:05:00.000Z",
               envStatus: "Ready",
+              extend: {
+                enabled: true,
+                reason: null,
+              },
               environment: {
                 dimension: "cloudshare_environment",
                 value: "Ready",
@@ -87,7 +91,181 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(screen.getByText("In progress")).toBeTruthy();
     expect(screen.getByText("Observed from CloudShare participant roster · 2026-08-30T10:06:00.000Z")).toBeTruthy();
     expect(screen.getByText("Ready")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Extend environment for Ari Visitor" })).toBeTruthy();
     expect(screen.queryByText("remote-1")).toBeNull();
+  });
+
+  it("disables extension when monitoring explains the retained row is not eligible", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") {
+        return json({
+          offerings: [
+            {
+              id: "offering-1",
+              title: "Helios Trial",
+              description: "Shared trial",
+              itemId: "item-1",
+              start: "2026-08-30T09:00",
+              end: "2026-08-30T17:00",
+              timeZone: "UTC",
+              salesProEmail: "owner@example.test",
+              salesProDisplayName: "Owner",
+              status: "ended",
+              attentionReason: null,
+            },
+          ],
+        });
+      }
+      if (url === "/api/sales/trial-offerings/offering-1/participants") {
+        return json({
+          observation: {
+            freshness: "stale",
+            source: "certalis_sales_trial_enrollment_reconciliation",
+            observedAt: "2026-08-30T10:06:00.000Z",
+          },
+          participants: [
+            {
+              id: "enrollment-1",
+              firstName: "Ari",
+              lastName: "Visitor",
+              email: "visitor@example.test",
+              invitationStatus: "notSent",
+              participationStatus: "concluded",
+              firstJoined: "2026-08-30T10:05:00.000Z",
+              envStatus: "Deleted",
+              extend: {
+                enabled: false,
+                reason:
+                  "A retained CloudShare environment mapping is required before Certalis can request an extension.",
+              },
+              environment: {
+                dimension: "cloudshare_environment",
+                value: null,
+                source: "not_observed",
+              },
+            },
+          ],
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open monitoring" }));
+
+    const button = await screen.findByRole("button", { name: "Extend environment for Ari Visitor" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("title")).toContain("retained CloudShare environment mapping");
+  });
+
+  it("shows an in-flight extend action, refreshes monitoring after success, and preserves a safe response surface", async () => {
+    let monitoringReadCount = 0;
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") {
+        return json({
+          offerings: [
+            {
+              id: "offering-1",
+              title: "Helios Trial",
+              description: "Shared trial",
+              itemId: "item-1",
+              start: "2026-08-30T09:00",
+              end: "2026-08-30T17:00",
+              timeZone: "UTC",
+              salesProEmail: "owner@example.test",
+              salesProDisplayName: "Owner",
+              status: "ended",
+              attentionReason: null,
+            },
+          ],
+        });
+      }
+      if (url === "/api/sales/trial-offerings/offering-1/participants") {
+        monitoringReadCount += 1;
+        return json({
+          observation: {
+            freshness: "stale",
+            source: "certalis_sales_trial_enrollment_reconciliation",
+            observedAt:
+              monitoringReadCount === 1
+                ? "2026-08-30T10:06:00.000Z"
+                : "2026-08-30T10:09:00.000Z",
+          },
+          participants: [
+            {
+              id: "enrollment-1",
+              firstName: "Ari",
+              lastName: "Visitor",
+              email: "visitor@example.test",
+              invitationStatus: "sent",
+              participationStatus: "inProgress",
+              firstJoined: "2026-08-30T10:05:00.000Z",
+              envStatus: monitoringReadCount === 1 ? "Archived" : "Ready",
+              extend: {
+                enabled: true,
+                reason: null,
+              },
+              observation: {
+                freshness: "stale",
+                source: "certalis_sales_trial_enrollment_reconciliation",
+                observedAt:
+                  monitoringReadCount === 1
+                    ? "2026-08-30T10:06:00.000Z"
+                    : "2026-08-30T10:09:00.000Z",
+              },
+              environment: {
+                dimension: "cloudshare_environment",
+                value: monitoringReadCount === 1 ? "Archived" : "Ready",
+                source: "certalis_sales_trial_enrollment_reconciliation",
+                observedAt:
+                  monitoringReadCount === 1
+                    ? "2026-08-30T10:06:00.000Z"
+                    : "2026-08-30T10:09:00.000Z",
+              },
+            },
+          ],
+          correlationId: `corr-monitor-${monitoringReadCount}`,
+        });
+      }
+      if (
+        url === "/api/sales/trial-offerings/offering-1/participants/enrollment-1/extend" &&
+        init?.method === "POST"
+      ) {
+        return json({
+          participant: {
+            id: "enrollment-1",
+          },
+          correlationId: "corr-extend-1",
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open monitoring" }));
+
+    const button = await screen.findByRole("button", { name: "Extend environment for Ari Visitor" });
+    await user.click(button);
+
+    await waitFor(() => {
+      expect(fetchAdmin).toHaveBeenCalledWith(
+        "/api/sales/trial-offerings/offering-1/participants/enrollment-1/extend",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+    expect((await screen.findByRole("status")).textContent).toContain("Sales Trial environment extended.");
+    expect(screen.getByText("Ready")).toBeTruthy();
+    expect(screen.queryByText("env-1")).toBeNull();
   });
 
   it("shows the calculated end and reconciliation freshness while an offering is Ending", async () => {

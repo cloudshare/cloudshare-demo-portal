@@ -75,13 +75,21 @@ export function createPrismaSalesTrialEnrollmentRepository(
       });
       return row ? hydrate(row as unknown as SalesTrialEnrollmentRow) : null;
     },
+    async findById(customerId, enrollmentId) {
+      const row = await prisma.salesTrialEnrollment.findUnique({
+        where: { id: enrollmentId },
+      });
+      return row && row.customerId === customerId
+        ? hydrate(row as unknown as SalesTrialEnrollmentRow)
+        : null;
+    },
     async listByOffering(customerId, salesTrialOfferingId) {
       return (
         await prisma.salesTrialEnrollment.findMany({
           where: { customerId, salesTrialOfferingId },
           orderBy: { createdAt: "asc" },
         })
-      ).map((row) => hydrate(row as unknown as SalesTrialEnrollmentRow));
+      ).map((row: unknown) => hydrate(row as SalesTrialEnrollmentRow));
     },
     async listByPortalUser(customerId, portalUserId) {
       return (
@@ -89,7 +97,7 @@ export function createPrismaSalesTrialEnrollmentRepository(
           where: { customerId, portalUserId },
           orderBy: { createdAt: "asc" },
         })
-      ).map((row) => hydrate(row as unknown as SalesTrialEnrollmentRow));
+      ).map((row: unknown) => hydrate(row as SalesTrialEnrollmentRow));
     },
   };
 }

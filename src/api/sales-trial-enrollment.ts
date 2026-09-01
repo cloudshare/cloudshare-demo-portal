@@ -27,6 +27,7 @@ import {
   type SalesParticipant,
   SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS,
 } from "@/integrations/cloudshare/sales-delivery";
+import type { SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
@@ -39,6 +40,13 @@ const TRIAL_CORRELATION_KEYS: readonly SalesParticipantCorrelationPropertyKey[] 
 const GENERIC_UNAVAILABLE = "This Sales Trial launch is unavailable.";
 const NEEDS_ATTENTION_REASON =
   "Sales Trial enrollment needs support follow-up before CloudShare launch can continue.";
+const EXTEND_UNAVAILABLE = "This Sales Trial environment cannot be extended.";
+const EXTEND_UNCONFIRMED =
+  "Sales Trial environment extension could not be confirmed.";
+const EXTEND_MAPPING_REQUIRED =
+  "A retained CloudShare environment mapping is required before Certalis can request an extension.";
+const EXTEND_ACTIVE_PARTICIPANT_REQUIRED =
+  "Only active Sales Trial participants can extend their environment.";
 
 type Actor = {
   readonly type: "sales_trial_participant";
@@ -58,6 +66,13 @@ export interface SalesTrialEnrollmentDeps {
   readonly enrollments: SalesTrialEnrollmentRepository;
   readonly connections: Pick<CloudShareConnectionRepository, "findByCustomerId">;
   readonly cloudshare?: Pick<CloudShareClientFactory, "forConnection">;
+  readonly salesEnvironmentFactory?: {
+    forConnection(
+      connection: NonNullable<
+        Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
+      >,
+    ): Pick<SalesEnvironmentSource, "observeById" | "extendById">;
+  };
   readonly deliveryFactory?: {
     forConnection(
       connection: NonNullable<
@@ -138,6 +153,10 @@ export interface SalesTrialMonitoringParticipant {
   };
   readonly needsAttention?: boolean;
   readonly monitoringMessage?: string;
+  readonly extend?: {
+    readonly enabled: boolean;
+    readonly reason: string | null;
+  };
 }
 
 export interface SalesTrialMonitoringObservation {
@@ -166,6 +185,27 @@ export interface SalesTrialOfferingMonitoringResponse {
   readonly body:
     | SalesTrialOfferingMonitoringResponseBody
     | { readonly error: string; readonly correlationId?: string };
+}
+
+export interface SalesTrialParticipantEnvironmentExtendRequest {
+  readonly customerId: string;
+  readonly offeringId: string;
+  readonly enrollmentId: string;
+  readonly actor: { readonly type: "admin"; readonly id: string; readonly email: string };
+}
+
+export interface SalesTrialParticipantEnvironmentExtendResponse {
+  readonly status: number;
+  readonly body:
+    | {
+        readonly participant: SalesTrialMonitoringParticipant;
+        readonly correlationId: string;
+      }
+    | {
+        readonly error: string;
+        readonly reason?: string;
+        readonly correlationId: string;
+      };
 }
 
 export async function handleEnterSalesTrialOffering(
@@ -525,6 +565,157 @@ export async function handleListSalesTrialOfferingParticipants(
   };
 }
 
+export async function handleExtendSalesTrialOfferingParticipant(
+  deps: SalesTrialEnrollmentDeps,
+  request: SalesTrialParticipantEnvironmentExtendRequest,
+): Promise<SalesTrialParticipantEnvironmentExtendResponse> {
+  const correlationId = randomUUID();
+  const now = (deps.now ?? (() => new Date()))();
+  let offering = await deps.offerings.findById(request.customerId, request.offeringId);
+  if (offering?.status === "ending" && deps.reconcileEnding) {
+    await deps.reconcileEnding({
+      customerId: request.customerId,
+      offeringId: request.offeringId,
+      actor: request.actor,
+    });
+    offering = await deps.offerings.findById(request.customerId, request.offeringId);
+  }
+  if (
+    !offering ||
+    !offering.cloudShareSalesExperienceId ||
+    !["published", "ending", "ended", "unpublished"].includes(offering.status)
+  ) {
+    return {
+      status: 404,
+      body: { error: EXTEND_UNAVAILABLE, correlationId },
+    };
+  }
+
+  const enrollment =
+    (await deps.enrollments.findById?.(request.customerId, request.enrollmentId)) ??
+    (await deps.enrollments.listByOffering(request.customerId, request.offeringId)).find(
+      (value) => value.id === request.enrollmentId,
+    ) ??
+    null;
+  if (!enrollment || enrollment.salesTrialOfferingId !== request.offeringId) {
+    return {
+      status: 404,
+      body: { error: EXTEND_UNAVAILABLE, correlationId },
+    };
+  }
+
+  const extendState = buildExtendState(enrollment);
+  if (!extendState.enabled) {
+    return {
+      status: 409,
+      body: {
+        error: EXTEND_UNAVAILABLE,
+        reason: extendState.reason ?? EXTEND_MAPPING_REQUIRED,
+        correlationId,
+      },
+    };
+  }
+
+  const connection = await deps.connections.findByCustomerId(request.customerId);
+  if (!connection || !deps.salesEnvironmentFactory) {
+    return {
+      status: 404,
+      body: { error: EXTEND_UNAVAILABLE, correlationId },
+    };
+  }
+  const environments = deps.salesEnvironmentFactory.forConnection(connection);
+  if (!environments.extendById || !environments.observeById) {
+    return {
+      status: 503,
+      body: { error: EXTEND_UNAVAILABLE, correlationId },
+    };
+  }
+
+  try {
+    const extension = await environments.extendById(
+      enrollment.cloudShareRosterEnvironmentReference!,
+    );
+    const observed = await environments.observeById(
+      enrollment.cloudShareRosterEnvironmentReference!,
+    );
+    const nextStatus =
+      statusCodeToPersistedEnvironmentStatus(observed.statusCode) ??
+      enrollment.environmentStatus;
+    const updatedEnrollment: SalesTrialEnrollment = {
+      ...enrollment,
+      status: "active",
+      attentionReason: null,
+      environmentStatus: nextStatus,
+      lastReconciledAt: now,
+      updatedAt: now,
+    };
+    await deps.enrollments.save(updatedEnrollment);
+
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-enrollment",
+        operation: "sales_trial.offering.environment.extend",
+        outcome: "success",
+        customerId: request.customerId,
+        actor: request.actor,
+        subject: { type: "sales_trial_enrollment", id: updatedEnrollment.id },
+        correlationId,
+        message: "Sales Trial environment extension confirmed from CloudShare.",
+        externalIds: {
+          offeringId: request.offeringId,
+          salesTrialEnrollmentId: updatedEnrollment.id,
+          environmentId: extension.environmentId,
+        },
+        request: extension.exchange.request as unknown as Record<string, unknown>,
+        response: extension.exchange.response as unknown as Record<string, unknown>,
+        details: {
+          integrationSurface: "cloudshare.v3.environments",
+          attemptedOperation: "extend_environment",
+          expirationTime: observed.expirationTime,
+          httpExchanges: [
+            extension.exchange,
+            ...observed.exchanges,
+          ],
+        },
+      }),
+      deps.audit?.write({
+        id: randomUUID(),
+        occurredAt: now,
+        customerId: request.customerId,
+        actorType: request.actor.type,
+        actorId: request.actor.id,
+        actorEmail: request.actor.email,
+        action: "sales_trial.offering.environment.extend",
+        subjectType: "sales_trial_enrollment",
+        subjectId: updatedEnrollment.id,
+        outcome: "success",
+        correlationId,
+        details: {
+          offeringId: request.offeringId,
+          expirationTime: observed.expirationTime,
+          attemptedOperation: "extend_environment",
+          integrationSurface: "cloudshare.v3.environments",
+        },
+      }),
+    ]);
+
+    return {
+      status: 200,
+      body: {
+        participant: projectTrialMonitoringParticipant(updatedEnrollment),
+        correlationId,
+      },
+    };
+  } catch (error) {
+    return extensionFailure(
+      deps,
+      request,
+      correlationId,
+      error,
+    );
+  }
+}
+
 function createEnrollment(
   request: SalesTrialOfferingEnterRequest,
   id: string,
@@ -876,6 +1067,7 @@ function projectTrialMonitoringParticipant(
       firstJoined: enrollment.firstJoined,
       envStatus: enrollment.environmentStatus,
       environment,
+      extend: buildExtendState(enrollment),
       ...(enrollment.status === "needs_attention"
         ? { needsAttention: true, monitoringMessage: enrollment.attentionReason ?? NEEDS_ATTENTION_REASON }
         : {}),
@@ -902,6 +1094,35 @@ function projectTrialMonitoringParticipant(
     firstJoined: participant.firstJoined,
     envStatus: participant.envStatus,
     environment,
+    extend: buildExtendState(enrollment, participant.participationStatus),
+  };
+}
+
+function buildExtendState(
+  enrollment: SalesTrialEnrollment,
+  participationStatus = enrollment.participationStatus ?? "pending",
+): NonNullable<SalesTrialMonitoringParticipant["extend"]> {
+  if (enrollment.status === "needs_attention") {
+    return {
+      enabled: false,
+      reason: enrollment.attentionReason ?? NEEDS_ATTENTION_REASON,
+    };
+  }
+  if (!hasContinuableSalesTrialEnvironment(enrollment)) {
+    return {
+      enabled: false,
+      reason: EXTEND_MAPPING_REQUIRED,
+    };
+  }
+  if (participationStatus === "concluded") {
+    return {
+      enabled: false,
+      reason: EXTEND_ACTIVE_PARTICIPANT_REQUIRED,
+    };
+  }
+  return {
+    enabled: true,
+    reason: null,
   };
 }
 
@@ -997,6 +1218,18 @@ function staleMonitoringFallback(
       correlationId,
     },
   };
+}
+
+function statusCodeToPersistedEnvironmentStatus(
+  statusCode: number,
+): string | null {
+  if (statusCode === 2) return "Ready";
+  if (statusCode === 3) return "Suspended";
+  if (statusCode === 4) return "Archived";
+  if (statusCode === 5) return "Deleted";
+  if (statusCode === 8) return "Preparing";
+  if (statusCode === 9) return "CreationFailed";
+  return null;
 }
 
 function isUnavailableParticipantRoster(error: unknown): boolean {
@@ -1240,6 +1473,94 @@ async function monitoringFailure(
   };
 }
 
+async function extensionFailure(
+  deps: SalesTrialEnrollmentDeps,
+  request: SalesTrialParticipantEnvironmentExtendRequest,
+  correlationId: string,
+  error: unknown,
+): Promise<SalesTrialParticipantEnvironmentExtendResponse> {
+  const context =
+    error instanceof Error && "context" in error
+      ? (error as { context?: Record<string, unknown> }).context
+      : undefined;
+  const attemptedOperation =
+    typeof context?.path === "string" && context.path.includes("/getextended")
+      ? "observe_extended_environment"
+      : "extend_environment";
+  await Promise.allSettled([
+    deps.diagnostics?.record({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "failure",
+      level: "warn",
+      customerId: request.customerId,
+      actor: request.actor,
+      subject: { type: "sales_trial_enrollment", id: request.enrollmentId },
+      correlationId,
+      message: EXTEND_UNCONFIRMED,
+      externalIds: {
+        offeringId: request.offeringId,
+        salesTrialEnrollmentId: request.enrollmentId,
+      },
+      ...(context
+        ? {
+            request: {
+              method: context.method,
+              path: context.path,
+              query: context.requestQuery,
+              headers: context.requestHeaders,
+              body: context.requestBody,
+            },
+            response: {
+              status: context.responseStatus ?? context.status,
+              headers: context.responseHeaders,
+              body: context.responseBody,
+              transport: context.transport,
+              network: context.network,
+              tls: context.tls,
+            },
+          }
+        : {}),
+      details: {
+        integrationSurface: "cloudshare.v3.environments",
+        attemptedOperation,
+        failureMode:
+          context?.failureMode ??
+          ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure"),
+      },
+    }),
+    deps.audit?.write({
+      id: randomUUID(),
+      occurredAt: (deps.now ?? (() => new Date()))(),
+      customerId: request.customerId,
+      actorType: request.actor.type,
+      actorId: request.actor.id,
+      actorEmail: request.actor.email,
+      action: "sales_trial.offering.environment.extend",
+      subjectType: "sales_trial_enrollment",
+      subjectId: request.enrollmentId,
+      outcome: "failure",
+      correlationId,
+      details: {
+        offeringId: request.offeringId,
+        integrationSurface: "cloudshare.v3.environments",
+        attemptedOperation,
+        failureMode:
+          context?.failureMode ??
+          ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure"),
+      },
+      error: EXTEND_UNCONFIRMED,
+    }),
+  ]);
+  return {
+    status: 502,
+    body: {
+      error: EXTEND_UNCONFIRMED,
+      correlationId,
+    },
+  };
+}
+
 function salesTrialIntegrationSurfaceForPath(path: unknown): string {
   if (typeof path !== "string") {
     return "portal.sales_trial";
@@ -1262,6 +1583,12 @@ function salesTrialIntegrationSurfaceForPath(path: unknown): string {
 function salesTrialAttemptedOperationForPath(path: unknown): string {
   if (typeof path !== "string") {
     return "portal_guard";
+  }
+  if (path.includes("/envs/actions/extend")) {
+    return "extend_environment";
+  }
+  if (path.includes("/envs/actions/getextended")) {
+    return "observe_extended_environment";
   }
   if (/^\/sales\/[^/]+$/.test(path)) {
     return "read_offering";

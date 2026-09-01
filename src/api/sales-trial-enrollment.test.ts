@@ -10,6 +10,7 @@ import {
 import {
   handleEnterSalesTrialOffering,
   handleListSalesTrialOfferingParticipants,
+  handleExtendSalesTrialOfferingParticipant,
 } from "./sales-trial-enrollment";
 
 function createOffering(overrides: Partial<SalesTrialOffering> = {}): SalesTrialOffering {
@@ -80,6 +81,10 @@ function createEnrollmentRepository(): SalesTrialEnrollmentRepository {
         ) ?? null
       );
     },
+    async findById(customerId, enrollmentId) {
+      const row = rows.get(enrollmentId);
+      return row?.customerId === customerId ? row : null;
+    },
     async listByOffering(customerId, salesTrialOfferingId) {
       return [...rows.values()].filter(
         (row) =>
@@ -128,6 +133,24 @@ function createDeps(
     request: { method: "POST", path: "/sales/sales-1/sponsored-link" },
     response: { status: 200, body: { loginUrl: "https://use.cloudshare.com/secret" } },
   });
+  const extendById = vi.fn().mockResolvedValue({
+    environmentId: "env-1",
+    exchange: {
+      request: { method: "PUT", path: "/api/v3/envs/actions/extend", query: { envId: "env-1" } },
+      response: { status: 200, body: "" },
+    },
+  });
+  const observeById = vi.fn().mockResolvedValue({
+    environmentId: "env-1",
+    statusCode: 4,
+    expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
+    exchanges: [
+      {
+        request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+        response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
+      },
+    ],
+  });
   const deps = {
     offerings: { findById: vi.fn().mockResolvedValue(offering) },
     enrollments,
@@ -157,6 +180,12 @@ function createDeps(
     },
     diagnostics,
     audit: { write: vi.fn().mockResolvedValue(undefined) },
+    salesEnvironmentFactory: {
+      forConnection: vi.fn().mockReturnValue({
+        observeById,
+        extendById,
+      }),
+    },
     now: () => new Date("2026-08-30T10:00:00.000Z"),
     newId: () => "enrollment-1",
     ...overrides,
@@ -171,6 +200,8 @@ function createDeps(
     registerParticipants,
     updateParticipantCorrelation,
     createSponsoredLink,
+    extendById,
+    observeById,
   };
 }
 
@@ -1654,6 +1685,10 @@ describe("Sales Trial offering monitoring", () => {
             source: "cloudshare_v4_sales_participant_roster",
             observedAt: "2026-08-30T10:09:00.000Z",
           },
+          extend: {
+            enabled: true,
+            reason: null,
+          },
         },
       ],
       correlationId: expect.any(String),
@@ -2102,6 +2137,10 @@ describe("Sales Trial offering monitoring", () => {
               source: "certalis_sales_trial_enrollment_reconciliation",
               observedAt: "2026-08-30T10:07:00.000Z",
             },
+            extend: {
+              enabled: false,
+              reason: "Only active Sales Trial participants can extend their environment.",
+            },
           },
         ],
         correlationId: expect.any(String),
@@ -2321,6 +2360,10 @@ describe("Sales Trial offering monitoring", () => {
               source: "certalis_sales_trial_enrollment_reconciliation",
               observedAt: "2026-08-30T10:07:00.000Z",
             },
+            extend: {
+              enabled: false,
+              reason: "Only active Sales Trial participants can extend their environment.",
+            },
           },
         ],
         correlationId: expect.any(String),
@@ -2470,5 +2513,201 @@ describe("Sales Trial offering monitoring", () => {
     );
     expect(JSON.stringify(result.body)).not.toContain("203.0.113.10");
     expect(JSON.stringify(result.body)).not.toContain("secret");
+  });
+});
+
+describe("Sales Trial participant environment extension", () => {
+  it("extends an exact retained environment mapping, reads back the provider state, and returns a safe monitoring projection", async () => {
+    const { deps, enrollments, diagnosticRepository, audit, extendById, observeById } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      invitationStatus: "sent",
+      participationStatus: "inProgress",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Archived",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+
+    const result = await handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    const persisted = await enrollments.findById?.("customer-1", "enrollment-1");
+    const [success] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "success",
+    });
+
+    expect(result).toEqual({
+      status: 200,
+      body: {
+        participant: expect.objectContaining({
+          id: "enrollment-1",
+          envStatus: "Archived",
+          observation: {
+            freshness: "stale",
+            source: "certalis_sales_trial_enrollment_reconciliation",
+            observedAt: "2026-08-30T10:00:00.000Z",
+          },
+          environment: {
+            dimension: "cloudshare_environment",
+            value: "Archived",
+            source: "certalis_sales_trial_enrollment_reconciliation",
+            observedAt: "2026-08-30T10:00:00.000Z",
+          },
+        }),
+        correlationId: expect.any(String),
+      },
+    });
+    expect(extendById).toHaveBeenCalledWith("env-1");
+    expect(observeById).toHaveBeenCalledWith("env-1");
+    expect(persisted).toMatchObject({
+      environmentStatus: "Archived",
+      lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+    expect(success).toMatchObject({
+      correlationId: result.body.correlationId,
+      request: expect.objectContaining({
+        method: "PUT",
+        path: "/api/v3/envs/actions/extend",
+        query: { envId: "env-1" },
+      }),
+      response: expect.objectContaining({ status: 200, body: "" }),
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v3.environments",
+        attemptedOperation: "extend_environment",
+        expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
+      }),
+    });
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales_trial.offering.environment.extend",
+        correlationId: result.body.correlationId,
+        outcome: "success",
+      }),
+    );
+    expect(JSON.stringify(result.body)).not.toContain("env-1");
+    expect(JSON.stringify(result.body)).not.toContain("remote-1");
+  });
+
+  it("fails closed before provider mutation when the enrollment does not retain a continuable environment", async () => {
+    const { deps, enrollments, extendById } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      invitationStatus: "sent",
+      participationStatus: "concluded",
+      cloudShareRosterEnvironmentReference: null,
+      environmentStatus: "Deleted",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+
+    const result = await handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+
+    expect(result).toEqual({
+      status: 409,
+      body: {
+        error: "This Sales Trial environment cannot be extended.",
+        reason: "A retained CloudShare environment mapping is required before Certalis can request an extension.",
+        correlationId: expect.any(String),
+      },
+    });
+    expect(extendById).not.toHaveBeenCalled();
+  });
+
+  it("does not claim success when the extend request is accepted but the readback remains unavailable", async () => {
+    const { deps, enrollments, diagnosticRepository, extendById, observeById } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      invitationStatus: "sent",
+      participationStatus: "inProgress",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Archived",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    observeById.mockRejectedValueOnce(
+      new CloudShareTransportError("getextended timed out", {
+        method: "GET",
+        path: "/api/v3/envs/actions/getextended",
+        requestQuery: { envId: "env-1" },
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+      }),
+    );
+
+    const result = await handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "failure",
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: {
+        error: "Sales Trial environment extension could not be confirmed.",
+        correlationId: expect.any(String),
+      },
+    });
+    expect(extendById).toHaveBeenCalledWith("env-1");
+    expect(failure).toMatchObject({
+      correlationId: result.body.correlationId,
+      details: expect.objectContaining({
+        attemptedOperation: "observe_extended_environment",
+        failureMode: "transport_failure",
+      }),
+    });
   });
 });
