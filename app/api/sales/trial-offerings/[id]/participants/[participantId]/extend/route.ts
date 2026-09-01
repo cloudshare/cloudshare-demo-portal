@@ -5,6 +5,7 @@ import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleExtendSalesTrialOfferingParticipant } from "@/api/sales-trial-enrollment";
 import { createCloudShareSalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
+import type { SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
 import { createPrismaSalesTrialEnrollmentRepository } from "@/persistence/prisma-sales-trial-enrollment-repository";
 import { createPrismaSalesTrialOfferingRepository } from "@/persistence/prisma-sales-trial-offering-repository";
 import { handleEndSalesTrialOffering } from "@/api/sales-trial-offerings";
@@ -36,7 +37,7 @@ export async function POST(
         forConnection: (connection) =>
           createCloudShareSalesEnvironmentSource(
             services.cloudshareClientFactory.forConnection(connection),
-          ),
+          ) as Pick<Required<SalesEnvironmentSource>, "observeById" | "extendById">,
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,

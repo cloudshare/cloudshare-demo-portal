@@ -73,7 +73,7 @@ export interface SalesTrialEnrollmentDeps {
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
       >,
-    ): Pick<SalesEnvironmentSource, "observeById" | "extendById">;
+    ): Pick<Required<SalesEnvironmentSource>, "observeById" | "extendById">;
   };
   readonly deliveryFactory?: {
     forConnection(
@@ -626,12 +626,6 @@ export async function handleExtendSalesTrialOfferingParticipant(
     };
   }
   const environments = deps.salesEnvironmentFactory.forConnection(connection);
-  if (!environments.extendById || !environments.observeById) {
-    return {
-      status: 503,
-      body: { error: EXTEND_UNAVAILABLE, correlationId },
-    };
-  }
 
   try {
     const preflight = await environments.observeById(
@@ -640,6 +634,32 @@ export async function handleExtendSalesTrialOfferingParticipant(
     const preflightEnrollment = applyEnvironmentObservation(enrollment, preflight, now);
 
     if (isPendingExtensionReconciliation(enrollment)) {
+      if (!isExtendEligibleEnvironmentStatus(preflight.statusCode)) {
+        const ineligible = {
+          ...preflightEnrollment,
+          status: "active" as const,
+          attentionReason: null,
+        };
+        await deps.enrollments.save(ineligible);
+        await recordExtensionFailure(
+          deps,
+          request,
+          correlationId,
+          EXTEND_UNAVAILABLE,
+          ineligibleReasonForStatus(preflight.statusCode),
+          preflight.exchanges,
+          ineligible.id,
+        );
+        return {
+          status: 409,
+          body: {
+            error: EXTEND_UNAVAILABLE,
+            reason: ineligibleReasonForStatus(preflight.statusCode),
+            correlationId,
+          },
+        };
+      }
+
       if (hasEstablishedExtensionOutcome(enrollment, preflightEnrollment)) {
         const reconciled = {
           ...preflightEnrollment,
@@ -688,6 +708,15 @@ export async function handleExtendSalesTrialOfferingParticipant(
         attentionReason: null,
       };
       await deps.enrollments.save(ineligible);
+      await recordExtensionFailure(
+        deps,
+        request,
+        correlationId,
+        EXTEND_UNAVAILABLE,
+        ineligibleReasonForStatus(preflight.statusCode),
+        preflight.exchanges,
+        ineligible.id,
+      );
       return {
         status: 409,
         body: {
@@ -698,6 +727,13 @@ export async function handleExtendSalesTrialOfferingParticipant(
       };
     }
 
+    const pendingExtension = {
+      ...preflightEnrollment,
+      status: "needs_attention" as const,
+      attentionReason: EXTEND_PENDING_RECONCILIATION,
+    };
+    await deps.enrollments.save(pendingExtension);
+
     const extension = await environments.extendById(
       enrollment.cloudShareRosterEnvironmentReference!,
     );
@@ -707,12 +743,6 @@ export async function handleExtendSalesTrialOfferingParticipant(
         enrollment.cloudShareRosterEnvironmentReference!,
       );
     } catch (error) {
-      const unresolved = {
-        ...preflightEnrollment,
-        status: "needs_attention" as const,
-        attentionReason: EXTEND_PENDING_RECONCILIATION,
-      };
-      await saveBestEffortEnrollment(deps, unresolved);
       return extensionFailure(
         deps,
         request,
@@ -729,7 +759,18 @@ export async function handleExtendSalesTrialOfferingParticipant(
         status: "active" as const,
         attentionReason: null,
       };
-      await deps.enrollments.save(ineligible);
+      try {
+        await deps.enrollments.save(ineligible);
+      } catch {
+        return extensionFailure(
+          deps,
+          request,
+          correlationId,
+          undefined,
+          [preflight.exchanges[0]!, extension.exchange, ...observed.exchanges],
+          pendingExtension.id,
+        );
+      }
       await recordExtensionFailure(
         deps,
         request,
@@ -749,19 +790,13 @@ export async function handleExtendSalesTrialOfferingParticipant(
       };
     }
     if (!didExtensionChangeOutcome(preflightEnrollment, updatedEnrollment)) {
-      const unresolved = {
-        ...updatedEnrollment,
-        status: "needs_attention" as const,
-        attentionReason: EXTEND_PENDING_RECONCILIATION,
-      };
-      await deps.enrollments.save(unresolved);
       return extensionFailure(
         deps,
         request,
         correlationId,
         undefined,
         [preflight.exchanges[0]!, extension.exchange, ...observed.exchanges],
-        unresolved.id,
+        pendingExtension.id,
       );
     }
 
@@ -770,7 +805,18 @@ export async function handleExtendSalesTrialOfferingParticipant(
       status: "active" as const,
       attentionReason: null,
     };
-    await deps.enrollments.save(reconciled);
+    try {
+      await deps.enrollments.save(reconciled);
+    } catch {
+      return extensionFailure(
+        deps,
+        request,
+        correlationId,
+        undefined,
+        [preflight.exchanges[0]!, extension.exchange, ...observed.exchanges],
+        pendingExtension.id,
+      );
+    }
 
     await recordExtensionSuccess(
       deps,
@@ -1200,7 +1246,11 @@ function buildExtendState(
       reason: enrollment.attentionReason ?? NEEDS_ATTENTION_REASON,
     };
   }
-  if (!hasContinuableSalesTrialEnvironment(enrollment)) {
+  if (
+    enrollment.cloudShareParticipantId === null ||
+    enrollment.cloudShareRosterEnvironmentReference === null ||
+    enrollment.lastLaunchedAt === null
+  ) {
     return {
       enabled: false,
       reason: EXTEND_MAPPING_REQUIRED,
@@ -1210,6 +1260,12 @@ function buildExtendState(
     return {
       enabled: false,
       reason: EXTEND_ACTIVE_PARTICIPANT_REQUIRED,
+    };
+  }
+  if (isPersistedEnvironmentIneligibleForExtend(enrollment.environmentStatus)) {
+    return {
+      enabled: false,
+      reason: "CloudShare does not currently report this retained environment as eligible for extension.",
     };
   }
   return {
@@ -1347,6 +1403,11 @@ function isExtendEligibleEnvironmentStatus(statusCode: number): boolean {
   return statusCode === 2 || statusCode === 3 || statusCode === 4 || statusCode === 8;
 }
 
+function isPersistedEnvironmentIneligibleForExtend(status: string | null): boolean {
+  const normalizedStatus = status?.trim().toLowerCase() ?? null;
+  return normalizedStatus === "deleted" || normalizedStatus === "creation failed" || normalizedStatus === "creationfailed";
+}
+
 function ineligibleReasonForStatus(statusCode: number): string {
   if (statusCode === 5 || statusCode === 9) {
     return "CloudShare now reports this retained environment as terminal and not extendable.";
@@ -1393,17 +1454,6 @@ function isPendingExtensionReconciliation(
     enrollment.status === "needs_attention" &&
     enrollment.attentionReason === EXTEND_PENDING_RECONCILIATION
   );
-}
-
-async function saveBestEffortEnrollment(
-  deps: SalesTrialEnrollmentDeps,
-  enrollment: SalesTrialEnrollment,
-): Promise<void> {
-  try {
-    await deps.enrollments.save(enrollment);
-  } catch {
-    // Preserve the provider failure as the primary error.
-  }
 }
 
 function isUnavailableParticipantRoster(error: unknown): boolean {
