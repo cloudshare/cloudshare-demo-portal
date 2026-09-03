@@ -20,8 +20,8 @@ export function createCloudShareDiagnosticObserver(input: {
     occurredAt: new Date(event.occurredAt), source: "cloudshare-integration", operation: "cloudshare.oauth.token",
     outcome: event.outcome, customerId: input.customerId, actor: { type: "system", id: "cloudshare" },
     subject: { type: "customer", id: input.customerId }, message: event.outcome === "failure" ? "CloudShare OAuth exchange failed." : "CloudShare OAuth exchange completed.",
-    request: event.outcome === "failure" ? event.request ?? null : null,
-    response: event.outcome === "failure" ? event.response ?? null : null,
+    request: null,
+    response: null,
     details: { durationMs: event.durationMs, integrationSurface: event.integrationSurface, status: event.status ?? null },
   });
   return { onRequest: recordRequest, onAcquisition: recordAcquisition };
