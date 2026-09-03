@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
 import type { DiagnosticActor, DiagnosticSubject } from "@/domain/diagnostic-log";
+import { createCloudShareWorkflowSequenceAllocator, type CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 
 /**
  * The one caller-facing seam for certification CloudShare wire observations.
@@ -17,6 +18,7 @@ export function certificationCloudShareWorkflow(input: {
   readonly examAttemptId?: string;
   readonly candidateEmail?: string;
   readonly externalIds?: Record<string, string>;
+  readonly sequenceAllocator?: CloudShareWorkflowSequenceAllocator;
 }): NonNullable<Parameters<CloudShareClientFactory["forConnection"]>[1]> {
   return {
     scope: "workflow",
@@ -25,6 +27,7 @@ export function certificationCloudShareWorkflow(input: {
       subject: input.subject,
       correlationId: input.correlationId,
       source: input.source,
+      sequenceAllocator: input.sequenceAllocator ?? createCloudShareWorkflowSequenceAllocator(),
       ...(input.examId ? { examId: input.examId } : {}),
       ...(input.examAttemptId ? { examAttemptId: input.examAttemptId } : {}),
       ...(input.candidateEmail ? { candidateEmail: input.candidateEmail } : {}),

@@ -171,6 +171,7 @@ export async function getExamAttemptScoreRuntime(
   }
 
   const scoreCorrelationId = (deps.newCorrelationId ?? randomUUID)();
+  const observation = scoreObservation(attempt, request.customerId, scoreCorrelationId);
   try {
     const resolvedParticipantId = await resolveLaunchParticipantId(
       deps,
@@ -180,6 +181,7 @@ export async function getExamAttemptScoreRuntime(
       attempt.candidateId,
       examAttemptId,
       launch,
+      observation,
     );
     if (!resolvedParticipantId.ok) {
       return resolvedParticipantId.response;
@@ -197,7 +199,7 @@ export async function getExamAttemptScoreRuntime(
       },
     });
 
-    const scoreRetriever = deps.createScoreRetriever(connection, scoreObservation(attempt, request.customerId, scoreCorrelationId));
+    const scoreRetriever = deps.createScoreRetriever(connection, observation);
     const scoreRetrieval = await getScoreProgressForDiagnostics(
       scoreRetriever,
       examAttemptId,
@@ -455,6 +457,7 @@ async function resolveLaunchParticipantId(
   candidateId: string,
   examAttemptId: string,
   launch: NonNullable<Awaited<ReturnType<LabLaunchRepository["findByExamAttemptId"]>>>,
+  observation: CloudShareClientObservationOptions,
 ): Promise<
   | { ok: true; participantId: string }
   | { ok: false; response: ExamAttemptScoreRuntimeResponse }
@@ -512,9 +515,8 @@ async function resolveLaunchParticipantId(
     };
   }
 
-  const participantCorrelationId = (deps.newCorrelationId ?? randomUUID)();
   try {
-    const participants = deps.createParticipantLister(connection, scoreObservation({ id: examAttemptId, examId, candidateId } as ExamAttempt, customerId, participantCorrelationId));
+    const participants = deps.createParticipantLister(connection, observation);
     await correlateEnvironmentForExamAttempt(
       {
         launches: deps.launches,

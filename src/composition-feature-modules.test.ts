@@ -1,10 +1,45 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createCloudShareClientFactory,
   createFeatureModules,
   disposeStaleServices,
   isReusableFeatureModules,
   type FeatureModuleInputs,
 } from "./composition";
+import type { CloudShareClient, CloudShareRequestObservation, V4TokenAcquisitionEvent } from "@/integrations/cloudshare";
+import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
+import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
+
+const CONNECTION: CloudShareConnectionRecord = {
+  customerId: "customer-a", apiId: "api-id", apiKey: "api-key", webhookSecret: "webhook-secret",
+  webhookPathToken: "path-token", connectedAt: new Date("2026-09-03T00:00:00.000Z"), verifiedAt: null,
+};
+
+function createObservedFactory() {
+  const record = vi.fn();
+  const integrations: Parameters<typeof createCloudShareIntegrationForConnection>[0][] = [];
+  const factory = createCloudShareClientFactory({
+    diagnostics: { record } as never,
+    mode: "fixture",
+    newCorrelationId: () => "mandatory-customer-correlation",
+    createIntegration: (input) => {
+      integrations.push(input);
+      return {} as CloudShareClient;
+    },
+    decorateClient: (client) => client,
+  });
+  return { factory, record, integrations };
+}
+
+const OAUTH_EVENT: V4TokenAcquisitionEvent = {
+  occurredAt: "2026-09-03T12:00:00.000Z", outcome: "success" as const, durationMs: 1,
+  integrationSurface: "cloudshare.v4.oauth.token",
+};
+
+const REQUEST_EVENT: CloudShareRequestObservation = {
+  occurredAt: "2026-09-03T12:00:01.000Z", outcome: "success" as const, durationMs: 1,
+  result: { data: null, request: { method: "GET", path: "/trainings" }, response: { status: 200, body: null }, integrationSurface: "cloudshare.v4.training", host: "example.test" },
+};
 
 function createInputs(): FeatureModuleInputs {
   return {
@@ -33,6 +68,56 @@ function createInputs(): FeatureModuleInputs {
 }
 
 describe("composition feature modules", () => {
+  it("composes mandatory Customer evidence with a workflow observer and fails open when its callback fails", async () => {
+    const { factory, record, integrations } = createObservedFactory();
+    const customRequest = vi.fn().mockRejectedValue(new Error("custom observation unavailable"));
+
+    factory.forConnection(CONNECTION, {
+      scope: "workflow",
+      workflow: {
+        actor: { type: "candidate", id: "candidate-1" }, subject: { type: "exam_attempt", id: "attempt-1" },
+        correlationId: "workflow-correlation", source: "runtime",
+      },
+      onRequest: customRequest,
+    });
+    await integrations[0].observer.onAcquisition(OAUTH_EVENT);
+    await integrations[0].observer.onRequest(REQUEST_EVENT);
+
+    expect(customRequest).toHaveBeenCalledOnce();
+    expect(record.mock.calls.map(([entry]) => entry)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ customerId: "customer-a", subject: { type: "exam_attempt", id: "attempt-1" }, correlationId: "workflow-correlation" }),
+      expect.objectContaining({ customerId: "customer-a", subject: { type: "customer", id: "customer-a" }, correlationId: "mandatory-customer-correlation" }),
+    ]));
+  });
+
+  it("requires one explicit scope and composes Customer-only and custom-observer scopes fail-open", async () => {
+    const { factory, record, integrations } = createObservedFactory();
+    expect(() => factory.forConnection(CONNECTION, undefined)).toThrow("explicit observation scope");
+
+    factory.forConnection(CONNECTION, { scope: "customer_default", correlationId: "catalogue-correlation", reason: "catalogue_resource_read" });
+    await integrations[0].observer.onRequest(REQUEST_EVENT);
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      customerId: "customer-a", subject: { type: "customer", id: "customer-a" }, correlationId: "catalogue-correlation",
+    }));
+
+    const customAcquisition = vi.fn().mockRejectedValue(new Error("custom observer unavailable"));
+    factory.forConnection(CONNECTION, { scope: "custom_observer", correlationId: "custom-correlation", onAcquisition: customAcquisition });
+    await integrations[1].observer.onAcquisition(OAUTH_EVENT);
+    expect(customAcquisition).toHaveBeenCalledOnce();
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      customerId: "customer-a", subject: { type: "customer", id: "customer-a" }, correlationId: "custom-correlation",
+    }));
+  });
+
+  it("keeps mandatory Customer evidence isolated across connections", async () => {
+    const { factory, record, integrations } = createObservedFactory();
+    factory.forConnection(CONNECTION, { scope: "customer_default", correlationId: "customer-a-correlation", reason: "connection_check" });
+    factory.forConnection({ ...CONNECTION, customerId: "customer-b" }, { scope: "customer_default", correlationId: "customer-b-correlation", reason: "connection_check" });
+    await integrations[0].observer.onAcquisition(OAUTH_EVENT);
+    await integrations[1].observer.onAcquisition(OAUTH_EVENT);
+    expect(record.mock.calls.map(([entry]) => entry.customerId)).toEqual(["customer-a", "customer-b"]);
+  });
+
   it("exposes the approved narrow dependency bundles", () => {
     const inputs = createInputs();
 

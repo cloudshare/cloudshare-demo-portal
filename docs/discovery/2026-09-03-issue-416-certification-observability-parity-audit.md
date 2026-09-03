@@ -206,7 +206,7 @@ The certification portal provided the correct protected diagnostics contract, Cu
 
 ### Certification OAuth correlation inventory (exact-head update)
 
-The composition root now always creates the mandatory Customer-scoped observer with a per-client correlation and ordered sequence. A narrower workflow observer is composed alongside it where a certification operation has an authoritative parent. The narrower row is not duplicated: each callback writes one Customer row and, when supplied, one distinct workflow row.
+The composition root now always creates the mandatory Customer-scoped observer with a per-client correlation and ordered sequence. A narrower workflow observer is composed alongside it where a certification operation has an authoritative parent. Workflow ordering is owned by an allocator carried in the explicit operation context, so clients built from the same context share one monotonic sequence without process-global state. The narrower row is not duplicated: each callback writes one Customer row and, when supplied, one distinct workflow row.
 
 | Production path | authoritative workflow anchor |
 | --- | --- |
@@ -217,6 +217,6 @@ The composition root now always creates the mandatory Customer-scoped observer w
 | External lease validation | ExamAttempt |
 | Resource/catalogue reads without a narrower workflow | Customer-scoped default |
 
-Both OAuth acquisition and subsequent v3/v4 requests use the same correlation and monotonic sequence within each observer. OAuth request and response evidence remains absent from both rows.
+Both OAuth acquisition and subsequent v3/v4 requests use the same correlation and operation-owned monotonic sequence when they reuse a workflow context (including score participant correlation and retrieval). OAuth request and response evidence remains absent from both rows.
 
 The shared context is owned by the domain-facing connection factory contract, while concrete OAuth evidence projection remains in integration/API code. Score retrieval and participant correlation now receive the same ExamAttempt-scoped factory context; snapshot validation, completion, suspend/resume, heartbeat completion, and admin diagnostic refresh each use their authoritative attempt/session context. Sales Trial's independent observer is explicitly marked `custom_observer` rather than being an unlabelled callback bag.

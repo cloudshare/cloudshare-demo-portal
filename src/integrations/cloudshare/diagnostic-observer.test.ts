@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver } from "./diagnostic-observer";
 import { CloudShareAuthError } from "./errors";
+import { createCloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 
 function makeObserver() {
   const record = vi.fn();
@@ -141,7 +142,7 @@ describe("createCloudShareWorkflowObserver", () => {
 
   it("continues one workflow sequence across separately constructed clients", async () => {
     const record = vi.fn();
-    const context = { diagnostics: { record } as never, customerId: "helios", actor: { type: "system", id: "test" }, subject: { type: "exam_attempt", id: "attempt-1" }, correlationId: "multi-client-thread", source: "runtime" } as const;
+    const context = { diagnostics: { record } as never, customerId: "helios", actor: { type: "system", id: "test" }, subject: { type: "exam_attempt", id: "attempt-1" }, correlationId: "multi-client-thread", source: "runtime", sequenceAllocator: createCloudShareWorkflowSequenceAllocator() } as const;
     await createCloudShareWorkflowObserver(context).onAcquisition({ occurredAt: "2026-09-03T12:00:00.000Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token" });
     await createCloudShareWorkflowObserver(context).onRequest({ occurredAt: "2026-09-03T12:00:01.000Z", outcome: "success", durationMs: 1, result: { request: {}, response: {}, integrationSurface: "cloudshare.v4.training", host: "example.test" } } as never);
     expect(record.mock.calls.map(([entry]) => entry.details.sequence)).toEqual([1, 2]);

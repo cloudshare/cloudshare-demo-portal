@@ -13,7 +13,7 @@ import {
   type PortalSessionStore,
 } from "@/auth";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
-import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers } from "@/integrations/cloudshare";
+import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers, type CloudShareClient, type CloudShareMode } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import {
   createCloudShareEnvironmentSimulator,
@@ -64,6 +64,8 @@ import type { ResourceRepository } from "@/domain/resource-sync";
 import type { EventLogRepository } from "@/domain/event-log";
 import type {
   CloudShareClientFactory,
+  CloudShareClientObservationOptions,
+  CloudShareConnectionRecord,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { AdminMonitoringAttemptRepository } from "@/domain/admin-monitoring";
@@ -122,6 +124,47 @@ export interface FeatureModules {
   readonly adminExamAuthoring: AdminExamAuthoringServices;
   readonly adminCohortExamSessions: AdminCohortExamSessionServices;
   readonly candidateSuspendResume: CandidateSuspendResumeServices;
+}
+
+/** The production factory seam; dependencies stay injectable for policy tests. */
+export function createCloudShareClientFactory(input: {
+  readonly diagnostics: DiagnosticRecorder;
+  readonly mode: CloudShareMode;
+  readonly trace?: Parameters<typeof createCloudShareIntegrationForConnection>[0]["trace"];
+  readonly createIntegration?: typeof createCloudShareIntegrationForConnection;
+  readonly decorateClient?: (client: CloudShareClient) => CloudShareClient;
+  readonly newCorrelationId?: () => string;
+}): CloudShareClientFactory {
+  const createIntegration = input.createIntegration ?? createCloudShareIntegrationForConnection;
+  const decorateClient = input.decorateClient ?? withLocalCohortRateLimitQaFixture;
+  const newCorrelationId = input.newCorrelationId ?? randomUUID;
+  return {
+    forConnection(connection: CloudShareConnectionRecord, options: CloudShareClientObservationOptions | undefined): CloudShareClient {
+      if (!options) throw new Error("CloudShare client construction requires an explicit observation scope.");
+      const defaultObserver = createCloudShareDiagnosticObserver({
+        diagnostics: input.diagnostics,
+        customerId: connection.customerId,
+        correlationId: options.scope === "workflow" ? newCorrelationId() : options.correlationId,
+      });
+      const workflowObserver = options.scope === "workflow"
+        ? createCloudShareWorkflowObserver({ diagnostics: input.diagnostics, customerId: connection.customerId, ...options.workflow })
+        : undefined;
+      return decorateClient(createIntegration({
+        mode: input.mode,
+        trace: input.trace,
+        observer: {
+          onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest, defaultObserver.onRequest),
+          onAcquisition: composeCloudShareObservers(options.onAcquisition, workflowObserver?.onAcquisition, defaultObserver.onAcquisition),
+        },
+        connection: {
+          customerId: connection.customerId,
+          apiId: connection.apiId,
+          apiKey: connection.apiKey,
+          webhookSecret: connection.webhookSecret,
+        },
+      }));
+    },
+  };
 }
 
 export function createFeatureModules(services: FeatureModuleInputs): FeatureModules {
@@ -442,30 +485,11 @@ export function getServices(): Services {
     prisma,
     cloudshareSecretBox,
   );
-  const cloudshareClientFactory: CloudShareClientFactory = {
-    forConnection: (connection, options) => {
-      if (!options) throw new Error("CloudShare client construction requires an explicit observation scope.");
-      const scopedOptions = options;
-      const observer = createCloudShareDiagnosticObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId, correlationId: scopedOptions.scope === "workflow" ? randomUUID() : scopedOptions.correlationId });
-      const workflowObserver = scopedOptions.scope === "workflow"
-        ? createCloudShareWorkflowObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId, ...scopedOptions.workflow })
-        : undefined;
-      return withLocalCohortRateLimitQaFixture(createCloudShareIntegrationForConnection({
-        mode: config.runtime.mode,
-        trace: traceCloudShare,
-        observer: {
-          onRequest: composeCloudShareObservers(options?.onRequest, workflowObserver?.onRequest, observer.onRequest),
-          onAcquisition: composeCloudShareObservers(options?.onAcquisition, workflowObserver?.onAcquisition, observer.onAcquisition),
-        },
-        connection: {
-          customerId: connection.customerId,
-          apiId: connection.apiId,
-          apiKey: connection.apiKey,
-          webhookSecret: connection.webhookSecret,
-        },
-      }));
-    },
-  };
+  const cloudshareClientFactory = createCloudShareClientFactory({
+    diagnostics: diagnosticRecorder,
+    mode: config.runtime.mode,
+    trace: traceCloudShare,
+  });
 
   // Heartbeat auto-suspend. The suspend function is pre-bound to the current
   // service instances so HeartbeatAutoSuspend stays free of framework concerns.

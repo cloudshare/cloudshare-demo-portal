@@ -1,5 +1,5 @@
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
-import type { CloudShareWorkflowObservationContext } from "@/ports/cloudshare-observation";
+import { createCloudShareWorkflowSequenceAllocator, type CloudShareWorkflowObservationContext } from "@/ports/cloudshare-observation";
 import type { CloudShareRequestObservation } from "./client";
 import type { V4TokenAcquisitionEvent } from "./v4-auth";
 import { projectCloudShareFailureContext } from "./diagnostic-failure-projection";
@@ -62,7 +62,7 @@ export function createCloudShareWorkflowObserver(input: {
   readonly diagnostics: DiagnosticRecorder;
   readonly customerId: string;
 } & CloudShareWorkflowObservationContext) {
-  const sequenceKey = `${input.customerId}:${input.source}:${input.correlationId}`;
+  const sequenceAllocator = input.sequenceAllocator ?? createCloudShareWorkflowSequenceAllocator();
   const subject = () => typeof input.subject === "function" ? input.subject() : input.subject;
   const anchor = () => ({
     customerId: input.customerId,
@@ -78,7 +78,7 @@ export function createCloudShareWorkflowObserver(input: {
     onRequest: async (event: CloudShareRequestObservation) => {
       const projectedFailure = projectCloudShareFailureContext(event.error?.context);
       const oauthFailure = projectedFailure?.request === null && projectedFailure.response === null;
-      const sequence = nextWorkflowSequence(sequenceKey);
+      const sequence = sequenceAllocator.next();
       await input.diagnostics.record({
         occurredAt: new Date(event.occurredAt), source: input.source,
         operation: "cloudshare.request", outcome: event.outcome,
@@ -97,7 +97,7 @@ export function createCloudShareWorkflowObserver(input: {
       });
     },
     onAcquisition: async (event: V4TokenAcquisitionEvent) => {
-      const sequence = nextWorkflowSequence(sequenceKey);
+      const sequence = sequenceAllocator.next();
       await input.diagnostics.record({
         occurredAt: new Date(event.occurredAt), source: input.source,
         operation: "cloudshare.oauth.token", outcome: event.outcome,
@@ -113,13 +113,6 @@ export function createCloudShareWorkflowObserver(input: {
       });
     },
   };
-}
-
-const workflowSequences = new Map<string, number>();
-function nextWorkflowSequence(key: string): number {
-  const next = (workflowSequences.get(key) ?? 0) + 1;
-  workflowSequences.set(key, next);
-  return next;
 }
 
 function projectErrorMetadata(error: CloudShareRequestObservation["error"]): Record<string, unknown> | null {

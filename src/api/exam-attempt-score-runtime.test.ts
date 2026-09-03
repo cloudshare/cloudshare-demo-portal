@@ -18,6 +18,7 @@ import {
   CloudShareRateLimitError,
   CloudShareResponseError,
   CloudShareTransportError,
+  createCloudShareWorkflowObserver,
 } from "@/integrations/cloudshare";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
@@ -644,6 +645,22 @@ describe("getExamAttemptScoreRuntime", () => {
     expect(result.status).toBe(200);
     expect(deps.createParticipantLister).toHaveBeenCalledTimes(1);
     expect(deps.participantLister.listParticipants).toHaveBeenCalledWith("training-1");
+    expect(deps.createParticipantLister.mock.calls[0][1]).toBe(deps.createScoreRetriever.mock.calls[0][1]);
+    expect(deps.createParticipantLister.mock.calls[0][1]).toMatchObject({
+      scope: "workflow",
+      workflow: {
+        correlationId: "corr-123",
+        subject: { type: "exam_attempt", id: "attempt-1" },
+      },
+    });
+    const observation = deps.createParticipantLister.mock.calls[0][1];
+    if (observation.scope !== "workflow") throw new Error("expected workflow observation");
+    const observed = vi.fn();
+    await createCloudShareWorkflowObserver({ diagnostics: { record: observed } as never, customerId: "customer-1", ...observation.workflow })
+      .onAcquisition({ occurredAt: "2026-09-03T12:00:00.000Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token" });
+    await createCloudShareWorkflowObserver({ diagnostics: { record: observed } as never, customerId: "customer-1", ...observation.workflow })
+      .onRequest({ occurredAt: "2026-09-03T12:00:01.000Z", outcome: "success", durationMs: 1, result: { request: {}, response: {}, integrationSurface: "cloudshare.v4.training", host: "example.test" } } as never);
+    expect(observed.mock.calls.map(([entry]) => entry.details.sequence)).toEqual([1, 2]);
     expect(deps.launches.save).toHaveBeenCalledWith(
       expect.objectContaining({
         participantId: "student-1",
