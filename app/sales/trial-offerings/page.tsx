@@ -12,7 +12,7 @@ export default async function SalesTrialOfferingsPage() {
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
   const session = await getPortalSession(services, sessionId);
   if (!session) {
-    redirect(getExpiredPortalLoginPath("/sales") ?? "/login");
+    redirect(getExpiredPortalLoginPath("/sales?tab=trial-offerings") ?? "/login");
   }
   if (session.role !== "admin") {
     redirect(getPortalHomePath(session));

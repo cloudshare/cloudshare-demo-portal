@@ -43,6 +43,6 @@ describe("Sales Trial Offerings page", () => {
   it("redirects an expired direct Trial Offerings navigation through the Sales login contract", async () => {
     mockGetPortalSession.mockResolvedValue(null);
 
-    await expect(SalesTrialOfferingsPage()).rejects.toThrow("redirect:/login?returnTo=%2Fsales");
+    await expect(SalesTrialOfferingsPage()).rejects.toThrow("redirect:/login?returnTo=%2Fsales%3Ftab%3Dtrial-offerings");
   });
 });

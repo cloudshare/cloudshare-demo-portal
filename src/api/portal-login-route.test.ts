@@ -89,4 +89,19 @@ describe("shared portal login form fallback", () => {
       redirectTo: "/candidate",
     });
   });
+
+  it("keeps a validated return target after a native-form login failure", async () => {
+    mockHandlePortalLogin.mockResolvedValue({ status: 401, body: { error: "Invalid email or password" } });
+
+    const response = await POST(
+      new Request("http://localhost:3025/api/auth/login?returnTo=%2Fsales%3Ftab%3Dsessions%26queue%3Dhistory", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ email: "sales-admin@certalis.demo", password: "wrong-password" }),
+      }),
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("http://localhost:3025/login?error=Invalid+email+or+password&returnTo=%2Fsales%3Ftab%3Dsessions%26queue%3Dhistory");
+  });
 });

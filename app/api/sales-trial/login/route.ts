@@ -3,7 +3,7 @@ import { DEFAULT_PORTAL_SESSION_TTL_MS } from "@/auth";
 import { getPortalSessionServices, getSalesTrialLoginServices } from "@/composition";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleSalesTrialLogin } from "@/api/sales-trial-portal";
-import { getPortalReturnTargetForSession } from "@/auth/portal-return-target";
+import { getExpiredPortalLoginPath, getPortalReturnTargetForSession, getSafePortalReturnTarget } from "@/auth/portal-return-target";
 
 export async function POST(request: Request) {
   const sessionServices = getPortalSessionServices();
@@ -50,6 +50,10 @@ export async function POST(request: Request) {
     if (!response.session) {
       const error = typeof response.body.error === "string" ? response.body.error : "Login failed";
       redirectUrl.searchParams.set("error", error);
+      const safeReturnTo = getSafePortalReturnTarget(returnTo);
+      if (safeReturnTo && getExpiredPortalLoginPath(safeReturnTo)?.startsWith("/sales-trial/login?")) {
+        redirectUrl.searchParams.set("returnTo", safeReturnTo);
+      }
     }
 
     const nextResponse = NextResponse.redirect(redirectUrl, { status: 303 });

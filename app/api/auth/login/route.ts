@@ -6,7 +6,7 @@ import {
   PORTAL_SESSION_COOKIE,
 } from "@/api/portal-auth";
 import { DEFAULT_PORTAL_SESSION_TTL_MS } from "@/auth";
-import { getPortalReturnTargetForSession } from "@/auth/portal-return-target";
+import { getPortalReturnTargetForSession, getSafePortalReturnTarget } from "@/auth/portal-return-target";
 
 export async function POST(request: Request) {
   const sessionServices = getPortalSessionServices();
@@ -49,6 +49,8 @@ export async function POST(request: Request) {
       const error =
         typeof response.body.error === "string" ? response.body.error : "Login failed";
       redirectUrl.searchParams.set("error", error);
+      const safeReturnTo = getSafePortalReturnTarget(returnTo);
+      if (safeReturnTo) redirectUrl.searchParams.set("returnTo", safeReturnTo);
     }
 
     const nextResponse = NextResponse.redirect(redirectUrl, { status: 303 });

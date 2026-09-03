@@ -34,7 +34,7 @@ describe("Sales diagnostics page", () => {
   it("redirects an expired direct Sales diagnostics navigation through the Sales login contract", async () => {
     mockGetPortalSession.mockResolvedValue(null);
 
-    await expect(SalesDiagnosticsPage()).rejects.toThrow("redirect:/login?returnTo=%2Fsales");
+    await expect(SalesDiagnosticsPage()).rejects.toThrow("redirect:/login?returnTo=%2Fsales%3Ftab%3Dsupport");
   });
 
   it("redirects a certification workspace admin away from Sales diagnostics", async () => {
