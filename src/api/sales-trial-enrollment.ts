@@ -2018,6 +2018,14 @@ async function recordExtensionSuccess(
     readonly response: unknown;
   }[],
 ): Promise<void> {
+  await recordExtensionExchangeSteps(
+    deps,
+    request,
+    correlationId,
+    enrollment.id,
+    canonicalEnvironmentId,
+    httpExchanges,
+  );
   await Promise.allSettled([
     deps.diagnostics?.record({
       source: "sales-trial-enrollment",
@@ -2066,6 +2074,48 @@ async function recordExtensionSuccess(
   ]);
 }
 
+async function recordExtensionExchangeSteps(
+  deps: SalesTrialEnrollmentDeps,
+  request: SalesTrialParticipantEnvironmentExtendRequest,
+  correlationId: string,
+  enrollmentId: string,
+  environmentId: string | undefined,
+  exchanges: readonly { readonly request: unknown; readonly response: unknown }[],
+): Promise<void> {
+  await Promise.allSettled(exchanges.map((exchange, index) => {
+    const response = exchange.response as { readonly status?: unknown };
+    const status = typeof response.status === "number" ? response.status : undefined;
+    return deps.diagnostics?.record({
+      occurredAt: (deps.now ?? (() => new Date()))(),
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend.http_exchange",
+      outcome: status !== undefined && status >= 200 && status < 300 ? "success" : "failure",
+      level: status !== undefined && status >= 200 && status < 300 ? "info" : "warn",
+      customerId: request.customerId,
+      actor: request.actor,
+      subject: { type: "sales_trial_enrollment", id: enrollmentId },
+      correlationId,
+      message: "CloudShare Sales Trial extension workflow step completed.",
+      externalIds: {
+        offeringId: request.offeringId,
+        salesTrialEnrollmentId: enrollmentId,
+        ...(environmentId ? { environmentId } : {}),
+      },
+      request: exchange.request as Record<string, unknown>,
+      response: exchange.response as Record<string, unknown>,
+      details: {
+        parentWorkflow: "sales_trial.offering.environment.extend",
+        sequence: index + 1,
+        totalSteps: exchanges.length,
+        integrationSurface: "cloudshare.v3.environments",
+        attemptedOperation: salesTrialAttemptedOperationForPath(
+          (exchange.request as { readonly path?: unknown }).path,
+        ),
+      },
+    });
+  }));
+}
+
 async function recordExtensionFailure(
   deps: SalesTrialEnrollmentDeps,
   request: SalesTrialParticipantEnvironmentExtendRequest,
@@ -2082,6 +2132,14 @@ async function recordExtensionFailure(
   const lastRequest = httpExchanges[httpExchanges.length - 1]?.request as
     | Record<string, unknown>
     | undefined;
+  await recordExtensionExchangeSteps(
+    deps,
+    request,
+    correlationId,
+    subjectId,
+    canonicalEnvironmentId,
+    httpExchanges,
+  );
   await Promise.allSettled([
     deps.diagnostics?.record({
       source: "sales-trial-enrollment",
@@ -2188,6 +2246,14 @@ async function extensionFailure(
     ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure");
   const loggedError = loggedErrorOverride ?? EXTEND_UNCONFIRMED;
 
+  await recordExtensionExchangeSteps(
+    deps,
+    request,
+    correlationId,
+    subjectId,
+    canonicalEnvironmentId,
+    httpExchanges,
+  );
   await Promise.allSettled([
     deps.diagnostics?.record({
       source: "sales-trial-enrollment",

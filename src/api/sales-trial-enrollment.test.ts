@@ -2616,6 +2616,33 @@ describe("Sales Trial offering monitoring", () => {
 });
 
 describe("Sales Trial participant environment extension", () => {
+  it("records each confirmed extension exchange as an ordered enrollment workflow step", async () => {
+    const { deps, enrollments, diagnosticRepository } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",
+      email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: "remote-1",
+      invitationStatus: "notSent", participationStatus: "inProgress", cloudShareRosterEnvironmentReference: "opaque-v3-env-1",
+      environmentStatus: "Ready", observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT", firstJoined: null,
+      status: "active", attentionReason: null, lastLaunchedAt: new Date("2026-08-30T10:00:00.000Z"), lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"), updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+
+    const result = await handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1", offeringId: "offering-1", enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    const entries = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend.http_exchange",
+      correlationId: result.body.correlationId,
+    });
+
+    expect(result.status).toBe(200);
+    expect(entries).toHaveLength(4);
+    expect(entries.map((entry) => entry.details?.sequence).sort()).toEqual([1, 2, 3, 4]);
+    expect(entries.every((entry) => entry.subject?.id === "enrollment-1")).toBe(true);
+  });
+
   it("extends an exact retained environment mapping, reads back the provider state, and returns a safe monitoring projection", async () => {
     const { deps, enrollments, diagnosticRepository, audit, observe, extendById, observeById } = createDeps();
     await enrollments.save({
