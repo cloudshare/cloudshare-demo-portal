@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { MAX_DIAGNOSTIC_QUERY_LIMIT, type DiagnosticLogEntry, type DiagnosticLogRepository } from "@/domain/diagnostic-log";
 import type {
   AdminExamAttemptDiagnosticContextRecord,
@@ -115,6 +116,7 @@ export async function refreshCloudShareEnvironmentStatus(
   >,
   context: AdminExamAttemptDiagnosticContextRecord,
 ): Promise<void> {
+  const operationCorrelationId = randomUUID();
   const environmentExternalId = context.environmentExternalId ?? context.environmentId;
   if (!environmentExternalId) {
     return;
@@ -143,7 +145,7 @@ export async function refreshCloudShareEnvironmentStatus(
   }
 
   const source = createCloudShareEnvironmentSource(
-    services.cloudshareClientFactory.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "admin", id: null }, customerId: context.customerId, subject: { type: "exam_attempt", id: context.attemptId }, correlationId: `admin-diagnostics:${context.attemptId}`, source: "admin-diagnostics", examId: context.examId ?? undefined, examAttemptId: context.attemptId, candidateEmail: context.candidateEmail ?? undefined, externalIds: { environmentExternalId } })),
+    services.cloudshareClientFactory.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "admin", id: null }, customerId: context.customerId, subject: { type: "exam_attempt", id: context.attemptId }, correlationId: operationCorrelationId, source: "admin-diagnostics", examId: context.examId ?? undefined, examAttemptId: context.attemptId, candidateEmail: context.candidateEmail ?? undefined, externalIds: { environmentExternalId, lifecycleParent: `admin-diagnostics:${context.attemptId}` } })),
   );
   const snapshot = await source.getEnvironmentState(environmentExternalId);
   const observedAt = new Date();

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
 import type { DiagnosticActor, DiagnosticSubject } from "@/domain/diagnostic-log";
 import { createCloudShareWorkflowSequenceAllocator, type CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
@@ -39,5 +38,5 @@ export function certificationCloudShareWorkflow(input: {
 export function customerDefaultCloudShareScope(
   reason: "catalogue_resource_read" | "connection_check" | "unanchored_support_read",
 ): NonNullable<Parameters<CloudShareClientFactory["forConnection"]>[1]> {
-  return { scope: "customer_default", correlationId: randomUUID(), reason };
+  return { scope: "customer_default", reason };
 }

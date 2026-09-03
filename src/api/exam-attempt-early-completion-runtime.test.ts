@@ -106,6 +106,7 @@ function makeCloudShareClient(): CloudShareClient {
 async function makeDeps(
   status: "ready" | "scheduled" | "in_progress" | "suspended" | "completed" | "expired" = "in_progress",
   cloudShareClient: CloudShareClient = makeCloudShareClient(),
+  correlationId = "corr-complete",
 ): Promise<CompleteExamAttemptEarlyHandlerDeps> {
   const attempts = createInMemoryExamAttemptRepository();
   await attempts.save({
@@ -173,12 +174,24 @@ async function makeDeps(
     cloudshare,
     diagnostics: { record: vi.fn().mockResolvedValue(undefined) },
     candidateEmail: "candidate@helioscx.demo",
-    newCorrelationId: () => "corr-complete",
+    newCorrelationId: () => correlationId,
     now: () => new Date("2026-06-15T16:10:00.000Z"),
   };
 }
 
 describe("completeExamAttemptEarlyRuntime", () => {
+  it("uses a fresh operation correlation for each early-completion invocation while retaining the ExamAttempt anchor", async () => {
+    const first = await makeDeps("in_progress", makeCloudShareClient(), "early-operation-1");
+    const second = await makeDeps("in_progress", makeCloudShareClient(), "early-operation-2");
+    await completeExamAttemptEarlyRuntime(first, { examAttemptId: "ea-1" });
+    await completeExamAttemptEarlyRuntime(second, { examAttemptId: "ea-1" });
+    const scopes = [first, second].map((deps) => vi.mocked(deps.cloudshare.forConnection).mock.calls[0]?.[1]);
+    expect(scopes.map((scope) => scope?.scope === "workflow" ? scope.workflow.correlationId : null)).toEqual(["early-operation-1", "early-operation-2"]);
+    expect(scopes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: "workflow", workflow: expect.objectContaining({ subject: { type: "exam_attempt", id: "ea-1" }, externalIds: { lifecycleParent: "early-completion:ea-1" } }) }),
+    ]));
+  });
+
   it("archives an in-progress CloudShare lab before marking the ExamAttempt completed", async () => {
     const deps = await makeDeps();
 

@@ -86,8 +86,9 @@ async function tryArchiveExamEnvironmentForCompletion(
   | { readonly ok: true }
   | { readonly ok: false; readonly response: SuspendResumeResponse }
 > {
+  const operationCorrelationId = deps.newCorrelationId?.() ?? randomUUID();
   try {
-    const access = await resolveCustomerEnvironmentAccess(deps, attempt);
+    const access = await resolveCustomerEnvironmentAccess(deps, attempt, operationCorrelationId);
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId: request.examAttemptId,
       operation: "exam_complete",
@@ -115,17 +116,16 @@ async function tryArchiveExamEnvironmentForCompletion(
     );
     return { ok: true };
   } catch (error) {
-    const correlationId = deps.newCorrelationId?.() ?? randomUUID();
     await recordArchiveFailureDiagnostic(
       deps.diagnostics,
       attempt,
       error,
-      correlationId,
+      operationCorrelationId,
       deps.candidateEmail,
     );
     return {
       ok: false,
-      response: mapArchiveErrorToCompleteResponse(error, request.examAttemptId, correlationId),
+      response: mapArchiveErrorToCompleteResponse(error, request.examAttemptId, operationCorrelationId),
     };
   }
 }
@@ -133,6 +133,7 @@ async function tryArchiveExamEnvironmentForCompletion(
 async function resolveCustomerEnvironmentAccess(
   deps: CompleteExamAttemptEarlyHandlerDeps,
   attempt: ExamAttempt,
+  correlationId: string,
 ) {
   if (!attempt.customerId) {
     throw new ExamAttemptRuntimeError(
@@ -149,7 +150,7 @@ async function resolveCustomerEnvironmentAccess(
     );
   }
 
-  const client = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "system", id: "early-completion" }, customerId: attempt.customerId, subject: { type: "exam_attempt", id: attempt.id }, correlationId: `early-completion:${attempt.id}`, source: "runtime", examId: attempt.examId ?? undefined, examAttemptId: attempt.id }));
+  const client = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "system", id: "early-completion" }, customerId: attempt.customerId, subject: { type: "exam_attempt", id: attempt.id }, correlationId, source: "runtime", examId: attempt.examId ?? undefined, examAttemptId: attempt.id, externalIds: { lifecycleParent: `early-completion:${attempt.id}` } }));
   return {
     controller: createCloudShareEnvironmentController(client),
     source: createCloudShareEnvironmentSource(client),

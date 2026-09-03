@@ -29,7 +29,7 @@ export function createSalesLaunchDenialContextResolver(deps: {
     try {
       const connection = await deps.connections.findByCustomerId(link.customerId);
       if (!connection) throw new Error("CloudShare Connection unavailable");
-      const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare.forConnection(connection, { scope: "customer_default", correlationId, reason: "unanchored_support_read" }));
+      const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" }));
       const result = await delivery.listSalesPros(session.cloudShareSalesExperienceId);
       salesPros = result.salesPros.length > 0 ? result.salesPros : fallback;
     } catch (error) {

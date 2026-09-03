@@ -144,7 +144,7 @@ export function createCloudShareClientFactory(input: {
       const defaultObserver = createCloudShareDiagnosticObserver({
         diagnostics: input.diagnostics,
         customerId: connection.customerId,
-        correlationId: options.scope === "workflow" ? newCorrelationId() : options.correlationId,
+        correlationId: newCorrelationId(),
       });
       const workflowObserver = options.scope === "workflow"
         ? createCloudShareWorkflowObserver({ diagnostics: input.diagnostics, customerId: connection.customerId, ...options.workflow })

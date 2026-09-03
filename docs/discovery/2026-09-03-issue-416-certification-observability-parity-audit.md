@@ -221,4 +221,6 @@ Both OAuth acquisition and subsequent v3/v4 requests use the same correlation an
 
 Snapshot validation and the CloudShare action that follows it reuse one exact workflow context for individual scheduling, Cohort participant admission, and Cohort publication. Distinct suspend, resume, auto-suspend, and completion-read operations instead receive fresh operation correlations while retaining the exact ExamAttempt subject and a safe deterministic lifecycle-parent external identifier.
 
+Customer-default scopes intentionally carry no caller correlation. The composition root mints a fresh Customer-only correlation for every client construction, including connection checks, webhook reads, and unanchored catalogue/resource operations.
+
 The shared context is owned by the domain-facing connection factory contract, while concrete OAuth evidence projection remains in integration/API code. Score retrieval and participant correlation now receive the same ExamAttempt-scoped factory context; snapshot validation, completion, suspend/resume, heartbeat completion, and admin diagnostic refresh each use their authoritative attempt/session context. Sales Trial's independent observer is explicitly marked `custom_observer` rather than being an unlabelled callback bag.

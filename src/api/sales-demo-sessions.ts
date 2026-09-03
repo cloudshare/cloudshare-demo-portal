@@ -128,7 +128,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       return reservationPersistenceFailure(deps, request, reservation, correlationId, now, error, clearedAmbiguousReservation);
     }
   }
-  const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, { scope: "customer_default", correlationId: correlationId, reason: "unanchored_support_read" }));
+  const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" }));
   let createDispatched = false;
   try {
     const validator = deps.itemProvisioningValidator ?? deps.itemProvisioningValidatorFactory?.forConnection(connection);
@@ -136,7 +136,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     await recordResourceReads(deps, request, correlationId, item.id, item.project.id, resourceReads, "success");
     // Re-read immediately before POST /sales. This deliberately accepts the
     // narrow race after this check; a cached or Item-stored member is never used.
-    const projectMembers = deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection) ?? createCloudShareProjectMemberSource((deps.cloudshare ?? missingClientFactory).forConnection(connection, { scope: "customer_default", correlationId: correlationId, reason: "catalogue_resource_read" }));
+    const projectMembers = deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection) ?? createCloudShareProjectMemberSource((deps.cloudshare ?? missingClientFactory).forConnection(connection, { scope: "customer_default", reason: "catalogue_resource_read" }));
     let memberRead: Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>;
     try { memberRead = await projectMembers.listActiveProjectMembers(item.project.id); }
     catch (error) { throw new SalesProjectMemberReadError(error); }

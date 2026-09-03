@@ -24,7 +24,7 @@ export async function handleGetSalesItemBlueprintDetails(
   if (!connection) return response(404, { error: "Save a Certalis CloudShare Connection before authoring Items." });
   const correlationId = randomUUID();
   try {
-    const client = deps.cloudshare.forConnection(connection, { scope: "customer_default", correlationId, reason: "catalogue_resource_read" }) as Parameters<typeof createCloudShareSalesItemResourceSource>[0];
+    const client = deps.cloudshare.forConnection(connection, { scope: "customer_default", reason: "catalogue_resource_read" }) as Parameters<typeof createCloudShareSalesItemResourceSource>[0];
     const source = createCloudShareSalesItemResourceSource(client);
     let reads: readonly CloudShareDetailedResourceRead<CloudShareBlueprintDetail>[];
     try {
@@ -86,7 +86,7 @@ async function save(deps: SalesItemDeps, request: SalesItemRequest, id: string |
 export async function handleArchiveSalesItem(deps: Pick<SalesItemDeps, "repository" | "diagnostics" | "audit" | "now">, request: { readonly customerId: string; readonly actor?: DiagnosticActor | null; readonly id: string }) { const correlationId = randomUUID(); try { const item = await archiveItem({ repository: deps.repository, now: deps.now }, request); await deps.diagnostics?.record({ source: "sales-items", operation: "sales.item.archived", outcome: "success", customerId: request.customerId, actor: request.actor, subject: { type: "item", id: item.id }, correlationId, message: "Item archived; it remains history-only and cannot start an Enablement Session.", externalIds: { itemId: item.id } }); await audit(deps, request, item.id, "sales.item.archived", "success", correlationId, null); return response(200, { item }); } catch (error) { await audit(deps, request, request.id, "sales.item.archived", "failure", correlationId, null); return response(error instanceof ItemNotFoundError ? 404 : 400, { error: error instanceof Error ? error.message : "Unable to archive Item." }); } }
 
 async function resolveLiveSelections(deps: Pick<SalesItemDeps, "cloudshare" | "diagnostics">, request: SalesItemRequest, connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>, input: WriteRequest, correlationId: string) {
-  const candidate = deps.cloudshare.forConnection(connection, { scope: "customer_default", correlationId, reason: "catalogue_resource_read" }) as unknown;
+  const candidate = deps.cloudshare.forConnection(connection, { scope: "customer_default", reason: "catalogue_resource_read" }) as unknown;
   if (typeof candidate === "object" && candidate !== null && "listProjects" in candidate) return selectFromAuthoringSource(candidate as CloudShareExamAuthoringSource, input);
   const source = createCloudShareSalesItemResourceSource(candidate as Parameters<typeof createCloudShareSalesItemResourceSource>[0]);
   const projects = await source.readProjects(); await record(deps, request, correlationId, projects, "project");

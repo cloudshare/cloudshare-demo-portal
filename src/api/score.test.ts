@@ -174,7 +174,7 @@ describe("buildCandidateScoreDeps", () => {
       connectedAt: new Date("2026-06-16T07:00:00.000Z"),
       verifiedAt: null,
     };
-    const observation = { scope: "customer_default" as const, correlationId: "test", reason: "unanchored_support_read" as const };
+    const observation = { scope: "customer_default" as const, reason: "unanchored_support_read" as const };
     expect(deps.createScoreRetriever(connection, observation)).toHaveProperty("getParticipantProgress");
     expect(deps.createParticipantLister(connection, observation)).toHaveProperty("listParticipants");
     expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledTimes(2);

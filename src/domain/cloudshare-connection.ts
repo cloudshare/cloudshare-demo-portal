@@ -52,7 +52,7 @@ type CloudShareClientObservationCallbacks = {
 /** Each production client declares a real workflow or an intentional Customer-only escape. */
 export type CloudShareClientObservationOptions = CloudShareClientObservationCallbacks & (
   | { readonly scope: "workflow"; readonly workflow: CloudShareWorkflowObservationContext }
-  | { readonly scope: "customer_default"; readonly correlationId: string; readonly reason: "catalogue_resource_read" | "connection_check" | "unanchored_support_read" }
+  | { readonly scope: "customer_default"; readonly reason: "catalogue_resource_read" | "connection_check" | "unanchored_support_read" }
   | { readonly scope: "custom_observer"; readonly correlationId: string }
 );
 
@@ -109,7 +109,6 @@ export async function testCloudShareConnection(
   try {
     const client = deps.cloudshare.forConnection(connection, {
       scope: "customer_default",
-      correlationId: `connection-check:${customerId}`,
       reason: "connection_check",
     });
     const pong = await pingCloudShareV3(client);
