@@ -481,8 +481,9 @@ export async function handlePublishSalesTrialOffering(
     });
   }
   const passphrase = opaqueCloudShareId(randomUUID());
+  const clientOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id });
   const delivery =
-    deps.deliveryFactory?.forConnection(connection, deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id })) ??
+    (clientOptions ? deps.deliveryFactory?.forConnection(connection, clientOptions) : deps.deliveryFactory?.forConnection(connection)) ??
     createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id })));
   const reservationUpdatedAt = (deps.now ?? (() => new Date()))();
   const reservation = {
