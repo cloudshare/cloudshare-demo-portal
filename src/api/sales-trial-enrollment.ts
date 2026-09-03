@@ -70,7 +70,7 @@ type Participant = {
 };
 
 export interface SalesTrialEnrollmentDeps {
-  readonly cloudshareObserver?: (input: { customerId: string; actor: DiagnosticActor; correlationId: string; subject: DiagnosticSubject }) => Parameters<CloudShareClientFactory["forConnection"]>[1];
+  readonly cloudshareObserver?: (input: { customerId: string; actor: DiagnosticActor; correlationId: string; subject: DiagnosticSubject | (() => DiagnosticSubject) }) => Parameters<CloudShareClientFactory["forConnection"]>[1];
   readonly offerings: Pick<SalesTrialOfferingRepository, "findById">;
   readonly items?: Pick<ItemRepository, "findById">;
   readonly enrollments: SalesTrialEnrollmentRepository;
@@ -260,7 +260,7 @@ export async function handleEnterSalesTrialOffering(
     return denied(deps, request, correlationId, "connection_missing");
   }
 
-  const observerOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, subject: { type: "sales_trial_offering", id: offering.id } });
+  const observerOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, subject: () => enrollment ? { type: "sales_trial_enrollment", id: enrollment.id } : { type: "sales_trial_offering", id: offering.id } });
   const delivery =
     (observerOptions ? deps.deliveryFactory?.forConnection(connection, observerOptions) : deps.deliveryFactory?.forConnection(connection)) ??
     createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection, observerOptions));

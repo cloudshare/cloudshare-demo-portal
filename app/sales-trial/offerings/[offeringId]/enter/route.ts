@@ -13,6 +13,7 @@ import { createPrismaSalesTrialEnrollmentRepository } from "@/persistence/prisma
 import { createPrismaSalesTrialOfferingRepository } from "@/persistence/prisma-sales-trial-offering-repository";
 import { handleEndSalesTrialOffering } from "@/api/sales-trial-offerings";
 import { salesTrialEndingDeps } from "@/api/sales-trial-ending-reconciliation";
+import { createSalesTrialCloudShareObserver } from "@/api/sales-trial-cloudshare-diagnostics";
 
 export async function GET(
   _request: Request,
@@ -78,10 +79,14 @@ export async function GET(
       enrollments: createPrismaSalesTrialEnrollmentRepository(services.prisma),
       connections: services.cloudshareConnections,
       deliveryFactory: {
-        forConnection: (connection) =>
+        forConnection: (connection, options) =>
           createCloudShareSalesDelivery(
-            services.cloudshareClientFactory.forConnection(connection),
+            services.cloudshareClientFactory.forConnection(connection, options),
           ),
+      },
+      cloudshareObserver: ({ customerId, actor, correlationId, subject }) => {
+        const observer = createSalesTrialCloudShareObserver({ diagnostics: services.diagnosticRecorder, customerId, actor, correlationId, source: "sales-trial-enrollment", subject, candidateEmail: session.email });
+        return { onRequest: observer.onRequest, onAcquisition: observer.onAcquisition };
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,
