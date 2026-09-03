@@ -848,6 +848,9 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "CloudShare publication outcome is unknown. Do not retry.",
     );
+    expect(screen.getByRole("button", {
+      name: "Open support diagnostics (corr-publish-1)",
+    })).toBeTruthy();
   });
 
   it("sends the end-trial action only after confirmation and refreshes the offering list", async () => {

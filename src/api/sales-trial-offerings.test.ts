@@ -2588,6 +2588,7 @@ describe("Sales Trial Offering API", () => {
 
     expect(result).toMatchObject({ status: 502, body: {
       error: "CloudShare authentication failed before the Sales Trial Offering was created. Review support diagnostics and retry.",
+      correlationId: expect.any(String),
     } });
     expect(await repository.findById("customer-1", "offering-token")).toMatchObject({
       status: "draft", externalId: null, cloudShareSalesExperienceId: null, attentionReason: null,

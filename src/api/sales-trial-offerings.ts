@@ -1529,6 +1529,7 @@ async function publishFailure(
   );
   return response(itemValidationFailure ? 422 : 502, {
     error: errorMessage,
+    correlationId,
   });
 }
 
