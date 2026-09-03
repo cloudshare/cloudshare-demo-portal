@@ -43,6 +43,14 @@ showing real CloudShare behaviour, CloudShare wins.
 8. Use `/codebase-design` before changing architecture or module boundaries, and
    `/improve-codebase-architecture` regularly, especially after several features have landed.
 
+## Lifecycle authority
+
+`AGENTS.md` is the authoritative source for the complete portal ticket lifecycle, including the
+parent/ticket-task boundary, mandatory internal implementation/review/QA roles and model settings,
+repair loops, exact-head review, duplicate-task prevention, branch/PR checkpoints, QA gates, and
+completion reporting. Read and follow it for every ticket. This file contains only Claude-specific
+tooling or invocation deltas; it must not restate or override those shared rules.
+
 ## Engineering discipline
 
 - Work in small vertical slices (one GitHub issue at a time, in dependency order).
@@ -123,31 +131,8 @@ High-integrity software.
 
 ## Git workflow
 
-Never commit directly to `main`.
-
-For each slice:
-
-```bash
-git checkout main
-git pull
-git checkout -b feature/<short-description>
-```
-
-Before completion:
-
-```bash
-npm run lint
-npm run typecheck
-npm test
-git status
-```
-
-Then prepare a PR summary including:
-
-- What changed
-- Why it changed
-- Tests added/updated
-- Risks or follow-up work
+Never commit directly to `main`. Follow the branch, draft-PR, checkpoint, validation, review, QA,
+merge, and cleanup lifecycle in `AGENTS.md`; no Claude-specific Git workflow overrides it.
 
 ## Definition of done
 
