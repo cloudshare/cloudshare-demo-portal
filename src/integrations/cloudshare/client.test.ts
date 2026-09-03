@@ -86,6 +86,25 @@ function sequentialHttp(...responses: HttpResponse[]): { http: HttpClient; calls
 }
 
 describe("createCloudShareClient — v4", () => {
+  it("observes each wire attempt when a safe read retries after 429", async () => {
+    const onRequest = vi.fn();
+    const { http } = sequentialHttp(
+      { status: 429, headers: { "retry-after": "0" }, body: "{\"error\":\"busy\"}" },
+      ok([{ id: "p1", name: "Proj" }]),
+    );
+    const client = createCloudShareClient({
+      http, endpoints, tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      sleep: async () => undefined, random: () => 0, onRequest,
+    });
+
+    await expect(client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema })).resolves.toEqual([{ id: "p1", name: "Proj" }]);
+    expect(onRequest).toHaveBeenCalledTimes(2);
+    expect(onRequest.mock.calls.map(([event]) => event.outcome)).toEqual(["failure", "success"]);
+    expect(onRequest.mock.calls[0]?.[0]).toMatchObject({ error: { context: { status: 429 } } });
+    expect(onRequest.mock.calls[0]?.[0].occurredAt).toBeDefined();
+    expect(onRequest.mock.calls[0]?.[0].durationMs).toEqual(expect.any(Number));
+  });
   it("returns schema-validated data and sends a Bearer token", async () => {
     const { http, last } = capturingHttp(ok([{ id: "p1", name: "Proj" }]));
     const client = clientWith(http);

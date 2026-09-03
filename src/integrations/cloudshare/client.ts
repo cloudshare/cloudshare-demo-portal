@@ -524,6 +524,20 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
   ): Promise<CloudShareDetailedResult<T>> {
     const requestInfo = describeRequest(request.url);
     for (let attempt = 0; ; attempt += 1) {
+      const attemptStartedAtMs = getNowMs();
+      const attemptOccurredAt = new Date(attemptStartedAtMs).toISOString();
+      const observeAttemptFailure = async (error: unknown): Promise<void> => {
+        await notifyRequest({
+          occurredAt: attemptOccurredAt,
+          outcome: "failure",
+          durationMs: Math.max(0, getNowMs() - attemptStartedAtMs),
+          error: {
+            name: error instanceof Error ? error.name : "Error",
+            message: error instanceof Error ? error.message : String(error),
+            context: error instanceof CloudShareRequestError || error instanceof CloudShareResponseError || error instanceof CloudShareTransportError || error instanceof CloudShareRateLimitError ? error.context : undefined,
+          },
+        });
+      };
       if (attempt === 0) {
         throwIfCooldownActive(request, requestInfo);
       }
@@ -538,7 +552,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           failureMode: "transport",
           error: cause instanceof Error ? cause.message : String(cause),
         });
-        throw new CloudShareTransportError(
+        const error = new CloudShareTransportError(
           `CloudShare request to ${request.url} failed to reach the server`,
           {
             method: request.method,
@@ -551,6 +565,8 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             ...transportContext(cause),
           },
         );
+        await observeAttemptFailure(error);
+        throw error;
       }
 
       trace("info", "cloudshare response received", request, {
@@ -590,6 +606,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             },
           );
           updateCooldownFromRateLimit(rateLimitError);
+          await observeAttemptFailure(rateLimitError);
           if (isSafeRead(request.method) && attempt < MAX_READ_RETRY_ATTEMPTS) {
             const delayMs = computeReadRetryDelayMs(rateLimitError);
             if (delayMs !== null) {
@@ -600,18 +617,20 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           throw rateLimitError;
         }
 
-        throw new CloudShareRequestError(
+        const error = new CloudShareRequestError(
           `CloudShare request to ${request.url} returned ${response.status}`,
           response.status,
           context,
         );
+        await observeAttemptFailure(error);
+        throw error;
       }
 
       let json: unknown;
       try {
         json = response.body.trim() === "" && allowEmptyResponse ? undefined : JSON.parse(response.body);
       } catch {
-        throw new CloudShareResponseError(
+        const error = new CloudShareResponseError(
           `CloudShare response from ${request.url} was not valid JSON`,
           {
             method: request.method,
@@ -628,11 +647,13 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             tls: response.tls,
           },
         );
+        await observeAttemptFailure(error);
+        throw error;
       }
 
       const parsed = schema.safeParse(json);
       if (!parsed.success) {
-        throw new CloudShareResponseError(
+        const error = new CloudShareResponseError(
           `CloudShare response from ${request.url} did not match the expected schema`,
           {
             method: request.method,
@@ -650,10 +671,12 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             issues: parsed.error.issues.map((i) => i.message),
           },
         );
+        await observeAttemptFailure(error);
+        throw error;
       }
       clearCooldown();
       const requestQuery = sanitizeQuery(extractQuery(request.url));
-      return {
+      const result = {
         data: parsed.data,
         host: requestInfo.host,
         integrationSurface: requestInfo.integrationSurface,
@@ -678,6 +701,8 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           ...(response.tls ? { tls: response.tls } : {}),
         },
       };
+      await notifyRequest({ occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
+      return result;
     }
   }
 
@@ -922,32 +947,32 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
   return {
     async requestV4<T>(spec: V4RequestSpec<T>): Promise<T> {
-      const result = await observeRequest(() => performV4Detailed(spec));
+      const result = await performV4Detailed(spec);
       return result.data;
     },
 
     async requestV4Detailed<T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> {
-      return observeRequest(() => performV4Detailed(spec));
+      return performV4Detailed(spec);
     },
 
     async requestV3<T>(spec: V3RequestSpec<T>): Promise<T> {
-      const result = await observeRequest(() => performV3Detailed(spec));
+      const result = await performV3Detailed(spec);
       return result.data;
     },
 
     async requestV3Detailed<T>(spec: V3RequestSpec<T>): Promise<CloudShareDetailedResult<T>> {
-      return observeRequest(() => performV3Detailed(spec));
+      return performV3Detailed(spec);
     },
 
     async requestV3Text(spec: Omit<V3RequestSpec<never>, "schema">): Promise<string> {
-      const result = await observeRequest(() => performV3TextDetailed(spec));
+      const result = await performV3TextDetailed(spec);
       return result.data;
     },
 
     async requestV3TextDetailed(
       spec: Omit<V3RequestSpec<never>, "schema">,
     ): Promise<CloudShareDetailedResult<string>> {
-      return observeRequest(() => performV3TextDetailed(spec));
+      return performV3TextDetailed(spec);
     },
   };
 }
