@@ -400,10 +400,11 @@ export async function handlePublishSalesTrialOffering(
   let memberRead:
     | Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>
     | undefined;
+  const publishClientOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id });
   try {
     const validator =
       deps.itemProvisioningValidator ??
-      deps.itemProvisioningValidatorFactory?.forConnection(connection, deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id }));
+      deps.itemProvisioningValidatorFactory?.forConnection(connection, publishClientOptions);
     const reads = (await validator?.revalidate(item)) ?? [];
     await recordResourceReads(
       deps,
@@ -417,7 +418,7 @@ export async function handlePublishSalesTrialOffering(
       "Catalogue Item resource revalidated before Sales Trial Offering publication",
     );
     const memberSource =
-      deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection, deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id }));
+      deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection, publishClientOptions);
     memberRead = await memberSource?.listActiveProjectMembers(item.project.id);
     if (memberRead) {
       await recordProjectMemberRead(
@@ -482,10 +483,10 @@ export async function handlePublishSalesTrialOffering(
     });
   }
   const passphrase = opaqueCloudShareId(randomUUID());
-  const clientOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id });
+  const clientOptions = publishClientOptions;
   const delivery =
     (clientOptions ? deps.deliveryFactory?.forConnection(connection, clientOptions) : deps.deliveryFactory?.forConnection(connection)) ??
-    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id })));
+    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, clientOptions));
   const reservationUpdatedAt = (deps.now ?? (() => new Date()))();
   const reservation = {
     ...offering,

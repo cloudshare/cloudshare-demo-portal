@@ -39,7 +39,7 @@ function projectFailureRequest(context?: Record<string, unknown>): Record<string
 function projectFailureResponse(context?: Record<string, unknown>): Record<string, unknown> | null {
   if (!context) return null;
   const response: Record<string, unknown> = {};
-  for (const key of ["responseStatus", "responseHeaders", "responseBody", "transport", "network", "tls"]) {
+  for (const key of ["responseStatus", "responseHeaders", "responseBody", "transport", "cause", "network", "tls"]) {
     if (key in context) response[key] = context[key];
   }
   return Object.keys(response).length ? response : null;

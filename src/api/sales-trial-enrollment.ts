@@ -498,9 +498,10 @@ export async function handleListSalesTrialOfferingParticipants(
     }
     return { status: 404, body: { error: "Sales Trial Offering is unavailable." } };
   }
+  const monitoringOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, subject: { type: "sales_trial_offering", id: offering.id } });
   const delivery =
-    deps.deliveryFactory?.forConnection(connection) ??
-    createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection));
+    (monitoringOptions ? deps.deliveryFactory?.forConnection(connection, monitoringOptions) : deps.deliveryFactory?.forConnection(connection)) ??
+    createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection, monitoringOptions));
   let enrollments: Awaited<ReturnType<SalesTrialEnrollmentRepository["listByOffering"]>>;
   let remote: Awaited<ReturnType<SalesDelivery["listParticipants"]>>;
   let rosterObservedAt: Date;

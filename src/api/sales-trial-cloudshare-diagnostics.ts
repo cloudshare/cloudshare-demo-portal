@@ -87,7 +87,8 @@ function projectResponse(
       : undefined;
   const transport =
     typeof context.transport === "string" ? context.transport : undefined;
-  if (!status && !headers && body === undefined && !network && !tls && !transport) {
+  const cause = context.cause;
+  if (!status && !headers && body === undefined && !network && !tls && !transport && cause === undefined) {
     return null;
   }
   return {
@@ -95,6 +96,7 @@ function projectResponse(
     ...(headers ? { headers } : {}),
     ...(body !== undefined ? { body } : {}),
     ...(transport ? { transport } : {}),
+    ...(cause !== undefined ? { cause } : {}),
     ...(network ? { network } : {}),
     ...(tls ? { tls } : {}),
   };
