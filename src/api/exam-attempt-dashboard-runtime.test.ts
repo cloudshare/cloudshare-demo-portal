@@ -659,7 +659,7 @@ describe("getExamAttemptDashboardRuntime", () => {
         attemptedOperation: "list_training_participants",
         integrationSurface: "cloudshare.v4.training.participant_list",
         method: "GET",
-        path: "/v4/trainings/EXtraining-1/students",
+        path: "/v4/[REDACTED_ROUTE]",
         failureMode: "rate_limit",
         responseStatus: 429,
       }),
@@ -1090,7 +1090,7 @@ describe("getExamAttemptDashboardRuntime", () => {
         correlationId: "corr-list-2",
         failureMode: "unexpected_response",
         host: "api.accelerate.cloudshare.com",
-        path: "/v4/trainings/EXtraining-1/students",
+        path: "/v4/[REDACTED_ROUTE]",
         integrationSurface: "cloudshare.v4.training.participant_list",
       }),
     );

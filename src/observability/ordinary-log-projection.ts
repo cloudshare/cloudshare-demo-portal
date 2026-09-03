@@ -127,13 +127,8 @@ function projectPath(value: unknown): string | undefined {
     "envs", "actions", "getextended", "extend", "blueprints", "policies", "regions", "participants",
   ]);
   if (route.length === 0) return `/${prefix.join("/")}`;
-  if (route.some((segment) => !allowed.has(segment) && !isSafeRouteIdentifier(segment))) return `/${prefix.join("/")}/[REDACTED_ROUTE]`;
+  if (route.some((segment) => !allowed.has(segment))) return `/${prefix.join("/")}/[REDACTED_ROUTE]`;
   return `/${[...prefix, ...route].join("/")}`;
-}
-
-function isSafeRouteIdentifier(segment: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment) &&
-    !/(?:secret|marker|token|password|credential|bearer|api[_-]?key)/i.test(segment);
 }
 
 function projectHost(value: unknown): string | undefined {

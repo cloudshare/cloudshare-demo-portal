@@ -3,16 +3,18 @@ import { projectOrdinaryLogFields } from "./ordinary-log-projection";
 
 describe("ordinary path projection", () => {
   it.each([
-    "/api/v4/trainings/training-secret/guided-journeys/journey-secret",
-    "/api/v4/projects/project-secret/experiences/experience-secret",
-    "/api/v4/trainings/training-secret/properties/student-secret",
-    "/api/v3/projects/project-secret/blueprints/blueprint-secret/policies/policy-secret",
-    "/api/v3/envs/environment-secret/actions/getextended",
-    "/sales/sales-secret/participants",
-    "/v4/secret-marker-unknown-route",
+    "/api/v4/trainings/TRN8b3Qp6/guided-journeys/GJ4m9Xs2",
+    "/api/v4/projects/PRJ6f8K2/experiences/EXP7v2Nc5",
+    "/api/v4/trainings/TRN3q6Wp8/properties/PROP9k2Ls5",
+    "/api/v3/projects/PRJ2x8Kd4/blueprints/BP7m3Qv9/policies/POL5r1Ts6",
+    "/api/v3/envs/ENV9r4Tk2/actions/getextended",
+    "/sales/SAL4p8Mx2/participants",
+    "/v4/ZXQ8f2Lm5/CHD4p7Nv1",
   ])("does not leak unrecognized route segments: %s", (path) => {
     const projected = projectOrdinaryLogFields({ path });
-    expect(projected.path).not.toContain("secret");
+    for (const segment of path.split("/").filter((part) => /\d/.test(part) && !/^v[34]$/.test(part))) {
+      expect(projected.path).not.toContain(segment);
+    }
     expect(projected.path).toMatch(/^\/(?:api\/)?v[34]\/(?:\[REDACTED_ROUTE\]|[a-z-]+(?:\/\[REDACTED_ROUTE\])?)$|^\/sales\/\[REDACTED_ROUTE\]$/);
   });
 

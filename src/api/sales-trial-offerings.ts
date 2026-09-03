@@ -39,7 +39,6 @@ import {
 } from "@/integrations/cloudshare/errors";
 import type { CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 import type { SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
-import { createSalesTrialCloudShareObserver } from "./sales-trial-cloudshare-diagnostics";
 
 const writeSchema = z.object({
   title: z.string().trim().min(1).max(100),

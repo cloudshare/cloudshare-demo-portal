@@ -666,7 +666,7 @@ describe("getExamAttemptScoreRuntime", () => {
       expect.objectContaining({
         attemptedOperation: "resolve_training_participant",
         integrationSurface: "cloudshare.v4.training.participant_list",
-        path: "/v4/trainings/training-1/students",
+        path: "/v4/[REDACTED_ROUTE]",
         failureMode: "missing_participant_id",
       }),
     );

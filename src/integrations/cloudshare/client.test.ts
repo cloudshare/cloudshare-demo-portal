@@ -745,6 +745,33 @@ describe("createCloudShareClient — v4", () => {
     );
   });
 
+  it.each([
+    ["v4", "/projects/PRJ6f8K2/blueprints/BP9q4Lm7", "/v4/projects/{providerId}"],
+    ["v4", "/experiences/EXP7v2Nc5/participants/PT4m8Xa1", "/v4/experiences/{providerId}"],
+    ["v4", "/trainings/TRN8b3Qp6/users/properties/PROP5d9Ks2", "/v4/trainings/{trainingId}"],
+    ["v4", "/guided-journey/progress/EXP3h7Rt9/PT6k2Wm4", "/v4/guided-journey/{providerId}"],
+    ["v4", "/ZXQ8f2Lm5/CHD4p7Nv1", "/v4/[REDACTED_ROUTE]"],
+    ["v3", "/projects/PRJ2x8Kd4/blueprints/BP7m3Qv9", "/api/v3/[REDACTED_ROUTE]"],
+    ["v3", "/envs/ENV9r4Tk2/actions/getextended", "/api/v3/envs/{environmentId}"],
+    ["v3", "/ZXQ5n8Lp3/CHD7w2Fs6", "/api/v3/[REDACTED_ROUTE]"],
+  ] as const)("removes opaque provider identifiers from ordinary %s traces", async (version, path, expectedPath) => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(ok({ ok: true }));
+    const client = createCloudShareClient({
+      http, endpoints, tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" }, trace,
+      newToken: () => "tokfixed01", now: () => 1_700_000_000_000,
+    });
+    const schema = z.object({ ok: z.boolean() });
+    if (version === "v4") await client.requestV4({ method: "GET", path, schema });
+    else await client.requestV3({ method: "GET", path, schema });
+    const serialized = JSON.stringify(trace.mock.calls);
+    expect(serialized).toContain(expectedPath);
+    for (const segment of path.split("/").filter((part) => /\d/.test(part) && !/^v[34]$/.test(part))) {
+      expect(serialized).not.toContain(segment);
+    }
+  });
+
   it("retains response headers and preserves ordinary TLS support metadata", async () => {
     const { http } = capturingHttp({
       status: 200,

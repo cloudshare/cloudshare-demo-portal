@@ -292,7 +292,13 @@ const documentedSalesTracePatterns = [
 ] as const;
 
 function sanitizeOrdinaryTracePath(path: string): string {
-  if (path === "/v4/trainings" || path === "/api/v3/ping") return path;
+  const safeStaticPaths = new Set([
+    "/v4/experiences", "/v4/projects", "/v4/regions", "/v4/sales", "/v4/teams", "/v4/trainings",
+    "/api/v3/envs", "/api/v3/envs/actions/archive", "/api/v3/envs/actions/extend",
+    "/api/v3/envs/actions/getextended", "/api/v3/envs/actions/resume", "/api/v3/envs/actions/suspend",
+    "/api/v3/ping", "/api/v3/projects", "/api/v3/regions", "/api/v3/timezones",
+  ]);
+  if (safeStaticPaths.has(path)) return path;
   const v4Training = path.match(/^\/v4\/trainings\/([^/]+)(?:\/(.*))?$/);
   if (v4Training) return "/v4/trainings/{trainingId}";
   const v3Environment = path.match(/^\/api\/v3\/envs\/([^/]+)(?:\/(.*))?$/);
@@ -302,12 +308,10 @@ function sanitizeOrdinaryTracePath(path: string): string {
   }
   const match = path.match(/^\/v4\/sales\/([^/]+)(?:\/(.*))?$/);
   if (!match) {
-  const v4 = path.match(/^\/v4\/([^/]+)/);
-  if (v4) return `/v4/${v4[1]}/{REDACTED_ROUTE}`;
-  const v3 = path.match(/^\/api\/v3\/([^/]+)/);
-  if (v3) return `/api/v3/${v3[1]}/{REDACTED_ROUTE}`;
-  return REDACTED_SALES_ROUTE;
-}
+    if (path.startsWith("/v4/")) return "/v4/[REDACTED_ROUTE]";
+    if (path.startsWith("/api/v3/")) return "/api/v3/[REDACTED_ROUTE]";
+    return REDACTED_SALES_ROUTE;
+  }
 
   const tail = match[2];
   if (!tail) {
