@@ -12,15 +12,12 @@ import {
   type PortalSessionStore,
 } from "@/auth";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
-import { createCloudShareIntegration, createCloudShareDiagnosticObserver, composeCloudShareObservers } from "@/integrations/cloudshare";
+import { createCloudShareDiagnosticObserver, composeCloudShareObservers } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
-import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
-import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
 import {
   createCloudShareEnvironmentSimulator,
   type CloudShareEnvironmentSimulator,
 } from "@/integrations/cloudshare/environment-simulator";
-import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { withLocalCohortRateLimitQaFixture } from "@/integrations/cloudshare/local-rate-limit-qa-fixture";
 import { createInMemoryWebhookIdempotencyStore } from "@/persistence/webhook-idempotency-store";
 import {
@@ -396,19 +393,6 @@ export function getServices(): Services {
 
   // CloudShare lab launch. The transport (live fetch vs fixture replay) is chosen
   // by PORTAL_MODE; the provisioner and launch flow are identical either way.
-  const cloudshare = createCloudShareIntegration({
-    mode: config.runtime.mode,
-    trace: traceCloudShare,
-    v4: {
-      clientId: config.secrets.cloudshareV4ClientId,
-      clientSecret: config.secrets.cloudshareV4ClientSecret,
-    },
-    v3: {
-      apiId: config.secrets.cloudshareV3ApiId,
-      apiKey: config.secrets.cloudshareV3ApiKey,
-    },
-  });
-  const trainingDelivery = createCloudShareTrainingDelivery(cloudshare);
   const labLaunches = createPrismaLabLaunchRepository(prisma);
 
   // Webhook receiver & polling source-of-truth. In demo mode the simulator is BOTH
@@ -423,10 +407,14 @@ export function getServices(): Services {
             config.secrets.webhookSecret,
         })
       : null;
-  const environmentSource: EnvironmentStateSource =
-    environmentSimulator ?? createCloudShareEnvironmentSource(cloudshare);
-  const environmentController: EnvironmentController =
-    environmentSimulator ?? createCloudShareEnvironmentController(cloudshare);
+  const environmentSource: EnvironmentStateSource = environmentSimulator ?? {
+    getEnvironmentState: async () => { throw new Error("Customer-scoped CloudShare connection required"); },
+  };
+  const environmentController: EnvironmentController = environmentSimulator ?? {
+    suspendEnvironment: async () => { throw new Error("Customer-scoped CloudShare connection required"); },
+    resumeEnvironment: async () => { throw new Error("Customer-scoped CloudShare connection required"); },
+    archiveEnvironment: async () => { throw new Error("Customer-scoped CloudShare connection required"); },
+  };
   const environments = createPrismaEnvironmentRepository(prisma);
   const webhookIdempotency = createInMemoryWebhookIdempotencyStore();
   const examClock = createExamClock({
@@ -434,7 +422,7 @@ export function getServices(): Services {
   });
   const eventLog = createInMemoryEventLogRepository();
 
-  const scoreRetriever = trainingDelivery;
+  const scoreRetriever = { getParticipantProgress: async () => { throw new Error("Customer-scoped CloudShare connection required"); } } as ScoreRetrievalProvider;
 
   const audit = createPrismaAuditRepository(prisma);
   const resources = createInMemoryResourceRepository();
