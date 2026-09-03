@@ -108,6 +108,7 @@ export function SalesTrialOfferingsAdmin({
   readonly onNavigate?: (intent: NavigationIntent) => void;
 }) {
   const formRef = useRef<HTMLFormElement | null>(null);
+  const lifecycleInFlightRef = useRef<string | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [timezones, setTimezones] = useState<Timezone[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -122,6 +123,7 @@ export function SalesTrialOfferingsAdmin({
   const [monitoringLoading, setMonitoringLoading] = useState(false);
   const [monitoringError, setMonitoringError] = useState<string | null>(null);
   const [extendingParticipantId, setExtendingParticipantId] = useState<string | null>(null);
+  const [lifecycleInFlight, setLifecycleInFlight] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -238,6 +240,10 @@ export function SalesTrialOfferingsAdmin({
   }
 
   async function lifecycle(id: string, action: "publish" | "end") {
+    const operationKey = `${id}:${action}`;
+    if (lifecycleInFlightRef.current !== null) return;
+    lifecycleInFlightRef.current = operationKey;
+    setLifecycleInFlight(operationKey);
     setMessage(null);
     setMessageCorrelationId(null);
     try {
@@ -268,6 +274,9 @@ export function SalesTrialOfferingsAdmin({
       if (isAdminSessionExpiredError(error)) return;
       setMessageTone("error");
       setMessage(error instanceof Error ? error.message : `Could not ${action} Trial Offering.`);
+    } finally {
+      lifecycleInFlightRef.current = null;
+      setLifecycleInFlight(null);
     }
   }
 
@@ -427,8 +436,8 @@ export function SalesTrialOfferingsAdmin({
           </div> : null}
           {offering.attentionReason ? <div role="alert" style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.55rem" }}><p style={{ margin: 0 }}>{offering.attentionReason}</p><button type="button" style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer", padding: 0, justifySelf: "start" }} onClick={() => openSupport(latestSupportByOfferingId[offering.id] ? { correlationId: latestSupportByOfferingId[offering.id] } : { source: "sales-trial-offerings", subjectId: offering.id })}>{latestSupportByOfferingId[offering.id] ? `Open support diagnostics (${latestSupportByOfferingId[offering.id]})` : "Open support diagnostics"}</button></div> : null}
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-            <button type="button" style={offering.status !== "draft" ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
-            <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => { if (window.confirm("End this Trial Offering now and unpublish it from the portal?")) void lifecycle(offering.id, "end"); }}>End trial</button>
+            <button type="button" style={offering.status !== "draft" || lifecycleInFlight !== null ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft" || lifecycleInFlight !== null} onClick={() => void lifecycle(offering.id, "publish")}>{lifecycleInFlight === `${offering.id}:publish` ? "Publishing…" : "Publish"}</button>
+            <button type="button" style={offering.status !== "published" || lifecycleInFlight !== null ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published" || lifecycleInFlight !== null} onClick={() => { if (window.confirm("End this Trial Offering now and unpublish it from the portal?")) void lifecycle(offering.id, "end"); }}>{lifecycleInFlight === `${offering.id}:end` ? "Ending…" : "End trial"}</button>
             {offering.status === "published" || offering.status === "ending" || offering.status === "ended" || offering.status === "unpublished" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
           </div>
           {monitoringOfferingId === offering.id ? <section aria-label="Participant monitoring" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem", overflowX: "auto", width: "100%" }}>

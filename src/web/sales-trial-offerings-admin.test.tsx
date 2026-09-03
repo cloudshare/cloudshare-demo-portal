@@ -782,6 +782,74 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(confirmSpy).toHaveBeenCalled();
   });
 
+  it("disables publication while the provider request is unresolved and sends only one POST", async () => {
+    let resolvePublish!: (response: Response) => void;
+    const publishResponse = new Promise<Response>((resolve) => {
+      resolvePublish = resolve;
+    });
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") {
+        return json({
+          offerings: [{
+            id: "offering-1",
+            title: "Extension QA",
+            description: "Disposable trial",
+            itemId: "item-1",
+            start: "2026-09-03T10:00",
+            end: null,
+            timeZone: "UTC",
+            salesProEmail: "owner@example.test",
+            salesProDisplayName: "Owner",
+            status: "draft",
+            attentionReason: null,
+          }],
+        });
+      }
+      if (url === "/api/sales/trial-offerings/offering-1/publish" && init?.method === "POST") {
+        return publishResponse;
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+
+    const user = userEvent.setup();
+    const publish = await screen.findByRole("button", { name: "Publish" });
+    await user.click(publish);
+
+    expect((publish as HTMLButtonElement).disabled).toBe(true);
+    expect(publish.textContent).toBe("Publishing…");
+    fireEvent.click(publish);
+    expect(fetchAdmin.mock.calls.filter(([input, init]) =>
+      String(input).endsWith("/publish") && (init as RequestInit | undefined)?.method === "POST",
+    )).toHaveLength(1);
+
+    resolvePublish(json({
+      error: "CloudShare publication outcome is unknown. Do not retry.",
+      correlationId: "corr-publish-1",
+      offering: {
+        id: "offering-1",
+        title: "Extension QA",
+        description: "Disposable trial",
+        itemId: "item-1",
+        start: "2026-09-03T10:00",
+        end: null,
+        timeZone: "UTC",
+        salesProEmail: "owner@example.test",
+        salesProDisplayName: "Owner",
+        status: "needs_attention",
+        attentionReason: "CloudShare publication outcome is unknown. Do not retry.",
+      },
+    }, { status: 502 }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "CloudShare publication outcome is unknown. Do not retry.",
+    );
+  });
+
   it("sends the end-trial action only after confirmation and refreshes the offering list", async () => {
     const fetchAdmin = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
