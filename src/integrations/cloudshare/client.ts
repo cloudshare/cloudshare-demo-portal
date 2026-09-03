@@ -87,6 +87,18 @@ export interface CloudShareDetailedResult<T> {
   readonly response: CloudShareResponseDiagnostics;
 }
 
+export interface CloudShareRequestObservation {
+  readonly occurredAt: string;
+  readonly outcome: "success" | "failure";
+  readonly durationMs: number;
+  readonly result?: CloudShareDetailedResult<unknown>;
+  readonly error?: {
+    readonly name: string;
+    readonly message: string;
+    readonly context?: Record<string, unknown>;
+  };
+}
+
 export interface CloudShareClient {
   requestV4<T>(spec: V4RequestSpec<T>): Promise<T>;
   requestV3<T>(spec: V3RequestSpec<T>): Promise<T>;
@@ -119,6 +131,7 @@ export interface CloudShareClientOptions {
   readonly random?: () => number;
   /** Shared per-process/customer cooldown store. */
   readonly cooldownStore?: CloudShareRateLimitCooldownStore;
+  readonly onRequest?: (event: CloudShareRequestObservation) => Promise<void> | void;
 }
 
 interface CloudShareRateLimitCooldown {
@@ -864,34 +877,77 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     }
   }
 
+  async function observeRequest<T>(
+    operation: () => Promise<CloudShareDetailedResult<T>>,
+  ): Promise<CloudShareDetailedResult<T>> {
+    const startedAtMs = getNowMs();
+    const occurredAt = new Date(startedAtMs).toISOString();
+    try {
+      const result = await operation();
+      await notifyRequest({
+        occurredAt,
+        outcome: "success",
+        durationMs: Math.max(0, getNowMs() - startedAtMs),
+        result,
+      });
+      return result;
+    } catch (error) {
+      await notifyRequest({
+        occurredAt,
+        outcome: "failure",
+        durationMs: Math.max(0, getNowMs() - startedAtMs),
+        error: {
+          name: error instanceof Error ? error.name : "Error",
+          message: error instanceof Error ? error.message : String(error),
+          context:
+            error instanceof CloudShareRequestError ||
+            error instanceof CloudShareResponseError ||
+            error instanceof CloudShareTransportError ||
+            error instanceof CloudShareRateLimitError
+              ? error.context
+              : undefined,
+        },
+      });
+      throw error;
+    }
+  }
+
+  async function notifyRequest(event: CloudShareRequestObservation): Promise<void> {
+    try {
+      await opts.onRequest?.(event);
+    } catch {
+      // Diagnostics must not break CloudShare traffic.
+    }
+  }
+
   return {
     async requestV4<T>(spec: V4RequestSpec<T>): Promise<T> {
-      const result = await performV4Detailed(spec);
+      const result = await observeRequest(() => performV4Detailed(spec));
       return result.data;
     },
 
     async requestV4Detailed<T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> {
-      return performV4Detailed(spec);
+      return observeRequest(() => performV4Detailed(spec));
     },
 
     async requestV3<T>(spec: V3RequestSpec<T>): Promise<T> {
-      const result = await performV3Detailed(spec);
+      const result = await observeRequest(() => performV3Detailed(spec));
       return result.data;
     },
 
     async requestV3Detailed<T>(spec: V3RequestSpec<T>): Promise<CloudShareDetailedResult<T>> {
-      return performV3Detailed(spec);
+      return observeRequest(() => performV3Detailed(spec));
     },
 
     async requestV3Text(spec: Omit<V3RequestSpec<never>, "schema">): Promise<string> {
-      const result = await performV3TextDetailed(spec);
+      const result = await observeRequest(() => performV3TextDetailed(spec));
       return result.data;
     },
 
     async requestV3TextDetailed(
       spec: Omit<V3RequestSpec<never>, "schema">,
     ): Promise<CloudShareDetailedResult<string>> {
-      return performV3TextDetailed(spec);
+      return observeRequest(() => performV3TextDetailed(spec));
     },
   };
 }

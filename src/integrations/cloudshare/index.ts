@@ -1,12 +1,16 @@
 import {
   createCloudShareClient,
   type CloudShareClient,
+  type CloudShareRequestObservation,
   type CloudShareEndpoints,
 } from "./client";
 import { createFetchHttpClient } from "./http";
 import { createFixtureHttpClient } from "./fixtures";
 import { bundledFixtures } from "./fixtures/index";
-import { createV4TokenProvider } from "./v4-auth";
+import { createV4TokenProvider, type V4TokenAcquisitionEvent } from "./v4-auth";
+
+export type { CloudShareRequestObservation } from "./client";
+export type { V4TokenAcquisitionEvent } from "./v4-auth";
 
 /**
  * Public surface of the CloudShare integration. Other layers import only from
@@ -51,6 +55,8 @@ export interface CloudShareIntegrationOptions {
   readonly v3: { readonly apiId: string; readonly apiKey: string };
   readonly endpoints?: CloudShareEndpoints;
   readonly trace?: Parameters<typeof createCloudShareClient>[0]["trace"];
+  readonly onRequest?: (event: CloudShareRequestObservation) => Promise<void> | void;
+  readonly onAcquisition?: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
 }
 
 /**
@@ -72,6 +78,7 @@ export function createCloudShareIntegration(
     baseUrl: endpoints.v4BaseUrl,
     clientId: opts.v4.clientId,
     clientSecret: opts.v4.clientSecret,
+    onAcquisition: opts.onAcquisition,
   });
 
   return createCloudShareClient({
@@ -81,6 +88,7 @@ export function createCloudShareIntegration(
     customerId: opts.customerId,
     v3: opts.v3,
     trace: opts.trace,
+    onRequest: opts.onRequest,
   });
 }
 
@@ -95,6 +103,8 @@ export function createCloudShareIntegrationForConnection(
     mode: opts.mode,
     endpoints: opts.endpoints,
     trace: opts.trace,
+    onRequest: opts.onRequest,
+    onAcquisition: opts.onAcquisition,
     customerId: opts.connection.customerId,
     v3: {
       apiId: opts.connection.apiId,

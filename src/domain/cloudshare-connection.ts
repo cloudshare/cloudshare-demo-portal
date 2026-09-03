@@ -1,4 +1,8 @@
-import type { CloudShareClient } from "@/integrations/cloudshare";
+import type {
+  CloudShareClient,
+  CloudShareRequestObservation,
+  V4TokenAcquisitionEvent,
+} from "@/integrations/cloudshare";
 import { CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE } from "./cloudshare-rate-limit-message";
 import {
   CloudShareError,
@@ -38,7 +42,13 @@ export function buildCloudShareWebhookPath(webhookPathToken: string): string {
 }
 
 export interface CloudShareClientFactory {
-  forConnection(connection: CloudShareConnectionRecord): CloudShareClient;
+  forConnection(
+    connection: CloudShareConnectionRecord,
+    options?: {
+      readonly onRequest?: (event: CloudShareRequestObservation) => Promise<void> | void;
+      readonly onAcquisition?: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
+    },
+  ): CloudShareClient;
 }
 
 export class MissingCloudShareConnectionError extends Error {

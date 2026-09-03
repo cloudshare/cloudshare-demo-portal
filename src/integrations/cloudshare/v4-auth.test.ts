@@ -40,6 +40,20 @@ describe("createV4TokenProvider", () => {
     expect(req.body).toContain("client_id=client-1");
   });
 
+  it("emits metadata-only acquisition evidence", async () => {
+    const { http } = stubHttp([tokenResponse("jwt-abc")]);
+    const onAcquisition = vi.fn();
+    const provider = createV4TokenProvider({ ...baseOpts, http, onAcquisition, now: () => 1_000_000 });
+
+    await provider.getToken();
+
+    expect(onAcquisition).toHaveBeenCalledWith({
+      occurredAt: "1970-01-01T00:16:40.000Z", outcome: "success", status: 200,
+      durationMs: 0, integrationSurface: "cloudshare.v4.oauth.token",
+    });
+    expect(JSON.stringify(onAcquisition.mock.calls)).not.toContain("jwt-abc");
+  });
+
   it("caches the token and does not re-request before the expiry margin", async () => {
     const { http, calls } = stubHttp([tokenResponse("jwt-1"), tokenResponse("jwt-2")]);
     let nowMs = 1_000_000;

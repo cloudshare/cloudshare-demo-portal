@@ -454,10 +454,12 @@ export function getServices(): Services {
     cloudshareSecretBox,
   );
   const cloudshareClientFactory: CloudShareClientFactory = {
-    forConnection: (connection) =>
+    forConnection: (connection, options) =>
       withLocalCohortRateLimitQaFixture(createCloudShareIntegrationForConnection({
         mode: config.runtime.mode,
         trace: traceCloudShare,
+        onRequest: options?.onRequest,
+        onAcquisition: options?.onAcquisition,
         connection: {
           customerId: connection.customerId,
           apiId: connection.apiId,

@@ -22,6 +22,14 @@ export interface V4TokenProvider {
   getToken(): Promise<string>;
 }
 
+export interface V4TokenAcquisitionEvent {
+  readonly occurredAt: string;
+  readonly outcome: "success" | "failure";
+  readonly status?: number;
+  readonly durationMs: number;
+  readonly integrationSurface: "cloudshare.v4.oauth.token";
+}
+
 export interface V4TokenProviderOptions {
   readonly http: HttpClient;
   /** v4 API base, e.g. `https://use.cloudshare.com/api/v4`. */
@@ -32,6 +40,7 @@ export interface V4TokenProviderOptions {
   readonly now?: () => number;
   /** Refresh this many ms before the real expiry. Defaults to 30s. */
   readonly safetyMarginMs?: number;
+  readonly onAcquisition?: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
 }
 
 interface CachedToken {
@@ -49,6 +58,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
   }
 
   async function acquire(): Promise<CachedToken> {
+    const startedAtMs = now();
     const body = new URLSearchParams({
       grant_type: "client_credentials",
       client_id: opts.clientId,
@@ -64,6 +74,12 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         body,
       });
     } catch (cause) {
+      await notifyAcquisition({
+        occurredAt: new Date(startedAtMs).toISOString(),
+        outcome: "failure",
+        durationMs: Math.max(0, now() - startedAtMs),
+        integrationSurface: "cloudshare.v4.oauth.token",
+      });
       throw new CloudShareAuthError("v4 token request failed to send", {
         method: "POST",
         path: "/oauth/token",
@@ -75,6 +91,13 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
     }
 
     if (response.status !== 200) {
+      await notifyAcquisition({
+        occurredAt: new Date(startedAtMs).toISOString(),
+        outcome: "failure",
+        status: response.status,
+        durationMs: Math.max(0, now() - startedAtMs),
+        integrationSurface: "cloudshare.v4.oauth.token",
+      });
       const rateLimitClassification = classifyTokenRateLimit(response.status, response.body);
       if (rateLimitClassification) {
         const rateLimitHeaders = extractRateLimitHeaders(response.headers);
@@ -132,6 +155,14 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
       });
     }
 
+    await notifyAcquisition({
+      occurredAt: new Date(startedAtMs).toISOString(),
+      outcome: "success",
+      status: response.status,
+      durationMs: Math.max(0, now() - startedAtMs),
+      integrationSurface: "cloudshare.v4.oauth.token",
+    });
+
     return {
       accessToken: parsed.data.access_token,
       expiresAtMs: now() + parsed.data.expires_in * 1000,
@@ -147,6 +178,14 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
       return cached.accessToken;
     },
   };
+
+  async function notifyAcquisition(event: V4TokenAcquisitionEvent): Promise<void> {
+    try {
+      await opts.onAcquisition?.(event);
+    } catch {
+      // Diagnostics must not break CloudShare authentication.
+    }
+  }
 }
 
 

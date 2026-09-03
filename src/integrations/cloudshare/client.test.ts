@@ -101,6 +101,39 @@ describe("createCloudShareClient — v4", () => {
     expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
   });
 
+  it("observes successful detailed requests with complete exchange evidence", async () => {
+    const onRequest = vi.fn();
+    const { http } = capturingHttp(ok([{ id: "p1", name: "Proj" }]));
+    const client = createCloudShareClient({
+      http, endpoints, tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      newToken: () => "tokfixed01", now: () => 1_700_000_000_000, onRequest,
+    });
+
+    await client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema });
+
+    expect(onRequest).toHaveBeenCalledWith(expect.objectContaining({
+      occurredAt: "2023-11-14T22:13:20.000Z", outcome: "success", durationMs: 0,
+      result: expect.objectContaining({
+        request: expect.objectContaining({ method: "GET", path: "/v4/projects" }),
+        response: expect.objectContaining({ status: 200 }),
+      }),
+    }));
+  });
+
+  it("observes failed requests without allowing diagnostics to alter the error", async () => {
+    const onRequest = vi.fn().mockRejectedValue(new Error("recorder offline"));
+    const { http } = capturingHttp({ status: 503, body: "offline" });
+    const client = createCloudShareClient({
+      http, endpoints, tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" }, onRequest,
+    });
+
+    await expect(client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }))
+      .rejects.toThrow();
+    expect(onRequest).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure" }));
+  });
+
   it("accepts an explicitly documented empty v4 success response while retaining request evidence", async () => {
     const { http, last } = capturingHttp({
       status: 200,
