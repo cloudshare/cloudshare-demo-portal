@@ -23,6 +23,7 @@ describe("Sales Trial Offerings admin monitoring", () => {
   });
 
   it("loads published-offering participant monitoring on demand without exposing provider ids", async () => {
+    const onNavigate = vi.fn();
     const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === "/api/sales/items") return json({ activeItems: [] });
@@ -79,7 +80,7 @@ describe("Sales Trial Offerings admin monitoring", () => {
       throw new Error(`Unexpected request: ${url}`);
     });
 
-    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} onNavigate={onNavigate} />);
 
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Open monitoring" }));
@@ -93,6 +94,21 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(screen.getByText("Ready")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Extend environment for Ari Visitor" })).toBeTruthy();
     expect(screen.queryByText("remote-1")).toBeNull();
+
+    const workflowLogButtons = screen.getAllByRole("button", { name: "View workflow logs" });
+    await user.click(workflowLogButtons[0]!);
+    expect(onNavigate).toHaveBeenLastCalledWith({
+      tab: "support",
+      source: "sales-trial-enrollment",
+      subjectId: "offering-1",
+    });
+
+    await user.click(workflowLogButtons[1]!);
+    expect(onNavigate).toHaveBeenLastCalledWith({
+      tab: "support",
+      source: "sales-trial-enrollment",
+      subjectId: "enrollment-1",
+    });
   });
 
   it("disables extension when monitoring explains the retained row is not eligible", async () => {

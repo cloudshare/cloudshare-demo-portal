@@ -1528,6 +1528,34 @@ describe("Sales Trial offering entry", () => {
 });
 
 describe("Sales Trial offering monitoring", () => {
+  it("records a successful CloudShare roster read under the Trial Offering", async () => {
+    const { deps, diagnosticRepository } = createDeps();
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "success",
+    });
+
+    expect(result).toMatchObject({ status: 200, body: { correlationId: expect.any(String) } });
+    expect(entry).toMatchObject({
+      customerId: "customer-1",
+      subject: { type: "sales_trial_offering", id: "offering-1" },
+      correlationId: result.body.correlationId,
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [] } },
+      details: {
+        integrationSurface: "cloudshare.v4.sales.participants",
+        attemptedOperation: "list_participants",
+      },
+    });
+  });
+
   it("fails closed when the roster has duplicate exact correlations", async () => {
     const { deps, enrollments, audit, listParticipants } = createDeps();
     await enrollments.save({

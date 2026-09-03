@@ -560,6 +560,25 @@ export async function handleListSalesTrialOfferingParticipants(
       rosterObservedAt,
     ),
   );
+  await deps.diagnostics?.record({
+    occurredAt: rosterObservedAt,
+    source: "sales-trial-enrollment",
+    operation: "sales_trial.offering.monitoring.read_participants",
+    outcome: "success",
+    customerId: request.customerId,
+    actor: request.actor,
+    subject: { type: "sales_trial_offering", id: request.offeringId },
+    correlationId,
+    message: "CloudShare Sales Trial participant roster read completed.",
+    externalIds: { offeringId: request.offeringId },
+    request: remote.request as unknown as Record<string, unknown>,
+    response: remote.response as unknown as Record<string, unknown>,
+    details: {
+      integrationSurface: "cloudshare.v4.sales.participants",
+      attemptedOperation: "list_participants",
+      participantCount: remote.participants.length,
+    },
+  });
   return {
     status: 200,
     body: {
