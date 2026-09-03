@@ -792,6 +792,11 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
     const requestInfo = describeRequest(request.url);
     for (let attempt = 0; ; attempt += 1) {
+      const attemptStartedAtMs = getNowMs();
+      const attemptOccurredAt = new Date(attemptStartedAtMs).toISOString();
+      const observeTextFailure = async (error: unknown): Promise<void> => {
+        await notifyRequest({ occurredAt: attemptOccurredAt, outcome: "failure", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), error: { name: error instanceof Error ? error.name : "Error", message: error instanceof Error ? error.message : String(error), context: error instanceof CloudShareRequestError || error instanceof CloudShareResponseError || error instanceof CloudShareTransportError || error instanceof CloudShareRateLimitError ? error.context : undefined } });
+      };
       if (attempt === 0) {
         throwIfCooldownActive(request, requestInfo);
       }
@@ -806,7 +811,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           failureMode: "transport",
           error: cause instanceof Error ? cause.message : String(cause),
         });
-        throw new CloudShareTransportError(
+        const error = new CloudShareTransportError(
           `CloudShare request to ${unsignedUrl} failed to reach the server`,
           {
             method: spec.method,
@@ -819,6 +824,8 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             ...transportContext(cause),
           },
         );
+        await observeTextFailure(error);
+        throw error;
       }
 
       trace("info", "cloudshare response received", request, {
@@ -858,6 +865,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             },
           );
           updateCooldownFromRateLimit(rateLimitError);
+          await observeTextFailure(rateLimitError);
           if (isSafeRead(request.method) && attempt < MAX_READ_RETRY_ATTEMPTS) {
             const delayMs = computeReadRetryDelayMs(rateLimitError);
             if (delayMs !== null) {
@@ -868,16 +876,18 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           throw rateLimitError;
         }
 
-        throw new CloudShareRequestError(
+        const error = new CloudShareRequestError(
           `CloudShare request to ${unsignedUrl} returned ${response.status}`,
           response.status,
           context,
         );
+        await observeTextFailure(error);
+        throw error;
       }
 
       clearCooldown();
       const requestQuery = sanitizeQuery(extractQuery(request.url));
-      return {
+      const result = {
         data: response.body,
         host: requestInfo.host,
         integrationSurface: requestInfo.integrationSurface,
@@ -899,6 +909,8 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           ...(response.tls ? { tls: response.tls } : {}),
         },
       };
+      await notifyRequest({ occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
+      return result;
     }
   }
 
