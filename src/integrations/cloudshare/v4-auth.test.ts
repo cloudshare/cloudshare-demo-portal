@@ -88,6 +88,20 @@ describe("createV4TokenProvider", () => {
     await expect(provider.getToken()).rejects.toBeInstanceOf(CloudShareAuthError);
   });
 
+  it.each([
+    ["transport", new Error("ETIMEDOUT"), "transport_failure", "timeout"],
+    ["http", { status: 503, body: "secret provider body" }, "http_failure", undefined],
+    ["malformed JSON", { status: 200, body: "not-json" }, "http_failure", undefined],
+    ["schema mismatch", { status: 200, body: JSON.stringify({ access_token: "secret", expires_in: 300 }) }, "http_failure", undefined],
+  ])("emits safe %s failure metadata", async (_label, response, failureMode, causeClassification) => {
+    const { http } = response instanceof Error ? { http: { send: vi.fn().mockRejectedValue(response) } as HttpClient } : stubHttp([response as HttpResponse]);
+    const onAcquisition = vi.fn();
+    const provider = createV4TokenProvider({ ...baseOpts, http, onAcquisition });
+    await expect(provider.getToken()).rejects.toBeInstanceOf(CloudShareAuthError);
+    expect(onAcquisition).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure", failureMode, ...(causeClassification ? { causeClassification } : {}) }));
+    expect(JSON.stringify(onAcquisition.mock.calls)).not.toContain("secret provider body");
+  });
+
   it("raises CloudShareRateLimitError on a throttled token response with retry headers", async () => {
     const { http } = stubHttp([
       {

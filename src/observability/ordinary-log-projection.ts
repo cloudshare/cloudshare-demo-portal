@@ -112,7 +112,28 @@ function projectScalarMetadata(value: unknown): string | number | boolean | null
 
 function projectPath(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  return value.split(/[?#]/, 1)[0];
+  const path = value.split(/[?#]/, 1)[0];
+  const segments = path.split("/").filter(Boolean);
+  const apiIndex = segments.findIndex((segment) => segment === "api");
+  const versionIndex = apiIndex >= 0 ? apiIndex + 1 : (segments[0] === "v3" || segments[0] === "v4" ? 0 : -1);
+  if (versionIndex < 0 || !["v3", "v4"].includes(segments[versionIndex] ?? "")) {
+    if (segments[0] === "sales") return "/sales/[REDACTED_ROUTE]";
+    return path;
+  }
+  const prefix = segments.slice(0, versionIndex + 1);
+  const route = segments.slice(versionIndex + 1);
+  const allowed = new Set([
+    "oauth", "token", "projects", "experiences", "trainings", "guided-journeys", "properties", "students",
+    "envs", "actions", "getextended", "extend", "blueprints", "policies", "regions", "participants",
+  ]);
+  if (route.length === 0) return `/${prefix.join("/")}`;
+  if (route.some((segment) => !allowed.has(segment) && !isSafeRouteIdentifier(segment))) return `/${prefix.join("/")}/[REDACTED_ROUTE]`;
+  return `/${[...prefix, ...route].join("/")}`;
+}
+
+function isSafeRouteIdentifier(segment: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment) &&
+    !/(?:secret|marker|token|password|credential|bearer|api[_-]?key)/i.test(segment);
 }
 
 function projectHost(value: unknown): string | undefined {

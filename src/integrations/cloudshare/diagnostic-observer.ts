@@ -14,7 +14,13 @@ export function createCloudShareDiagnosticObserver(input: {
     message: event.outcome === "failure" ? "CloudShare request failed." : "CloudShare request completed.",
     request: event.result?.request as unknown as Record<string, unknown> ?? projectFailureRequest(event.error?.context) ?? null,
     response: event.result?.response as unknown as Record<string, unknown> ?? projectFailureResponse(event.error?.context) ?? null,
-    details: { durationMs: event.durationMs, integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null, error: event.error ?? null },
+    details: {
+      durationMs: event.durationMs,
+      integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,
+      ...(event.error?.context?.failureMode ? { failureMode: event.error.context.failureMode } : {}),
+      ...(event.error?.context?.causeClassification ? { causeClassification: event.error.context.causeClassification } : {}),
+      error: event.error ?? null,
+    },
   });
   const recordAcquisition = (event: V4TokenAcquisitionEvent) => input.diagnostics.record({
     occurredAt: new Date(event.occurredAt), source: "cloudshare-integration", operation: "cloudshare.oauth.token",
@@ -22,7 +28,13 @@ export function createCloudShareDiagnosticObserver(input: {
     subject: { type: "customer", id: input.customerId }, message: event.outcome === "failure" ? "CloudShare OAuth exchange failed." : "CloudShare OAuth exchange completed.",
     request: null,
     response: null,
-    details: { durationMs: event.durationMs, integrationSurface: event.integrationSurface, status: event.status ?? null },
+    details: {
+      durationMs: event.durationMs,
+      integrationSurface: event.integrationSurface,
+      status: event.status ?? null,
+      ...(event.failureMode ? { failureMode: event.failureMode } : {}),
+      ...(event.causeClassification ? { causeClassification: event.causeClassification } : {}),
+    },
   });
   return { onRequest: recordRequest, onAcquisition: recordAcquisition };
 }
@@ -42,6 +54,10 @@ function projectFailureResponse(context?: Record<string, unknown>): Record<strin
   for (const key of ["responseStatus", "responseHeaders", "responseBody", "transport", "cause", "network", "tls"]) {
     if (key in context) response[key] = context[key];
   }
-  if (!("status" in response) && "status" in context) response.status = context.status;
+  if (!("status" in response)) {
+    if (typeof context.responseStatus === "number") response.status = context.responseStatus;
+    else if (typeof context.status === "number") response.status = context.status;
+  }
+  delete response.responseStatus;
   return Object.keys(response).length ? response : null;
 }
