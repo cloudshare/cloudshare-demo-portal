@@ -447,8 +447,10 @@ export function getServices(): Services {
       return withLocalCohortRateLimitQaFixture(createCloudShareIntegrationForConnection({
         mode: config.runtime.mode,
         trace: traceCloudShare,
-        onRequest: composeCloudShareObservers(options?.onRequest, observer.onRequest),
-        onAcquisition: composeCloudShareObservers(options?.onAcquisition, observer.onAcquisition),
+        observer: {
+          onRequest: composeCloudShareObservers(options?.onRequest, observer.onRequest),
+          onAcquisition: composeCloudShareObservers(options?.onAcquisition, observer.onAcquisition),
+        },
         connection: {
           customerId: connection.customerId,
           apiId: connection.apiId,

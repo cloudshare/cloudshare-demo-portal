@@ -1,7 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { createCloudShareClient, type CloudShareRateLimitCooldownStore } from "./client";
+import {
+  createCloudShareClient as createCloudShareClientBase,
+  createCloudShareNoopRequestObserver,
+  type CloudShareClientOptions,
+  type CloudShareRateLimitCooldownStore,
+  type CloudShareRequestObservation,
+  type CloudShareRequestObserver,
+} from "./client";
 import { createFixtureHttpClient, loadFixturesFromDir } from "./fixtures";
 import { pingCloudShareV3 } from "./ping";
 import {
@@ -19,6 +26,19 @@ const endpoints = {
 };
 
 const stubTokenProvider: V4TokenProvider = { getToken: async () => "test-bearer" };
+
+type TestClientOptions = Omit<CloudShareClientOptions, "observer"> & {
+  readonly observer?: CloudShareRequestObserver;
+  readonly onRequest?: (event: CloudShareRequestObservation) => Promise<void> | void;
+};
+
+function createCloudShareClient(options: TestClientOptions) {
+  const { onRequest, observer, ...clientOptions } = options;
+  return createCloudShareClientBase({
+    ...clientOptions,
+    observer: observer ?? (onRequest ? { onRequest } : createCloudShareNoopRequestObserver()),
+  });
+}
 
 /** HttpClient that records the last request and returns a fixed response. */
 function capturingHttp(response: HttpResponse): {

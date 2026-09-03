@@ -99,6 +99,15 @@ export interface CloudShareRequestObservation {
   };
 }
 
+export interface CloudShareRequestObserver {
+  readonly onRequest: (event: CloudShareRequestObservation) => Promise<void> | void;
+}
+
+/** Explicit opt-out for tests and isolated probes that do not persist diagnostics. */
+export function createCloudShareNoopRequestObserver(): CloudShareRequestObserver {
+  return { onRequest: () => undefined };
+}
+
 export interface CloudShareClient {
   requestV4<T>(spec: V4RequestSpec<T>): Promise<T>;
   requestV3<T>(spec: V3RequestSpec<T>): Promise<T>;
@@ -131,7 +140,7 @@ export interface CloudShareClientOptions {
   readonly random?: () => number;
   /** Shared per-process/customer cooldown store. */
   readonly cooldownStore?: CloudShareRateLimitCooldownStore;
-  readonly onRequest?: (event: CloudShareRequestObservation) => Promise<void> | void;
+  readonly observer: CloudShareRequestObserver;
 }
 
 interface CloudShareRateLimitCooldown {
@@ -955,7 +964,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
   async function notifyRequest(event: CloudShareRequestObservation): Promise<void> {
     try {
-      await opts.onRequest?.(event);
+      await opts.observer.onRequest(event);
     } catch {
       // Diagnostics must not break CloudShare traffic.
     }
