@@ -1,0 +1,200 @@
+# Issue #416 certification observability parity audit
+
+Date: 2026-09-03
+
+## Status
+
+Issue [#416](https://github.com/swinster/cloudshare-demo-portal/issues/416) remains implementation-blocked by open issue [#418](https://github.com/swinster/cloudshare-demo-portal/issues/418) and draft PR [#420](https://github.com/swinster/cloudshare-demo-portal/pull/420). As of 2026-09-03, overlapping production changes to retained Trial enrollment projections, extension diagnostics, and mutable live Trial assets should not begin. This audit is the allowed prerequisite work called out in #416.
+
+Current checkout state at audit time:
+
+- `git status --short --branch`: detached `HEAD`
+- `git rev-parse HEAD`: `fa9a0dc6295724dadfd6d90770b7f3fad0b67a5b`
+
+## Scope
+
+This note records the current certification-side baseline for:
+
+- protected diagnostic persistence;
+- authenticated Customer-scoped support access and filtering;
+- CloudShare request recording coverage across certification workflows;
+- successful-read, failure, mutation, webhook, and ordered multi-request representation;
+- the highest shared seam that could guarantee capture of every CloudShare request;
+- the current Sales Trial gaps that #416 must close without weakening the existing security contract.
+
+## Canonical rules confirmed before code inspection
+
+- `AGENTS.md` requires API-first integration slices, Customer-scoped protected diagnostics, and ordinary-surface confinement.
+- `docs/architecture/integration-slice-protocol.md` requires provider-facing behavior to be observable, supportable, and safe to inspect after failure.
+- `docs/decisions/ADR-004-typed-diagnostic-log-entry.md` defines the typed protected evidence model and its relationship to metadata-only ordinary logs.
+- Issue #416 requires successful-read visibility, ordered child exchanges, metadata-only authentication steps, and exact subject-scoped workflow-log navigation for Trial Offerings and retained enrollments.
+
+## Certification baseline
+
+### Shared protected persistence and access model
+
+The certification side already has the right protected evidence architecture.
+
+- `src/domain/diagnostic-log.ts` exposes the shared recorder seam via `createDiagnosticRecorder()` and `DiagnosticRecorder.record()`.
+- The recorder writes durable `DiagnosticLogEntry` records and applies `redactDiagnosticInput()` before persistence.
+- `src/persistence/diagnostic-log-repository.ts` stores first-class filter columns for `customerId`, `examId`, `examAttemptId`, `candidateEmail`, `correlationId`, `subjectId`, `operation`, `integrationSurface`, and `externalId`, then enforces exact `customerId` scoping on reads.
+- `src/api/admin.ts` derives the Customer scope from authenticated admin state and exposes exact filter inputs without trusting caller-supplied Customer identifiers.
+- `src/web/admin-support.tsx` and `src/web/admin-shell-route.ts` provide the protected workflow-log UI and stable navigation intents for support, exam attempt, and correlation drill-down.
+
+### Redaction and confinement contract
+
+The current certification contract matches the required protected-diagnostics model.
+
+- Request headers are projected through the centralized allowlist and auth-bearing request headers are masked at the protected recorder seam.
+- Protected request/query evidence and provider response bodies are retained for authorized Customer support users.
+- Ordinary UI, browser state, generic logs, event logs, and candidate surfaces remain metadata-only and correlation-driven.
+
+This contract must remain unchanged for #416. Sales parity cannot be implemented by weakening confinement or by introducing a second redaction scheme.
+
+## Certification CloudShare call-path inventory
+
+The certification side does not yet have a universal automatic transport recorder, but it already demonstrates broad explicit capture across live workflows.
+
+### Connection and authoring
+
+- `src/api/admin-cloudshare.ts`
+  - CloudShare connection test success is logged as `cloudshare_connection.tested` with correlation metadata.
+  - Connection test failures record protected request/response evidence through the diagnostic recorder.
+- `src/api/admin-exam-authoring-runtime.ts`
+  - Successful CloudShare reads for projects, regions, blueprints, policies, policy detail, and blueprint detail are explicitly recorded through `onReadSuccess`.
+  - Failures record request/response evidence and return correlation IDs for support.
+- `src/api/admin.ts`
+  - Legacy resource sync also records successful and failed resource reads.
+
+### Candidate scheduling and provisioning
+
+- `src/domain/scheduling.ts`
+  - Explicitly records provisioning workflow steps including create training, ensure user properties, add participant, create sponsored link, and final attempt state transitions.
+  - Multi-request steps can preserve ordered child exchanges in `details.httpExchanges`.
+- `src/api/exam-attempt-scheduling-runtime.ts`
+  - Adds successful and failed CloudShare team-read diagnostics around scheduling.
+  - Guards runtime blueprint/snapshot correctness before provisioning.
+
+### Candidate runtime, suspend/resume, and score retrieval
+
+- `src/api/exam-attempt-runtime.ts`
+  - Records enter-path failures and successful `exam_attempt.enter` transitions.
+- `src/api/exam-attempt-suspend-resume-runtime.ts`
+  - Records successful suspend and resume transitions.
+  - Records failure classifications for invalid state, lease issues, and provider/runtime failures.
+- `src/api/exam-attempt-score-runtime.ts`
+  - Records successful score correlation and score retrieval outcomes, including "no score yet" responses when CloudShare reads succeed.
+
+### Monitoring and lease inspection
+
+- `src/api/admin-cohort-exam-session-detail.ts`
+  - Records successful and failed participant monitoring reads.
+  - Records successful and failed Guided Journey aggregate reads.
+  - Returns support-navigation seeds that already align monitoring views with exact diagnostics filters.
+- `src/api/exam-attempt-external-lease.ts`
+  - Records failed lease inspections and expiry reconciliation evidence.
+
+### Webhooks
+
+- `src/api/cloudshare-webhook.ts`
+  - Records unknown target, missing signature, invalid signature, invalid payload, accepted webhook, signature verification, and reconcile outcomes.
+  - Keeps invalid or unresolvable traffic metadata-only until Customer ownership is established.
+
+## What certification still does not provide
+
+The certification side is the parity baseline, not the finished shared solution.
+
+- `src/integrations/cloudshare/client.ts` can return detailed request/response evidence for v3 and v4 calls through `requestV3Detailed()`, `requestV3TextDetailed()`, and `requestV4Detailed()`, but it does not persist diagnostics on its own.
+- `src/integrations/cloudshare/v4-auth.ts` performs OAuth token acquisition directly and throws typed errors with request/response context, but it does not emit a standalone metadata-only authentication step on success or failure.
+- Current coverage therefore depends on higher-level runtime code remembering to call `diagnostics.record()` or to use callback-based explicit instrumentation.
+
+Conclusion: certification proves the required evidence shape, filtering, support UI, and security model, but not yet a single shared capture seam that can guarantee universal coverage.
+
+## Highest shared seam that can guarantee universal CloudShare capture
+
+The narrowest shared seam that can guarantee recording for every CloudShare request is:
+
+1. `src/integrations/cloudshare/client.ts`
+   - instrument the detailed request execution path used by `requestV3Detailed()`, `requestV3TextDetailed()`, and `requestV4Detailed()`;
+   - normalize every request into an ordered workflow child exchange with timestamp, duration, method, path, integration surface, status or transport failure, success/failure classification, and protected direction-aware request/response evidence.
+2. `src/integrations/cloudshare/v4-auth.ts`
+   - instrument OAuth token acquisition as a distinct metadata-only workflow step with timestamp, duration, correlation, and outcome;
+   - never persist bearer values, access tokens, Authorization headers, or renderable token response bodies outside protected-safe metadata.
+
+Why this seam:
+
+- it is below screen- and feature-specific omissions;
+- it sees every real HTTP exchange, including successful reads;
+- it can preserve ordered child exchanges for multi-call workflows instead of forcing each feature module to reconstruct them;
+- it can keep the existing `DiagnosticRecorder` and repository/filter/UI model intact instead of introducing a Sales-only diagnostics system.
+
+## Sales Trial gaps against that baseline
+
+### Support surface and navigation
+
+- `src/api/sales-diagnostics.ts` correctly reuses the protected admin diagnostics endpoint behavior, but only for sales-specific sources.
+- `src/web/sales-diagnostics.tsx` is intentionally locked to `source: "sales-records"` and is not the full Trial workflow-log entry point.
+- `src/web/sales-workspace.tsx` routes support navigation through `correlationId`, `source`, and `subjectId`, but current participant and offering screens do not yet expose the exact Trial Offering and retained-enrollment workflow-log links required by #416.
+- The monitoring table exposes `View launch activity` for participant launch logs, but that is narrower than the full retained enrollment lifecycle required by the issue.
+
+### Participant monitoring and retained-enrollment lifecycle
+
+`src/api/sales-session-participants.ts` already records a significant amount of evidence, but it is still below the required parity bar.
+
+- Successful participant reconciliation is recorded as `sales.demo_session.participants.reconciled`.
+- Each mapped participant also gets an individual `sales.demo_session.participant.reconciled` entry.
+- Successful and failed environment observations are recorded as `sales.demo_session.participant.environment_observed`.
+- Multi-request operations can already stash ordered exchanges in `details.httpExchanges`.
+
+Current gaps:
+
+- the helper records these entries against `subject: { type: "sales_demo_session", id: session.id }`, not against a stable retained participant or retained enrollment subject;
+- participant workflows therefore are not yet exactly filterable from ordinary participant screens the way #416 requires;
+- some multi-call workflows are still represented as one combined parent row whose child exchanges only exist inside protected details;
+- successful reads remain dependent on this handler remembering to write them, rather than on a universal shared seam.
+
+### Sales CloudShare adapters
+
+- `src/integrations/cloudshare/sales-delivery.ts` already uses detailed CloudShare request helpers and returns rich evidence for create/read/update session, ensure participant correlation properties, register participants, list participants, invite participants, and create sponsored links.
+- `src/integrations/cloudshare/sales-environment.ts` performs a two-call environment observation and returns both exchanges in order.
+
+Current gaps:
+
+- these adapters return evidence to callers but do not write diagnostics themselves;
+- list, update, registration, invitation, extension, and environment-observation workflows can still collapse multiple HTTP exchanges into one feature-level row;
+- v4 token acquisition remains invisible as its own workflow step even when the underlying sales flow uses v4 requests.
+
+## Parity matrix
+
+| Area | Certification today | Sales Trial today | Required for #416 |
+| --- | --- | --- | --- |
+| Protected persistence | Shared typed recorder and repository with exact Customer filters | Reuses same repository and admin endpoint shape | Keep same shared persistence model |
+| Support authorization | Authenticated admin Customer scoping is enforced server-side | Same endpoint family, but workflow entry points are narrower | Preserve exact Customer scoping and expand safe navigation only |
+| Successful read visibility | Present in many certification handlers | Partial and handler-specific | Universal capture for every CloudShare read |
+| Failure visibility | Strong and usually includes protected request/response evidence | Strong in major sales paths | Preserve and align through shared seam |
+| Multi-request ordering | Often preserved through `details.httpExchanges` | Present in some paths, but often collapsed into one row | Ordered child exchanges must be individually reconstructable |
+| Authentication step | Typed error context exists, but no standalone auth event | Same gap | Metadata-only token-acquisition step required |
+| Subject-scoped navigation | Mature support, correlation, and exam-attempt drill-down | Correlation-driven support links, but no exact Trial Offering / retained-enrollment workflow-log links | Add stable subject links for offering and retained enrollment |
+| Ordinary-surface confinement | Strong | Strong | Must remain unchanged |
+
+## Constraints for the eventual implementation
+
+- Rebase from the final merged `#418` head before touching production code.
+- Do not duplicate diagnostics logic at individual screens.
+- Do not regress certification-side successful-read coverage while making the seam shared.
+- Do not render provider bodies, tokens, sponsored links, provider IDs, or protected evidence on ordinary sales or participant surfaces.
+- Keep timestamps deterministic and timezone-explicit.
+- Keep invalid or unresolvable webhook traffic metadata-only until Customer ownership is proven.
+
+## Recommended implementation direction once #418 closes
+
+1. Add shared CloudShare request instrumentation below feature handlers and above raw HTTP, centered on the detailed execution path in `src/integrations/cloudshare/client.ts`.
+2. Add metadata-only v4 token-acquisition instrumentation in `src/integrations/cloudshare/v4-auth.ts`.
+3. Thread workflow parent and stable subject context into the shared recorder so Trial Offerings and retained enrollments can be filtered without cross-Customer probing.
+4. Preserve combined workflow summary rows where they help operators, but never let them replace ordered child exchanges.
+5. Repoint sales workflow-log UI links to stable offering and retained-enrollment subjects once `#418` finishes the retained enrollment seam.
+6. Add regression tests proving certification behavior is preserved while successful sales reads and auth steps become universally visible.
+
+## Result
+
+The current certification portal already provides the correct protected diagnostics contract, Customer-scoped support access pattern, and many explicit successful-read and mutation recordings. The missing platform-level step is not a new Sales-only diagnostics design. It is a shared CloudShare transport-plus-auth instrumentation seam that feeds the existing `DiagnosticRecorder` model, preserves ordered child exchanges, and lets Trial Offerings and retained enrollments navigate to exact protected workflow logs after `#418` lands.
