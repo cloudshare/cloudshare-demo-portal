@@ -45,6 +45,10 @@ export interface V4TokenProviderOptions {
   readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
 }
 
+export function createV4TokenAcquisitionNoopObserver(): (event: V4TokenAcquisitionEvent) => void {
+  return () => undefined;
+}
+
 interface CachedToken {
   readonly accessToken: string;
   readonly expiresAtMs: number;

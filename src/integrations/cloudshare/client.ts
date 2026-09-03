@@ -296,13 +296,17 @@ function sanitizeOrdinaryTracePath(path: string): string {
   if (v4Training) return "/v4/trainings/{trainingId}";
   const v3Environment = path.match(/^\/api\/v3\/envs\/([^/]+)(?:\/(.*))?$/);
   if (v3Environment) return "/api/v3/envs/{environmentId}";
-  for (const prefix of ["/v4/projects/", "/v4/experiences/"]) {
+  for (const prefix of ["/v4/projects/", "/v4/experiences/", "/v4/guided-journey/"]) {
     if (path.startsWith(prefix)) return `${prefix}{providerId}`;
   }
   const match = path.match(/^\/v4\/sales\/([^/]+)(?:\/(.*))?$/);
   if (!match) {
-    return path;
-  }
+  const v4 = path.match(/^\/v4\/([^/]+)/);
+  if (v4) return `/v4/${v4[1]}/{REDACTED_ROUTE}`;
+  const v3 = path.match(/^\/api\/v3\/([^/]+)/);
+  if (v3) return `/api/v3/${v3[1]}/{REDACTED_ROUTE}`;
+  return REDACTED_SALES_ROUTE;
+}
 
   const tail = match[2];
   if (!tail) {

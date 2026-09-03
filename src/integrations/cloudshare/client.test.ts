@@ -727,7 +727,7 @@ describe("createCloudShareClient — v4", () => {
         message: "cloudshare request sent",
         fields: expect.objectContaining({
           customerId: "customer-helios",
-          path: "/v4/guided-journey/progress/exp-1/student-1",
+          path: "/v4/guided-journey/{providerId}",
           integrationSurface: "cloudshare.v4",
         }),
       }),
@@ -738,7 +738,7 @@ describe("createCloudShareClient — v4", () => {
         message: "cloudshare response received",
         fields: expect.objectContaining({
           customerId: "customer-helios",
-          path: "/v4/guided-journey/progress/exp-1/student-1",
+          path: "/v4/guided-journey/{providerId}",
           integrationSurface: "cloudshare.v4",
         }),
       }),

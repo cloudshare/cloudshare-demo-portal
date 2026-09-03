@@ -8,10 +8,11 @@ import {
 import { createFetchHttpClient } from "./http";
 import { createFixtureHttpClient } from "./fixtures";
 import { bundledFixtures } from "./fixtures/index";
-import { createV4TokenProvider, type V4TokenAcquisitionEvent } from "./v4-auth";
+import { createV4TokenProvider, createV4TokenAcquisitionNoopObserver, type V4TokenAcquisitionEvent } from "./v4-auth";
 
 export type { CloudShareRequestObservation, CloudShareRequestObserver } from "./client";
 export type { V4TokenAcquisitionEvent } from "./v4-auth";
+export { createV4TokenAcquisitionNoopObserver } from "./v4-auth";
 
 /**
  * Public surface of the CloudShare integration. Other layers import only from
