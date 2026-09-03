@@ -2273,7 +2273,7 @@ async function extensionFailure(
         integrationSurface: "cloudshare.v3.environments",
         attemptedOperation,
         failureMode,
-        httpExchanges,
+        ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
       },
     }),
     deps.audit?.write({

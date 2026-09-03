@@ -189,6 +189,8 @@ export function createSalesTrialCloudShareObserver(input: {
           durationMs: event.durationMs,
           integrationSurface: event.integrationSurface,
           ...(event.status !== undefined ? { status: event.status } : {}),
+          ...(event.failureMode ? { failureMode: event.failureMode } : {}),
+          ...(event.causeClassification ? { causeClassification: event.causeClassification } : {}),
         },
       });
     },

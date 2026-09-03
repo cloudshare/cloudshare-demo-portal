@@ -91,8 +91,8 @@ describe("createV4TokenProvider", () => {
   it.each([
     ["transport", new Error("ETIMEDOUT"), "transport_failure", "timeout"],
     ["http", { status: 503, body: "secret provider body" }, "http_failure", undefined],
-    ["malformed JSON", { status: 200, body: "not-json" }, "http_failure", undefined],
-    ["schema mismatch", { status: 200, body: JSON.stringify({ access_token: "secret", expires_in: 300 }) }, "http_failure", undefined],
+    ["malformed JSON", { status: 200, body: "not-json" }, "unexpected_response", "invalid_json"],
+    ["schema mismatch", { status: 200, body: JSON.stringify({ access_token: "secret", expires_in: 300 }) }, "unexpected_response", "invalid_schema"],
   ])("emits safe %s failure metadata", async (_label, response, failureMode, causeClassification) => {
     const { http } = response instanceof Error ? { http: { send: vi.fn().mockRejectedValue(response) } as HttpClient } : stubHttp([response as HttpResponse]);
     const onAcquisition = vi.fn();

@@ -654,7 +654,6 @@ describe("getExamAttemptDashboardRuntime", () => {
         correlationId: "corr-list-1",
         customerId: "customer-helios",
         examAttemptId: "attempt-ready",
-        trainingId: "EXtraining-1",
         operation: "candidate_dashboard_environment_correlation",
         attemptedOperation: "list_training_participants",
         integrationSurface: "cloudshare.v4.training.participant_list",

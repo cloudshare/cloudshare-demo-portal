@@ -2597,9 +2597,11 @@ describe("Sales Trial Offering API", () => {
     const [entry] = await diagnosticRepository.query({ operation: "sales.trial_offering.publish", outcome: "failure" });
     expect(entry).toMatchObject({
       message: "CloudShare OAuth token request failed before Sales Experience creation",
-      request: { method: "POST", path: "/oauth/token" }, response: { status: 504, body: { error: "gateway_timeout" } },
+      request: null, response: null,
       details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "cloudshare_oauth_token" }),
     });
+    expect(JSON.stringify(entry)).not.toContain("client_secret");
+    expect(JSON.stringify(entry)).not.toContain("gateway_timeout");
     expect(deps.audit.write).toHaveBeenCalledWith(expect.objectContaining({
       outcome: "failure", details: expect.objectContaining({ failureMode: "cloudshare_oauth_token", integrationSurface: "cloudshare.v4.oauth.token" }),
     }));

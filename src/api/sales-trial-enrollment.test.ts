@@ -1550,7 +1550,10 @@ describe("Sales Trial offering entry", () => {
     expect(result.status).toBe(502);
     expect(summaries).toHaveLength(1);
     expect(children).toHaveLength(0);
-    expect(summaries[0]).toMatchObject({ details: expect.objectContaining({ failureMode: "http_failure" }) });
+    expect(summaries[0]).toMatchObject({
+      details: expect.objectContaining({ failureMode: "http_failure", exchangeCount: 1 }),
+    });
+    expect(summaries[0]?.details).not.toHaveProperty("httpExchanges");
   });
 });
 

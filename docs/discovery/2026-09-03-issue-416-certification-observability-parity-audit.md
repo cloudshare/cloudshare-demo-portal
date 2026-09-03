@@ -168,18 +168,19 @@ Baseline gaps:
 - list, update, registration, invitation, extension, and environment-observation workflows could collapse multiple HTTP exchanges into one feature-level row;
 - v4 token acquisition was invisible as its own workflow step even when the underlying sales flow used v4 requests.
 
-## Parity matrix
+## Parity matrix: pre-implementation baseline and implemented PR #423 result
 
-| Area | Certification today | Sales Trial today | Required for #416 |
+| Area | Pre-implementation certification baseline | Pre-implementation Sales Trial baseline | Implemented result at PR #423 head |
 | --- | --- | --- | --- |
-| Protected persistence | Shared typed recorder and repository with exact Customer filters | Reuses same repository and admin endpoint shape | Keep same shared persistence model |
-| Support authorization | Authenticated admin Customer scoping is enforced server-side | Same endpoint family, but workflow entry points are narrower | Preserve exact Customer scoping and expand safe navigation only |
-| Successful read visibility | Present in many certification handlers | Partial and handler-specific | Universal capture for every CloudShare read |
-| Failure visibility | Strong and usually includes protected request/response evidence | Strong in major sales paths | Preserve and align through shared seam |
-| Multi-request ordering | Often preserved through `details.httpExchanges` | Present in some paths, but often collapsed into one row | Ordered child exchanges must be individually reconstructable |
-| Authentication step | Typed error context exists, but no standalone auth event | Same gap | Metadata-only token-acquisition step required |
-| Subject-scoped navigation | Mature support, correlation, and exam-attempt drill-down | Correlation-driven support links, but no exact Trial Offering / retained-enrollment workflow-log links | Add stable subject links for offering and retained enrollment |
-| Ordinary-surface confinement | Strong | Strong | Must remain unchanged |
+| Protected persistence | Shared typed recorder and repository with exact Customer filters | Reuses same repository and admin endpoint shape | Shared persistence and exact Customer scope retained |
+| Support authorization | Authenticated admin Customer scoping is enforced server-side | Same endpoint family, but workflow entry points are narrower | Stable Trial Offering and retained-enrollment subject navigation added |
+| Protected request headers | Explicit operational allowlist; auth-bearing headers masked | Same recorder policy | Same allowlist/masking policy retained across shared observer rows |
+| OAuth token claims and bodies | Typed error context could contain token request/response evidence; no standalone event | Same gap | Acquisition rows retain only status, duration, failure mode, and classification; no client secret, access token, token claims, request, or response body |
+| Successful read visibility | Present in many handlers | Partial and handler-specific | Shared observer captures each CloudShare read |
+| Failure visibility | Strong and usually includes protected request/response evidence | Strong in major sales paths | Shared observer aligns feature failures; OAuth summary is metadata-only |
+| Multi-request ordering | Often preserved through `details.httpExchanges` | Present in some paths, but often collapsed into one row | Ordered observer rows reconstruct child exchanges; guarded summary rows use `exchangeCount` |
+| Subject-scoped navigation | Mature support, correlation, and exam-attempt drill-down | Correlation-driven support links, but no exact Trial Offering / retained-enrollment workflow-log links | Exact Trial Offering and retained-enrollment workflow links added |
+| Ordinary-surface confinement | Strong | Strong | Provider IDs and opaque routes fail closed in ordinary projections |
 
 ## Constraints for the eventual implementation
 

@@ -1503,8 +1503,8 @@ async function publishFailure(
       itemId: offering.itemId,
       externalId,
     },
-    request: evidence?.request,
-    response: evidence?.response,
+    request: oauthTokenFailure ? null : evidence?.request,
+    response: oauthTokenFailure ? null : evidence?.response,
     details: {
       integrationSurface,
       failureMode,

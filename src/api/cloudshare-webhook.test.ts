@@ -135,11 +135,11 @@ describe("handleCloudShareWebhook", () => {
     expect(receivedLine).not.toContain('"webhookPayload"');
     expect(receivedLine).not.toContain('"requestBodySummary"');
     expect(receivedLine).toContain('"eventType":"environment.created"');
-    expect(receivedLine).toContain('"environmentId":"env-1"');
+    expect(receivedLine).not.toContain('"environmentId":"env-1"');
     expect(receivedLine).not.toContain('"webhookEnvironmentName"');
     expect(receivedLine).not.toContain('"webhookOwnerEmail"');
     expect(receivedLine).not.toContain("Allowed Environment Name");
-    expect(receivedLine).toContain("env-1");
+    expect(receivedLine).not.toContain("env-1");
     expect(receivedLine).not.toContain("owner@example.test");
   });
 
@@ -595,7 +595,7 @@ describe("handleCloudShareWebhook", () => {
     );
   });
 
-  it("records rejected webhook diagnostics at warn level with safe signature header metadata and allowlisted body summary", async () => {
+  it("records rejected webhook diagnostics at warn level without retaining untrusted payload content", async () => {
     const { diagnostics, deps } = setup();
     const rawBody = JSON.stringify({
       Event: "environment.created",
@@ -628,22 +628,8 @@ describe("handleCloudShareWebhook", () => {
           outcome: "failure",
           details: expect.objectContaining({
             trustGateOutcome: "invalid_signature",
-            webhookSummary: expect.objectContaining({
-              parseStatus: "ok",
-              envelope: expect.objectContaining({
-                Event: "environment.created",
-                CreatedByEmail: "owner@example.test",
-              }),
-              payload: expect.objectContaining({
-                EnvironmentId: "env-1",
-                EnvironmentExternalId: "env-ext-invalid",
-                EnvironmentName: "Helios Candidate Lab",
-                BlueprintId: "bp-1",
-                PolicyId: "policy-1",
-                OwnerEmail: "owner@example.test",
-                RegionId: "region-1",
-              }),
-            }),
+            requestBodyBytes: expect.any(Number),
+            rawBodySha256: expect.any(String),
             signatureHeader: expect.objectContaining({
               name: "x-cloudshare-signature",
               present: true,
@@ -652,10 +638,7 @@ describe("handleCloudShareWebhook", () => {
               fingerprint: expect.stringMatching(/^sha256:/),
             }),
           }),
-          request: expect.objectContaining({
-            requestBodyBytes: expect.any(Number),
-            rawBodySha256: expect.any(String),
-          }),
+          request: null,
         }),
         expect.objectContaining({
           operation: "cloudshare.webhook.verify_signature",
@@ -678,7 +661,7 @@ describe("handleCloudShareWebhook", () => {
     expect(JSON.stringify(entries)).not.toContain("invalid-signature-value");
   });
 
-  it("records the full parsed webhook event payload as support evidence", async () => {
+  it("does not retain invalid-signature payload content as support evidence", async () => {
     const { diagnostics, deps } = setup();
     const rawBody = JSON.stringify({
       Event: "environment.created",
@@ -704,17 +687,13 @@ describe("handleCloudShareWebhook", () => {
     expect(res.status).toBe(401);
     const entries = await diagnostics.query({ customerId: "customer-helios" });
     const receive = entries.find((entry) => entry.operation === "cloudshare.webhook.receive");
-    expect(receive?.details).toEqual(
-      expect.objectContaining({
-        webhookSummary: expect.objectContaining({
-          payload: expect.objectContaining({
-            CustomCloudShareField: "support-evidence",
-            token: "payload-token-evidence",
-            authorization: "payload-authorization-evidence",
-          }),
-        }),
-      }),
-    );
+    expect(receive?.request).toBeNull();
+    expect(receive?.response).toBeNull();
+    expect(receive?.details).not.toHaveProperty("webhookSummary");
+    expect(receive?.details).not.toHaveProperty("body");
+    expect(JSON.stringify(entries)).not.toContain("support-evidence");
+    expect(JSON.stringify(entries)).not.toContain("payload-token-evidence");
+    expect(JSON.stringify(entries)).not.toContain("payload-authorization-evidence");
     expect(JSON.stringify(entries)).not.toContain("invalid-signature-value");
   });
 
@@ -837,10 +816,10 @@ describe("handleCloudShareWebhook", () => {
       ]),
     );
     const serializedEntries = JSON.stringify(allEntries);
-    expect(serializedEntries).toContain("must-not-be-logged");
+    expect(serializedEntries).not.toContain("must-not-be-logged");
     expect(
       allEntries.some((entry) => entry.request?.body === unknownRawBody),
-    ).toBe(true);
+    ).toBe(false);
     expect(serializedEntries).not.toContain("wrong");
     expect(JSON.stringify(allEntries)).not.toContain("whk-helios");
     expect(JSON.stringify(allEntries)).not.toContain("unknown-token");

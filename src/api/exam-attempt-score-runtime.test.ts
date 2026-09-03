@@ -553,7 +553,7 @@ describe("getExamAttemptScoreRuntime", () => {
       expect.objectContaining({
         attemptedOperation: "get_guided_journey_progress",
         integrationSurface: "cloudshare.v4.guided_journey.progress",
-        path: "/guided-journey/progress/exp-1/student-1",
+        path: "/[REDACTED_ROUTE]",
         failureMode: "unexpected_response",
       }),
     );

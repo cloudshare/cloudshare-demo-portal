@@ -32,7 +32,7 @@ const SAFE_METADATA_KEYS = new Set([
   "signatureMatched",
 ]);
 
-const SAFE_ID_KEY = /^(?:customer|candidate|exam|examAttempt|environment|environmentExternal|training|participant|project|blueprint|policy|region|webhook|cohortExamSession|session|experience|team|opportunity|contact|salesSession|idempotency)Ids?$/;
+const SAFE_ID_KEY = /^(?:customer|candidate|exam|examAttempt|cohortExamSession|session|opportunity|contact|salesSession|idempotency)Ids?$/;
 const REDACTED = "[REDACTED]";
 
 /** Fail-closed projection for ordinary process logs. */
@@ -117,8 +117,7 @@ function projectPath(value: unknown): string | undefined {
   const apiIndex = segments.findIndex((segment) => segment === "api");
   const versionIndex = apiIndex >= 0 ? apiIndex + 1 : (segments[0] === "v3" || segments[0] === "v4" ? 0 : -1);
   if (versionIndex < 0 || !["v3", "v4"].includes(segments[versionIndex] ?? "")) {
-    if (segments[0] === "sales") return "/sales/[REDACTED_ROUTE]";
-    return path;
+    return "/[REDACTED_ROUTE]";
   }
   const prefix = segments.slice(0, versionIndex + 1);
   const route = segments.slice(versionIndex + 1);

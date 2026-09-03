@@ -49,7 +49,10 @@ export function composeCloudShareObservers<TRequest>(
   second?: (event: TRequest) => Promise<void> | void,
 ): (event: TRequest) => Promise<void> {
   return async (event) => {
-    await Promise.allSettled([first?.(event), second?.(event)]);
+    await Promise.allSettled([
+      Promise.resolve().then(() => first?.(event)),
+      Promise.resolve().then(() => second?.(event)),
+    ]);
   };
 }
 
