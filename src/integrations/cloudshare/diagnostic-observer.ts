@@ -12,8 +12,8 @@ export function createCloudShareDiagnosticObserver(input: {
     operation: "cloudshare.request", outcome: event.outcome, customerId: input.customerId,
     actor: { type: "system", id: "cloudshare" }, subject: { type: "customer", id: input.customerId },
     message: event.outcome === "failure" ? "CloudShare request failed." : "CloudShare request completed.",
-    request: event.result?.request as unknown as Record<string, unknown> ?? event.error?.context?.request as Record<string, unknown> ?? null,
-    response: event.result?.response as unknown as Record<string, unknown> ?? event.error?.context?.response as Record<string, unknown> ?? null,
+    request: event.result?.request as unknown as Record<string, unknown> ?? projectFailureRequest(event.error?.context) ?? null,
+    response: event.result?.response as unknown as Record<string, unknown> ?? projectFailureResponse(event.error?.context) ?? null,
     details: { durationMs: event.durationMs, integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null, error: event.error ?? null },
   });
   const recordAcquisition = (event: V4TokenAcquisitionEvent) => input.diagnostics.record({
@@ -25,4 +25,22 @@ export function createCloudShareDiagnosticObserver(input: {
     details: { durationMs: event.durationMs, integrationSurface: event.integrationSurface, status: event.status ?? null },
   });
   return { onRequest: recordRequest, onAcquisition: recordAcquisition };
+}
+
+function projectFailureRequest(context?: Record<string, unknown>): Record<string, unknown> | null {
+  if (!context) return null;
+  const request: Record<string, unknown> = {};
+  for (const key of ["method", "path", "requestQuery", "requestHeaders", "requestBody"]) {
+    if (key in context) request[key] = context[key];
+  }
+  return Object.keys(request).length ? request : null;
+}
+
+function projectFailureResponse(context?: Record<string, unknown>): Record<string, unknown> | null {
+  if (!context) return null;
+  const response: Record<string, unknown> = {};
+  for (const key of ["responseStatus", "responseHeaders", "responseBody", "transport", "network", "tls"]) {
+    if (key in context) response[key] = context[key];
+  }
+  return Object.keys(response).length ? response : null;
 }

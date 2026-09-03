@@ -454,19 +454,21 @@ export function getServices(): Services {
     cloudshareSecretBox,
   );
   const cloudshareClientFactory: CloudShareClientFactory = {
-    forConnection: (connection, options) =>
-      withLocalCohortRateLimitQaFixture(createCloudShareIntegrationForConnection({
+    forConnection: (connection, options) => {
+      const observer = createCloudShareDiagnosticObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId });
+      return withLocalCohortRateLimitQaFixture(createCloudShareIntegrationForConnection({
         mode: config.runtime.mode,
         trace: traceCloudShare,
-        onRequest: composeCloudShareObservers(options?.onRequest, createCloudShareDiagnosticObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId }).onRequest),
-        onAcquisition: composeCloudShareObservers(options?.onAcquisition, createCloudShareDiagnosticObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId }).onAcquisition),
+        onRequest: composeCloudShareObservers(options?.onRequest, observer.onRequest),
+        onAcquisition: composeCloudShareObservers(options?.onAcquisition, observer.onAcquisition),
         connection: {
           customerId: connection.customerId,
           apiId: connection.apiId,
           apiKey: connection.apiKey,
           webhookSecret: connection.webhookSecret,
         },
-      })),
+      }));
+    },
   };
 
   // Heartbeat auto-suspend. The suspend function is pre-bound to the current
