@@ -8,21 +8,25 @@ export function createCloudShareDiagnosticObserver(input: {
   readonly diagnostics: DiagnosticRecorder;
   readonly customerId: string;
 }) {
-  const recordRequest = (event: CloudShareRequestObservation) => input.diagnostics.record({
-    occurredAt: new Date(event.occurredAt), source: "cloudshare-integration",
-    operation: "cloudshare.request", outcome: event.outcome, customerId: input.customerId,
-    actor: { type: "system", id: "cloudshare" }, subject: { type: "customer", id: input.customerId },
-    message: event.outcome === "failure" ? "CloudShare request failed." : "CloudShare request completed.",
-    request: event.result?.request as unknown as Record<string, unknown> ?? projectCloudShareFailureContext(event.error?.context)?.request ?? projectFailureRequest(event.error?.context) ?? null,
-    response: event.result?.response as unknown as Record<string, unknown> ?? projectCloudShareFailureContext(event.error?.context)?.response ?? projectFailureResponse(event.error?.context) ?? null,
-    details: {
-      durationMs: event.durationMs,
-      integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,
-      ...(event.error?.context?.failureMode ? { failureMode: event.error.context.failureMode } : {}),
-      ...(event.error?.context?.causeClassification ? { causeClassification: event.error.context.causeClassification } : {}),
-      error: event.error ?? null,
-    },
-  });
+  const recordRequest = (event: CloudShareRequestObservation) => {
+    const projectedFailure = projectCloudShareFailureContext(event.error?.context);
+    const oauthFailure = projectedFailure?.request === null && projectedFailure.response === null;
+    return input.diagnostics.record({
+      occurredAt: new Date(event.occurredAt), source: "cloudshare-integration",
+      operation: "cloudshare.request", outcome: event.outcome, customerId: input.customerId,
+      actor: { type: "system", id: "cloudshare" }, subject: { type: "customer", id: input.customerId },
+      message: event.outcome === "failure" ? "CloudShare request failed." : "CloudShare request completed.",
+      request: event.result?.request as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.request : projectFailureRequest(event.error?.context)) ?? null,
+      response: event.result?.response as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.response : projectFailureResponse(event.error?.context)) ?? null,
+      details: {
+        durationMs: event.durationMs,
+        integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,
+        ...(event.error?.context?.failureMode ? { failureMode: event.error.context.failureMode } : {}),
+        ...(event.error?.context?.causeClassification ? { causeClassification: event.error.context.causeClassification } : {}),
+        error: oauthFailure ? projectErrorMetadata(event.error) : event.error ?? null,
+      },
+    });
+  };
   const recordAcquisition = (event: V4TokenAcquisitionEvent) => input.diagnostics.record({
     occurredAt: new Date(event.occurredAt), source: "cloudshare-integration", operation: "cloudshare.oauth.token",
     outcome: event.outcome, customerId: input.customerId, actor: { type: "system", id: "cloudshare" },
@@ -38,6 +42,23 @@ export function createCloudShareDiagnosticObserver(input: {
     },
   });
   return { onRequest: recordRequest, onAcquisition: recordAcquisition };
+}
+
+function projectErrorMetadata(error: CloudShareRequestObservation["error"]): Record<string, unknown> | null {
+  if (!error) return null;
+  const directStatus = (error as unknown as { status?: unknown }).status;
+  const status = typeof directStatus === "number"
+    ? directStatus
+    : typeof error.context?.responseStatus === "number"
+      ? error.context.responseStatus
+      : typeof error.context?.status === "number"
+        ? error.context.status
+        : undefined;
+  return {
+    name: error.name,
+    message: error.message,
+    ...(status === undefined ? {} : { status }),
+  };
 }
 
 function projectFailureRequest(context?: Record<string, unknown>): Record<string, unknown> | null {

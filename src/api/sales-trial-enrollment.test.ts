@@ -4,6 +4,7 @@ import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-
 import type { SalesTrialOffering } from "@/domain/sales-trial-offering";
 import type { SalesTrialEnrollment, SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 import {
+  CloudShareAuthError,
   CloudShareRequestError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare/errors";
@@ -434,6 +435,38 @@ describe("Sales Trial offering entry", () => {
         details: expect.objectContaining({ failureMode: "provider_failure" }),
       }),
     );
+  });
+
+  it("keeps OAuth token failure evidence metadata-only during candidate entry", async () => {
+    const { deps, diagnosticRepository, readSession } = createDeps();
+    readSession.mockRejectedValue(
+      new CloudShareAuthError("OAuth token exchange returned 503", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        status: 503,
+        requestBody: { client_id: "private-client", client_secret: "private-secret" },
+        responseBody: { access_token: "private-token" },
+      }),
+    );
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.entered",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({ status: 404, body: { correlationId: expect.any(String) } });
+    expect(failure).toMatchObject({
+      request: null,
+      response: null,
+      details: expect.objectContaining({ failureMode: "provider_failure" }),
+    });
+    const persisted = JSON.stringify(failure);
+    expect(persisted).not.toContain("private-client");
+    expect(persisted).not.toContain("private-secret");
+    expect(persisted).not.toContain("private-token");
   });
 
   it("fails closed before enrollment mutation when CloudShare reports the offering has not started", async () => {
@@ -2642,6 +2675,42 @@ describe("Sales Trial offering monitoring", () => {
     );
     expect(JSON.stringify(result.body)).not.toContain("203.0.113.10");
     expect(JSON.stringify(result.body)).not.toContain("secret");
+  });
+
+  it("keeps OAuth token failure evidence metadata-only during Trial participant monitoring", async () => {
+    const { deps, diagnosticRepository, listParticipants } = createDeps();
+    listParticipants.mockRejectedValue(
+      new CloudShareAuthError("OAuth token exchange returned 503", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        status: 503,
+        requestBody: { client_id: "private-client", client_secret: "private-secret" },
+        responseBody: { access_token: "private-token" },
+      }),
+    );
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({ status: 502, body: { correlationId: expect.any(String) } });
+    expect(failure).toMatchObject({
+      request: null,
+      response: null,
+      details: expect.objectContaining({ failureMode: "http_failure" }),
+    });
+    const persisted = JSON.stringify(failure);
+    expect(persisted).not.toContain("private-client");
+    expect(persisted).not.toContain("private-secret");
+    expect(persisted).not.toContain("private-token");
   });
 });
 

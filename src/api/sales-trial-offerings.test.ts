@@ -9,6 +9,7 @@ import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import {
   CLOUDSHARE_ERROR_DISCRIMINANT,
+  CloudShareAuthError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -2748,6 +2749,44 @@ describe("Sales Trial Offering API", () => {
       expect(entry).toMatchObject({ correlationId: (result.body as { correlationId: string }).correlationId,
         details: expect.objectContaining({ failureMode: scenario.failureMode, status: "ending", needsAttention: true }) });
     }
+  });
+
+  it("keeps OAuth token failure evidence metadata-only while ending a Trial Offering", async () => {
+    const repository = createOfferingRepository();
+    await saveDeferredOffering(repository);
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const oauthFailure = new CloudShareAuthError("OAuth token exchange returned 503", {
+      method: "POST",
+      path: "/oauth/token",
+      integrationSurface: "cloudshare.v4.oauth.token",
+      status: 503,
+      requestBody: { client_id: "private-client", client_secret: "private-secret" },
+      responseBody: { access_token: "private-token" },
+    });
+    const result = await handleEndSalesTrialOffering(createDeps(repository, {
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({
+        readSession: vi.fn().mockRejectedValue(oauthFailure),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [], request: {}, response: {} }),
+        updateSession: vi.fn(),
+      }) } as never,
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observeById: vi.fn() }) },
+    } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+    const [failure] = await diagnosticRepository.query({
+      operation: "sales.trial_offering.end",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({ status: 202, body: { needsAttention: true } });
+    expect(failure).toMatchObject({
+      request: null,
+      response: null,
+      details: expect.objectContaining({ status: "ending", needsAttention: true }),
+    });
+    const persisted = JSON.stringify(failure);
+    expect(persisted).not.toContain("private-client");
+    expect(persisted).not.toContain("private-secret");
+    expect(persisted).not.toContain("private-token");
   });
 
   it("bounds getextended reads to one in flight and fails closed without reading later environments", async () => {
