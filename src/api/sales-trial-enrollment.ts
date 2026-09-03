@@ -2049,7 +2049,7 @@ async function recordExtensionSuccess(
         integrationSurface: "cloudshare.v3.environments",
         attemptedOperation: primaryExchange ? "extend_environment" : "observe_extended_environment",
         expirationTime,
-        exchangeCount: httpExchanges.length,
+        ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
       },
     }),
     deps.audit?.write({
@@ -2155,7 +2155,7 @@ async function recordExtensionFailure(
         integrationSurface: "cloudshare.v3.environments",
         attemptedOperation: salesTrialAttemptedOperationForPath(lastRequest?.path),
         failureMode: reason,
-        exchangeCount: httpExchanges.length,
+        ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
       },
     }),
     deps.audit?.write({
