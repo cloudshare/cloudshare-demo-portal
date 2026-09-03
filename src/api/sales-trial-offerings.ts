@@ -39,6 +39,7 @@ import {
 } from "@/integrations/cloudshare/errors";
 import type { CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 import type { SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
+import { createSalesTrialCloudShareObserver } from "./sales-trial-cloudshare-diagnostics";
 
 const writeSchema = z.object({
   title: z.string().trim().min(1).max(100),
@@ -69,6 +70,7 @@ export interface SalesTrialOfferingsDeps {
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
       >,
+      options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): SalesDelivery;
   };
   readonly salesEnvironmentFactory?: {
@@ -77,12 +79,13 @@ export interface SalesTrialOfferingsDeps {
     ): SalesEnvironmentSource;
   };
   readonly cloudshare?: Pick<CloudShareClientFactory, "forConnection">;
+  readonly cloudshareObserver?: (input: { customerId: string; actor: DiagnosticActor; correlationId: string; offeringId: string }) => Parameters<CloudShareClientFactory["forConnection"]>[1];
   readonly itemProvisioningValidator?: SalesItemProvisioningValidator;
   readonly itemProvisioningValidatorFactory?: {
     forConnection(
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
-      >,
+      >, options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): SalesItemProvisioningValidator;
   };
   readonly projectMembers?: CloudShareProjectMemberSource;
@@ -90,7 +93,7 @@ export interface SalesTrialOfferingsDeps {
     forConnection(
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
-      >,
+      >, options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): CloudShareProjectMemberSource;
   };
   readonly timezones?: Pick<SalesTimezoneCacheRepository, "find">;
@@ -399,7 +402,7 @@ export async function handlePublishSalesTrialOffering(
   try {
     const validator =
       deps.itemProvisioningValidator ??
-      deps.itemProvisioningValidatorFactory?.forConnection(connection);
+      deps.itemProvisioningValidatorFactory?.forConnection(connection, deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id }));
     const reads = (await validator?.revalidate(item)) ?? [];
     await recordResourceReads(
       deps,
@@ -413,7 +416,7 @@ export async function handlePublishSalesTrialOffering(
       "Catalogue Item resource revalidated before Sales Trial Offering publication",
     );
     const memberSource =
-      deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection);
+      deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection, deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id }));
     memberRead = await memberSource?.listActiveProjectMembers(item.project.id);
     if (memberRead) {
       await recordProjectMemberRead(
@@ -479,8 +482,8 @@ export async function handlePublishSalesTrialOffering(
   }
   const passphrase = opaqueCloudShareId(randomUUID());
   const delivery =
-    deps.deliveryFactory?.forConnection(connection) ??
-    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+    deps.deliveryFactory?.forConnection(connection, deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id })) ??
+    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id })));
   const reservationUpdatedAt = (deps.now ?? (() => new Date()))();
   const reservation = {
     ...offering,

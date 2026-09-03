@@ -10,6 +10,7 @@ import { createPrismaSalesTimezoneCacheRepository } from "@/persistence/prisma-s
 import { createCloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import { createCloudShareSalesItemProvisioningValidator } from "@/integrations/cloudshare/sales-item-provisioning";
+import { createSalesTrialCloudShareObserver } from "@/api/sales-trial-cloudshare-diagnostics";
 
 export async function POST(
   _request: Request,
@@ -32,20 +33,24 @@ export async function POST(
       connections: services.cloudshareConnections,
       timezones: createPrismaSalesTimezoneCacheRepository(services.prisma),
       deliveryFactory: {
-        forConnection: (connection) =>
-          createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection)),
+        forConnection: (connection, options) =>
+          createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection, options)),
       },
       itemProvisioningValidatorFactory: {
-        forConnection: (connection) =>
+        forConnection: (connection, options) =>
           createCloudShareSalesItemProvisioningValidator(
-            services.cloudshareClientFactory.forConnection(connection),
+            services.cloudshareClientFactory.forConnection(connection, options),
           ),
       },
       projectMemberSourceFactory: {
-        forConnection: (connection) =>
+        forConnection: (connection, options) =>
           createCloudShareProjectMemberSource(
-            services.cloudshareClientFactory.forConnection(connection),
+            services.cloudshareClientFactory.forConnection(connection, options),
           ),
+      },
+      cloudshareObserver: ({ customerId, actor, correlationId, offeringId }) => {
+        const observer = createSalesTrialCloudShareObserver({ diagnostics: services.diagnosticRecorder, customerId, actor, correlationId, source: "sales-trial-offerings", subject: { type: "sales_trial_offering", id: offeringId }, externalIds: { offeringId } });
+        return { onRequest: observer.onRequest, onAcquisition: observer.onAcquisition };
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,
