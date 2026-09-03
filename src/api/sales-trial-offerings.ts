@@ -76,6 +76,7 @@ export interface SalesTrialOfferingsDeps {
   readonly salesEnvironmentFactory?: {
     forConnection(
       connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>,
+      options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): SalesEnvironmentSource;
   };
   readonly cloudshare?: Pick<CloudShareClientFactory, "forConnection">;
@@ -974,10 +975,11 @@ export async function handleEndSalesTrialOffering(
   };
   const connection = await deps.connections.findByCustomerId(request.customerId);
   if (!connection) return configurationFailure("cloudshare_connection_missing", "portal.cloudshare_connection");
-  const delivery = deps.deliveryFactory?.forConnection(connection) ??
-    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+  const observerOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id });
+  const delivery = (observerOptions ? deps.deliveryFactory?.forConnection(connection, observerOptions) : deps.deliveryFactory?.forConnection(connection)) ??
+    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, observerOptions));
   if (!delivery.updateSession) return configurationFailure("sales_delivery_update_missing", "cloudshare.v4.sales");
-  const environments = deps.salesEnvironmentFactory.forConnection(connection);
+  const environments = deps.salesEnvironmentFactory.forConnection(connection, observerOptions);
   if (!environments.observeById) return configurationFailure("environment_getextended_missing", "cloudshare.v3.envs.getextended");
   try {
     await renewLease();
