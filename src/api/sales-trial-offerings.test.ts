@@ -1019,10 +1019,11 @@ describe("Sales Trial Offering API", () => {
       deliveryFactory: {
         forConnection: vi.fn().mockReturnValue({
           createSession: vi.fn().mockRejectedValue(
-            new CloudShareTransportError("timeout", {
+            new CloudShareRequestError("gateway timeout", 504, {
               method: "POST",
-              path: "/sales",
-              cause: { code: "ETIMEDOUT" },
+              path: "/v4/sales",
+              responseStatus: 504,
+              responseBody: "<html><body><h1>504 Gateway Time-out</h1></body></html>",
             }),
           ),
         }),

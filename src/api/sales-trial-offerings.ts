@@ -1395,7 +1395,8 @@ function isCloudShareOAuthTokenFailure(error: unknown): boolean {
 
 function isSalesCreateRequest(error: unknown): boolean {
   const context = cloudShareErrorContext(error);
-  return context?.method === "POST" && context?.path === "/sales";
+  return context?.method === "POST" &&
+    (context?.path === "/sales" || context?.path === "/v4/sales");
 }
 
 function cloudShareEvidence(error: unknown):
