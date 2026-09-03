@@ -10,6 +10,7 @@ import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-
 import {
   CLOUDSHARE_ERROR_DISCRIMINANT,
   CloudShareRequestError,
+  CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
 import { SalesItemProvisioningValidationError } from "@/integrations/cloudshare/sales-item-provisioning";
@@ -2303,27 +2304,25 @@ describe("Sales Trial Offering API", () => {
       unpublishedAt: null,
       attentionReason: null,
     });
-    const failure = Object.assign(
-      new Error("CloudShare did not return the complete documented Sales Experience required for a safe update."),
+    const failure = new CloudShareResponseError(
+      "CloudShare did not return the complete documented Sales Experience required for a safe update.",
       {
-        context: {
-          method: "GET",
-          path: "/sales/sales-1",
-          responseStatus: 200,
-          responseBody: {
-            id: "sales-1",
-            name: "Helios Trial Offering",
-            type: "trial",
-            projectId: "project-1",
-            blueprintIds: ["bp-1"],
-            cloudshareRegionIds: ["region-1"],
-            policyId: "policy-1",
-            mainSalesPro: { email: "owner@example.test" },
-            registrationType: "registeredParticipantsOnly",
-            start: "2026-09-01T09:00",
-            end: null,
-            timeZone: "UTC",
-          },
+        method: "GET",
+        path: "/sales/sales-1",
+        responseStatus: 200,
+        responseBody: {
+          id: "sales-1",
+          name: "Helios Trial Offering",
+          type: "trial",
+          projectId: "project-1",
+          blueprintIds: ["bp-1"],
+          cloudshareRegionIds: ["region-1"],
+          policyId: "policy-1",
+          mainSalesPro: { email: "owner@example.test" },
+          registrationType: "registeredParticipantsOnly",
+          start: "2026-09-01T09:00",
+          end: null,
+          timeZone: "UTC",
         },
       },
     );
@@ -2647,11 +2646,13 @@ describe("Sales Trial Offering API", () => {
 
   it("does not trust forged OAuth-looking context on an untyped Error", async () => {
     const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
     await savePublishDraft(repository, "offering-forged-oauth");
     const forged = Object.assign(new Error("unknown failure"), {
       context: { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token", responseStatus: 504 },
     });
     const result = await handlePublishSalesTrialOffering(createDeps(repository, {
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
       deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(forged) }) },
     }), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-forged-oauth" });
 
@@ -2659,6 +2660,12 @@ describe("Sales Trial Offering API", () => {
     expect(await repository.findById("customer-1", "offering-forged-oauth")).toMatchObject({
       status: "needs_attention", attentionReason: expect.stringContaining("creation outcome is unknown"),
     });
+    const [entry] = await diagnosticRepository.query({
+      operation: "sales.trial_offering.publish",
+      outcome: "failure",
+    });
+    expect(entry.request).toBeNull();
+    expect(entry.response).toBeNull();
   });
 
   it("unpublishes immediately and defers CloudShare end to the latest active Environment expiry plus five minutes", async () => {

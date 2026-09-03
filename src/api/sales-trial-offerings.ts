@@ -1404,7 +1404,11 @@ function cloudShareEvidence(error: unknown):
       readonly response?: Record<string, unknown>;
     }
   | undefined {
-  if (!(error instanceof Error) || !("context" in error)) {
+  if (!(error instanceof CloudShareAuthError) &&
+    !(error instanceof CloudShareRequestError) &&
+    !(error instanceof CloudShareTransportError) &&
+    !(error instanceof CloudShareResponseError) &&
+    !isCloudShareErrorAcrossBoundaries(error)) {
     return undefined;
   }
   const context = (error as { context?: Record<string, unknown> }).context;
