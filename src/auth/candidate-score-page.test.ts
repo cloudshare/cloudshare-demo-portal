@@ -58,8 +58,8 @@ describe("candidate score page", () => {
       searchParams: Promise.resolve({
         examAttemptId: "ea-1",
       }),
-    })).rejects.toThrow("redirect:/login");
-    expect(mockRedirect).toHaveBeenCalledWith("/login");
+    })).rejects.toThrow("redirect:/login?returnTo=%2Fcandidate");
+    expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fcandidate");
   });
 
   it("redirects admins away from candidate score screens", async () => {

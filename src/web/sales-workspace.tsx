@@ -18,6 +18,7 @@ import { SalesSessionsWorkbench } from "./sales-sessions-workbench";
 import { SalesTrialOfferingsAdmin } from "./sales-trial-offerings-admin";
 import shellStyles from "./sales-workspace.module.css";
 import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
+import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
 
 type Account = { id: string; name: string; kind: "prospect" | "current_customer"; archivedAt: string | null; createdAt: string; updatedAt?: string };
 type Opportunity = { id: string; accountId: string; name: string; status: "open" | "won" | "lost"; archivedAt: string | null; createdAt: string; updatedAt?: string };
@@ -56,11 +57,13 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
   const router = useRouter();
   const [route, setRoute] = useState<SalesWorkspaceRouteState>(initialRoute);
   const [creationNotice, setCreationNotice] = useState<SalesNavigationIntent["creationNotice"]>();
+  const [sessionExpired, setSessionExpired] = useState(false);
   useEffect(() => {
     setRoute((current) => salesRoutesMatch(current, initialRoute) ? current : initialRoute);
   }, [initialRoute]);
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
-  const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
+  const handleSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { setSessionExpired(true); router.replace(path); router.refresh(); } }), [router]);
+  const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: handleSessionExpired }), [browserFetch, handleSessionExpired]);
   const logout = useCallback(async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }, [router]);
   const navigate = useCallback((intent: SalesNavigationIntent) => {
     setCreationNotice(intent.creationNotice);
@@ -87,6 +90,8 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     setRoute(next);
   }, [route.queueOffset, route.queueSearch, route.queueSort, route.queueView, router]);
 
+  if (sessionExpired) return <main aria-live="polite" className={shellStyles.main}>Continuing to sign in…</main>;
+
   return <div className={shellStyles.appShell}>
     <aside className={shellStyles.leftNav} aria-label="Sales workspace navigation">
       <div className={shellStyles.brand}><span className={shellStyles.brandMark} aria-hidden="true">C</span><div className={shellStyles.brandText}><strong>Certalis</strong><small>Sales workspace</small></div></div>
@@ -102,9 +107,9 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
       <header className={shellStyles.topbar}><div><p>Certalis</p><span>Sales workspace</span></div></header>
       <div className={shellStyles.content}>
     {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
-    {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
-    {route.tab === "sessions" && route.sessionView !== "provision" && route.queueView ? <SalesSessionsWorkbench route={route} creationNotice={creationNotice} onNavigate={navigate} /> : null}
-    {route.tab === "sessions" && (route.sessionView === "provision" || !route.queueView) ? <SalesDemoSessionsFeature draftStorageKey={salesSessionProvisionDraftKey(email)} initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView === "provision" ? "provision" : "manage", focusSessionId: route.sessionId ?? "", status: route.sessionStatus ?? "upcoming", participantsOpen: route.participantsOpen ?? false }} onNavigate={navigate} /> : null}
+    {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} onSessionExpired={handleSessionExpired} /> : null}
+    {route.tab === "sessions" && route.sessionView !== "provision" && route.queueView ? <SalesSessionsWorkbench route={route} creationNotice={creationNotice} onNavigate={navigate} onSessionExpired={handleSessionExpired} /> : null}
+    {route.tab === "sessions" && (route.sessionView === "provision" || !route.queueView) ? <SalesDemoSessionsFeature draftStorageKey={salesSessionProvisionDraftKey(email)} initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView === "provision" ? "provision" : "manage", focusSessionId: route.sessionId ?? "", status: route.sessionStatus ?? "upcoming", participantsOpen: route.participantsOpen ?? false }} onNavigate={navigate} onSessionExpired={handleSessionExpired} /> : null}
     {route.tab === "trial-offerings" ? <SalesTrialOfferingsAdmin email={email} fetchAdmin={fetchAdmin} onNavigate={navigate} /> : null}
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{ ...(route.correlationId ? { correlationId: route.correlationId } : {}), ...(route.source ? { source: route.source } : {}), ...(route.subjectType ? { subjectType: route.subjectType } : {}), ...(route.subjectId ? { subjectId: route.subjectId } : {}) }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId, source: intent.diagnosticFilters?.source, subjectType: intent.diagnosticFilters?.subjectType, subjectId: intent.diagnosticFilters?.subjectId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}</div>
@@ -153,10 +158,10 @@ function SearchableSalesSelector({ label, value, placeholder, options, helperTex
   </div>;
 }
 
-function SalesDemoSessionsFeature({ initialSelection, draftStorageKey, onNavigate }: { readonly initialSelection: { accountId: string; opportunityId: string; view: "manage" | "provision"; focusSessionId: string; status: "upcoming" | "in_progress" | "needs_attention" | "ended"; participantsOpen: boolean }; readonly draftStorageKey: string; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
+function SalesDemoSessionsFeature({ initialSelection, draftStorageKey, onNavigate, onSessionExpired }: { readonly initialSelection: { accountId: string; opportunityId: string; view: "manage" | "provision"; focusSessionId: string; status: "upcoming" | "in_progress" | "needs_attention" | "ended"; participantsOpen: boolean }; readonly draftStorageKey: string; readonly onNavigate: (intent: SalesNavigationIntent) => void; readonly onSessionExpired: () => void }) {
   const router = useRouter();
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
-  const fetchSales = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
+  const fetchSales = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired }), [browserFetch, onSessionExpired]);
   const [items, setItems] = useState<Item[]>([]);
   const [sessions, setSessions] = useState<EnablementSession[]>([]);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -531,13 +536,13 @@ export function SalesSessionParticipants({ session, fetchSales, onOpenSupport }:
 }
 
 
-function SalesRecordsFeature({ initialSelection, onNavigate }: { readonly initialSelection?: Partial<SalesSelection>; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
+function SalesRecordsFeature({ initialSelection, onNavigate, onSessionExpired }: { readonly initialSelection?: Partial<SalesSelection>; readonly onNavigate: (intent: SalesNavigationIntent) => void; readonly onSessionExpired: () => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const hasObservedSearchParams = useRef(false);
   const [selection, setSelection] = useState<SalesSelection>(() => ({ accountId: initialSelection?.accountId ?? searchParams.get("accountId"), opportunityId: initialSelection?.opportunityId ?? searchParams.get("opportunityId") }));
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
-  const fetchSales = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
+  const fetchSales = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired }), [browserFetch, onSessionExpired]);
   const [data, setData] = useState<SalesData>(blank);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);

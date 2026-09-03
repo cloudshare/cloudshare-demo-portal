@@ -13,7 +13,7 @@ import {
   type AdminTab,
   type DiagnosticLogFilters,
 } from "./admin-shell-route";
-import { ADMIN_SESSION_EXPIRED_MESSAGE, createAdminAuthenticatedRequest } from "./admin-authenticated-request";
+import { createAdminAuthenticatedRequest } from "./admin-authenticated-request";
 import { CloudShareConnectionFeature } from "./admin-cloudshare-connection";
 import { AdminCandidateRosterFeature } from "./admin-candidate-roster";
 import { AdminSupportFeature } from "./admin-support";
@@ -25,6 +25,7 @@ import { accountLogoutButtonStyle, disabledButtonStyle } from "./button-styles";
 import { colors } from "./design-tokens";
 import { PortalPageHeader } from "./portal-page-header";
 import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
+import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
 
 const extensionHydrationProps = { suppressHydrationWarning: true } as const;
 
@@ -57,11 +58,15 @@ export function AdminConsole({
   const [sessionExpired, setSessionExpired] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
-  const handleAdminSessionExpired = useCallback(() => {
-    setSessionExpired(true);
-    router.replace("/login");
-    router.refresh();
-  }, [router]);
+  const handleAdminSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({
+    currentPath: () => `${window.location.pathname}${window.location.search}`,
+    fallbackLoginPath: "/login",
+    replace: (path) => {
+      setSessionExpired(true);
+      router.replace(path);
+      router.refresh();
+    },
+  }), [router]);
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
   const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: handleAdminSessionExpired }), [browserFetch, handleAdminSessionExpired]);
   const getNavigationHref = useCallback((intent: AdminNavigationIntent) => buildAdminNavigationHref(intent), []);
@@ -87,7 +92,7 @@ export function AdminConsole({
     finally { router.push("/login"); router.refresh(); }
   }
 
-  if (sessionExpired) return <main style={pageShellStyle}><h1 style={{ marginBottom: "0.5rem" }}>Admin session expired</h1><p style={{ color: "#555" }}>{ADMIN_SESSION_EXPIRED_MESSAGE}</p><button onClick={() => router.replace("/login")} style={{ padding: "0.55rem 0.9rem" }}>Go to login</button></main>;
+  if (sessionExpired) return <main aria-live="polite" style={pageShellStyle}>Continuing to sign in…</main>;
 
   return <main style={{ ...pageShellStyle, minHeight: "100vh", scrollbarGutter: "stable" }}>
     <PortalPageHeader eyebrow="Helios Admin Portal" title="Certalis Admin Console" description="Manage the Helios CX CloudShare Connection, Exam catalog, Candidate accounts, and active exam attempt support workflows." email={email} actions={<button {...extensionHydrationProps} onClick={logout} disabled={loggingOut} style={loggingOut ? { ...accountLogoutButtonStyle, ...disabledButtonStyle } : accountLogoutButtonStyle}>Log out</button>} />

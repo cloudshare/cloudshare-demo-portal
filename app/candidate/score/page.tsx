@@ -7,6 +7,7 @@ import { getPortalHomePath, getPortalSession } from "@/auth/portal-session";
 import { ScoreDisplay } from "@/web/score-display";
 import { pageShellStyle } from "@/web/page-shell";
 import { PortalPageHeader } from "@/web/portal-page-header";
+import { getExpiredPortalLoginPath } from "@/auth/portal-return-target";
 
 /**
  * Candidate score page. Shown after the lab session completes.
@@ -22,7 +23,7 @@ export default async function CandidateScorePage({
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
   const session = await getPortalSession(services, sessionId);
   if (!session) {
-    redirect("/login");
+    redirect(getExpiredPortalLoginPath("/candidate") ?? "/login");
   }
   if (session.role !== "candidate") {
     redirect(getPortalHomePath(session));

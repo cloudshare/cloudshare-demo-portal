@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LabLauncher } from "./lab-launcher";
 import { getCandidateLabPresentation } from "./candidate-lab-state";
-import { loadCandidateLabStatus, type CandidateLabStatus } from "./lab-launcher-client";
+import { isLabPortalSessionExpiredError, loadCandidateLabStatus, type CandidateLabStatus } from "./lab-launcher-client";
 import {
   updateCandidateLabStatus,
   updateCandidateLabStatusAttemptState,
@@ -15,6 +15,7 @@ import { cardStyle, mutedPanelStyle } from "./card-styles";
 import { accountLogoutButtonStyle, disabledButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
 import { PortalPageHeader } from "./portal-page-header";
+import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
 
 type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 
@@ -31,7 +32,17 @@ export function CandidateLabShell({
   const [labStatus, setLabStatus] = useState<CandidateLabStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
+  const handleSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({
+    currentPath: () => `${window.location.pathname}${window.location.search}`,
+    fallbackLoginPath: "/login",
+    replace: (path) => {
+      setSessionExpired(true);
+      router.replace(path);
+      router.refresh();
+    },
+  }), [router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +64,10 @@ export function CandidateLabShell({
         }
       } catch (error) {
         if (!cancelled) {
+          if (isLabPortalSessionExpiredError(error)) {
+            handleSessionExpired();
+            return;
+          }
           setStatusError(
             error instanceof Error ? error.message : "Failed to load exam details.",
           );
@@ -84,7 +99,7 @@ export function CandidateLabShell({
       window.removeEventListener("focus", refreshIfVisible);
       document.removeEventListener("visibilitychange", refreshIfVisible);
     };
-  }, [examAttemptId]);
+  }, [examAttemptId, handleSessionExpired]);
 
   const presentation = labStatus ? getCandidateLabPresentation({
     status: labStatus.status ?? initialAttemptStatus,
@@ -95,6 +110,10 @@ export function CandidateLabShell({
     openPeriodEndsAt: labStatus.openPeriodEndsAt ?? null,
     openPeriodClosed: labStatus.openPeriodClosed === true,
   }) : null;
+
+  if (sessionExpired) {
+    return <main aria-live="polite" style={pageShellStyle}>Continuing to sign in…</main>;
+  }
 
   return (
     <main style={{ ...pageShellStyle, color: "#14213d" }}>
@@ -218,6 +237,7 @@ export function CandidateLabShell({
           onLabStatusLoaded={(status) =>
             setLabStatus((current) => updateCandidateLabStatus(current, status))
           }
+          onSessionExpired={handleSessionExpired}
         />
       ) : null}
     </main>

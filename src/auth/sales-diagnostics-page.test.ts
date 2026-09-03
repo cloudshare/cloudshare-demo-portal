@@ -31,6 +31,12 @@ describe("Sales diagnostics page", () => {
     expect(mockRedirect).toHaveBeenCalledWith("/sales?tab=support");
   });
 
+  it("redirects an expired direct Sales diagnostics navigation through the Sales login contract", async () => {
+    mockGetPortalSession.mockResolvedValue(null);
+
+    await expect(SalesDiagnosticsPage()).rejects.toThrow("redirect:/login?returnTo=%2Fsales");
+  });
+
   it("redirects a certification workspace admin away from Sales diagnostics", async () => {
     mockGetPortalSession.mockResolvedValue({ role: "admin", workspace: "certification", email: "admin@helioscx.demo" });
 

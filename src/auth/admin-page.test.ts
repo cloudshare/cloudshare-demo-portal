@@ -42,11 +42,19 @@ describe("admin page routing", () => {
     mockGetServices.mockReturnValue({});
   });
 
-  it("redirects anonymous users to /login", async () => {
+  it("redirects an expired admin navigation to its safe login return target", async () => {
     mockGetPortalSession.mockResolvedValue(null);
 
-    await expect(AdminPage({})).rejects.toThrow("redirect:/login");
-    expect(mockRedirect).toHaveBeenCalledWith("/login");
+    await expect(AdminPage({})).rejects.toThrow("redirect:/login?returnTo=%2Fadmin");
+    expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fadmin");
+  });
+
+  it("preserves an allowlisted Admin query on an expired direct navigation", async () => {
+    mockGetPortalSession.mockResolvedValue(null);
+
+    await expect(AdminPage({ searchParams: Promise.resolve({ tab: "exams" }) })).rejects.toThrow(
+      "redirect:/login?returnTo=%2Fadmin%3Ftab%3Dexams",
+    );
   });
 
   it("redirects Candidates away from admin screens", async () => {

@@ -8,9 +8,10 @@ import { colors, pageHeadingStyle, spacing } from "@/web/design-tokens";
 interface LoginFormProps {
   readonly initialError: string | null;
   readonly initialEmail: string;
+  readonly returnTo?: string | null;
 }
 
-export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
+export function LoginForm({ initialError, initialEmail, returnTo = null }: LoginFormProps) {
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,7 +23,7 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
     setError(null);
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetch(`/api/auth/login${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ""}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -34,21 +35,22 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
           role?: "admin" | "candidate" | "sales_trial_participant";
           workspace?: "certification" | "sales" | "both";
         };
+        redirectTo?: string;
       };
       if (!response.ok) {
         setError(data.error ?? "Login failed");
         return;
       }
 
-      window.location.assign(
+      window.location.assign(data.redirectTo ?? (
         data.session?.role === "admin"
           ? data.session.workspace === "sales"
             ? "/sales"
             : "/admin"
           : data.session?.role === "sales_trial_participant"
             ? "/sales-trial"
-            : "/candidate",
-      );
+            : "/candidate"
+      ));
     } catch {
       setError("Login failed");
     } finally {
@@ -74,7 +76,7 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
         </p>
         <form
           onSubmit={onSubmit}
-          action="/api/auth/login"
+          action={returnTo ? `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}` : "/api/auth/login"}
           method="post"
           style={{ display: "grid", gap: "1rem" }}
         >

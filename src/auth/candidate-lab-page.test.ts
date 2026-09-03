@@ -67,8 +67,8 @@ describe("candidate lab page", () => {
         examAttemptId: "ea-1",
         attemptStatus: "ready",
       }),
-    })).rejects.toThrow("redirect:/login");
-    expect(mockRedirect).toHaveBeenCalledWith("/login");
+    })).rejects.toThrow("redirect:/login?returnTo=%2Fcandidate");
+    expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fcandidate");
   });
 
   it("redirects admins away from candidate lab screens", async () => {

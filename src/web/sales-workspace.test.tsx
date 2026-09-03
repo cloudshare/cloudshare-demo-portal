@@ -11,7 +11,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const deferred = <T,>() => { let resolve!: (value: T) => void; return { promise: new Promise<T>((done) => { resolve = done; }), resolve }; };
 
 describe("Sales Item authoring", () => {
-  afterEach(() => { vi.restoreAllMocks(); router.push.mockClear(); });
+  afterEach(() => { vi.restoreAllMocks(); router.push.mockClear(); router.replace.mockClear(); router.refresh.mockClear(); });
 
   it("renders Trial Offerings inside the Sales workspace shell with the left-nav section active", async () => {
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
@@ -28,6 +28,20 @@ describe("Sales Item authoring", () => {
     expect(screen.getByRole("button", { name: "Trial Offerings" }).getAttribute("aria-current")).toBe("page");
     expect(await screen.findByRole("heading", { name: "Trial Offerings" })).not.toBeNull();
     expect(screen.getByText("Current Offerings")).not.toBeNull();
+  });
+
+  it("replaces the rendered Sales workspace after a post-render 401", async () => {
+    window.history.replaceState({}, "", "/sales?tab=trial-offerings");
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/sales/trial-offerings" && !init?.method) return json({ error: "unauthorized" }, 401);
+      return json({});
+    });
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "trial-offerings" }} />);
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login?returnTo=%2Fsales%3Ftab%3Dtrial-offerings"));
+    expect(screen.queryByRole("complementary", { name: "Sales workspace navigation" })).toBeNull();
   });
 
   it("numbers Blueprint steps by selection order, reindexes on removal, and posts only shared default-Snapshot Regions", async () => {

@@ -59,4 +59,34 @@ describe("shared portal login form fallback", () => {
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("http://localhost:3025/sales-trial");
   });
+
+  it("reauthorizes a safe return target after login instead of trusting its requested workspace", async () => {
+    mockHandlePortalLogin.mockResolvedValue({
+      status: 200,
+      body: { session: { role: "candidate" } },
+      session: {
+        sessionId: "session-candidate-1",
+        userId: "candidate-1",
+        customerId: "customer-helios",
+        email: "candidate@helioscx.demo",
+        role: "candidate",
+        workspace: "certification",
+        issuedAtMs: 1,
+      },
+    });
+
+    const response = await POST(
+      new Request("http://localhost:3025/api/auth/login?returnTo=%2Fadmin%3Ftab%3Dexams", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "candidate@helioscx.demo", password: "test-password" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      session: { role: "candidate" },
+      redirectTo: "/candidate",
+    });
+  });
 });

@@ -6,9 +6,22 @@ import {
   readHeartbeatAttemptStatus,
   resumeLabAttempt,
   suspendLabAttempt,
+  isLabPortalSessionExpiredError,
 } from "./lab-launcher-client";
 
 describe("lab launcher client helpers", () => {
+  it("classifies a protected lab read 401 as expiry instead of an inline action error", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "unauthorized" }),
+    });
+
+    await expect(loadCandidateLabStatus(fetchImpl, "attempt-1")).rejects.toSatisfy(
+      isLabPortalSessionExpiredError,
+    );
+  });
+
   it("blocks enter preflight for a future-scheduled ready attempt before any child-window open path can start", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

@@ -18,8 +18,8 @@ const queueViewPresentation: Record<SalesSessionQueueView, { readonly button: st
   history: { button: "History", heading: "Session history" },
 };
 
-export function SalesSessionsWorkbench({ route, creationNotice, onNavigate }: { readonly route: SalesWorkspaceRouteState; readonly creationNotice?: SalesNavigationIntent["creationNotice"]; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
-  const fetchRef = useRef(createAdminAuthenticatedRequest({ fetchImpl: (input, init) => window.fetch(input, init), onSessionExpired: () => { window.location.assign("/login"); } }));
+export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSessionExpired = () => { window.location.replace("/login"); } }: { readonly route: SalesWorkspaceRouteState; readonly creationNotice?: SalesNavigationIntent["creationNotice"]; readonly onNavigate: (intent: SalesNavigationIntent) => void; readonly onSessionExpired?: () => void }) {
+  const fetchRef = useRef(createAdminAuthenticatedRequest({ fetchImpl: (input, init) => window.fetch(input, init), onSessionExpired }));
   const [result, setResult] = useState<SuccessfulQueueResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

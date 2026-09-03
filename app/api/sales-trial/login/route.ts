@@ -3,6 +3,7 @@ import { DEFAULT_PORTAL_SESSION_TTL_MS } from "@/auth";
 import { getPortalSessionServices, getSalesTrialLoginServices } from "@/composition";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleSalesTrialLogin } from "@/api/sales-trial-portal";
+import { getPortalReturnTargetForSession } from "@/auth/portal-return-target";
 
 export async function POST(request: Request) {
   const sessionServices = getPortalSessionServices();
@@ -36,10 +37,14 @@ export async function POST(request: Request) {
     },
     { body },
   );
+  const returnTo = new URL(request.url).searchParams.get("returnTo");
+  const redirectTo = response.session
+    ? getPortalReturnTargetForSession(response.session, returnTo)
+    : null;
 
   if (!expectsJson) {
     const redirectUrl = new URL(
-      response.session ? "/sales-trial" : "/sales-trial/login",
+      redirectTo ?? "/sales-trial/login",
       request.url,
     );
     if (!response.session) {
@@ -60,7 +65,10 @@ export async function POST(request: Request) {
     return nextResponse;
   }
 
-  const nextResponse = NextResponse.json(response.body, { status: response.status });
+  const nextResponse = NextResponse.json(
+    response.session ? { ...response.body, redirectTo } : response.body,
+    { status: response.status },
+  );
   if (response.session) {
     nextResponse.cookies.set(PORTAL_SESSION_COOKIE, response.session.sessionId, {
       httpOnly: true,

@@ -6,7 +6,7 @@ import {
   PORTAL_SESSION_COOKIE,
 } from "@/api/portal-auth";
 import { DEFAULT_PORTAL_SESSION_TTL_MS } from "@/auth";
-import { getPortalHomePath } from "@/auth/portal-session";
+import { getPortalReturnTargetForSession } from "@/auth/portal-return-target";
 
 export async function POST(request: Request) {
   const sessionServices = getPortalSessionServices();
@@ -35,12 +35,14 @@ export async function POST(request: Request) {
     buildPortalLoginDeps(services),
     { body },
   );
+  const returnTo = new URL(request.url).searchParams.get("returnTo");
+  const redirectTo = response.session
+    ? getPortalReturnTargetForSession(response.session, returnTo)
+    : null;
 
   if (!expectsJson) {
     const redirectUrl = new URL(
-      response.session
-        ? getPortalHomePath(response.session)
-        : "/login",
+      redirectTo ?? "/login",
       request.url,
     );
     if (!response.session) {
@@ -62,7 +64,10 @@ export async function POST(request: Request) {
     return nextResponse;
   }
 
-  const nextResponse = NextResponse.json(response.body, { status: response.status });
+  const nextResponse = NextResponse.json(
+    response.session ? { ...response.body, redirectTo } : response.body,
+    { status: response.status },
+  );
   if (response.session) {
     nextResponse.cookies.set(PORTAL_SESSION_COOKIE, response.session.sessionId, {
       httpOnly: true,

@@ -274,4 +274,19 @@ describe("Sales Trial participant home", () => {
       cache: "no-store",
     });
   });
+
+  it("replaces the rendered participant portal after a post-render 401 without retaining its content", async () => {
+    window.history.replaceState({}, "", "/sales-trial");
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "unauthorized" }),
+    });
+
+    render(<SalesTrialHome email="visitor@example.test" firstName="Ari" fetchImpl={fetchImpl as typeof fetch} />);
+
+    await waitFor(() => expect(routerReplace).toHaveBeenCalledWith("/sales-trial/login?returnTo=%2Fsales-trial"));
+    expect(screen.queryByText("Your Sales Trial sign-in is active")).toBeNull();
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
 });

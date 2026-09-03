@@ -31,7 +31,7 @@ export async function loadCandidateLabStatus(
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401) {
-      throw new Error("Your portal session has expired. Log in again to continue.");
+      throw new PortalSessionExpiredError();
     }
     throw new Error(readError(json, "Failed to load exam details."));
   }
@@ -132,6 +132,8 @@ export async function suspendLabAttempt(
   });
   const detail = await response.json().catch(() => ({}));
 
+  throwIfPortalSessionExpired(response.status);
+
   if (response.status === 202) {
     const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
     return {
@@ -183,6 +185,7 @@ export async function resumeLabAttempt(
   });
 
   const detail = await response.json().catch(() => ({}));
+  throwIfPortalSessionExpired(response.status);
   if (response.status === 202) {
     const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
     return {
@@ -269,6 +272,7 @@ export async function endLabAttempt(
   });
 
   const detail = await response.json().catch(() => ({}));
+  throwIfPortalSessionExpired(response.status);
 
   if (response.status === 202) {
     const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
@@ -313,6 +317,21 @@ function readError(json: unknown, fallback: string): string {
     return (json as { error: string }).error;
   }
   return fallback;
+}
+
+class PortalSessionExpiredError extends Error {
+  constructor() {
+    super("Your portal session has expired. Log in again to continue.");
+    this.name = "PortalSessionExpiredError";
+  }
+}
+
+export function isLabPortalSessionExpiredError(error: unknown): error is PortalSessionExpiredError {
+  return error instanceof PortalSessionExpiredError;
+}
+
+function throwIfPortalSessionExpired(status: number): void {
+  if (status === 401) throw new PortalSessionExpiredError();
 }
 
 function readBoolean(json: unknown, key: string): boolean {

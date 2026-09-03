@@ -5,6 +5,7 @@ import { openEnterExamWindow } from "./enter-exam";
 import { closeLabWindow, isLabWindowOpen } from "./lab-window";
 import { endLabAttempt, preflightLabAction, readHeartbeatAttemptStatus, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
 import { describeAndReportLaunchFailure } from "./lab-launcher-runtime-diagnostics";
+import { isLabPortalSessionExpiredError } from "./lab-launcher-client";
 import {
   getAttemptStatusAfterLaunchTransition,
   getLauncherPresentation,
@@ -103,12 +104,14 @@ export function LabLauncher({
   openPeriodClosed = false,
   onAttemptStatusChange,
   onLabStatusLoaded,
+  onSessionExpired,
 }: {
   examAttemptId: string;
   currentAttemptStatus?: AttemptStatus;
   openPeriodClosed?: boolean;
   onAttemptStatusChange?: (status: AttemptStatus) => void;
   onLabStatusLoaded?: (status: CandidateLabStatus) => void;
+  onSessionExpired?: () => void;
 }) {
   const [state, setState] = useState<LaunchState>(
     currentAttemptStatus === "completed"
@@ -128,6 +131,7 @@ export function LabLauncher({
   const currentAttemptStatusRef = useRef(currentAttemptStatus);
   const onAttemptStatusChangeRef = useRef(onAttemptStatusChange);
   const onLabStatusLoadedRef = useRef(onLabStatusLoaded);
+  const onSessionExpiredRef = useRef(onSessionExpired);
 
   useEffect(() => {
     currentAttemptStatusRef.current = currentAttemptStatus;
@@ -141,6 +145,10 @@ export function LabLauncher({
   useEffect(() => {
     onLabStatusLoadedRef.current = onLabStatusLoaded;
   }, [onLabStatusLoaded]);
+
+  useEffect(() => {
+    onSessionExpiredRef.current = onSessionExpired;
+  }, [onSessionExpired]);
 
   const reportAttemptStatusChange = useCallback((status: AttemptStatus) => {
     currentAttemptStatusRef.current = status;
@@ -187,6 +195,10 @@ export function LabLauncher({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ examAttemptId }),
     });
+    if (response.status === 401) {
+      onSessionExpiredRef.current?.();
+      return;
+    }
     const body = await response.json().catch(() => ({}));
     const attemptStatus = readHeartbeatAttemptStatus(body);
     if (attemptStatus === "suspended" || attemptStatus === "completed") {
@@ -271,6 +283,10 @@ export function LabLauncher({
       setMessage(result.message);
       reportAttemptStatusChange("suspended");
     } catch (err) {
+      if (isLabPortalSessionExpiredError(err)) {
+        onSessionExpiredRef.current?.();
+        return;
+      }
       setState("error");
       setMessage(err instanceof Error ? err.message : "suspend failed");
     } finally {
@@ -325,6 +341,10 @@ export function LabLauncher({
       reportAttemptStatusChange("in_progress");
       setState("open");
     } catch (err) {
+      if (isLabPortalSessionExpiredError(err)) {
+        onSessionExpiredRef.current?.();
+        return;
+      }
       setState("error");
       setMessage(
         err instanceof Error ? err.message : "launch failed",
@@ -407,6 +427,10 @@ export function LabLauncher({
       }
       setState("open");
     } catch (err) {
+      if (isLabPortalSessionExpiredError(err)) {
+        onSessionExpiredRef.current?.();
+        return;
+      }
       setState("error");
       setMessage(
         err instanceof Error ? err.message : "resume failed",
@@ -457,6 +481,10 @@ export function LabLauncher({
       setMessage(result.message);
       reportAttemptStatusChange("completed");
     } catch (err) {
+      if (isLabPortalSessionExpiredError(err)) {
+        onSessionExpiredRef.current?.();
+        return;
+      }
       setState("error");
       setMessage(err instanceof Error ? err.message : "end exam failed");
     } finally {
