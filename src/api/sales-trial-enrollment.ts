@@ -260,7 +260,8 @@ export async function handleEnterSalesTrialOffering(
     return denied(deps, request, correlationId, "connection_missing");
   }
 
-  const observerOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, subject: () => enrollment ? { type: "sales_trial_enrollment", id: enrollment.id } : { type: "sales_trial_offering", id: offering.id } });
+  let observerSubject: DiagnosticSubject = { type: "sales_trial_offering", id: offering.id };
+  const observerOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, subject: () => observerSubject });
   const delivery =
     (observerOptions ? deps.deliveryFactory?.forConnection(connection, observerOptions) : deps.deliveryFactory?.forConnection(connection)) ??
     createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection, observerOptions));
@@ -325,6 +326,7 @@ export async function handleEnterSalesTrialOffering(
     );
   }
   let enrollment = reservation.enrollment;
+  observerSubject = { type: "sales_trial_enrollment", id: enrollment.id };
 
   try {
     const correlationEvidence = await delivery.ensureParticipantCorrelationProperties(
@@ -2023,14 +2025,7 @@ async function recordExtensionSuccess(
     readonly response: unknown;
   }[],
 ): Promise<void> {
-  await recordExtensionExchangeSteps(
-    deps,
-    request,
-    correlationId,
-    enrollment.id,
-    canonicalEnvironmentId,
-    httpExchanges,
-  );
+  if (!deps.cloudshareObserver) await recordExtensionExchangeSteps(deps, request, correlationId, enrollment.id, canonicalEnvironmentId, httpExchanges);
   await Promise.allSettled([
     deps.diagnostics?.record({
       source: "sales-trial-enrollment",
@@ -2054,7 +2049,7 @@ async function recordExtensionSuccess(
         integrationSurface: "cloudshare.v3.environments",
         attemptedOperation: primaryExchange ? "extend_environment" : "observe_extended_environment",
         expirationTime,
-        httpExchanges,
+        exchangeCount: httpExchanges.length,
       },
     }),
     deps.audit?.write({
@@ -2137,14 +2132,7 @@ async function recordExtensionFailure(
   const lastRequest = httpExchanges[httpExchanges.length - 1]?.request as
     | Record<string, unknown>
     | undefined;
-  await recordExtensionExchangeSteps(
-    deps,
-    request,
-    correlationId,
-    subjectId,
-    canonicalEnvironmentId,
-    httpExchanges,
-  );
+  if (!deps.cloudshareObserver) await recordExtensionExchangeSteps(deps, request, correlationId, subjectId, canonicalEnvironmentId, httpExchanges);
   await Promise.allSettled([
     deps.diagnostics?.record({
       source: "sales-trial-enrollment",
@@ -2167,7 +2155,7 @@ async function recordExtensionFailure(
         integrationSurface: "cloudshare.v3.environments",
         attemptedOperation: salesTrialAttemptedOperationForPath(lastRequest?.path),
         failureMode: reason,
-        httpExchanges,
+        exchangeCount: httpExchanges.length,
       },
     }),
     deps.audit?.write({
