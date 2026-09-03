@@ -37,6 +37,7 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare/errors";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 const TRIAL_CORRELATION_KEYS: readonly SalesParticipantCorrelationPropertyKey[] =
   SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS;
@@ -1358,6 +1359,7 @@ async function denied(
     error instanceof Error && "context" in error
       ? (error as { context?: Record<string, unknown> }).context
       : undefined;
+  const evidence = projectCloudShareFailureContext(context);
   await Promise.allSettled([
     deps.diagnostics?.record({
       source: "sales-trial-enrollment",
@@ -1373,23 +1375,10 @@ async function denied(
         offeringId: request.offeringId,
         ...(enrollmentId ? { salesTrialEnrollmentId: enrollmentId } : {}),
       },
-      ...(context
+      ...(evidence
         ? {
-            request: {
-              method: context.method,
-              path: context.path,
-              query: context.requestQuery,
-              headers: context.requestHeaders,
-              body: context.requestBody,
-            },
-            response: {
-              status: context.responseStatus ?? context.status,
-              headers: context.responseHeaders,
-              body: context.responseBody,
-              transport: context.transport,
-              network: context.network,
-              tls: context.tls,
-            },
+            request: evidence.request,
+            response: evidence.response,
           }
         : {}),
       details: {
@@ -1881,6 +1870,7 @@ async function monitoringFailure(
       : undefined;
   const integrationSurface = salesTrialIntegrationSurfaceForPath(context?.path);
   const attemptedOperation = salesTrialAttemptedOperationForPath(context?.path);
+  const evidence = projectCloudShareFailureContext(context);
 
   await Promise.allSettled([
     deps.diagnostics?.record({
@@ -1894,23 +1884,10 @@ async function monitoringFailure(
       correlationId,
       message,
       externalIds: { offeringId: request.offeringId },
-      ...(context
+      ...(evidence
         ? {
-            request: {
-              method: context.method,
-              path: context.path,
-              query: context.requestQuery,
-              headers: context.requestHeaders,
-              body: context.requestBody,
-            },
-            response: {
-              status: context.responseStatus ?? context.status,
-              headers: context.responseHeaders,
-              body: context.responseBody,
-              transport: context.transport,
-              network: context.network,
-              tls: context.tls,
-            },
+            request: evidence.request,
+            response: evidence.response,
           }
         : {}),
       details: {
@@ -2206,25 +2183,7 @@ async function extensionFailure(
           readonly response: Record<string, unknown>;
         }
       | undefined) ?? null;
-  const requestExchange = context
-    ? {
-        request: {
-          method: context.method,
-          path: context.path,
-          query: context.requestQuery,
-          headers: context.requestHeaders,
-          body: context.requestBody,
-        },
-        response: {
-          status: context.responseStatus ?? context.status,
-          headers: context.responseHeaders,
-          body: context.responseBody,
-          transport: context.transport,
-          network: context.network,
-          tls: context.tls,
-        },
-      }
-    : fallbackExchange;
+  const requestExchange = projectCloudShareFailureContext(context) ?? fallbackExchange;
   const attemptedOperation = salesTrialAttemptedOperationForPath(
     requestExchange?.request?.path,
   );

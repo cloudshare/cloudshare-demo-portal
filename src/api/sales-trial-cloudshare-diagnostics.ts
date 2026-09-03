@@ -8,6 +8,7 @@ import type {
   CloudShareRequestObservation,
   V4TokenAcquisitionEvent,
 } from "@/integrations/cloudshare";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 type RequestFailure = NonNullable<CloudShareRequestObservation["error"]>;
 
@@ -19,6 +20,8 @@ function projectRequest(
     return result.request as unknown as Record<string, unknown>;
   }
   const context = failure?.context;
+  const projectedFailure = projectCloudShareFailureContext(context);
+  if (projectedFailure) return projectedFailure.request;
   if (!context) {
     return null;
   }
@@ -57,6 +60,8 @@ function projectResponse(
     return result.response as unknown as Record<string, unknown>;
   }
   const context = failure?.context;
+  const projectedFailure = projectCloudShareFailureContext(context);
+  if (projectedFailure) return projectedFailure.response;
   if (!context) {
     return null;
   }

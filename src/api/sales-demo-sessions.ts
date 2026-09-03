@@ -16,6 +16,7 @@ import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integration
 import { CloudShareAuthError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError } from "@/integrations/cloudshare/errors";
 import { SalesItemProvisioningReadError, SalesItemProvisioningValidationError, type SalesItemProvisioningValidator } from "@/integrations/cloudshare/sales-item-provisioning";
 import { createCloudShareProjectMemberSource, type CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
+import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 const bodySchema = z.object({
   opportunityId: z.string().trim().min(1), itemId: z.string().trim().min(1),
@@ -206,11 +207,8 @@ function toDeliveryInput(input: SessionBody, item: { name: string; project: { id
 function opaqueCloudShareId(value: string): string { return value.replaceAll("-", ""); }
 function isChronological(input: SessionBody): boolean { return input.end > input.start; }
 const missingClientFactory: Pick<CloudShareClientFactory, "forConnection"> = { forConnection() { throw new Error("Sales Delivery is not configured."); } };
-function cloudShareEvidence(error: unknown): { request: Record<string, unknown>; response: Record<string, unknown> } | undefined {
-  if (!(error instanceof Error) || !("context" in error)) return undefined;
-  const context = (error as { context?: Record<string, unknown> }).context;
-  if (!context) return undefined;
-  return { request: { method: context.method, path: context.path, query: context.requestQuery, headers: context.requestHeaders, body: context.requestBody }, response: { status: context.responseStatus ?? context.status, headers: context.responseHeaders, body: context.responseBody, transport: context.cause, network: context.network, tls: context.tls } };
+function cloudShareEvidence(error: unknown): { request: Record<string, unknown> | null; response: Record<string, unknown> | null } | undefined {
+  return projectCloudShareFailureEvidence(error);
 }
 function isMainSalesProValidationFailure(error: unknown): boolean {
   if (!(error instanceof Error)) return false;

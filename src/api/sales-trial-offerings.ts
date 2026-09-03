@@ -39,6 +39,7 @@ import {
 } from "@/integrations/cloudshare/errors";
 import type { CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 import type { SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
+import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 const writeSchema = z.object({
   title: z.string().trim().min(1).max(100),
@@ -1407,38 +1408,11 @@ function isSalesCreateRequest(error: unknown): boolean {
 
 function cloudShareEvidence(error: unknown):
   | {
-      readonly request?: Record<string, unknown>;
-      readonly response?: Record<string, unknown>;
+      readonly request: Record<string, unknown> | null;
+      readonly response: Record<string, unknown> | null;
     }
   | undefined {
-  if (!(error instanceof CloudShareAuthError) &&
-    !(error instanceof CloudShareRequestError) &&
-    !(error instanceof CloudShareTransportError) &&
-    !(error instanceof CloudShareResponseError) &&
-    !isCloudShareErrorAcrossBoundaries(error)) {
-    return undefined;
-  }
-  const context = (error as { context?: Record<string, unknown> }).context;
-  if (!context) {
-    return undefined;
-  }
-  return {
-    request: {
-      method: context.method,
-      path: context.path,
-      query: context.requestQuery,
-      headers: context.requestHeaders,
-      body: context.requestBody,
-    },
-    response: {
-      status: context.responseStatus ?? context.status,
-      headers: context.responseHeaders,
-      body: context.responseBody,
-      cause: context.cause,
-      network: context.network,
-      tls: context.tls,
-    },
-  };
+  return projectCloudShareFailureEvidence(error);
 }
 
 const missingClientFactory: Pick<CloudShareClientFactory, "forConnection"> = {

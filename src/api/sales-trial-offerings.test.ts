@@ -2575,8 +2575,8 @@ describe("Sales Trial Offering API", () => {
     await savePublishDraft(repository);
     const createSession = vi.fn().mockRejectedValue(new CloudShareRequestError("gateway timeout", 504, {
       method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
-      requestBody: "grant_type=client_credentials", responseStatus: 504,
-      responseBody: { error: "gateway_timeout" },
+      requestBody: { client_secret: "marker-client_secret" }, responseStatus: 504,
+      responseBody: { access_token: "marker-access_token" },
     }));
     const deps = createDeps(repository, {
       diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
@@ -2600,8 +2600,8 @@ describe("Sales Trial Offering API", () => {
       request: null, response: null,
       details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "cloudshare_oauth_token" }),
     });
-    expect(JSON.stringify(entry)).not.toContain("client_secret");
-    expect(JSON.stringify(entry)).not.toContain("gateway_timeout");
+    expect(JSON.stringify(entry)).not.toContain("marker-client_secret");
+    expect(JSON.stringify(entry)).not.toContain("marker-access_token");
     expect(deps.audit.write).toHaveBeenCalledWith(expect.objectContaining({
       outcome: "failure", details: expect.objectContaining({ failureMode: "cloudshare_oauth_token", integrationSurface: "cloudshare.v4.oauth.token" }),
     }));

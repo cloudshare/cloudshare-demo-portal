@@ -1,6 +1,7 @@
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { CloudShareRequestObservation } from "./client";
 import type { V4TokenAcquisitionEvent } from "./v4-auth";
+import { projectCloudShareFailureContext } from "./diagnostic-failure-projection";
 
 /** Customer-scoped default observer. OAuth evidence never records credentials. */
 export function createCloudShareDiagnosticObserver(input: {
@@ -12,8 +13,8 @@ export function createCloudShareDiagnosticObserver(input: {
     operation: "cloudshare.request", outcome: event.outcome, customerId: input.customerId,
     actor: { type: "system", id: "cloudshare" }, subject: { type: "customer", id: input.customerId },
     message: event.outcome === "failure" ? "CloudShare request failed." : "CloudShare request completed.",
-    request: event.result?.request as unknown as Record<string, unknown> ?? projectFailureRequest(event.error?.context) ?? null,
-    response: event.result?.response as unknown as Record<string, unknown> ?? projectFailureResponse(event.error?.context) ?? null,
+    request: event.result?.request as unknown as Record<string, unknown> ?? projectCloudShareFailureContext(event.error?.context)?.request ?? projectFailureRequest(event.error?.context) ?? null,
+    response: event.result?.response as unknown as Record<string, unknown> ?? projectCloudShareFailureContext(event.error?.context)?.response ?? projectFailureResponse(event.error?.context) ?? null,
     details: {
       durationMs: event.durationMs,
       integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,

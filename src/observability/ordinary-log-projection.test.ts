@@ -23,6 +23,16 @@ describe("ordinary path projection", () => {
     expect(projectOrdinaryLogFields({ path: "/api/v3/envs/actions/getextended" }).path).toBe("/api/v3/envs/actions/getextended");
   });
 
+  it.each([
+    ["/api/v4/projects/trainings", "/api/v4/[REDACTED_ROUTE]"],
+    ["/MicaOrbit/api/v4/projects", "/[REDACTED_ROUTE]"],
+    ["/api/v4/oauth%2Ftoken", "/api/v4/[REDACTED_ROUTE]"],
+    ["/api/v4/projects/oauth/token", "/api/v4/[REDACTED_ROUTE]"],
+    ["/v3/envs/actions/getextended", "/v3/envs/actions/getextended"],
+  ])("fails closed for adversarial or non-static routes: %s", (path, expected) => {
+    expect(projectOrdinaryLogFields({ path }).path).toBe(expected);
+  });
+
   it("never projects provider identifier keys, including under externalIds", () => {
     const projected = projectOrdinaryLogFields({
       customerId: "customer-portal-1", examAttemptId: "attempt-portal-1",
