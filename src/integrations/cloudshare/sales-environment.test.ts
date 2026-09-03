@@ -22,4 +22,50 @@ describe("CloudShare Sales Environment observation", () => {
     const source = createCloudShareSalesEnvironmentSource({ requestV3Detailed: vi.fn().mockResolvedValue(detailed(items, "/api/v3/envs")), requestV3: vi.fn() } as never);
     await expect(source.observe({ ownerEmail: "participant@example.test", projectId: "project-1" })).rejects.toBeInstanceOf(SalesEnvironmentResolutionError);
   });
+
+  it("issues the documented v3 extend action with the canonical envId and no duration override", async () => {
+    const requestV3TextDetailed = vi.fn().mockResolvedValue({
+      data: "",
+      host: "use.cloudshare.com",
+      integrationSurface: "cloudshare.v3",
+      request: {
+        method: "PUT" as const,
+        path: "/api/v3/envs/actions/extend",
+        query: { envId: "opaque-b" },
+      },
+      response: {
+        status: 200,
+        body: "",
+      },
+    });
+    const source = createCloudShareSalesEnvironmentSource({
+      requestV3Detailed: vi.fn(),
+      requestV3: vi.fn(),
+      requestV3TextDetailed,
+      requestV3Text: vi.fn(),
+    } as never);
+
+    await expect(source.extendById?.("opaque-b")).resolves.toMatchObject({
+      environmentId: "opaque-b",
+      exchange: {
+        request: {
+          method: "PUT",
+          path: "/api/v3/envs/actions/extend",
+          query: { envId: "opaque-b" },
+        },
+        response: {
+          status: 200,
+          body: "",
+        },
+      },
+    });
+
+    expect(requestV3TextDetailed).toHaveBeenCalledWith({
+      method: "PUT",
+      path: "/envs/actions/extend",
+      query: { envId: "opaque-b" },
+    });
+    expect(requestV3TextDetailed.mock.calls[0]?.[0]).not.toHaveProperty("body");
+    expect(requestV3TextDetailed.mock.calls[0]?.[0]?.query).not.toHaveProperty("duration");
+  });
 });

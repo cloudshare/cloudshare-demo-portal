@@ -17,6 +17,7 @@ export interface SalesTrialEnrollment {
   readonly participationStatus?: "pending" | "inProgress" | "concluded";
   readonly cloudShareRosterEnvironmentReference: string | null;
   readonly environmentStatus: string | null;
+  readonly observedExpirationTime?: string | null;
   readonly firstJoined: string | null;
   readonly status: SalesTrialEnrollmentStatus;
   readonly attentionReason: string | null;
@@ -35,10 +36,30 @@ export interface SalesTrialEnrollmentRepository {
     readonly created: boolean;
     readonly reclaimed: boolean;
   }>;
+  reserveForExtension?(
+    customerId: string,
+    enrollmentId: string,
+    update: {
+      readonly updatedAt: Date;
+      readonly attentionReason: string;
+    },
+  ): Promise<boolean>;
+  releaseExtensionReservation?(
+    customerId: string,
+    enrollmentId: string,
+    update: {
+      readonly updatedAt: Date;
+      readonly expectedAttentionReason: string;
+    },
+  ): Promise<boolean>;
   findByOfferingAndPortalUser(
     customerId: string,
     salesTrialOfferingId: string,
     portalUserId: string,
+  ): Promise<SalesTrialEnrollment | null>;
+  findById?(
+    customerId: string,
+    enrollmentId: string,
   ): Promise<SalesTrialEnrollment | null>;
   listByOffering(
     customerId: string,
@@ -64,5 +85,5 @@ export function hasContinuableSalesTrialEnvironment(
     return false;
   }
   const status = enrollment.environmentStatus.trim().toLowerCase();
-  return status !== "deleted" && status !== "creation failed";
+  return status !== "deleted" && status !== "creation failed" && status !== "creationfailed";
 }

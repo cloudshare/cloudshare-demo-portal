@@ -8,7 +8,9 @@ import type {
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import {
+  CLOUDSHARE_ERROR_DISCRIMINANT,
   CloudShareRequestError,
+  CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
 import { SalesItemProvisioningValidationError } from "@/integrations/cloudshare/sales-item-provisioning";
@@ -1017,10 +1019,11 @@ describe("Sales Trial Offering API", () => {
       deliveryFactory: {
         forConnection: vi.fn().mockReturnValue({
           createSession: vi.fn().mockRejectedValue(
-            new CloudShareTransportError("timeout", {
+            new CloudShareRequestError("gateway timeout", 504, {
               method: "POST",
-              path: "/sales",
-              cause: { code: "ETIMEDOUT" },
+              path: "/v4/sales",
+              responseStatus: 504,
+              responseBody: "<html><body><h1>504 Gateway Time-out</h1></body></html>",
             }),
           ),
         }),
@@ -2302,27 +2305,25 @@ describe("Sales Trial Offering API", () => {
       unpublishedAt: null,
       attentionReason: null,
     });
-    const failure = Object.assign(
-      new Error("CloudShare did not return the complete documented Sales Experience required for a safe update."),
+    const failure = new CloudShareResponseError(
+      "CloudShare did not return the complete documented Sales Experience required for a safe update.",
       {
-        context: {
-          method: "GET",
-          path: "/sales/sales-1",
-          responseStatus: 200,
-          responseBody: {
-            id: "sales-1",
-            name: "Helios Trial Offering",
-            type: "trial",
-            projectId: "project-1",
-            blueprintIds: ["bp-1"],
-            cloudshareRegionIds: ["region-1"],
-            policyId: "policy-1",
-            mainSalesPro: { email: "owner@example.test" },
-            registrationType: "registeredParticipantsOnly",
-            start: "2026-09-01T09:00",
-            end: null,
-            timeZone: "UTC",
-          },
+        method: "GET",
+        path: "/sales/sales-1",
+        responseStatus: 200,
+        responseBody: {
+          id: "sales-1",
+          name: "Helios Trial Offering",
+          type: "trial",
+          projectId: "project-1",
+          blueprintIds: ["bp-1"],
+          cloudshareRegionIds: ["region-1"],
+          policyId: "policy-1",
+          mainSalesPro: { email: "owner@example.test" },
+          registrationType: "registeredParticipantsOnly",
+          start: "2026-09-01T09:00",
+          end: null,
+          timeZone: "UTC",
         },
       },
     );
@@ -2588,6 +2589,7 @@ describe("Sales Trial Offering API", () => {
 
     expect(result).toMatchObject({ status: 502, body: {
       error: "CloudShare authentication failed before the Sales Trial Offering was created. Review support diagnostics and retry.",
+      correlationId: expect.any(String),
     } });
     expect(await repository.findById("customer-1", "offering-token")).toMatchObject({
       status: "draft", externalId: null, cloudShareSalesExperienceId: null, attentionReason: null,
@@ -2604,13 +2606,55 @@ describe("Sales Trial Offering API", () => {
     expect(createSession).toHaveBeenCalledTimes(1);
   });
 
+  it("recognizes a branded OAuth token 504 across a reloaded module boundary", async () => {
+    const repository = createOfferingRepository();
+    await savePublishDraft(repository, "offering-reloaded-oauth");
+    const reloadedModuleError = Object.assign(new Error("gateway timeout"), {
+      name: "CloudShareRequestError",
+      cloudShareErrorBoundaryDiscriminant: CLOUDSHARE_ERROR_DISCRIMINANT,
+      status: 504,
+      context: {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        responseStatus: 504,
+      },
+    });
+    const result = await handlePublishSalesTrialOffering(createDeps(repository, {
+      deliveryFactory: {
+        forConnection: vi.fn().mockReturnValue({
+          createSession: vi.fn().mockRejectedValue(reloadedModuleError),
+        }),
+      },
+    }), {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1" },
+      id: "offering-reloaded-oauth",
+    });
+
+    expect(result).toMatchObject({
+      status: 502,
+      body: {
+        error: "CloudShare authentication failed before the Sales Trial Offering was created. Review support diagnostics and retry.",
+      },
+    });
+    expect(await repository.findById("customer-1", "offering-reloaded-oauth")).toMatchObject({
+      status: "draft",
+      externalId: null,
+      cloudShareSalesExperienceId: null,
+      attentionReason: null,
+    });
+  });
+
   it("does not trust forged OAuth-looking context on an untyped Error", async () => {
     const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
     await savePublishDraft(repository, "offering-forged-oauth");
     const forged = Object.assign(new Error("unknown failure"), {
       context: { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token", responseStatus: 504 },
     });
     const result = await handlePublishSalesTrialOffering(createDeps(repository, {
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
       deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(forged) }) },
     }), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-forged-oauth" });
 
@@ -2618,6 +2662,12 @@ describe("Sales Trial Offering API", () => {
     expect(await repository.findById("customer-1", "offering-forged-oauth")).toMatchObject({
       status: "needs_attention", attentionReason: expect.stringContaining("creation outcome is unknown"),
     });
+    const [entry] = await diagnosticRepository.query({
+      operation: "sales.trial_offering.publish",
+      outcome: "failure",
+    });
+    expect(entry.request).toBeNull();
+    expect(entry.response).toBeNull();
   });
 
   it("unpublishes immediately and defers CloudShare end to the latest active Environment expiry plus five minutes", async () => {

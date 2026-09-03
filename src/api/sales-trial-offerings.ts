@@ -35,6 +35,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareErrorAcrossBoundaries,
 } from "@/integrations/cloudshare/errors";
 import type { CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 import type { SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
@@ -1360,14 +1361,18 @@ function isOutcomeAmbiguousCreateFailure(error: unknown): boolean {
   if (isCloudShareOAuthTokenFailure(error)) {
     return false;
   }
-  if (error instanceof CloudShareRequestError) {
-    return error.status >= 500 && isSalesCreateRequest(error);
+  if (error instanceof CloudShareRequestError ||
+    (isCloudShareErrorAcrossBoundaries(error) && error.name === "CloudShareRequestError")) {
+    return (error as CloudShareRequestError).status >= 500 && isSalesCreateRequest(error);
   }
-  if (error instanceof CloudShareTransportError || error instanceof CloudShareResponseError) {
+  if (error instanceof CloudShareTransportError || error instanceof CloudShareResponseError ||
+    (isCloudShareErrorAcrossBoundaries(error) &&
+      (error.name === "CloudShareTransportError" || error.name === "CloudShareResponseError"))) {
     const context = cloudShareErrorContext(error);
     return context ? isSalesCreateRequest(error) : true;
   }
-  return !(error instanceof CloudShareAuthError);
+  return !(error instanceof CloudShareAuthError) &&
+    !(isCloudShareErrorAcrossBoundaries(error) && error.name === "CloudShareAuthError");
 }
 
 function cloudShareErrorContext(error: unknown): Record<string, unknown> | undefined {
@@ -1380,7 +1385,8 @@ function isCloudShareOAuthTokenFailure(error: unknown): boolean {
   if (!(error instanceof CloudShareAuthError) &&
     !(error instanceof CloudShareRequestError) &&
     !(error instanceof CloudShareTransportError) &&
-    !(error instanceof CloudShareResponseError)) {
+    !(error instanceof CloudShareResponseError) &&
+    !isCloudShareErrorAcrossBoundaries(error)) {
     return false;
   }
   const context = cloudShareErrorContext(error);
@@ -1389,7 +1395,8 @@ function isCloudShareOAuthTokenFailure(error: unknown): boolean {
 
 function isSalesCreateRequest(error: unknown): boolean {
   const context = cloudShareErrorContext(error);
-  return context?.method === "POST" && context?.path === "/sales";
+  return context?.method === "POST" &&
+    (context?.path === "/sales" || context?.path === "/v4/sales");
 }
 
 function cloudShareEvidence(error: unknown):
@@ -1398,7 +1405,11 @@ function cloudShareEvidence(error: unknown):
       readonly response?: Record<string, unknown>;
     }
   | undefined {
-  if (!(error instanceof Error) || !("context" in error)) {
+  if (!(error instanceof CloudShareAuthError) &&
+    !(error instanceof CloudShareRequestError) &&
+    !(error instanceof CloudShareTransportError) &&
+    !(error instanceof CloudShareResponseError) &&
+    !isCloudShareErrorAcrossBoundaries(error)) {
     return undefined;
   }
   const context = (error as { context?: Record<string, unknown> }).context;
@@ -1519,6 +1530,7 @@ async function publishFailure(
   );
   return response(itemValidationFailure ? 422 : 502, {
     error: errorMessage,
+    correlationId,
   });
 }
 

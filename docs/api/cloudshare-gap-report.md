@@ -2124,6 +2124,36 @@ only one worker owns each reconciliation pass.
 
 ---
 
+## GAP-35 — Live default extension outcome for a retained Trial Environment
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed |
+| **Verified live** | Yes — the real Sales Admin UI extended one disposable retained Trial Environment on 2026-09-03 and reconciled the provider expiry before reporting success. |
+
+**Observed behaviour**
+
+The Certalis Sales Admin browser flow resolved one exact Customer-scoped retained Environment,
+read its current state, and sent the documented bodyless
+`PUT /api/v3/envs/actions/extend?envId=...` request. CloudShare returned 200. A post-operation
+`getextended` read changed the provider expiration from `2026-09-04T13:19:10Z` to
+`2026-09-05T13:19:10Z`, an exact 24-hour retention increase. The CloudShare UI independently
+showed remaining runtime increase from 47 minutes to 1 hour 47 minutes, an exact 60-minute runtime
+increase. Protected diagnostic correlation `df3fab1e-7eb8-4dad-8c05-8dc2f009cbe3` retains the
+resolution, pre-read, PUT, and post-read exchanges without exposing provider identifiers in the
+ordinary portal UI.
+
+**Impact on Certalis Sales Trial use**
+
+The verified tenant default is two-dimensional: one extension adds 60 minutes of runtime and moves
+the deletion/retention expiry forward by 24 hours. Certalis does not assume those durations in code;
+it remains fail-closed and reports success only after the provider expiry readback changes.
+
+**Code reference:** `src/integrations/cloudshare/sales-environment.ts`,
+`src/api/sales-trial-enrollment.ts`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
@@ -2151,5 +2181,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-08-31 (updated GAP-34 with live sponsored-link boundary and deferred-end mitigation).
+*Last updated: 2026-09-01 (added GAP-35 with the bounded live extension-verification result).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

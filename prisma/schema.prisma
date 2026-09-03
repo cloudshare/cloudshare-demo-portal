@@ -164,6 +164,7 @@ model SalesTrialEnrollment {
   participationStatus                String   @default("pending")
   cloudShareRosterEnvironmentReference String?
   environmentStatus                  String?
+  observedExpirationTime             String?
   firstJoined                        String?
   status                             String
   attentionReason                    String?

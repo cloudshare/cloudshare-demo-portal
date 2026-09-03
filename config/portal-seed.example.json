@@ -1,5 +1,5 @@
 {
-  "heliosAdminEmail": "admin@helioscx.demo",
+  "heliosAdminEmail": "helios-admin@example.invalid",
   "heliosAdminPassword": "replace-with-helios-admin-password",
   "heliosCloudShareConnection": {
     "apiId": "replace-with-helios-cloudshare-api-id",
@@ -7,10 +7,10 @@
     "webhookSecret": "replace-with-helios-webhook-secret"
   },
   "heliosInstructor": {
-    "id": "replace-with-helios-cloudshare-member-id",
+    "id": "replace-with-real-cloudshare-member-id",
     "name": "Helios Service Account"
   },
-  "certalisSalesAdminEmail": "sales-admin@certalis.demo",
+  "certalisSalesAdminEmail": "certalis-sales-admin@example.invalid",
   "certalisSalesAdminPassword": "replace-with-certalis-sales-admin-password",
   "certalisSalesShareConnection": {
     "apiId": "replace-with-certalis-cloudshare-api-id",

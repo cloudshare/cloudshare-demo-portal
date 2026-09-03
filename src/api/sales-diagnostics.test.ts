@@ -36,6 +36,12 @@ describe("Sales diagnostics handler", () => {
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-session-participants", correlationId: "corr-participants-failed" }));
   });
 
+  it("allows Sales Trial enrollment extension evidence to be correlated from Sales Support", async () => {
+    const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
+    await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-trial-enrollment", correlationId: "corr-trial-extend-failed" } });
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-trial-enrollment", correlationId: "corr-trial-extend-failed" }));
+  });
+
   it("returns correlated participant reconciliation evidence through the aggregate Sales Support feed", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     await diagnostics.append({ source: "sales-session-participants", operation: "sales.demo_session.participants.reconciled", outcome: "failure", customerId: "customer-certalis", correlationId: "corr-participants-failed", message: "CloudShare could not reconcile Sales Participant monitoring", occurredAt: new Date("2026-07-17T00:00:00.000Z") });
@@ -80,6 +86,7 @@ describe("Sales diagnostics handler", () => {
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-session-reconciliation" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-project-members" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-session-participants" }));
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-trial-enrollment" }));
   });
 
   it("rejects an arbitrary source instead of widening Sales support", async () => {

@@ -108,6 +108,7 @@ export function SalesTrialOfferingsAdmin({
   readonly onNavigate?: (intent: NavigationIntent) => void;
 }) {
   const formRef = useRef<HTMLFormElement | null>(null);
+  const lifecycleInFlightRef = useRef<string | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [timezones, setTimezones] = useState<Timezone[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -121,6 +122,9 @@ export function SalesTrialOfferingsAdmin({
   const [monitoringObservation, setMonitoringObservation] = useState<SalesTrialMonitoringObservation | null>(null);
   const [monitoringLoading, setMonitoringLoading] = useState(false);
   const [monitoringError, setMonitoringError] = useState<string | null>(null);
+  const [monitoringCorrelationId, setMonitoringCorrelationId] = useState<string | null>(null);
+  const [extendingParticipantId, setExtendingParticipantId] = useState<string | null>(null);
+  const [lifecycleInFlight, setLifecycleInFlight] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -237,6 +241,10 @@ export function SalesTrialOfferingsAdmin({
   }
 
   async function lifecycle(id: string, action: "publish" | "end") {
+    const operationKey = `${id}:${action}`;
+    if (lifecycleInFlightRef.current !== null) return;
+    lifecycleInFlightRef.current = operationKey;
+    setLifecycleInFlight(operationKey);
     setMessage(null);
     setMessageCorrelationId(null);
     try {
@@ -267,11 +275,46 @@ export function SalesTrialOfferingsAdmin({
       if (isAdminSessionExpiredError(error)) return;
       setMessageTone("error");
       setMessage(error instanceof Error ? error.message : `Could not ${action} Trial Offering.`);
+    } finally {
+      lifecycleInFlightRef.current = null;
+      setLifecycleInFlight(null);
     }
   }
 
   function openSupport(intent: Omit<NavigationIntent, "tab">) {
     onNavigate?.({ tab: "support", ...intent });
+  }
+
+  async function loadMonitoring(id: string) {
+    setMonitoringLoading(true);
+    setMonitoringOfferingId(id);
+    setMonitoringError(null);
+    setMonitoringCorrelationId(null);
+    try {
+      const response = await fetchAdmin(
+        `/api/sales/trial-offerings/${encodeURIComponent(id)}/participants`,
+      );
+      const body = (await response.json()) as SalesTrialOfferingMonitoringResponseBody & {
+        error?: string;
+        correlationId?: string;
+      };
+      if (!response.ok) {
+        setMonitoringError(body.error ?? "Could not load participant monitoring.");
+        setMonitoringCorrelationId(body.correlationId ?? null);
+        return;
+      }
+      setMonitoringParticipants([...(body.participants ?? [])]);
+      setMonitoringObservation(body.observation ?? null);
+    } catch (error) {
+      setMonitoringParticipants([]);
+      setMonitoringObservation(null);
+      setMonitoringCorrelationId(null);
+      setMonitoringError(
+        error instanceof Error ? error.message : "Could not load participant monitoring.",
+      );
+    } finally {
+      setMonitoringLoading(false);
+    }
   }
 
   async function toggleMonitoring(id: string) {
@@ -280,31 +323,49 @@ export function SalesTrialOfferingsAdmin({
       setMonitoringParticipants([]);
       setMonitoringObservation(null);
       setMonitoringError(null);
+      setMonitoringCorrelationId(null);
       return;
     }
-    setMonitoringLoading(true);
-    setMonitoringOfferingId(id);
-    setMonitoringError(null);
+    await loadMonitoring(id);
+  }
+
+  async function extendEnvironment(
+    offeringId: string,
+    participant: SalesTrialMonitoringParticipant,
+  ) {
+    setMessage(null);
+    setMessageCorrelationId(null);
+    setExtendingParticipantId(participant.id);
     try {
       const response = await fetchAdmin(
-        `/api/sales/trial-offerings/${encodeURIComponent(id)}/participants`,
+        `/api/sales/trial-offerings/${encodeURIComponent(offeringId)}/participants/${encodeURIComponent(participant.id)}/extend`,
+        { method: "POST" },
       );
-      const body = (await response.json()) as SalesTrialOfferingMonitoringResponseBody & {
+      const body = (await response.json()) as {
         error?: string;
+        reason?: string;
+        correlationId?: string;
       };
       if (!response.ok) {
-        throw new Error(body.error ?? "Could not load participant monitoring.");
+        setMessageTone("error");
+        setMessage(body.reason ?? body.error ?? "Could not extend Sales Trial environment.");
+        setMessageCorrelationId(body.correlationId ?? null);
+        return;
       }
-      setMonitoringParticipants([...(body.participants ?? [])]);
-      setMonitoringObservation(body.observation ?? null);
+      await loadMonitoring(offeringId);
+      setMessageTone("success");
+      setMessage("Sales Trial environment extended.");
+      setMessageCorrelationId(null);
     } catch (error) {
-      setMonitoringParticipants([]);
-      setMonitoringObservation(null);
-      setMonitoringError(
-        error instanceof Error ? error.message : "Could not load participant monitoring.",
+      if (isAdminSessionExpiredError(error)) return;
+      setMessageTone("error");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not extend Sales Trial environment.",
       );
     } finally {
-      setMonitoringLoading(false);
+      setExtendingParticipantId(null);
     }
   }
 
@@ -382,8 +443,8 @@ export function SalesTrialOfferingsAdmin({
           </div> : null}
           {offering.attentionReason ? <div role="alert" style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.55rem" }}><p style={{ margin: 0 }}>{offering.attentionReason}</p><button type="button" style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer", padding: 0, justifySelf: "start" }} onClick={() => openSupport(latestSupportByOfferingId[offering.id] ? { correlationId: latestSupportByOfferingId[offering.id] } : { source: "sales-trial-offerings", subjectId: offering.id })}>{latestSupportByOfferingId[offering.id] ? `Open support diagnostics (${latestSupportByOfferingId[offering.id]})` : "Open support diagnostics"}</button></div> : null}
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-            <button type="button" style={offering.status !== "draft" ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
-            <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => { if (window.confirm("End this Trial Offering now and unpublish it from the portal?")) void lifecycle(offering.id, "end"); }}>End trial</button>
+            <button type="button" style={offering.status !== "draft" || lifecycleInFlight !== null ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft" || lifecycleInFlight !== null} onClick={() => void lifecycle(offering.id, "publish")}>{lifecycleInFlight === `${offering.id}:publish` ? "Publishing…" : "Publish"}</button>
+            <button type="button" style={offering.status !== "published" || lifecycleInFlight !== null ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published" || lifecycleInFlight !== null} onClick={() => { if (window.confirm("End this Trial Offering now and unpublish it from the portal?")) void lifecycle(offering.id, "end"); }}>{lifecycleInFlight === `${offering.id}:end` ? "Ending…" : "End trial"}</button>
             {offering.status === "published" || offering.status === "ending" || offering.status === "ended" || offering.status === "unpublished" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
           </div>
           {monitoringOfferingId === offering.id ? <section aria-label="Participant monitoring" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem", overflowX: "auto", width: "100%" }}>
@@ -394,7 +455,7 @@ export function SalesTrialOfferingsAdmin({
               {formatMonitoringObservationSource(monitoringObservation?.source) ? <span style={{ color: "#52606d" }}>{`Observed from ${formatMonitoringObservationSource(monitoringObservation?.source)}${monitoringObservation?.observedAt ? ` · ${monitoringObservation.observedAt}` : ""}`}</span> : null}
             </div>
             {monitoringLoading ? <p style={{ margin: 0 }}>Refreshing participant monitoring…</p> : null}
-            {monitoringError ? <div role="alert" style={alertPanelStyle.danger}>{monitoringError}</div> : null}
+            {monitoringError ? <div role="alert" style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.55rem" }}><span>{monitoringError}</span>{monitoringCorrelationId ? <button type="button" style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer", padding: 0, justifySelf: "start" }} onClick={() => openSupport({ correlationId: monitoringCorrelationId })}>{`Open support diagnostics (${monitoringCorrelationId})`}</button> : null}</div> : null}
             {!monitoringLoading && !monitoringError && monitoringParticipants.length === 0 ? <p style={{ margin: 0, color: "#52606d" }}>No enrolled participants are currently visible for this Trial Offering.</p> : null}
             {!monitoringLoading && !monitoringError && monitoringParticipants.length > 0 ? <table style={{ width: "100%", minWidth: "48rem", borderCollapse: "collapse" }}>
               <thead>
@@ -422,7 +483,42 @@ export function SalesTrialOfferingsAdmin({
                       </>
                     ) : null}
                   </td>
-                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.environment.value ?? participant.envStatus ?? "Not assigned"}</td>
+                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>
+                    {(() => {
+                      const extendReasonId = participant.extend?.reason
+                        ? `extend-reason-${participant.id}`
+                        : undefined;
+                      return (
+                    <div style={{ display: "grid", gap: "0.5rem", justifyItems: "start" }}>
+                      <span>{participant.environment.value ?? participant.envStatus ?? "Not assigned"}</span>
+                      {participant.extend ? (
+                        <>
+                          <button
+                            type="button"
+                            aria-label={`Extend environment for ${participant.firstName} ${participant.lastName}`}
+                            aria-describedby={extendReasonId}
+                            title={participant.extend.reason ?? undefined}
+                            style={
+                              !participant.extend.enabled || extendingParticipantId === participant.id
+                                ? { ...secondaryButtonStyle, ...disabledButtonStyle }
+                                : secondaryButtonStyle
+                            }
+                            disabled={!participant.extend.enabled || extendingParticipantId === participant.id}
+                            onClick={() => void extendEnvironment(offering.id, participant)}
+                          >
+                            {extendingParticipantId === participant.id ? "Extending…" : "Extend environment"}
+                          </button>
+                          {participant.extend.reason ? (
+                            <small id={extendReasonId} style={{ color: "#52606d", maxWidth: "20rem" }}>
+                              {participant.extend.reason}
+                            </small>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                      );
+                    })()}
+                  </td>
                 </tr>)}
               </tbody>
             </table> : null}

@@ -14,6 +14,7 @@ const enrollment = {
   participationStatus: "pending" as const,
   cloudShareRosterEnvironmentReference: null,
   environmentStatus: null,
+  observedExpirationTime: null,
   firstJoined: null,
   status: "provisioning" as const,
   attentionReason: null,
@@ -99,6 +100,66 @@ describe("Prisma Sales Trial enrollment repository", () => {
         attentionReason: null,
         lastReconciledAt: enrollment.lastReconciledAt,
         updatedAt: enrollment.updatedAt,
+      },
+    });
+  });
+
+  it("claims the extend pending fence only from an active unclaimed enrollment", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const repository = createPrismaSalesTrialEnrollmentRepository({
+      salesTrialEnrollment: { updateMany },
+    } as never);
+    const updatedAt = new Date("2026-09-01T10:15:00.000Z");
+
+    await expect(
+      repository.reserveForExtension!("customer-1", "enrollment-1", {
+        updatedAt,
+        attentionReason:
+          "The previous Sales Trial extension outcome is still unconfirmed. Certalis must reconcile the current CloudShare state before another extension can be requested.",
+      }),
+    ).resolves.toBe(true);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        customerId: "customer-1",
+        id: "enrollment-1",
+        status: "active",
+        attentionReason: null,
+      },
+      data: {
+        status: "needs_attention",
+        attentionReason:
+          "The previous Sales Trial extension outcome is still unconfirmed. Certalis must reconcile the current CloudShare state before another extension can be requested.",
+        updatedAt,
+      },
+    });
+  });
+
+  it("releases the extend pending fence only from the exact claimed marker", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const repository = createPrismaSalesTrialEnrollmentRepository({
+      salesTrialEnrollment: { updateMany },
+    } as never);
+    const updatedAt = new Date("2026-09-01T10:20:00.000Z");
+
+    await expect(
+      repository.releaseExtensionReservation!("customer-1", "enrollment-1", {
+        updatedAt,
+        expectedAttentionReason:
+          "The previous Sales Trial extension outcome is still unconfirmed. Certalis must reconcile the current CloudShare state before another extension can be requested.",
+      }),
+    ).resolves.toBe(true);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        customerId: "customer-1",
+        id: "enrollment-1",
+        status: "needs_attention",
+        attentionReason:
+          "The previous Sales Trial extension outcome is still unconfirmed. Certalis must reconcile the current CloudShare state before another extension can be requested.",
+      },
+      data: {
+        status: "active",
+        attentionReason: null,
+        updatedAt,
       },
     });
   });
