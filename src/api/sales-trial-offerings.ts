@@ -1102,7 +1102,7 @@ async function legacyHandleEndSalesTrialOffering(
   }
   const delivery =
     deps.deliveryFactory?.forConnection(connection) ??
-    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, { scope: "customer_default", correlationId: `sales-offering-update:${request.customerId}`, reason: "unanchored_support_read" }));
   if (!delivery.updateSession) {
     return response(503, { error: "Sales Delivery update is not configured." });
   }

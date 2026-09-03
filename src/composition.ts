@@ -444,10 +444,8 @@ export function getServices(): Services {
   );
   const cloudshareClientFactory: CloudShareClientFactory = {
     forConnection: (connection, options) => {
-      // Compatibility calls remain Customer-scoped; new certification paths must pass an explicit scope.
-      const scopedOptions = options?.scope
-        ? options
-        : { scope: "customer_default" as const, correlationId: randomUUID(), reason: "unanchored_support_read" as const };
+      if (!options) throw new Error("CloudShare client construction requires an explicit observation scope.");
+      const scopedOptions = options;
       const observer = createCloudShareDiagnosticObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId, correlationId: scopedOptions.scope === "workflow" ? randomUUID() : scopedOptions.correlationId });
       const workflowObserver = scopedOptions.scope === "workflow"
         ? createCloudShareWorkflowObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId, ...scopedOptions.workflow })

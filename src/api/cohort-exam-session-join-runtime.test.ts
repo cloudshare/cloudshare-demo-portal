@@ -751,7 +751,7 @@ describe("joinCohortExamSessionRuntime", () => {
             ) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
             requestV3Text: vi.fn(),
             requestV4: vi.fn(),
-            requestV4Detailed: makeCloudShareFactory().forConnection({} as never).requestV4Detailed,
+            requestV4Detailed: makeCloudShareFactory().forConnection({} as never, undefined).requestV4Detailed,
           })),
         },
         diagnostics: createDiagnosticRecorder({ repository: createInMemoryDiagnosticLogRepository() }),

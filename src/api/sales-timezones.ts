@@ -24,7 +24,7 @@ export async function handleGetSalesTimezones(deps: SalesTimezonesDeps, request:
   const connection = await deps.connections.findByCustomerId(request.customerId);
   if (!connection) return cached ? { status: 200, body: { timezones: cached.timezones, fetchedAt: cached.fetchedAt.toISOString(), freshness: "stale", preference, warning: "CloudShare Connection is unavailable; showing the last verified timezone catalogue." } } : { status: 404, body: { error: "Save a CloudShare Connection before retrieving timezones." } };
   try {
-    const source = deps.timezoneSourceFactory?.forConnection(connection) ?? createCloudShareTimezoneSource((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+    const source = deps.timezoneSourceFactory?.forConnection(connection) ?? createCloudShareTimezoneSource((deps.cloudshare ?? missingClientFactory).forConnection(connection, { scope: "customer_default", correlationId: `sales-timezones:${request.customerId}`, reason: "catalogue_resource_read" }));
     const live = await source.list();
     await deps.cache.save({ customerId: request.customerId, timezones: live.timezones, fetchedAt: now });
     const correlationId = randomUUID();

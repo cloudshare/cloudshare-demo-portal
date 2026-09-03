@@ -16,7 +16,7 @@ export async function handleReconcileSalesSession(deps: { sessions: Pick<SalesDe
   const correlationId = randomUUID();
   let remote: Awaited<ReturnType<SalesDelivery["readSession"]>> | undefined;
   try {
-    const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare as NonNullable<typeof deps.cloudshare>).forConnection(connection));
+    const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare as NonNullable<typeof deps.cloudshare>).forConnection(connection, { scope: "customer_default", correlationId, reason: "unanchored_support_read" }));
     const read = await delivery.readSession(session.cloudShareSalesExperienceId);
     if (read.status !== "notStarted" && read.status !== "inProgress" && read.status !== "ended") throw salesStatusContractError(read);
     remote = read;

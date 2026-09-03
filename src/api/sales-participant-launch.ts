@@ -46,7 +46,7 @@ export async function handleSalesParticipantLaunch(deps: Deps, token: string): P
   try { contact = await deps.records.findContact(link.customerId, participant.opportunityContactId); connection = await deps.connections.findByCustomerId(link.customerId); }
   catch (error) { return launchDenied(deps, link, correlationId, "persistence_failure", error); }
   if (!contact || !connection) return launchDenied(deps, link, correlationId, "unavailable");
-  try { const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare.forConnection(connection)); const sponsored = await delivery.createSponsoredLink(session.cloudShareSalesExperienceId, contact); await launchEvidence(deps, link, correlationId, "success", sponsored); return { status: 302, redirect: sponsored.loginUrl }; }
+  try { const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare.forConnection(connection, { scope: "customer_default", correlationId, reason: "unanchored_support_read" })); const sponsored = await delivery.createSponsoredLink(session.cloudShareSalesExperienceId, contact); await launchEvidence(deps, link, correlationId, "success", sponsored); return { status: 302, redirect: sponsored.loginUrl }; }
   catch (error) { return launchDenied(deps, link, correlationId, "provider_failure", error); }
 }
 async function ownedParticipant(deps: Deps, request: AdminRequest) { const session = await deps.sessions.findById(request.customerId, request.sessionId); if (!session) return null; const participant = (await deps.participants.list(request.customerId, request.sessionId)).find((value) => value.id === request.participantId); return participant ? { session, participant } : null; }

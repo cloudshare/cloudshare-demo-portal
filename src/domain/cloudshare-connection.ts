@@ -68,7 +68,7 @@ export type CloudShareClientObservationOptions = CloudShareClientObservationCall
 export interface CloudShareClientFactory {
   forConnection(
     connection: CloudShareConnectionRecord,
-    options?: CloudShareClientObservationOptions,
+    options: CloudShareClientObservationOptions | undefined,
   ): CloudShareClient;
 }
 
