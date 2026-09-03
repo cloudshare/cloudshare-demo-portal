@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
+import { CloudShareAuthError, CloudShareResponseError } from "@/integrations/cloudshare/errors";
 import { handleInviteSalesSessionParticipants as inviteSalesSessionParticipants, handleListSalesSessionParticipants as listSalesSessionParticipants, handleRegisterSalesSessionParticipants as registerSalesSessionParticipants } from "./sales-session-participants";
 import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales-environment";
 
@@ -631,5 +631,35 @@ describe("Sales Session participant invitation", () => {
 
     expect(result.status).toBe(502);
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "participant_page_duplicate_id", expectedCount: 2, returnedCount: 2 }) }));
+  });
+
+  it("keeps OAuth token failure evidence metadata-only during participant roster refresh", async () => {
+    const diagnostics = { record: vi.fn() };
+    const oauthFailure = new CloudShareAuthError("OAuth token exchange returned 503", {
+      method: "POST",
+      path: "/oauth/token",
+      integrationSurface: "cloudshare.v4.oauth.token",
+      status: 503,
+      requestBody: { client_id: "private-client", client_secret: "private-secret" },
+      responseBody: { access_token: "private-token" },
+    });
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) },
+      records: { findContact: vi.fn() },
+      participants: { list: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockRejectedValue(oauthFailure) }) },
+      diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor });
+    const failure = diagnostics.record.mock.calls
+      .map(([entry]) => entry)
+      .find((entry) => entry.operation === "sales.demo_session.participants.reconciled" && entry.outcome === "failure");
+
+    expect(result).toMatchObject({ status: 502, body: { correlationId: expect.any(String) } });
+    expect(failure).toMatchObject({ request: null, response: null });
+    const persisted = JSON.stringify(failure);
+    expect(persisted).not.toContain("private-client");
+    expect(persisted).not.toContain("private-secret");
+    expect(persisted).not.toContain("private-token");
   });
 });

@@ -4,6 +4,7 @@ import type { AuditRepository } from "@/domain/audit-trail";
 import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { isSalesExperienceType, isSalesTimezoneCacheFresh, type SalesAdminPreferenceRepository, type SalesTimezoneCacheRepository } from "@/domain/sales-timezones";
 import { createCloudShareTimezoneSource, type CloudShareTimezoneSource } from "@/integrations/cloudshare/timezones";
+import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 export interface SalesTimezonesDeps {
   readonly cache: SalesTimezoneCacheRepository;
@@ -35,18 +36,27 @@ export async function handleGetSalesTimezones(deps: SalesTimezonesDeps, request:
   } catch (error) {
     const correlationId = randomUUID();
     const exchange = cloudShareExchange(error);
+    const context = cloudShareFailureContext(error);
+    const oauthFailure = exchange?.request === null && exchange.response === null;
+    const status = typeof context?.responseStatus === "number" ? context.responseStatus : typeof context?.status === "number" ? context.status : undefined;
     await Promise.allSettled([
-      deps.diagnostics?.record({ source: "sales-timezones", operation: "sales.timezones.refreshed", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, message: "CloudShare timezone catalogue refresh failed", correlationId, request: exchange?.request, response: exchange?.response, details: { integrationSurface: "cloudshare.v3.timezones", failureMode: "timezone_catalogue_read", error: error instanceof Error ? error.message : String(error) } }),
+      deps.diagnostics?.record({ source: "sales-timezones", operation: "sales.timezones.refreshed", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, message: "CloudShare timezone catalogue refresh failed", correlationId, request: exchange?.request, response: exchange?.response, details: { integrationSurface: typeof context?.integrationSurface === "string" ? context.integrationSurface : "cloudshare.v3.timezones", failureMode: oauthFailure ? status === undefined ? "transport_failure" : "http_failure" : "timezone_catalogue_read", ...(oauthFailure && status !== undefined ? { status } : {}), error: error instanceof Error ? error.message : String(error) } }),
       deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor?.type, actorId: request.actor?.id, actorEmail: request.actor?.email, action: "sales.timezones.refreshed", subjectType: "sales_timezone_cache", subjectId: request.customerId, outcome: "failure", correlationId, details: { integrationSurface: "cloudshare.v3.timezones", failureMode: "timezone_catalogue_read" }, error: error instanceof Error ? error.message : String(error) }),
     ]);
     return cached ? { status: 200, body: { timezones: cached.timezones, fetchedAt: cached.fetchedAt.toISOString(), freshness: "stale", preference, correlationId, warning: "CloudShare could not refresh timezones; showing the last verified catalogue." } } : { status: 502, body: { error: "CloudShare could not retrieve supported timezones.", correlationId } };
   }
 }
 
-function cloudShareExchange(error: unknown): { request?: Record<string, unknown>; response?: Record<string, unknown> } | undefined {
-  if (!(error instanceof Error) || !("context" in error)) return undefined;
-  const context = (error as { context?: Record<string, unknown> }).context;
+function cloudShareExchange(error: unknown): { request: Record<string, unknown> | null; response: Record<string, unknown> | null } | undefined {
+  const projected = projectCloudShareFailureEvidence(error);
+  if (projected) return projected;
+  const context = cloudShareFailureContext(error);
   return context ? { request: { method: context.method, path: context.path, headers: context.requestHeaders, query: context.requestQuery }, response: { status: context.responseStatus ?? context.status, headers: context.responseHeaders, body: context.responseBody, transport: context.cause } } : undefined;
+}
+
+function cloudShareFailureContext(error: unknown): Record<string, unknown> | undefined {
+  if (!(error instanceof Error) || !("context" in error)) return undefined;
+  return (error as { context?: Record<string, unknown> }).context;
 }
 
 export async function handleSaveSalesPreference(deps: SalesTimezonesDeps, request: { customerId: string; userId: string; body: unknown }) {

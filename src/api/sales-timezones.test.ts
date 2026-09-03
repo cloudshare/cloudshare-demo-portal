@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { CloudShareAuthError } from "@/integrations/cloudshare/errors";
 import { handleGetSalesTimezones, handleSaveSalesPreference } from "./sales-timezones";
 
 describe("Sales timezone API", () => {
@@ -26,5 +27,16 @@ describe("Sales timezone API", () => {
     const stale = await handleGetSalesTimezones({ cache, preferences: noPreference, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, timezoneSourceFactory: { forConnection: () => ({ list: vi.fn().mockRejectedValue(offline) }) }, now: () => new Date("2026-07-15T10:00:00Z") }, { customerId: "certalis", userId: "admin" });
     expect(live).toMatchObject({ status: 200, body: { freshness: "live", preference: { timeZone: null, experienceType: null } } });
     expect(stale).toMatchObject({ status: 200, body: { freshness: "stale", preference: { timeZone: null, experienceType: null } } });
+  });
+
+  it("keeps OAuth token failure evidence metadata-only during timezone refresh", async () => {
+    const diagnostics = { record: vi.fn() };
+    const oauthFailure = new CloudShareAuthError("OAuth token exchange returned 503", { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token", status: 503, requestBody: { client_secret: "private-secret" }, responseBody: { access_token: "private-token" } });
+    const result = await handleGetSalesTimezones({ cache: { find: vi.fn().mockResolvedValue(null), save: vi.fn() }, preferences, diagnostics, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, timezoneSourceFactory: { forConnection: () => ({ list: vi.fn().mockRejectedValue(oauthFailure) }) } }, { customerId: "certalis", userId: "admin", actor: { type: "admin", id: "admin", email: "admin@certalis.demo" } });
+    const [failure] = diagnostics.record.mock.calls[0];
+
+    expect(result).toMatchObject({ status: 502, body: { correlationId: expect.any(String) } });
+    expect(failure).toMatchObject({ request: null, response: null, details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "http_failure", status: 503 }) });
+    expect(JSON.stringify(failure)).not.toMatch(/private-secret|private-token/);
   });
 });

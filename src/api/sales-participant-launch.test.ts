@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { CloudShareAuthError } from "@/integrations/cloudshare/errors";
 import { handleCreateSalesParticipantLaunchLink, handleRevokeSalesParticipantLaunchLink, handleSalesParticipantLaunch } from "./sales-participant-launch";
 
 const now = new Date("2026-07-18T09:30:00.000Z");
@@ -60,6 +61,36 @@ describe("Sales participant instant launch", () => {
     const result = await handleSalesParticipantLaunch(transport, "a".repeat(43));
     expect(result.body).toMatchObject({ error: "This Certalis launch link is unavailable." });
     expect(transport.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "transport_failure", cause: "connection reset", network: "ECONNRESET", tls: "certificate verify failed" }), response: expect.objectContaining({ network: "ECONNRESET", tls: "certificate verify failed" }) }));
+  });
+  it("keeps OAuth token failure evidence metadata-only during participant launch", async () => {
+    const oauthFailure = new CloudShareAuthError("OAuth token exchange returned 503", {
+      method: "POST",
+      path: "/oauth/token",
+      integrationSurface: "cloudshare.v4.oauth.token",
+      status: 503,
+      requestBody: { client_id: "private-client", client_secret: "private-secret" },
+      responseBody: { access_token: "private-token" },
+      cause: "private-cause",
+    });
+    const d = deps({ deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSponsoredLink: vi.fn().mockRejectedValue(oauthFailure) }) } });
+    d.links.findByTokenHash.mockResolvedValue({ id: "link-1", customerId: "certalis", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: null, createdAt: now });
+
+    const result = await handleSalesParticipantLaunch(d, "a".repeat(43));
+    const failure = d.diagnostics.record.mock.calls
+      .map(([entry]: [Record<string, unknown>]) => entry)
+      .find((entry: Record<string, unknown>) => entry.operation === "sales.demo_session.participant_launch.opened" && entry.outcome === "failure");
+
+    expect(result).toMatchObject({ status: 404, body: { error: "This Certalis launch link is unavailable." } });
+    expect(failure).toMatchObject({
+      request: null,
+      response: null,
+      details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "http_failure", status: 503 }),
+    });
+    const persisted = JSON.stringify(failure);
+    expect(persisted).not.toContain("private-client");
+    expect(persisted).not.toContain("private-secret");
+    expect(persisted).not.toContain("private-token");
+    expect(persisted).not.toContain("private-cause");
   });
   it.each([
     ["Session repository", { sessions: { findById: vi.fn().mockRejectedValue(new Error("session database secret")) } }],

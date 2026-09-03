@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { CloudShareAuthError } from "@/integrations/cloudshare/errors";
 import { handleReconcileSalesSession } from "./sales-session-reconciliation";
 
 const actor = { type: "admin" as const, id: "a", email: "a@certalis.demo" };
@@ -31,6 +32,35 @@ describe("Sales Session reconciliation", () => {
     expect(result).toMatchObject({ status: 502, body: { correlationId: expect.any(String) } });
     expect(updateOperationalState).toHaveBeenCalledWith("certalis", "s1", expect.objectContaining({ operationalStatus: "needs_attention" }));
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure", request: expect.objectContaining({ path: "/sales/remote-1" }), response: expect.objectContaining({ status: 503 }) }));
+  });
+
+  it("keeps OAuth token failure evidence metadata-only during reconciliation", async () => {
+    const updateOperationalState = vi.fn(); const diagnostics = { record: vi.fn() };
+    const oauthFailure = new CloudShareAuthError("OAuth token exchange returned 503", {
+      method: "POST",
+      path: "/oauth/token",
+      integrationSurface: "cloudshare.v4.oauth.token",
+      failureMode: "http_failure",
+      status: 503,
+      requestBody: { client_id: "private-client", client_secret: "private-secret" },
+      responseBody: { access_token: "private-token" },
+    });
+    const result = await handleReconcileSalesSession({
+      sessions: { findById: vi.fn().mockResolvedValue(activeSession), updateOperationalState },
+      connections: connection,
+      deliveryFactory: { forConnection: () => ({ readSession: vi.fn().mockRejectedValue(oauthFailure) }) },
+      diagnostics,
+    }, request);
+    const failure = diagnostics.record.mock.calls
+      .map(([entry]) => entry)
+      .find((entry) => entry.operation === "sales.demo_session.reconciled" && entry.outcome === "failure");
+
+    expect(result).toMatchObject({ status: 502, body: { correlationId: expect.any(String) } });
+    expect(failure).toMatchObject({ request: null, response: null, details: expect.objectContaining({ failureMode: "http_failure" }) });
+    const persisted = JSON.stringify(failure);
+    expect(persisted).not.toContain("private-client");
+    expect(persisted).not.toContain("private-secret");
+    expect(persisted).not.toContain("private-token");
   });
 
   it("returns correlated failure diagnostics when local observation persistence is unavailable", async () => {

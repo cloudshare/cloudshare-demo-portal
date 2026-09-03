@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { CloudShareAuthError } from "@/integrations/cloudshare/errors";
 import { createSalesLaunchDenialContextResolver } from "./sales-launch-denial-context";
 
 const link = { id: "link-1", customerId: "customer-1", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: new Date(), createdAt: new Date() };
@@ -19,5 +20,15 @@ describe("Sales launch denial context resolver", () => {
     const d = deps({ deliveryFactory: { forConnection: () => ({ listSalesPros: vi.fn().mockRejectedValue(new Error("provider secret")) }) } });
     const result = await createSalesLaunchDenialContextResolver(d).resolve(link, "corr-3");
     expect(result?.salesPros).toEqual([{ name: "Persisted Owner", email: "owner@example.test", type: "mainSalesPro" }]); expect(d.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: "corr-3", customerId: "customer-1", details: expect.objectContaining({ integrationSurface: "cloudshare.v4.sales.sales_pros" }) })); expect(JSON.stringify(result)).not.toContain("provider secret");
+  });
+  it("keeps OAuth token failure evidence metadata-only while loading recovery contacts", async () => {
+    const oauthFailure = new CloudShareAuthError("OAuth token exchange returned 503", { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token", status: 503, requestBody: { client_secret: "private-secret" }, responseBody: { access_token: "private-token" } });
+    const d = deps({ deliveryFactory: { forConnection: () => ({ listSalesPros: vi.fn().mockRejectedValue(oauthFailure) }) } });
+
+    await createSalesLaunchDenialContextResolver(d).resolve(link, "corr-oauth");
+    const [failure] = d.diagnostics.record.mock.calls[0];
+
+    expect(failure).toMatchObject({ request: null, response: null, details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "http_failure", status: 503 }) });
+    expect(JSON.stringify(failure)).not.toMatch(/private-secret|private-token/);
   });
 });
