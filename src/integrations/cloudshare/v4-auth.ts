@@ -28,6 +28,9 @@ export interface V4TokenAcquisitionEvent {
   readonly status?: number;
   readonly durationMs: number;
   readonly integrationSurface: "cloudshare.v4.oauth.token";
+  /** Protected failure evidence; never includes the acquired token. */
+  readonly request?: Record<string, unknown>;
+  readonly response?: Record<string, unknown>;
 }
 
 export interface V4TokenProviderOptions {
@@ -79,6 +82,8 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         outcome: "failure",
         durationMs: Math.max(0, now() - startedAtMs),
         integrationSurface: "cloudshare.v4.oauth.token",
+        request: { method: "POST", path: "/oauth/token", headers: { "content-type": "application/x-www-form-urlencoded" } },
+        response: { transportError: cause instanceof Error ? cause.message : String(cause) },
       });
       throw new CloudShareAuthError("v4 token request failed to send", {
         method: "POST",
@@ -97,6 +102,8 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         status: response.status,
         durationMs: Math.max(0, now() - startedAtMs),
         integrationSurface: "cloudshare.v4.oauth.token",
+        request: { method: "POST", path: "/oauth/token", headers: { "content-type": "application/x-www-form-urlencoded" } },
+        response: { status: response.status, body: response.body, headers: response.headers },
       });
       const rateLimitClassification = classifyTokenRateLimit(response.status, response.body);
       if (rateLimitClassification) {

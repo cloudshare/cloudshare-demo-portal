@@ -12,7 +12,7 @@ import {
   type PortalSessionStore,
 } from "@/auth";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
-import { createCloudShareIntegration } from "@/integrations/cloudshare";
+import { createCloudShareIntegration, createCloudShareDiagnosticObserver, composeCloudShareObservers } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
@@ -458,8 +458,8 @@ export function getServices(): Services {
       withLocalCohortRateLimitQaFixture(createCloudShareIntegrationForConnection({
         mode: config.runtime.mode,
         trace: traceCloudShare,
-        onRequest: options?.onRequest,
-        onAcquisition: options?.onAcquisition,
+        onRequest: composeCloudShareObservers(options?.onRequest, createCloudShareDiagnosticObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId }).onRequest),
+        onAcquisition: composeCloudShareObservers(options?.onAcquisition, createCloudShareDiagnosticObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId }).onAcquisition),
         connection: {
           customerId: connection.customerId,
           apiId: connection.apiId,

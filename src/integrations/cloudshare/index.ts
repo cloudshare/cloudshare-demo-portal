@@ -31,6 +31,16 @@ export type {
 } from "./client";
 export { createFixtureHttpClient, loadFixturesFromDir, type FixtureMap } from "./fixtures";
 export { pingCloudShareV3 } from "./ping";
+export { createCloudShareDiagnosticObserver } from "./diagnostic-observer";
+
+export function composeCloudShareObservers<TRequest>(
+  first?: (event: TRequest) => Promise<void> | void,
+  second?: (event: TRequest) => Promise<void> | void,
+): (event: TRequest) => Promise<void> {
+  return async (event) => {
+    await Promise.all([first?.(event), second?.(event)]);
+  };
+}
 
 /** Well-known CloudShare API roots; overridable for staging or a recording proxy. */
 export const CLOUDSHARE_DEFAULT_ENDPOINTS: CloudShareEndpoints = {
