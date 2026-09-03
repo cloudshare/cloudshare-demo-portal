@@ -635,14 +635,14 @@ describe("Sales Session participant invitation", () => {
 
   it("keeps OAuth token failure evidence metadata-only during participant roster refresh", async () => {
     const diagnostics = { record: vi.fn() };
-    const oauthFailure = new CloudShareAuthError("OAuth token exchange returned 503", {
+    const oauthFailure = Object.assign(new Error("wrapped OAuth token exchange returned 503"), { context: {
       method: "POST",
       path: "/oauth/token",
       integrationSurface: "cloudshare.v4.oauth.token",
       status: 503,
       requestBody: { client_id: "private-client", client_secret: "private-secret" },
       responseBody: { access_token: "private-token" },
-    });
+    } });
     const result = await handleListSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) },
       records: { findContact: vi.fn() },

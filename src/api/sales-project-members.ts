@@ -4,7 +4,7 @@ import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/
 import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ItemRepository } from "@/domain/item";
 import { createCloudShareProjectMemberSource, type CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
-import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
+import { projectCloudShareFailureContext, projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 export interface SalesProjectMembersDeps {
   readonly items: Pick<ItemRepository, "findById">;
@@ -60,7 +60,7 @@ function cloudShareEvidence(error: unknown): { request: Record<string, unknown> 
   const projected = projectCloudShareFailureEvidence(error);
   if (projected) return projected;
   const context = cloudShareFailureContext(error);
-  return context ? { request: { method: context.method, path: context.path, query: context.requestQuery, headers: context.requestHeaders }, response: { status: context.responseStatus ?? context.status, headers: context.responseHeaders, body: context.responseBody, transport: context.cause } } : undefined;
+  return projectCloudShareFailureContext(context);
 }
 
 function cloudShareFailureContext(error: unknown): Record<string, unknown> | undefined {

@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { CloudShareAuthError } from "@/integrations/cloudshare/errors";
 import { handleReconcileSalesSession } from "./sales-session-reconciliation";
 
 const actor = { type: "admin" as const, id: "a", email: "a@certalis.demo" };
@@ -28,15 +27,15 @@ describe("Sales Session reconciliation", () => {
 
   it("marks a failed CloudShare read needs-attention and records failure evidence", async () => {
     const updateOperationalState = vi.fn(); const diagnostics = { record: vi.fn() }; const audit = { write: vi.fn() };
-    const result = await handleReconcileSalesSession({ sessions: { findById: vi.fn().mockResolvedValue(activeSession), updateOperationalState }, connections: connection, deliveryFactory: { forConnection: () => ({ readSession: vi.fn().mockRejectedValue(Object.assign(new Error("offline"), { context: { method: "GET", path: "/sales/remote-1", responseStatus: 503 } })) }) }, diagnostics, audit }, request);
+    const result = await handleReconcileSalesSession({ sessions: { findById: vi.fn().mockResolvedValue(activeSession), updateOperationalState }, connections: connection, deliveryFactory: { forConnection: () => ({ readSession: vi.fn().mockRejectedValue(Object.assign(new Error("offline"), { context: { method: "GET", path: "/sales/remote-1", requestBody: { marker: "request-marker" }, responseStatus: 503, responseBody: { marker: "response-marker" } } })) }) }, diagnostics, audit }, request);
     expect(result).toMatchObject({ status: 502, body: { correlationId: expect.any(String) } });
     expect(updateOperationalState).toHaveBeenCalledWith("certalis", "s1", expect.objectContaining({ operationalStatus: "needs_attention" }));
-    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure", request: expect.objectContaining({ path: "/sales/remote-1" }), response: expect.objectContaining({ status: 503 }) }));
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure", request: expect.objectContaining({ path: "/sales/remote-1", body: { marker: "request-marker" } }), response: expect.objectContaining({ status: 503, body: { marker: "response-marker" } }) }));
   });
 
   it("keeps OAuth token failure evidence metadata-only during reconciliation", async () => {
     const updateOperationalState = vi.fn(); const diagnostics = { record: vi.fn() };
-    const oauthFailure = new CloudShareAuthError("OAuth token exchange returned 503", {
+    const oauthFailure = Object.assign(new Error("wrapped OAuth token exchange returned 503"), { context: {
       method: "POST",
       path: "/oauth/token",
       integrationSurface: "cloudshare.v4.oauth.token",
@@ -44,7 +43,7 @@ describe("Sales Session reconciliation", () => {
       status: 503,
       requestBody: { client_id: "private-client", client_secret: "private-secret" },
       responseBody: { access_token: "private-token" },
-    });
+    } });
     const result = await handleReconcileSalesSession({
       sessions: { findById: vi.fn().mockResolvedValue(activeSession), updateOperationalState },
       connections: connection,

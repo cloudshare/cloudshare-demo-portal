@@ -12,6 +12,7 @@ import {
   isCloudShareRateLimitError,
 } from "./errors";
 import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
+import { projectCloudShareFailureContext } from "./diagnostic-failure-projection";
 import { mapCloudShareEnvironmentStatus } from "./environment";
 
 const v3EnvironmentSchema = z
@@ -238,6 +239,25 @@ function mapLeaseFailure(input: {
   readonly error: unknown;
   readonly notFoundStatus: string;
 }): CloudShareExternalLease {
+  const rawError = input.error as { context?: Record<string, unknown>; status?: unknown; name?: unknown };
+  const rawContext = rawError?.context;
+  const projected = projectCloudShareFailureContext(rawContext);
+  if (projected?.request === null && projected.response === null) {
+    const status = asNumber(rawError.status) ?? asNumber(rawContext?.status);
+    return {
+      kind: "unknown",
+      target: input.target,
+      attemptedOperation: input.attemptedOperation,
+      integrationSurface: asString(rawContext?.integrationSurface) ?? input.integrationSurface,
+      method: asString(rawContext?.method) ?? "GET",
+      path: asString(rawContext?.path) ?? input.fallbackPath,
+      host: asString(rawContext?.host) ?? null,
+      request: null,
+      response: null,
+      responseStatus: status,
+      failureMode: isCloudShareRateLimitError(input.error) ? "rate_limit" : input.error instanceof CloudShareTransportError ? "transport" : input.error instanceof CloudShareResponseError ? "unexpected_response" : input.error instanceof CloudShareRequestError ? "http_status" : "unknown",
+    };
+  }
   if (isCloudShareRateLimitError(input.error)) {
     const error = input.error as CloudShareRequestError;
     const isRehydrated = !(input.error instanceof CloudShareRateLimitError);

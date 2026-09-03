@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { CloudShareAuthError } from "@/integrations/cloudshare/errors";
 import { handleCreateSalesParticipantLaunchLink, handleRevokeSalesParticipantLaunchLink, handleSalesParticipantLaunch } from "./sales-participant-launch";
 
 const now = new Date("2026-07-18T09:30:00.000Z");
@@ -63,7 +62,7 @@ describe("Sales participant instant launch", () => {
     expect(transport.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "transport_failure", cause: "connection reset", network: "ECONNRESET", tls: "certificate verify failed" }), response: expect.objectContaining({ network: "ECONNRESET", tls: "certificate verify failed" }) }));
   });
   it("keeps OAuth token failure evidence metadata-only during participant launch", async () => {
-    const oauthFailure = new CloudShareAuthError("OAuth token exchange returned 503", {
+    const oauthFailure = Object.assign(new Error("wrapped OAuth token exchange returned 503"), { context: {
       method: "POST",
       path: "/oauth/token",
       integrationSurface: "cloudshare.v4.oauth.token",
@@ -71,7 +70,7 @@ describe("Sales participant instant launch", () => {
       requestBody: { client_id: "private-client", client_secret: "private-secret" },
       responseBody: { access_token: "private-token" },
       cause: "private-cause",
-    });
+    } });
     const d = deps({ deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSponsoredLink: vi.fn().mockRejectedValue(oauthFailure) }) } });
     d.links.findByTokenHash.mockResolvedValue({ id: "link-1", customerId: "certalis", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: null, createdAt: now });
 

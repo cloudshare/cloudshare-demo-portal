@@ -32,6 +32,7 @@ import {
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import {
   createCloudShareTrainingDelivery,
   type CloudShareLabProvisionerObserver,
@@ -428,6 +429,18 @@ function toProvisioningDiagnostic(
   };
 
   const cause = error.context.cause;
+  const causeContext = (cause as { context?: Record<string, unknown> } | undefined)?.context;
+  const projected = projectCloudShareFailureContext(causeContext);
+  if (projected?.request === null && projected.response === null) {
+    return {
+      ...base,
+      method: causeContext?.method ?? base.method,
+      path: causeContext?.path ?? base.path,
+      integrationSurface: causeContext?.integrationSurface ?? base.integrationSurface,
+      failureMode: isCloudShareRateLimitError(cause) ? "rate_limit" : cause instanceof CloudShareTransportError ? "transport" : cause instanceof CloudShareResponseError ? "unexpected_response" : "http_status",
+      responseStatus: typeof (cause as { status?: unknown } | undefined)?.status === "number" ? (cause as { status: number }).status : causeContext?.status,
+    };
+  }
   if (isCloudShareRateLimitError(cause) || cause instanceof CloudShareRequestError) {
     return {
       ...base,

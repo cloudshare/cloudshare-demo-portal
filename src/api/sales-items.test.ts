@@ -5,6 +5,7 @@ import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection"
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { CloudShareAuthError, CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare";
+import { CLOUDSHARE_ERROR_DISCRIMINANT } from "@/integrations/cloudshare/errors";
 
 function repository(): ItemRepository { const rows = new Map<string, Item>(); return { save: async (item) => { rows.set(item.id, item); }, findById: async (id) => rows.get(id) ?? null, listByCustomerId: async (customerId) => [...rows.values()].filter((item) => item.customerId === customerId) }; }
 const connection: CloudShareConnectionRecord = { customerId: "certalis", apiId: "api-id", apiKey: "api-key", webhookSecret: "secret", webhookPathToken: "token", connectedAt: new Date(), verifiedAt: new Date() };
@@ -92,6 +93,31 @@ describe("Sales Item API", () => {
     expect(result).toMatchObject({ status: 502, body: { correlationId: expect.any(String) } });
     expect(failure).toMatchObject({ request: null, response: null, details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", responseStatus: 503 }) });
     expect(JSON.stringify(failure)).not.toMatch(/private-secret|private-token/);
+  });
+
+  it("classifies branded CloudShare failures across module boundaries", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const brandedFailure = Object.assign(new Error("reloaded provider failure"), {
+      name: "CloudShareRequestError",
+      cloudShareErrorBoundaryDiscriminant: CLOUDSHARE_ERROR_DISCRIMINANT,
+      status: 503,
+      context: {
+        method: "GET",
+        path: "/projects",
+        integrationSurface: "cloudshare.v3.projects",
+        status: 503,
+        responseBody: { error: "unavailable" },
+      },
+    });
+    const result = await handleCreateSalesItem({ ...deps(repository(), source({ listProjects: vi.fn().mockRejectedValue(brandedFailure) })), diagnostics: createDiagnosticRecorder({ repository: diagnostics }) }, { customerId: "certalis", body });
+    const [failure] = await diagnostics.query({ operation: "sales.item.authoring_resources.read", outcome: "failure" });
+
+    expect(result).toMatchObject({ status: 502, body: { diagnostic: { integrationSurface: "cloudshare.v3.projects", failureMode: "http_status", responseStatus: 503 } } });
+    expect(failure).toMatchObject({
+      request: expect.objectContaining({ method: "GET", path: "/projects" }),
+      response: expect.objectContaining({ status: 503, body: { error: "unavailable" } }),
+      details: expect.objectContaining({ integrationSurface: "cloudshare.v3.projects", failureMode: "http_status", responseStatus: 503 }),
+    });
   });
 
   it("persists completed policy exchanges before a sibling policy detail failure", async () => {

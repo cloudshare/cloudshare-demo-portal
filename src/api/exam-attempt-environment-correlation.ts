@@ -18,6 +18,7 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import { projectProtectedCloudShareExchange } from "./protected-cloudshare-exchange";
 
 export interface EnsureExamAttemptEnvironmentCorrelationDeps {
@@ -126,8 +127,9 @@ export async function ensureExamAttemptEnvironmentCorrelation(
       response: protectedExchange.response,
       details: {
         attemptedOperation: "list_training_participants",
-        integrationSurface: "cloudshare.v4.training.participant_list",
+        integrationSurface: diagnostic["integrationSurface"],
         failureMode: diagnostic["failureMode"],
+        ...(typeof diagnostic["responseStatus"] === "number" ? { responseStatus: diagnostic["responseStatus"] } : {}),
         ...(protectedExchange.transport ? { transport: protectedExchange.transport } : {}),
       },
     });
@@ -148,8 +150,21 @@ function toCloudShareFailureDiagnostic(input: {
     path: input.path,
   };
 
+  const rawContext = (input.cause as { context?: Record<string, unknown> } | null)?.context;
+  const rawProjection = projectCloudShareFailureContext(rawContext);
   const cause = asCloudShareError(input.cause);
   const rateLimited = isCloudShareRateLimitError(cause);
+  const context = cause?.context ?? rawContext;
+  if (rawProjection?.request === null && rawProjection.response === null) {
+    return {
+      ...base,
+      method: context?.method ?? base.method,
+      path: context?.path ?? base.path,
+      integrationSurface: context?.integrationSurface ?? base.integrationSurface,
+      failureMode: rateLimited ? cause.classification ?? "rate_limit" : "http_status",
+      responseStatus: typeof (cause as { status?: unknown } | null)?.status === "number" ? (cause as unknown as { status: number }).status : context?.status,
+    };
+  }
   if (rateLimited || cause instanceof CloudShareRequestError || cause?.name === "CloudShareRequestError") {
     return {
       ...base,

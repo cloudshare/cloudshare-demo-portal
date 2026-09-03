@@ -1365,6 +1365,54 @@ describe("joinCohortExamSessionRuntime", () => {
     );
   });
 
+  it("keeps an OAuth failure metadata-only when reading the shared Cohort Exam Session", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const attempts = createInMemoryExamAttemptRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const oauthFailure = new CloudShareRequestError("OAuth token exchange failed", 503, {
+      method: "POST",
+      path: "/oauth/token",
+      integrationSurface: "cloudshare.v4.oauth.token",
+      requestBody: { client_secret: "private-secret" },
+      responseBody: { access_token: "private-token" },
+    });
+
+    const response = await joinCohortExamSessionRuntime({
+      exams,
+      sessions,
+      attempts,
+      launches: createInMemoryLabLaunchRepository(),
+      audit: createInMemoryAuditRepository(),
+      eventLog: createInMemoryEventLogRepository(),
+      connections: makeConnectionRepository(),
+      cloudshare: makeCloudShareFactory({ requestV4Detailed: vi.fn().mockRejectedValue(oauthFailure) }),
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+      logger: makeLogger(),
+      now: () => new Date("2026-07-05T10:00:00.000Z"),
+      newId: vi.fn().mockReturnValueOnce("attempt-oauth"),
+      newCorrelationId: () => "corr-cohort-oauth",
+    }, {
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      candidateEmail: "candidate@helioscx.demo",
+      candidateFirstName: "Asha",
+      candidateLastName: "Patel",
+      examId: "exam-1",
+      cohortSessionId: "cohort-session-1",
+    });
+    const entries = await diagnosticsRepository.query({ correlationId: "corr-cohort-oauth", outcome: "failure" });
+    const entry = entries.find((value) => value.operation === "cloudshare.read_training");
+
+    expect(response.status).toBe(502);
+    expect(entry).toMatchObject({
+      request: null,
+      response: null,
+      details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "http_status", responseStatus: 503 }),
+    });
+    expect(JSON.stringify(entry)).not.toMatch(/private-secret|private-token/);
+  });
+
   it("records supportable diagnostics when sponsored-link creation fails after participant add", async () => {
     const exams = await makeExamRepository();
     const sessions = await makePublishedSession();

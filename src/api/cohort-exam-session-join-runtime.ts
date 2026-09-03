@@ -39,6 +39,7 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
 
 export interface CohortExamSessionJoinRuntimeDeps {
@@ -905,8 +906,8 @@ function toProvisioningDiagnostic(
   attemptedOperation: JoinProvisioningOperation,
   cause: unknown,
 ): {
-  readonly request?: Record<string, unknown>;
-  readonly response?: Record<string, unknown>;
+  readonly request?: Record<string, unknown> | null;
+  readonly response?: Record<string, unknown> | null;
   readonly details: Record<string, unknown>;
 } {
   const context = (cause as { context?: Record<string, unknown> }).context ?? {};
@@ -916,8 +917,10 @@ function toProvisioningDiagnostic(
       : typeof context.status === "number"
         ? context.status
       : undefined;
+  const projected = projectCloudShareFailureContext(context);
+  const oauthFailure = projected?.request === null && projected.response === null;
   const request =
-    context.method || context.path || context.requestQuery || context.requestHeaders || context.requestBody
+    oauthFailure ? null : context.method || context.path || context.requestQuery || context.requestHeaders || context.requestBody
       ? {
           method: context.method ?? (attemptedOperation === "read_training" ? "GET" : "POST"),
           path: context.path ?? fallbackProvisioningPath(attemptedOperation),
@@ -927,7 +930,7 @@ function toProvisioningDiagnostic(
         }
       : undefined;
   const response =
-    status !== undefined || context.responseHeaders || context.responseBody
+    oauthFailure ? null : status !== undefined || context.responseHeaders || context.responseBody
       ? {
           ...(status !== undefined ? { status } : {}),
           ...(context.responseHeaders ? { headers: context.responseHeaders } : {}),
@@ -944,8 +947,8 @@ function toProvisioningDiagnostic(
           context.integrationSurface ?? fallbackIntegrationSurface(attemptedOperation),
         failureMode: inferFailureMode(cause),
         ...(status !== undefined ? { responseStatus: status } : {}),
-        ...(context.issues ? { issues: context.issues } : {}),
-        ...(context.cause ? { cause: context.cause } : {}),
+        ...(!oauthFailure && context.issues ? { issues: context.issues } : {}),
+        ...(!oauthFailure && context.cause ? { cause: context.cause } : {}),
     },
   };
 }
@@ -977,8 +980,8 @@ function fallbackIntegrationSurface(attemptedOperation: JoinProvisioningOperatio
 }
 
 function toProvisioningLogFields(diagnostic: {
-  readonly request?: Record<string, unknown>;
-  readonly response?: Record<string, unknown>;
+  readonly request?: Record<string, unknown> | null;
+  readonly response?: Record<string, unknown> | null;
   readonly details: Record<string, unknown>;
 }): Record<string, unknown> {
   return {

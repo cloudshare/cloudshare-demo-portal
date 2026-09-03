@@ -677,4 +677,52 @@ describe("ExamAttempt scheduling runtime", () => {
       },
     });
   });
+
+  it("keeps an OAuth 429 provisioning failure metadata-only", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const eventLog = createInMemoryEventLogRepository();
+    const oauthFailure = new CloudShareRateLimitError("OAuth token request throttled", 429, "rate_limit", {
+      method: "POST",
+      path: "/oauth/token",
+      integrationSurface: "cloudshare.v4.oauth.token",
+      requestBody: { client_secret: "private-secret" },
+      responseBody: { access_token: "private-token" },
+    });
+
+    const response = await scheduleExamAttemptRuntime({
+      exams: await makeExamRepository(),
+      attempts,
+      launches,
+      audit: createInMemoryAuditRepository(),
+      eventLog,
+      connections: makeConnectionRepository(),
+      cloudshare: makeCloudShareFactory({ requestV4Detailed: vi.fn().mockRejectedValue(oauthFailure) }),
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+      logger: makeLogger(),
+      now: () => new Date("2026-06-15T10:00:00.000Z"),
+      newId: vi.fn().mockReturnValueOnce("attempt-oauth"),
+      newCorrelationId: () => "corr-oauth-schedule",
+    }, {
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      candidateEmail: "candidate@helioscx.demo",
+      candidateFirstName: "Asha",
+      candidateLastName: "Patel",
+      examId: "exam-1",
+      scheduledFor: "2026-06-15T16:00:00.000Z",
+    });
+    const [entry] = await diagnosticsRepository.query({ operation: "cloudshare.create_training", outcome: "failure" });
+    const [event] = await eventLog.listByCustomerId("customer-helios");
+
+    expect(response.status).toBe(429);
+    expect(entry).toMatchObject({
+      request: null,
+      response: null,
+      details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "rate_limit", responseStatus: 429 }),
+    });
+    expect(event.payload).toMatchObject({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "rate_limit", responseStatus: 429 });
+    expect(JSON.stringify({ entry, event })).not.toMatch(/private-secret|private-token/);
+  });
 });

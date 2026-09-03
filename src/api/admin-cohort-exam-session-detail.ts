@@ -21,6 +21,7 @@ import {
   type AggregateGuidedJourneyProgress,
 } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import { attachCohortExamSessionInheritedContext } from "@/domain/cohort-exam-session";
 import {
   deriveCohortExamSessionMonitoringSummary,
@@ -778,18 +779,24 @@ function toCloudShareReadFailureDiagnostic(
   trainingId: string,
   experienceId: string,
 ): {
-  readonly request?: Record<string, unknown>;
-  readonly response?: Record<string, unknown>;
+  readonly request?: Record<string, unknown> | null;
+  readonly response?: Record<string, unknown> | null;
   readonly details: Record<string, unknown>;
 } {
   const context = (error as { context?: Record<string, unknown> }).context ?? {};
   const status =
     typeof (error as { status?: unknown }).status === "number"
       ? ((error as { status: number }).status)
-      : undefined;
+      : typeof context.responseStatus === "number"
+        ? context.responseStatus
+        : typeof context.status === "number"
+          ? context.status
+          : undefined;
+  const projected = projectCloudShareFailureContext(context);
+  const oauthFailure = projected?.request === null && projected.response === null;
 
   return {
-    request:
+    request: oauthFailure ? null :
       context.method || context.path || context.requestHeaders || context.requestBody
         ? {
             method: context.method ?? "GET",
@@ -801,7 +808,7 @@ function toCloudShareReadFailureDiagnostic(
             method: "GET",
             path: `/v4/trainings/${trainingId}/students`,
           },
-    response:
+    response: oauthFailure ? null :
       status !== undefined || context.responseHeaders || context.responseBody
         ? {
             ...(status !== undefined ? { status } : {}),
@@ -813,8 +820,8 @@ function toCloudShareReadFailureDiagnostic(
       integrationSurface: context.integrationSurface ?? "cloudshare.v4.training.participant",
       failureMode: inferFailureMode(error),
       ...(status !== undefined ? { responseStatus: status } : {}),
-      ...(context.cause ? { cause: context.cause } : {}),
-      ...(context.issues ? { issues: context.issues } : {}),
+      ...(!oauthFailure && context.cause ? { cause: context.cause } : {}),
+      ...(!oauthFailure && context.issues ? { issues: context.issues } : {}),
       trainingId,
       ...(experienceId ? { experienceId } : {}),
     },
@@ -841,18 +848,24 @@ function toCloudShareAggregateReadFailureDiagnostic(
   error: unknown,
   experienceId: string,
 ): {
-  readonly request?: Record<string, unknown>;
-  readonly response?: Record<string, unknown>;
+  readonly request?: Record<string, unknown> | null;
+  readonly response?: Record<string, unknown> | null;
   readonly details: Record<string, unknown>;
 } {
   const context = (error as { context?: Record<string, unknown> }).context ?? {};
   const status =
     typeof (error as { status?: unknown }).status === "number"
       ? ((error as { status: number }).status)
-      : undefined;
+      : typeof context.responseStatus === "number"
+        ? context.responseStatus
+        : typeof context.status === "number"
+          ? context.status
+          : undefined;
+  const projected = projectCloudShareFailureContext(context);
+  const oauthFailure = projected?.request === null && projected.response === null;
 
   return {
-    request:
+    request: oauthFailure ? null :
       context.method || context.path || context.requestHeaders || context.requestBody
         ? {
             method: context.method ?? "GET",
@@ -864,7 +877,7 @@ function toCloudShareAggregateReadFailureDiagnostic(
             method: "GET",
             path: `/v4/guided-journey/progress/${experienceId}`,
           },
-    response:
+    response: oauthFailure ? null :
       status !== undefined || context.responseHeaders || context.responseBody
         ? {
             ...(status !== undefined ? { status } : {}),
@@ -876,8 +889,8 @@ function toCloudShareAggregateReadFailureDiagnostic(
       integrationSurface: context.integrationSurface ?? "cloudshare.v4.guided_journey.progress.aggregate",
       failureMode: inferFailureMode(error),
       ...(status !== undefined ? { responseStatus: status } : {}),
-      ...(context.cause ? { cause: context.cause } : {}),
-      ...(context.issues ? { issues: context.issues } : {}),
+      ...(!oauthFailure && context.cause ? { cause: context.cause } : {}),
+      ...(!oauthFailure && context.issues ? { issues: context.issues } : {}),
       experienceId,
     },
   };

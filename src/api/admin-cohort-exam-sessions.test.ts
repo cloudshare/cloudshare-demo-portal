@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createDraftExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
-import { CloudShareRequestError, CloudShareResponseError, CloudShareTransportError } from "@/integrations/cloudshare";
+import { CloudShareRateLimitError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError } from "@/integrations/cloudshare";
 import { createInMemoryCohortExamSessionRepository } from "@/persistence/cohort-exam-session-repository";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
@@ -685,6 +685,34 @@ describe("admin Cohort Exam Session runtime", () => {
     });
     expect(retry.status).toBe(502);
     expect(requestV4Detailed).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an OAuth 429 publish failure metadata-only", async () => {
+    const { diagnosticsRepository, deps } = await makePublishFailureDeps(
+      new CloudShareRateLimitError("OAuth token request throttled", 429, "rate_limit", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        requestBody: { client_secret: "private-secret" },
+        responseBody: { access_token: "private-token" },
+      }),
+    );
+
+    const response = await handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+    const [entry] = await diagnosticsRepository.query({ operation: "cohort_exam_session.publish", outcome: "failure" });
+
+    expect(response.status).toBe(429);
+    expect(entry).toMatchObject({
+      request: null,
+      response: null,
+      details: { integrationSurface: "cloudshare.v4.oauth.token", failureMode: "rate_limit", responseStatus: 429 },
+    });
+    expect(JSON.stringify(entry)).not.toMatch(/private-secret|private-token/);
   });
 
   it("records attempted operation when training user-property creation returns incomplete keys after Experience creation", async () => {

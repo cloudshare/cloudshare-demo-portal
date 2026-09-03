@@ -6,7 +6,7 @@ import type { SalesDemoSessionRepository } from "@/domain/sales-demo-session";
 import { isSalesSessionVerificationEligible } from "@/domain/sales-session-verification";
 import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
-import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
+import { projectCloudShareFailureContext, projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 export async function handleReconcileSalesSession(deps: { sessions: Pick<SalesDemoSessionRepository, "findById" | "updateOperationalState">; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): Pick<SalesDelivery, "readSession"> }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write"> }, request: { customerId: string; sessionId: string; actor: DiagnosticActor }) {
   if (!deps.sessions.findById || !deps.sessions.updateOperationalState) return { status: 503, body: { error: "Sales reconciliation is unavailable." } };
@@ -33,8 +33,7 @@ export async function handleReconcileSalesSession(deps: { sessions: Pick<SalesDe
     const failureMode = localPersistenceFailure ? "local_reconciliation_persistence" : failureModeFrom(error);
     const failureContext = cloudShareFailureContext(error);
     const integrationSurface = !localPersistenceFailure && typeof failureContext?.integrationSurface === "string" ? failureContext.integrationSurface : "cloudshare.v4.sales";
-    const projectedFailure = projectCloudShareFailureEvidence(error);
-    const oauthFailure = projectedFailure?.request === null && projectedFailure.response === null;
+    const oauthFailure = exchange?.request === null && exchange.response === null;
     const status = typeof failureContext?.responseStatus === "number" ? failureContext.responseStatus : typeof failureContext?.status === "number" ? failureContext.status : undefined;
     await Promise.allSettled([
       deps.diagnostics?.record({ source: "sales-session-reconciliation", operation: "sales.demo_session.reconciled", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId }, message: localPersistenceFailure ? "CloudShare Sales Session was read but Certalis could not persist reconciliation" : "CloudShare Sales Session reconciliation failed", correlationId, request: exchange?.request, response: exchange?.response, details: { integrationSurface, failureMode, ...(oauthFailure && status !== undefined ? { status } : {}), error: error instanceof Error ? error.message : String(error) } }),
@@ -60,7 +59,7 @@ function cloudShareExchange(error: unknown): { request: Record<string, unknown> 
   const projected = projectCloudShareFailureEvidence(error);
   if (projected) return projected;
   const context = cloudShareFailureContext(error);
-  return context ? { request: { method: context.method, path: context.path, headers: context.requestHeaders, query: context.requestQuery }, response: { status: context.responseStatus ?? context.status, headers: context.responseHeaders, body: context.responseBody, transport: context.cause } } : undefined;
+  return projectCloudShareFailureContext(context);
 }
 
 function cloudShareFailureContext(error: unknown): Record<string, unknown> | undefined {

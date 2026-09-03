@@ -4,7 +4,7 @@ import type { AuditRepository } from "@/domain/audit-trail";
 import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { isSalesExperienceType, isSalesTimezoneCacheFresh, type SalesAdminPreferenceRepository, type SalesTimezoneCacheRepository } from "@/domain/sales-timezones";
 import { createCloudShareTimezoneSource, type CloudShareTimezoneSource } from "@/integrations/cloudshare/timezones";
-import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
+import { projectCloudShareFailureContext, projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 export interface SalesTimezonesDeps {
   readonly cache: SalesTimezoneCacheRepository;
@@ -51,7 +51,7 @@ function cloudShareExchange(error: unknown): { request: Record<string, unknown> 
   const projected = projectCloudShareFailureEvidence(error);
   if (projected) return projected;
   const context = cloudShareFailureContext(error);
-  return context ? { request: { method: context.method, path: context.path, headers: context.requestHeaders, query: context.requestQuery }, response: { status: context.responseStatus ?? context.status, headers: context.responseHeaders, body: context.responseBody, transport: context.cause } } : undefined;
+  return projectCloudShareFailureContext(context);
 }
 
 function cloudShareFailureContext(error: unknown): Record<string, unknown> | undefined {

@@ -22,6 +22,7 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import type { AdminCohortExamSessionAttemptRepository } from "./admin-cohort-exam-session-detail";
 
 export interface AdminCohortExamSessionLifecycleDeps {
@@ -337,14 +338,22 @@ function isCloudShareError(error: unknown): boolean {
 function toCloudShareFailureDiagnostic(
   error: unknown,
 ): {
-  readonly request?: Record<string, unknown>;
-  readonly response?: Record<string, unknown>;
+  readonly request?: Record<string, unknown> | null;
+  readonly response?: Record<string, unknown> | null;
   readonly details: Record<string, unknown>;
 } {
   const context = (error as { context?: Record<string, unknown> }).context ?? {};
-  const status = typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : undefined;
+  const status = typeof (error as { status?: unknown }).status === "number"
+    ? (error as { status: number }).status
+    : typeof context.responseStatus === "number"
+      ? context.responseStatus
+      : typeof context.status === "number"
+        ? context.status
+        : undefined;
+  const projected = projectCloudShareFailureContext(context);
+  const oauthFailure = projected?.request === null && projected.response === null;
   return {
-    request:
+    request: oauthFailure ? null :
       context.method || context.path || context.requestHeaders || context.requestBody
         ? {
             method: context.method ?? "PUT",
@@ -353,7 +362,7 @@ function toCloudShareFailureDiagnostic(
             ...(context.requestBody !== undefined ? { body: context.requestBody } : {}),
           }
         : undefined,
-    response:
+    response: oauthFailure ? null :
       status !== undefined || context.responseHeaders || context.responseBody
         ? {
             ...(status !== undefined ? { status } : {}),
@@ -365,8 +374,8 @@ function toCloudShareFailureDiagnostic(
       integrationSurface: context.integrationSurface ?? "cloudshare.v4.training.update",
       failureMode: inferFailureMode(error),
       ...(status !== undefined ? { responseStatus: status } : {}),
-      ...(context.cause ? { cause: context.cause } : {}),
-      ...(context.issues ? { issues: context.issues } : {}),
+      ...(!oauthFailure && context.cause ? { cause: context.cause } : {}),
+      ...(!oauthFailure && context.issues ? { issues: context.issues } : {}),
     },
   };
 }

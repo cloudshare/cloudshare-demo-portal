@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { CloudShareAuthError } from "@/integrations/cloudshare/errors";
 import { handleGetSalesTimezones, handleSaveSalesPreference } from "./sales-timezones";
 
 describe("Sales timezone API", () => {
@@ -11,10 +10,10 @@ describe("Sales timezone API", () => {
   it("falls back to stale verified values when the live read fails and persists validated preferences", async () => {
     const cache = { find: vi.fn().mockResolvedValue({ customerId: "certalis", timezones: [{ id: "UTC", name: "UTC" }], fetchedAt: new Date("2026-07-13T09:00:00Z") }), save: vi.fn() };
     const diagnostics = { record: vi.fn().mockResolvedValue(undefined) }; const audit = { write: vi.fn().mockResolvedValue(undefined) };
-    const offline = Object.assign(new Error("offline"), { context: { method: "GET", path: "/timezones", responseStatus: 503 } });
+    const offline = Object.assign(new Error("offline"), { context: { method: "GET", path: "/timezones", requestBody: { marker: "request-marker" }, responseStatus: 503, responseBody: { marker: "response-marker" } } });
     const result = await handleGetSalesTimezones({ cache, preferences, diagnostics, audit, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, timezoneSourceFactory: { forConnection: () => ({ list: vi.fn().mockRejectedValue(offline) }) }, now: () => new Date("2026-07-15T10:00:00Z") }, { customerId: "certalis", userId: "admin", actor: { type: "admin", id: "admin", email: "admin@certalis.demo" } });
     expect(result).toMatchObject({ status: 200, body: { freshness: "stale", preference: { timeZone: "UTC", experienceType: "demo" }, warning: expect.any(String), correlationId: expect.any(String) } });
-    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: expect.any(String), request: expect.objectContaining({ path: "/timezones" }), response: expect.objectContaining({ status: 503 }), details: expect.objectContaining({ integrationSurface: "cloudshare.v3.timezones" }) }));
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: expect.any(String), request: expect.objectContaining({ path: "/timezones", body: { marker: "request-marker" } }), response: expect.objectContaining({ status: 503, body: { marker: "response-marker" } }), details: expect.objectContaining({ integrationSurface: "cloudshare.v3.timezones" }) }));
     await expect(handleSaveSalesPreference({ cache, preferences, connections: { findByCustomerId: vi.fn() } }, { customerId: "certalis", userId: "admin", body: { timeZone: "UTC", experienceType: "poc" } })).resolves.toMatchObject({ status: 204 });
     expect(preferences.save).toHaveBeenCalledWith("admin", { timeZone: "UTC", experienceType: "poc" });
   });
@@ -31,7 +30,7 @@ describe("Sales timezone API", () => {
 
   it("keeps OAuth token failure evidence metadata-only during timezone refresh", async () => {
     const diagnostics = { record: vi.fn() };
-    const oauthFailure = new CloudShareAuthError("OAuth token exchange returned 503", { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token", status: 503, requestBody: { client_secret: "private-secret" }, responseBody: { access_token: "private-token" } });
+    const oauthFailure = Object.assign(new Error("wrapped OAuth token exchange returned 503"), { context: { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token", status: 503, requestBody: { client_secret: "private-secret" }, responseBody: { access_token: "private-token" } } });
     const result = await handleGetSalesTimezones({ cache: { find: vi.fn().mockResolvedValue(null), save: vi.fn() }, preferences, diagnostics, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, timezoneSourceFactory: { forConnection: () => ({ list: vi.fn().mockRejectedValue(oauthFailure) }) } }, { customerId: "certalis", userId: "admin", actor: { type: "admin", id: "admin", email: "admin@certalis.demo" } });
     const [failure] = diagnostics.record.mock.calls[0];
 

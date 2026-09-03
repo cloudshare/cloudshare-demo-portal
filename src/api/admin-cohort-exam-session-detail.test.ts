@@ -1132,7 +1132,7 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     });
   });
 
-  it("reports a rate-limited participant read as temporary CloudShare throttling without adding an actionable reconciliation problem", async () => {
+  it("keeps an OAuth 429 participant read metadata-only without adding an actionable reconciliation problem", async () => {
     const exams = createInMemoryExamCatalogRepository();
     const sessions = createInMemoryCohortExamSessionRepository();
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
@@ -1144,11 +1144,12 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
       forConnection: () => ({
         requestV4Detailed: vi.fn(async () => {
           throw new CloudShareRateLimitError("CloudShare is temporarily throttling requests", 429, "abuse_protection", {
-            method: "GET",
-            path: "/v4/trainings/EXcohort-1/students",
-            integrationSurface: "cloudshare.v4.training.participant",
+            method: "POST",
+            path: "/oauth/token",
+            integrationSurface: "cloudshare.v4.oauth.token",
+            requestBody: { client_secret: "private-secret" },
             responseHeaders: { "retry-after": "60" },
-            responseBody: { code: "0x42901" },
+            responseBody: { access_token: "private-token" },
           });
         }),
       }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
@@ -1207,9 +1208,11 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
 
     const [entry] = await diagnosticsRepository.query({ customerId: "customer-1", operation: "cohort_exam_session.monitor.read_participants", outcome: "failure" });
     expect(entry).toMatchObject({
-      details: { failureMode: "rate_limit", responseStatus: 429 },
-      response: { status: 429, headers: { "retry-after": "60" }, body: { code: "0x42901" } },
+      request: null,
+      response: null,
+      details: { integrationSurface: "cloudshare.v4.oauth.token", failureMode: "rate_limit", responseStatus: 429 },
     });
+    expect(JSON.stringify(entry)).not.toMatch(/private-secret|private-token/);
   });
 
   it("keeps a generic participant-read transport failure unavailable, redacted, and in Needs attention", async () => {

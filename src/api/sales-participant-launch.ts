@@ -7,7 +7,7 @@ import type { SalesSessionParticipantRepository } from "@/domain/sales-session-p
 import type { SalesRecordRepository } from "@/domain/sales-records";
 import type { CloudShareConnectionRepository, CloudShareClientFactory } from "@/domain/cloudshare-connection";
 import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
-import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
+import { projectCloudShareFailureContext, projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
 import { createSalesLaunchDenialContextResolver, type SalesLaunchDenialContext, type SalesLaunchDenialContextResolver } from "./sales-launch-denial-context";
 
@@ -54,13 +54,8 @@ async function adminDenied(deps: Deps, request: AdminRequest, code: "sales_sessi
 async function adminEvidence(deps: Deps, request: AdminRequest, correlationId: string, operation: string, outcome: "success") { await deps.diagnostics?.record({ source: "sales-participant-launch", operation, outcome, customerId: request.customerId, actor: request.actor, subject: { type: "sales_session_participant", id: request.participantId }, message: "Sales participant launch capability updated.", correlationId, details: { sessionId: request.sessionId } }); await deps.audit?.write({ id: randomUUID(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: operation, subjectType: "sales_session_participant", subjectId: request.participantId, outcome, correlationId, occurredAt: new Date() }); }
 async function launchEvidence(deps: Deps, link: Awaited<ReturnType<SalesParticipantLaunchLinkRepository["findByTokenHash"]>>, correlationId: string, outcome: "success" | "failure", sponsored?: { request: unknown; response: unknown }, failure?: unknown) {
   const context = failure && typeof failure === "object" && "context" in failure ? (failure as { context?: Record<string, unknown> }).context : undefined;
-  const projectedFailure = projectCloudShareFailureEvidence(failure);
-  const oauthFailure = projectedFailure?.request === null && projectedFailure.response === null;
-  const fallbackFailure = context ? {
-    request: { method: context.method, path: context.path, headers: context.requestHeaders, body: context.requestBody },
-    response: { status: context.responseStatus ?? context.status, headers: context.responseHeaders, body: context.responseBody, transport: context.transport, network: context.network, tls: context.tls },
-  } : undefined;
-  const failureEvidence = projectedFailure ?? fallbackFailure;
+  const failureEvidence = projectCloudShareFailureEvidence(failure) ?? projectCloudShareFailureContext(context);
+  const oauthFailure = failureEvidence?.request === null && failureEvidence.response === null;
   const status = typeof context?.responseStatus === "number" ? context.responseStatus : typeof context?.status === "number" ? context.status : undefined;
   const protectedFailure = context ? {
     integrationSurface: typeof context.integrationSurface === "string" ? context.integrationSurface : "cloudshare.v4.sales.sponsored_link",

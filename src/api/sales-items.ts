@@ -39,11 +39,12 @@ export async function handleGetSalesItemBlueprintDetails(
     for (const read of reads) await record(deps, request, correlationId, read, "blueprint_detail");
     return response(200, { blueprintDetails: reads.map((read) => ({ id: read.data.id, defaultSnapshotRegionIds: read.data.snapshots.find((snapshot) => snapshot.isDefault)?.regionIds ?? [] })) });
   } catch (error) {
-    const cloudShareError = error instanceof CloudShareError ? error : undefined;
-    const typed = Boolean(cloudShareError);
-    const evidence = cloudShareError ? projectCloudShareFailureEvidence(cloudShareError) : undefined;
-    const oauthFailure = evidence?.request === null && evidence.response === null;
-    const diagnostic = { operation: "sales.item.authoring_resources.read", integrationSurface: oauthFailure && typeof cloudShareError?.context?.integrationSurface === "string" ? cloudShareError.context.integrationSurface : "cloudshare.v3.projects.blueprint_detail", failureMode: cloudShareError ? failureMode(cloudShareError) : "unexpected_response", ...(typeof cloudShareError?.context?.status === "number" ? { responseStatus: cloudShareError.context.status } : {}) };
+    const evidence = projectCloudShareFailureEvidence(error);
+    const typed = Boolean(evidence);
+    const cloudShareError = typed ? error as CloudShareError : undefined;
+    const context = cloudShareError?.context;
+    const responseStatus = typeof context?.status === "number" ? context.status : typeof (cloudShareError as { status?: unknown } | undefined)?.status === "number" ? (cloudShareError as unknown as { status: number }).status : undefined;
+    const diagnostic = { operation: "sales.item.authoring_resources.read", integrationSurface: typed && typeof context?.integrationSurface === "string" ? context.integrationSurface : "cloudshare.v3.projects.blueprint_detail", failureMode: cloudShareError ? failureMode(cloudShareError) : "unexpected_response", ...(responseStatus !== undefined ? { responseStatus } : {}) };
     await deps.diagnostics?.record({ source: "sales-items", operation: "sales.item.authoring_resources.read", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, correlationId, message: "Item Blueprint-detail resource read failed", request: typed ? evidence?.request : { method: "GET", path: `/projects/${request.projectId}/blueprints` }, response: typed ? evidence?.response : {}, details: diagnostic, externalIds: { projectId: request.projectId, resourceType: "blueprint_detail" } });
     return response(502, { error: "CloudShare Blueprint detail validation failed. Review support diagnostics.", correlationId, diagnostic });
   }
@@ -68,11 +69,12 @@ async function save(deps: SalesItemDeps, request: SalesItemRequest, id: string |
     await audit(deps, request, item.id, id ? "sales.item.updated" : "sales.item.created", "success", correlationId, { projectId: item.project.id, blueprintIds: item.blueprints.map((blueprint) => blueprint.id), policyId: item.policy.id, regionIds: item.regions.map((region) => region.id) });
     return response(id ? 200 : 201, { item });
   } catch (error) {
-    const cloudShareError = error instanceof CloudShareError ? error : undefined;
-    const typed = Boolean(cloudShareError);
-    const evidence = cloudShareError ? projectCloudShareFailureEvidence(cloudShareError) : undefined;
-    const oauthFailure = evidence?.request === null && evidence.response === null;
-    const diagnostic = { operation: "sales.item.authoring_resources.read", integrationSurface: oauthFailure && typeof cloudShareError?.context?.integrationSurface === "string" ? cloudShareError.context.integrationSurface : "cloudshare.v3.authoring_resources", failureMode: cloudShareError ? failureMode(cloudShareError) : "resource_selection", ...(typeof cloudShareError?.context?.status === "number" ? { responseStatus: cloudShareError.context.status } : {}) };
+    const evidence = projectCloudShareFailureEvidence(error);
+    const typed = Boolean(evidence);
+    const cloudShareError = typed ? error as CloudShareError : undefined;
+    const context = cloudShareError?.context;
+    const responseStatus = typeof context?.status === "number" ? context.status : typeof (cloudShareError as { status?: unknown } | undefined)?.status === "number" ? (cloudShareError as unknown as { status: number }).status : undefined;
+    const diagnostic = { operation: "sales.item.authoring_resources.read", integrationSurface: typed && typeof context?.integrationSurface === "string" ? context.integrationSurface : "cloudshare.v3.authoring_resources", failureMode: cloudShareError ? failureMode(cloudShareError) : "resource_selection", ...(responseStatus !== undefined ? { responseStatus } : {}) };
     await deps.diagnostics?.record({ source: "sales-items", operation: "sales.item.authoring_resources.read", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, correlationId, message: "Item resource validation failed", request: typed ? evidence?.request : { method: "GET", path: "/projects" }, response: typed ? evidence?.response : {}, details: diagnostic });
     await audit(deps, request, id ?? "unpersisted", id ? "sales.item.updated" : "sales.item.created", "failure", correlationId, null);
     if (error instanceof ItemValidationError) return response(400, { error: error.message, correlationId });

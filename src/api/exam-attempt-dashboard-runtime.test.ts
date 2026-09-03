@@ -577,7 +577,7 @@ describe("getExamAttemptDashboardRuntime", () => {
     expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
   });
 
-  it("retains protected response evidence for a cross-realm CloudShare rate-limit failure", async () => {
+  it("keeps a cross-realm OAuth rate-limit failure metadata-only", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
@@ -622,16 +622,16 @@ describe("getExamAttemptDashboardRuntime", () => {
                 classification: "rate_limit",
                 context: {
                   status: 429,
-                  method: "GET",
-                  path: "/v4/trainings/EXtraining-1/students",
-                  integrationSurface: "cloudshare.v4.training.participant_list",
+                  method: "POST",
+                  path: "/oauth/token",
+                  integrationSurface: "cloudshare.v4.oauth.token",
                   requestHeaders: {
                     Accept: "application/json",
                     Authorization: "Bearer synthetic-dashboard-request-marker",
                   },
-                  requestBody: { queryMarker: "synthetic-dashboard-query-marker" },
+                  requestBody: { client_secret: "synthetic-dashboard-request-marker" },
                   responseHeaders: { "x-provider-trace": "synthetic-dashboard-trace" },
-                  responseBody: { accessLink: "synthetic-dashboard-response-marker" },
+                  responseBody: { access_token: "synthetic-dashboard-response-marker" },
                 },
               };
             }
@@ -656,9 +656,9 @@ describe("getExamAttemptDashboardRuntime", () => {
         examAttemptId: "attempt-ready",
         operation: "candidate_dashboard_environment_correlation",
         attemptedOperation: "list_training_participants",
-        integrationSurface: "cloudshare.v4.training.participant_list",
-        method: "GET",
-        path: "/v4/[REDACTED_ROUTE]",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        method: "POST",
+        path: "/[REDACTED_ROUTE]",
         failureMode: "rate_limit",
         responseStatus: 429,
       }),
@@ -677,7 +677,7 @@ describe("getExamAttemptDashboardRuntime", () => {
           operation: "candidate_dashboard_environment_correlation",
           outcome: "failure",
           attemptedOperation: "list_training_participants",
-          integrationSurface: "cloudshare.v4.training.participant_list",
+          integrationSurface: "cloudshare.v4.oauth.token",
           failureMode: "rate_limit",
           responseStatus: 429,
           externalIds: expect.objectContaining({
@@ -702,20 +702,8 @@ describe("getExamAttemptDashboardRuntime", () => {
         operation: "candidate_dashboard_environment_correlation",
         outcome: "failure",
         examAttemptId: "attempt-ready",
-        request: {
-          method: "GET",
-          path: "/v4/trainings/EXtraining-1/students",
-          headers: {
-            Accept: "application/json",
-            Authorization: "[REDACTED]",
-          },
-          body: { queryMarker: "synthetic-dashboard-query-marker" },
-        },
-        response: {
-          status: 429,
-          headers: { "x-provider-trace": "synthetic-dashboard-trace" },
-          body: { accessLink: "synthetic-dashboard-response-marker" },
-        },
+        request: null,
+        response: null,
       }),
     ]);
   });

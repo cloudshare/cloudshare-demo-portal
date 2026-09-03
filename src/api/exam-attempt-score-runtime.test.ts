@@ -117,6 +117,7 @@ function makeDeps(input?: {
   readonly connection?: CloudShareConnectionRecord | null;
   readonly progress?: ParticipantProgress | null;
   readonly progressError?: unknown;
+  readonly participantError?: unknown;
 }) {
   let storedLaunch = input?.launch ?? makeLaunch();
   const exams: ExamRepository = {
@@ -169,7 +170,7 @@ function makeDeps(input?: {
   };
   const createScoreRetriever = vi.fn().mockReturnValue(scoreRetriever);
   const participantLister = {
-    listParticipants: vi.fn().mockResolvedValue([
+    listParticipants: input?.participantError !== undefined ? vi.fn().mockRejectedValue(input.participantError) : vi.fn().mockResolvedValue([
       {
         email: "candidate@example.com",
         environmentId: "env-1",
@@ -477,17 +478,19 @@ describe("getExamAttemptScoreRuntime", () => {
     );
   });
 
-  it("returns 429 with rate-limit diagnostics when CloudShare score retrieval is throttled", async () => {
-    const deps = makeDeps({
+  it("returns 429 with metadata-only diagnostics when OAuth score retrieval is throttled", async () => {
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const deps = { ...makeDeps({
       progressError: new CloudShareRateLimitError("too many requests", 429, "rate_limit", {
-        method: "GET",
+        method: "POST",
         host: "api.accelerate.cloudshare.com",
-        path: "/guided-journey/progress/exp-1/student-1",
-        integrationSurface: "cloudshare.v4.guided_journey.progress",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        requestBody: { client_secret: "private-secret" },
         responseHeaders: { "retry-after": "45" },
-        responseBody: "too many requests",
+        responseBody: { access_token: "private-token" },
       }),
-    });
+    }), diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }) };
 
     const result = await getExamAttemptScoreRuntime(deps, makeRuntimeRequest());
 
@@ -517,6 +520,9 @@ describe("getExamAttemptScoreRuntime", () => {
         }),
       }),
     );
+    const [entry] = await diagnosticsRepository.query({ operation: "exam_attempt.score.retrieve", outcome: "failure" });
+    expect(entry).toMatchObject({ request: null, response: null, details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "rate_limit", responseStatus: 429 }) });
+    expect(JSON.stringify(entry)).not.toMatch(/private-secret|private-token/);
   });
 
   it("returns a supportable 502 when the diagnostics-aware Guided Journey path gets an unsupported payload", async () => {
@@ -670,5 +676,26 @@ describe("getExamAttemptScoreRuntime", () => {
         failureMode: "missing_participant_id",
       }),
     );
+  });
+
+  it("keeps OAuth participant-resolution failure details metadata-only", async () => {
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const deps = { ...makeDeps({
+      launch: makeLaunch({ participantId: undefined }),
+      participantError: new CloudShareRateLimitError("OAuth token request throttled", 429, "rate_limit", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        requestBody: { client_secret: "private-secret" },
+        responseBody: { access_token: "private-token" },
+      }),
+    }), diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }) };
+
+    const result = await getExamAttemptScoreRuntime(deps, makeRuntimeRequest());
+    const [entry] = await diagnosticsRepository.query({ operation: "exam_attempt.score.correlate_environment", outcome: "failure" });
+
+    expect(result.status).toBe(502);
+    expect(entry.details).toMatchObject({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "rate_limit", responseStatus: 429 });
+    expect(JSON.stringify(entry.details)).not.toMatch(/private-secret|private-token|requestBody|responseBody/);
   });
 });

@@ -9,7 +9,7 @@ import type { SalesSessionParticipantRepository } from "@/domain/sales-session-p
 import { projectSalesSessionAccessWindow } from "@/domain/sales-session-access-window";
 import { createCloudShareSalesDelivery, type SalesDelivery, type SalesDeliveryEvidence } from "@/integrations/cloudshare/sales-delivery";
 import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
-import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
+import { projectCloudShareFailureContext, projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import type { EnvironmentStateEvidenceSource } from "@/domain/environment";
 import type { ItemRepository } from "@/domain/item";
 import { SalesEnvironmentResolutionError, type SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
@@ -444,10 +444,7 @@ function exchange(error: unknown): { readonly request: unknown; readonly respons
   if (!(error instanceof Error) || !("context" in error)) return undefined;
   const c = (error as { context?: Record<string, unknown> }).context;
   if (!c || typeof c.method !== "string" || typeof c.path !== "string") return undefined;
-  return {
-    request: { method: c.method, path: c.path, query: c.requestQuery, headers: c.requestHeaders, body: c.requestBody },
-    response: { status: c.responseStatus ?? c.status, headers: c.responseHeaders, body: c.responseBody, transport: c.cause },
-  };
+  return projectCloudShareFailureContext(c);
 }
 function priorHttpExchanges(error: unknown): readonly { readonly request: unknown; readonly response: unknown }[] { if (!(error instanceof Error) || !("context" in error)) return []; const exchanges = (error as { context?: { priorHttpExchanges?: unknown } }).context?.priorHttpExchanges; return Array.isArray(exchanges) ? exchanges.filter((value): value is { readonly request: unknown; readonly response: unknown } => Boolean(value && typeof value === "object" && "request" in value && "response" in value)) : []; }
 type ParticipantFailureMode = "cloudshare_participants" | "http_failure" | "transport_failure" | "environment_not_found_for_project" | "environment_ambiguous_for_project" | "environment_status_observation" | "environment_observation_persistence" | "participant_page_count_contradiction" | "participant_page_duplicate_id" | "participant_registration_not_reconciled" | "participant_roster_mapping_unresolved" | "participant_mapping_persistence" | "participant_invitation_confirmation" | "sales_participant_correlation_properties_missing" | "participant_legacy_backfill_ambiguous";
