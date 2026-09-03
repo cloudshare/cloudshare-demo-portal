@@ -234,7 +234,7 @@ accumulate as local-only commits.
   spawn time, using the closest available explicit equivalent only when a requested model is unavailable
   and recording that limitation on the PR. The implementation role follows the issue and project docs
   and does not redesign scope unless genuinely blocked.
-- While any internal implementation or review agent is active, the ticket task must monitor it and the
+- While any internal implementation, review, or QA agent is active, the ticket task must monitor it and the
   current PR head/comments. It must not merge or report completion while an expected result is pending.
   If a reviewer exits before implementation is pushed, spawn a fresh reviewer after the PR head changes.
 - The implementation agent fixes review findings on the same PR branch. Re-review until the review
@@ -254,14 +254,14 @@ For each slice, before implementation starts:
 
 ```bash
 git fetch origin main
-git switch -c feature/issue-<number>-<short-description> origin/main
+git switch -c codex/issue-<number>-<short-description> origin/main
 ```
 
 Then immediately open a draft PR linked to the issue with a closing keyword:
 
 ```bash
-git push -u origin feature/issue-<number>-<short-description>
-gh pr create --draft --base main --head feature/issue-<number>-<short-description>
+git push -u origin codex/issue-<number>-<short-description>
+gh pr create --draft --base main --head codex/issue-<number>-<short-description>
 ```
 
 The PR body must include:
