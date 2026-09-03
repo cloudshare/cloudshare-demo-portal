@@ -5,7 +5,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type { DiagnosticActor, DiagnosticRecorder, DiagnosticSubject } from "@/domain/diagnostic-log";
 import {
   hasContinuableSalesTrialEnvironment,
   type SalesTrialEnrollment,
@@ -70,6 +70,7 @@ type Participant = {
 };
 
 export interface SalesTrialEnrollmentDeps {
+  readonly cloudshareObserver?: (input: { customerId: string; actor: DiagnosticActor; correlationId: string; subject: DiagnosticSubject }) => Parameters<CloudShareClientFactory["forConnection"]>[1];
   readonly offerings: Pick<SalesTrialOfferingRepository, "findById">;
   readonly items?: Pick<ItemRepository, "findById">;
   readonly enrollments: SalesTrialEnrollmentRepository;
@@ -80,6 +81,7 @@ export interface SalesTrialEnrollmentDeps {
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
       >,
+      options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): Pick<Required<SalesEnvironmentSource>, "observe" | "observeById" | "extendById">;
   };
   readonly deliveryFactory?: {
@@ -723,7 +725,8 @@ export async function handleExtendSalesTrialOfferingParticipant(
       reconcileOnly = true;
     }
   }
-  const environments = deps.salesEnvironmentFactory.forConnection(connection);
+  const environmentOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, subject: { type: "sales_trial_enrollment", id: enrollment.id } });
+  const environments = deps.salesEnvironmentFactory.forConnection(connection, environmentOptions);
 
   try {
     const preflight = await environments.observe({

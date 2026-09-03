@@ -11,6 +11,7 @@ import { createPrismaSalesTrialEnrollmentRepository } from "@/persistence/prisma
 import { createPrismaSalesTrialOfferingRepository } from "@/persistence/prisma-sales-trial-offering-repository";
 import { handleEndSalesTrialOffering } from "@/api/sales-trial-offerings";
 import { salesTrialEndingDeps } from "@/api/sales-trial-ending-reconciliation";
+import { createSalesTrialCloudShareObserver } from "@/api/sales-trial-cloudshare-diagnostics";
 
 export async function POST(
   _request: Request,
@@ -36,10 +37,14 @@ export async function POST(
       enrollments: createPrismaSalesTrialEnrollmentRepository(services.prisma),
       connections: services.cloudshareConnections,
       salesEnvironmentFactory: {
-        forConnection: (connection) =>
+        forConnection: (connection, options) =>
           createCloudShareSalesEnvironmentSource(
-            services.cloudshareClientFactory.forConnection(connection),
+            services.cloudshareClientFactory.forConnection(connection, options),
           ) as Pick<Required<SalesEnvironmentSource>, "observe" | "observeById" | "extendById">,
+      },
+      cloudshareObserver: ({ customerId, actor, correlationId, subject }) => {
+        const observer = createSalesTrialCloudShareObserver({ diagnostics: services.diagnosticRecorder, customerId, actor, correlationId, source: "sales-trial-enrollment", subject });
+        return { onRequest: observer.onRequest, onAcquisition: observer.onAcquisition };
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,
