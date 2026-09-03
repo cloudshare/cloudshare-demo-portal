@@ -9,7 +9,7 @@ Issue [#418](https://github.com/swinster/cloudshare-demo-portal/issues/418) is m
 Current checkout state at audit time:
 
 - The audit was refreshed against the current `feature/issue-416-trial-workflow-observability` head; the working branch is pushed and is not detached.
-- `git rev-parse HEAD`: `fa9a0dc6295724dadfd6d90770b7f3fad0b67a5b`
+- Review target: the pushed PR #423 feature head; verify its exact commit at review time rather than relying on a stale audit snapshot.
 
 ## Scope
 
