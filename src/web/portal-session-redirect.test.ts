@@ -5,7 +5,7 @@ describe("portal session-expiry redirect", () => {
   it("replaces a safe current target exactly once when concurrent 401 responses arrive", () => {
     const replace = vi.fn();
     const redirect = createPortalSessionExpiryRedirect({
-      currentPath: () => "/sales?tab=sessions&queueView=active",
+      currentPath: () => "/sales?tab=sessions&queue=active",
       fallbackLoginPath: "/login",
       replace,
     });
@@ -14,7 +14,7 @@ describe("portal session-expiry redirect", () => {
     redirect();
 
     expect(replace).toHaveBeenCalledOnce();
-    expect(replace).toHaveBeenCalledWith("/login?returnTo=%2Fsales%3Ftab%3Dsessions%26queueView%3Dactive");
+    expect(replace).toHaveBeenCalledWith("/login?returnTo=%2Fsales%3Ftab%3Dsessions%26queue%3Dactive");
   });
 
   it("falls back without carrying an unsafe or failed-request target", () => {
