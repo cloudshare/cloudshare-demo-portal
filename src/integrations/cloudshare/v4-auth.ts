@@ -145,6 +145,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
     try {
       json = JSON.parse(response.body);
     } catch {
+      await notifyAcquisition({ occurredAt: new Date(startedAtMs).toISOString(), outcome: "failure", status: response.status, durationMs: Math.max(0, now() - startedAtMs), integrationSurface: "cloudshare.v4.oauth.token" });
       throw new CloudShareAuthError("v4 token response was not valid JSON", {
         method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
         requestHeaders: { "content-type": "application/x-www-form-urlencoded" }, requestBody: body,
@@ -154,6 +155,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
 
     const parsed = tokenResponseSchema.safeParse(json);
     if (!parsed.success) {
+      await notifyAcquisition({ occurredAt: new Date(startedAtMs).toISOString(), outcome: "failure", status: response.status, durationMs: Math.max(0, now() - startedAtMs), integrationSurface: "cloudshare.v4.oauth.token" });
       throw new CloudShareAuthError("v4 token response did not match the expected schema", {
         method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
         requestHeaders: { "content-type": "application/x-www-form-urlencoded" }, requestBody: body,
