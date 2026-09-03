@@ -88,7 +88,7 @@ export interface SalesTrialEnrollmentDeps {
     forConnection(
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
-      >,
+      >, options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): Pick<
       SalesDelivery,
       | "readSession"
@@ -260,9 +260,10 @@ export async function handleEnterSalesTrialOffering(
     return denied(deps, request, correlationId, "connection_missing");
   }
 
+  const observerOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, subject: { type: "sales_trial_offering", id: offering.id } });
   const delivery =
-    deps.deliveryFactory?.forConnection(connection) ??
-    createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection));
+    (observerOptions ? deps.deliveryFactory?.forConnection(connection, observerOptions) : deps.deliveryFactory?.forConnection(connection)) ??
+    createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection, observerOptions));
   try {
     const session = await delivery.readSession(offering.cloudShareSalesExperienceId);
     if (!isLaunchableProviderSession(offering, session, isContinuedAccess)) {
