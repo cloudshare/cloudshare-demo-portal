@@ -16,7 +16,7 @@ export function salesTrialEndingDeps(services: Services) {
       createCloudShareSalesEnvironmentSource(services.cloudshareClientFactory.forConnection(connection, options)) },
     cloudshareObserver: ({ customerId, actor, correlationId, offeringId }: { customerId: string; actor: import("@/domain/diagnostic-log").DiagnosticActor; correlationId: string; offeringId: string }) => {
       const observer = createSalesTrialCloudShareObserver({ diagnostics: services.diagnosticRecorder, customerId, actor, correlationId, source: "sales-trial-offerings", subject: { type: "sales_trial_offering", id: offeringId }, externalIds: { offeringId } });
-      return { onRequest: observer.onRequest, onAcquisition: observer.onAcquisition };
+      return observer;
     },
     diagnostics: services.diagnosticRecorder,
     audit: services.audit,

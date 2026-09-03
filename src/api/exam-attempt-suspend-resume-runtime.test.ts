@@ -521,6 +521,7 @@ describe("suspendExamAttemptRuntime", () => {
     expect(resp.status).toBe(200);
     expect(cloudshare.forConnection).toHaveBeenCalledWith(
       expect.objectContaining({ customerId: "customer-1" }),
+      expect.objectContaining({ scope: "workflow" }),
     );
     expect(customerClient.requestV3Text).toHaveBeenNthCalledWith(
       1,

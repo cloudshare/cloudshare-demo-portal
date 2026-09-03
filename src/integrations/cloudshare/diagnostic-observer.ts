@@ -1,4 +1,5 @@
-import type { DiagnosticActor, DiagnosticRecorder, DiagnosticSubject } from "@/domain/diagnostic-log";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type { CloudShareWorkflowObservationContext } from "@/domain/cloudshare-connection";
 import type { CloudShareRequestObservation } from "./client";
 import type { V4TokenAcquisitionEvent } from "./v4-auth";
 import { projectCloudShareFailureContext } from "./diagnostic-failure-projection";
@@ -57,17 +58,6 @@ export function createCloudShareDiagnosticObserver(input: {
  * Customer-scoped observer; this observer deliberately writes only the one
  * workflow row for each callback.
  */
-export interface CloudShareWorkflowObservationContext {
-  readonly actor: DiagnosticActor;
-  readonly subject: DiagnosticSubject | (() => DiagnosticSubject);
-  readonly correlationId: string;
-  readonly source: string;
-  readonly externalIds?: Record<string, string>;
-  readonly candidateEmail?: string | null;
-  readonly examId?: string | null;
-  readonly examAttemptId?: string | null;
-}
-
 export function createCloudShareWorkflowObserver(input: {
   readonly diagnostics: DiagnosticRecorder;
   readonly customerId: string;

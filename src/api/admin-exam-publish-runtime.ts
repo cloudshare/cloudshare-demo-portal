@@ -27,6 +27,7 @@ import {
 } from "@/integrations/cloudshare/resources";
 import type { Logger } from "@/observability/logger";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
+import { customerDefaultCloudShareScope } from "./certification-cloudshare-observer";
 
 export interface AdminExamPublishRuntimeDeps {
   readonly repository: ExamRepository;
@@ -212,7 +213,7 @@ function resolveAuthoringSource(
     ? Exclude<T, null>
     : never,
 ): { source: CloudShareExamAuthoringSource; capturesDetailedReads: boolean } {
-  const candidate = deps.cloudshare.forConnection(connection) as unknown;
+  const candidate = deps.cloudshare.forConnection(connection, customerDefaultCloudShareScope("catalogue_resource_read")) as unknown;
   if (
     typeof candidate === "object" &&
     candidate !== null &&

@@ -117,6 +117,8 @@ export function createSalesTrialCloudShareObserver(input: {
   readonly externalIds?: Record<string, string>;
   readonly candidateEmail?: string | null;
 }): {
+  readonly scope: "custom_observer";
+  readonly correlationId: string;
   readonly onRequest: (event: CloudShareRequestObservation) => Promise<void>;
   readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void>;
 } {
@@ -127,6 +129,8 @@ export function createSalesTrialCloudShareObserver(input: {
   }
 
   return {
+    scope: "custom_observer",
+    correlationId: input.correlationId,
     onRequest: async (event) => {
       if (!input.diagnostics) {
         return;

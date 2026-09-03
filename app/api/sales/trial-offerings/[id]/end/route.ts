@@ -38,7 +38,7 @@ export async function POST(
       },
       cloudshareObserver: ({ customerId, actor, correlationId, offeringId }) => {
         const observer = createSalesTrialCloudShareObserver({ diagnostics: services.diagnosticRecorder, customerId, actor, correlationId, source: "sales-trial-offerings", subject: { type: "sales_trial_offering", id: offeringId }, externalIds: { offeringId } });
-        return { onRequest: observer.onRequest, onAcquisition: observer.onAcquisition };
+        return observer;
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,

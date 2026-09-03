@@ -156,7 +156,7 @@ describe("refreshCloudShareEnvironmentStatus", () => {
 
     await refreshCloudShareEnvironmentStatus(services, BASE_CONTEXT);
 
-    expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledWith(connection);
+    expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledWith(connection, expect.objectContaining({ scope: "workflow" }));
     expect(services.environments.save).toHaveBeenCalledWith({
       environmentExternalId: "env-external-1",
       status: "running",

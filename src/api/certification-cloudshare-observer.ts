@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
 import type { DiagnosticActor, DiagnosticSubject } from "@/domain/diagnostic-log";
 
@@ -18,6 +19,7 @@ export function certificationCloudShareWorkflow(input: {
   readonly externalIds?: Record<string, string>;
 }): NonNullable<Parameters<CloudShareClientFactory["forConnection"]>[1]> {
   return {
+    scope: "workflow",
     workflow: {
       actor: input.actor ?? { type: "system", id: "certification-workflow" },
       subject: input.subject,
@@ -29,4 +31,10 @@ export function certificationCloudShareWorkflow(input: {
       ...(input.externalIds ? { externalIds: input.externalIds } : {}),
     },
   };
+}
+
+export function customerDefaultCloudShareScope(
+  reason: "catalogue_resource_read" | "connection_check" | "unanchored_support_read",
+): NonNullable<Parameters<CloudShareClientFactory["forConnection"]>[1]> {
+  return { scope: "customer_default", correlationId: randomUUID(), reason };
 }

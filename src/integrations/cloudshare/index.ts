@@ -36,8 +36,8 @@ export { pingCloudShareV3 } from "./ping";
 export {
   createCloudShareDiagnosticObserver,
   createCloudShareWorkflowObserver,
-  type CloudShareWorkflowObservationContext,
 } from "./diagnostic-observer";
+export type { CloudShareWorkflowObservationContext } from "@/domain/cloudshare-connection";
 
 export interface CloudShareObservationPort extends CloudShareRequestObserver {
   readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void> | void;

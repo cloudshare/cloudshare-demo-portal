@@ -218,3 +218,5 @@ The composition root now always creates the mandatory Customer-scoped observer w
 | Resource/catalogue reads without a narrower workflow | Customer-scoped default |
 
 Both OAuth acquisition and subsequent v3/v4 requests use the same correlation and monotonic sequence within each observer. OAuth request and response evidence remains absent from both rows.
+
+The shared context is owned by the domain-facing connection factory contract, while concrete OAuth evidence projection remains in integration/API code. Score retrieval and participant correlation now receive the same ExamAttempt-scoped factory context; snapshot validation, completion, suspend/resume, heartbeat completion, and admin diagnostic refresh each use their authoritative attempt/session context. Sales Trial's independent observer is explicitly marked `custom_observer` rather than being an unlabelled callback bag.

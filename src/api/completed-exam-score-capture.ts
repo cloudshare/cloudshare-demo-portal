@@ -13,6 +13,7 @@ import {
 } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { getExamAttemptScoreRuntime } from "./exam-attempt-score-runtime";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 export interface CompletedExamScoreCaptureDeps {
   readonly attempts: Pick<ExamAttemptRepository, "findById">;
@@ -51,10 +52,10 @@ export async function captureCompletedExamScoreEvidence(
         launches: deps.launches,
         audit: deps.audit,
         connections: deps.connections,
-        createScoreRetriever: (connection) =>
-          createCloudShareTrainingDelivery(deps.cloudshare!.forConnection(connection)),
-        createParticipantLister: (connection) =>
-          createCloudShareTrainingDelivery(deps.cloudshare!.forConnection(connection)),
+        createScoreRetriever: (connection, observation) =>
+          createCloudShareTrainingDelivery(deps.cloudshare!.forConnection(connection, observation)),
+        createParticipantLister: (connection, observation) =>
+          createCloudShareTrainingDelivery(deps.cloudshare!.forConnection(connection, observation)),
         logger: deps.logger,
         limitations: SCORING_LIMITATIONS,
         diagnostics: deps.diagnostics,

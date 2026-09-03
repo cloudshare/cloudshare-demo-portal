@@ -14,7 +14,6 @@ import type {
 } from "./lab-launch";
 import { TrainingDeliveryOperationError } from "./lab-launch";
 import type { DiagnosticRecorder } from "./diagnostic-log";
-import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 type ProvisioningOperation =
   | "create_training"
@@ -40,8 +39,7 @@ function describeProvisioningCause(cause: unknown): Record<string, unknown> {
     | { name?: string; status?: number; message?: string; context?: Record<string, unknown> }
     | undefined;
   const ctx = (err?.context ?? {}) as Record<string, unknown>;
-  const projected = projectCloudShareFailureContext(ctx);
-  const oauthFailure = projected?.request === null && projected.response === null;
+  const oauthFailure = isOAuthMetadataOnlyContext(ctx);
   const failureMode =
     err?.name === "CloudShareRateLimitError"
       ? "rate_limit"
@@ -69,8 +67,7 @@ function extractProvisioningRequest(cause: unknown): Record<string, unknown> | n
     string,
     unknown
   >;
-  const projected = projectCloudShareFailureContext(ctx);
-  if (projected?.request === null) return null;
+  if (isOAuthMetadataOnlyContext(ctx)) return null;
   const method = ctx.method;
   const path = ctx.path;
   const requestHeaders = ctx.requestHeaders;
@@ -95,8 +92,7 @@ function extractProvisioningRequest(cause: unknown): Record<string, unknown> | n
 function extractProvisioningResponse(cause: unknown): Record<string, unknown> | null | undefined {
   const err = cause as { status?: number; context?: Record<string, unknown> } | undefined;
   const ctx = (err?.context ?? {}) as Record<string, unknown>;
-  const projected = projectCloudShareFailureContext(ctx);
-  if (projected?.response === null) return null;
+  if (isOAuthMetadataOnlyContext(ctx)) return null;
   const status = typeof err?.status === "number" ? err.status : ctx.status;
   const responseHeaders = ctx.responseHeaders;
   const responseBody = ctx.responseBody;
@@ -109,6 +105,11 @@ function extractProvisioningResponse(cause: unknown): Record<string, unknown> | 
     ...(responseHeaders !== undefined ? { headers: responseHeaders } : {}),
     ...(responseBody !== undefined ? { body: responseBody } : {}),
   };
+}
+
+/** Domain-level shape test only; concrete provider projection stays outside domain. */
+function isOAuthMetadataOnlyContext(context: Record<string, unknown>): boolean {
+  return context.integrationSurface === "cloudshare.v4.oauth.token";
 }
 
 function toDiagnosticRequestEvidence(

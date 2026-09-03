@@ -10,6 +10,7 @@ import type {
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EnvironmentRepository } from "@/domain/environment";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 import type { Logger } from "@/observability/logger";
 
 export interface AdminExamAttemptDiagnosticDrilldownHandlerDeps {
@@ -142,7 +143,7 @@ export async function refreshCloudShareEnvironmentStatus(
   }
 
   const source = createCloudShareEnvironmentSource(
-    services.cloudshareClientFactory.forConnection(connection),
+    services.cloudshareClientFactory.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "admin", id: null }, customerId: context.customerId, subject: { type: "exam_attempt", id: context.attemptId }, correlationId: `admin-diagnostics:${context.attemptId}`, source: "admin-diagnostics", examId: context.examId ?? undefined, examAttemptId: context.attemptId, candidateEmail: context.candidateEmail ?? undefined, externalIds: { environmentExternalId } })),
   );
   const snapshot = await source.getEnvironmentState(environmentExternalId);
   const observedAt = new Date();

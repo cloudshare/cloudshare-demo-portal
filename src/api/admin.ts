@@ -25,6 +25,7 @@ import {
   type CloudShareResourceReadFailure,
   type CloudShareResourceReadSuccess,
 } from "@/integrations/cloudshare/resources";
+import { customerDefaultCloudShareScope } from "./certification-cloudshare-observer";
 
 /**
  * Framework-agnostic admin API handlers. All three surfaces are read-only
@@ -165,7 +166,7 @@ export async function handleSyncResources(
     }
 
     const lister: CloudShareResourceLister = createCloudShareResourceLister(
-      deps.cloudshare.forConnection(connection),
+      deps.cloudshare.forConnection(connection, customerDefaultCloudShareScope("catalogue_resource_read")),
       {
         onReadSuccess: async (spec) => {
           await safeRecordDiagnostic(deps, buildResourceReadSuccessEntry(request.customerId, spec));

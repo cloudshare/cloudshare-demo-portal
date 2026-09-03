@@ -174,10 +174,11 @@ describe("buildCandidateScoreDeps", () => {
       connectedAt: new Date("2026-06-16T07:00:00.000Z"),
       verifiedAt: null,
     };
-    expect(deps.createScoreRetriever(connection)).toHaveProperty("getParticipantProgress");
-    expect(deps.createParticipantLister(connection)).toHaveProperty("listParticipants");
+    const observation = { scope: "customer_default" as const, correlationId: "test", reason: "unanchored_support_read" as const };
+    expect(deps.createScoreRetriever(connection, observation)).toHaveProperty("getParticipantProgress");
+    expect(deps.createParticipantLister(connection, observation)).toHaveProperty("listParticipants");
     expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledTimes(2);
-    expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledWith(connection);
+    expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledWith(connection, observation);
   });
 
   it("keeps the Next route adapter from constructing CloudShare score adapters", () => {

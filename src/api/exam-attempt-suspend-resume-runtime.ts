@@ -27,6 +27,7 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import { ensureExamAttemptEnvironmentCorrelation } from "./exam-attempt-environment-correlation";
 import type { ExamClock } from "@/domain/exam-clock";
@@ -627,7 +628,7 @@ async function resolveCustomerEnvironmentAccess(
     );
   }
 
-  const client = deps.cloudshare.forConnection(connection);
+  const client = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "system", id: "exam-runtime" }, customerId: attempt.customerId, subject: { type: "exam_attempt", id: examAttemptId }, correlationId: `exam-runtime:${examAttemptId}`, source: "runtime", examId: attempt.examId ?? undefined, examAttemptId }));
   return {
     controller: createCloudShareEnvironmentController(client),
     source: createCloudShareEnvironmentSource(client),

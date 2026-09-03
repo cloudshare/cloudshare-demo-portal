@@ -1561,7 +1561,7 @@ describe("Sales Trial offering entry", () => {
 
   it("with a shared observer records one thrown extension summary without duplicate child steps", async () => {
     const { deps, enrollments, diagnosticRepository, observe, extendById } = createDeps({
-      cloudshareObserver: () => ({ onRequest: vi.fn(), onAcquisition: vi.fn() }),
+      cloudshareObserver: () => ({ scope: "custom_observer", correlationId: "test-observer", onRequest: vi.fn(), onAcquisition: vi.fn() }),
     });
     await enrollments.save({
       id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",

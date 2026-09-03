@@ -288,7 +288,7 @@ async function readCloudShareAggregateProgress(
 
   const trainingDelivery = createCloudShareTrainingDelivery(
     deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
-      actor: { type: "admin", id: "cohort-session-detail" }, customerId: input.customerId,
+      actor: { type: "system", id: "cohort-session-detail" }, customerId: input.customerId,
       subject: { type: "cohort_exam_session", id: input.session.session.id }, correlationId: input.correlationId,
       source: "admin-exams", examId: input.examId, externalIds: { experienceId },
     })),
@@ -441,7 +441,7 @@ async function readCloudShareParticipants(
   }
 
   const trainingDelivery = createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
-    actor: { type: "admin", id: "cohort-session-detail" }, customerId: input.customerId,
+    actor: { type: "system", id: "cohort-session-detail" }, customerId: input.customerId,
     subject: { type: "cohort_exam_session", id: input.session.session.id }, correlationId: input.correlationId,
     source: "admin-exams", examId: input.examId, externalIds: { trainingId, ...(experienceId ? { experienceId } : {}) },
   })));

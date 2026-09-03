@@ -8,7 +8,7 @@ import {
 import type { ExamAttempt } from "@/domain/exam-attempt";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { AuditRepository } from "@/domain/audit-trail";
-import type { CloudShareConnectionRecord, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
+import type { CloudShareClientObservationOptions, CloudShareConnectionRecord, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
 import type { ParticipantLister } from "@/domain/environment-correlation";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
@@ -24,6 +24,7 @@ import {
 import { projectCloudShareGenericLogValue, redactCloudShareAdminSupportValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 export interface ExamAttemptScoreRuntimeDeps {
   readonly exams: ExamRepository;
@@ -32,9 +33,11 @@ export interface ExamAttemptScoreRuntimeDeps {
   readonly connections: CloudShareConnectionRepository;
   readonly createScoreRetriever: (
     connection: CloudShareConnectionRecord,
+    observation: CloudShareClientObservationOptions,
   ) => ScoreRetrievalProvider;
   readonly createParticipantLister: (
     connection: CloudShareConnectionRecord,
+    observation: CloudShareClientObservationOptions,
   ) => ParticipantLister;
   readonly logger: Logger;
   readonly limitations: readonly string[];
@@ -167,6 +170,7 @@ export async function getExamAttemptScoreRuntime(
     };
   }
 
+  const scoreCorrelationId = (deps.newCorrelationId ?? randomUUID)();
   try {
     const resolvedParticipantId = await resolveLaunchParticipantId(
       deps,
@@ -193,7 +197,7 @@ export async function getExamAttemptScoreRuntime(
       },
     });
 
-    const scoreRetriever = deps.createScoreRetriever(connection);
+    const scoreRetriever = deps.createScoreRetriever(connection, scoreObservation(attempt, request.customerId, scoreCorrelationId));
     const scoreRetrieval = await getScoreProgressForDiagnostics(
       scoreRetriever,
       examAttemptId,
@@ -508,8 +512,9 @@ async function resolveLaunchParticipantId(
     };
   }
 
+  const participantCorrelationId = (deps.newCorrelationId ?? randomUUID)();
   try {
-    const participants = deps.createParticipantLister(connection);
+    const participants = deps.createParticipantLister(connection, scoreObservation({ id: examAttemptId, examId, candidateId } as ExamAttempt, customerId, participantCorrelationId));
     await correlateEnvironmentForExamAttempt(
       {
         launches: deps.launches,
@@ -561,16 +566,16 @@ async function resolveLaunchParticipantId(
     return { ok: true, participantId: refreshedLaunch.participantId };
   }
 
-  const correlationId = (deps.newCorrelationId ?? randomUUID)();
+  const missingCorrelationId = (deps.newCorrelationId ?? randomUUID)();
   const diagnostic = buildParticipantResolutionDiagnostic(
-    correlationId,
+    missingCorrelationId,
     customerId,
     examAttemptId,
     launch,
     "missing_participant_id",
   );
   await deps.diagnostics?.record({
-    ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch, correlationId),
+    ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch, missingCorrelationId),
     level: "warn",
     operation: "exam_attempt.score.correlate_environment",
     outcome: "failure",
@@ -585,7 +590,7 @@ async function resolveLaunchParticipantId(
     examAttemptId,
     candidateId,
     launch.experienceId,
-    correlationId,
+    missingCorrelationId,
     diagnostic,
     "Score retrieval failed.",
   );
@@ -594,7 +599,7 @@ async function resolveLaunchParticipantId(
     ok: false,
     response: {
       status: 502,
-      body: { error: "score retrieval failed", correlationId },
+      body: { error: "score retrieval failed", correlationId: missingCorrelationId },
     },
   };
 }
@@ -765,6 +770,10 @@ function toCloudShareDiagnostic(
     tls: cloudShareCause.context?.tls,
     issues: cloudShareCause.context?.issues,
   };
+}
+
+function scoreObservation(attempt: Pick<ExamAttempt, "id" | "examId" | "candidateId">, customerId: string, correlationId: string): CloudShareClientObservationOptions {
+  return certificationCloudShareWorkflow({ actor: { type: "candidate", id: attempt.candidateId }, customerId, subject: { type: "exam_attempt", id: attempt.id }, correlationId, source: "runtime", examId: attempt.examId ?? undefined, examAttemptId: attempt.id });
 }
 
 function isOAuthFailureContext(error: unknown): boolean {

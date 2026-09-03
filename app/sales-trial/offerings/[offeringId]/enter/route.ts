@@ -86,7 +86,7 @@ export async function GET(
       },
       cloudshareObserver: ({ customerId, actor, correlationId, subject }) => {
         const observer = createSalesTrialCloudShareObserver({ diagnostics: services.diagnosticRecorder, customerId, actor, correlationId, source: "sales-trial-enrollment", subject, candidateEmail: session.email });
-        return { onRequest: observer.onRequest, onAcquisition: observer.onAcquisition };
+        return observer;
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,

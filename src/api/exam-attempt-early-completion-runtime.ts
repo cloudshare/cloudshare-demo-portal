@@ -13,6 +13,7 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 import { ensureExamAttemptEnvironmentCorrelation } from "./exam-attempt-environment-correlation";
 import type { SuspendHandlerDeps, SuspendResumeResponse } from "./exam-attempt-suspend-resume-runtime";
 
@@ -148,7 +149,7 @@ async function resolveCustomerEnvironmentAccess(
     );
   }
 
-  const client = deps.cloudshare.forConnection(connection);
+  const client = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "system", id: "early-completion" }, customerId: attempt.customerId, subject: { type: "exam_attempt", id: attempt.id }, correlationId: `early-completion:${attempt.id}`, source: "runtime", examId: attempt.examId ?? undefined, examAttemptId: attempt.id }));
   return {
     controller: createCloudShareEnvironmentController(client),
     source: createCloudShareEnvironmentSource(client),
