@@ -505,6 +505,36 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(screen.queryByText("Sales Trial Offering was not found")).toBeNull();
   });
 
+  it("links a failed participant monitoring read to its support diagnostics", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") return json({ offerings: [{
+        id: "offering-1", title: "Extension QA", description: "", itemId: "item-1",
+        start: "2026-09-03T13:17", end: null, timeZone: "GMT Standard Time",
+        salesProEmail: "owner@example.test", salesProDisplayName: "Owner",
+        status: "published", attentionReason: null,
+      }] });
+      if (url === "/api/sales/trial-offerings/offering-1/participants") {
+        return json({
+          error: "Sales Trial participant monitoring is unavailable.",
+          correlationId: "corr-monitor-failure",
+        }, { status: 502 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const onNavigate = vi.fn();
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} onNavigate={onNavigate} />);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open monitoring" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Sales Trial participant monitoring is unavailable.");
+    await user.click(screen.getByRole("button", { name: "Open support diagnostics (corr-monitor-failure)" }));
+    expect(onNavigate).toHaveBeenCalledWith({ tab: "support", correlationId: "corr-monitor-failure" });
+  });
+
   it("renders monitoring inside an overflow-safe constrained-width container", async () => {
     const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

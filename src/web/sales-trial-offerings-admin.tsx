@@ -122,6 +122,7 @@ export function SalesTrialOfferingsAdmin({
   const [monitoringObservation, setMonitoringObservation] = useState<SalesTrialMonitoringObservation | null>(null);
   const [monitoringLoading, setMonitoringLoading] = useState(false);
   const [monitoringError, setMonitoringError] = useState<string | null>(null);
+  const [monitoringCorrelationId, setMonitoringCorrelationId] = useState<string | null>(null);
   const [extendingParticipantId, setExtendingParticipantId] = useState<string | null>(null);
   const [lifecycleInFlight, setLifecycleInFlight] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -288,21 +289,26 @@ export function SalesTrialOfferingsAdmin({
     setMonitoringLoading(true);
     setMonitoringOfferingId(id);
     setMonitoringError(null);
+    setMonitoringCorrelationId(null);
     try {
       const response = await fetchAdmin(
         `/api/sales/trial-offerings/${encodeURIComponent(id)}/participants`,
       );
       const body = (await response.json()) as SalesTrialOfferingMonitoringResponseBody & {
         error?: string;
+        correlationId?: string;
       };
       if (!response.ok) {
-        throw new Error(body.error ?? "Could not load participant monitoring.");
+        setMonitoringError(body.error ?? "Could not load participant monitoring.");
+        setMonitoringCorrelationId(body.correlationId ?? null);
+        return;
       }
       setMonitoringParticipants([...(body.participants ?? [])]);
       setMonitoringObservation(body.observation ?? null);
     } catch (error) {
       setMonitoringParticipants([]);
       setMonitoringObservation(null);
+      setMonitoringCorrelationId(null);
       setMonitoringError(
         error instanceof Error ? error.message : "Could not load participant monitoring.",
       );
@@ -317,6 +323,7 @@ export function SalesTrialOfferingsAdmin({
       setMonitoringParticipants([]);
       setMonitoringObservation(null);
       setMonitoringError(null);
+      setMonitoringCorrelationId(null);
       return;
     }
     await loadMonitoring(id);
@@ -448,7 +455,7 @@ export function SalesTrialOfferingsAdmin({
               {formatMonitoringObservationSource(monitoringObservation?.source) ? <span style={{ color: "#52606d" }}>{`Observed from ${formatMonitoringObservationSource(monitoringObservation?.source)}${monitoringObservation?.observedAt ? ` · ${monitoringObservation.observedAt}` : ""}`}</span> : null}
             </div>
             {monitoringLoading ? <p style={{ margin: 0 }}>Refreshing participant monitoring…</p> : null}
-            {monitoringError ? <div role="alert" style={alertPanelStyle.danger}>{monitoringError}</div> : null}
+            {monitoringError ? <div role="alert" style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.55rem" }}><span>{monitoringError}</span>{monitoringCorrelationId ? <button type="button" style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer", padding: 0, justifySelf: "start" }} onClick={() => openSupport({ correlationId: monitoringCorrelationId })}>{`Open support diagnostics (${monitoringCorrelationId})`}</button> : null}</div> : null}
             {!monitoringLoading && !monitoringError && monitoringParticipants.length === 0 ? <p style={{ margin: 0, color: "#52606d" }}>No enrolled participants are currently visible for this Trial Offering.</p> : null}
             {!monitoringLoading && !monitoringError && monitoringParticipants.length > 0 ? <table style={{ width: "100%", minWidth: "48rem", borderCollapse: "collapse" }}>
               <thead>
