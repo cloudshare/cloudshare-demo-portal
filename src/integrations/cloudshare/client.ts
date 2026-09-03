@@ -293,9 +293,12 @@ const documentedSalesTracePatterns = [
 
 function sanitizeOrdinaryTracePath(path: string): string {
   const v4Training = path.match(/^\/v4\/trainings\/([^/]+)(?:\/(.*))?$/);
-  if (v4Training) return `/v4/trainings/{trainingId}${v4Training[2] ? `/${v4Training[2]}` : ""}`;
+  if (v4Training) return "/v4/trainings/{trainingId}";
   const v3Environment = path.match(/^\/api\/v3\/envs\/([^/]+)(?:\/(.*))?$/);
-  if (v3Environment) return `/api/v3/envs/{environmentId}${v3Environment[2] ? `/${v3Environment[2]}` : ""}`;
+  if (v3Environment) return "/api/v3/envs/{environmentId}";
+  for (const prefix of ["/v4/projects/", "/v4/experiences/"]) {
+    if (path.startsWith(prefix)) return `${prefix}{providerId}`;
+  }
   const match = path.match(/^\/v4\/sales\/([^/]+)(?:\/(.*))?$/);
   if (!match) {
     return path;
@@ -924,41 +927,6 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       };
       await notifyRequest({ occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
       return result;
-    }
-  }
-
-  async function observeRequest<T>(
-    operation: () => Promise<CloudShareDetailedResult<T>>,
-  ): Promise<CloudShareDetailedResult<T>> {
-    const startedAtMs = getNowMs();
-    const occurredAt = new Date(startedAtMs).toISOString();
-    try {
-      const result = await operation();
-      await notifyRequest({
-        occurredAt,
-        outcome: "success",
-        durationMs: Math.max(0, getNowMs() - startedAtMs),
-        result,
-      });
-      return result;
-    } catch (error) {
-      await notifyRequest({
-        occurredAt,
-        outcome: "failure",
-        durationMs: Math.max(0, getNowMs() - startedAtMs),
-        error: {
-          name: error instanceof Error ? error.name : "Error",
-          message: error instanceof Error ? error.message : String(error),
-          context:
-            error instanceof CloudShareRequestError ||
-            error instanceof CloudShareResponseError ||
-            error instanceof CloudShareTransportError ||
-            error instanceof CloudShareRateLimitError
-              ? error.context
-              : undefined,
-        },
-      });
-      throw error;
     }
   }
 

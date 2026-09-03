@@ -42,5 +42,6 @@ function projectFailureResponse(context?: Record<string, unknown>): Record<strin
   for (const key of ["responseStatus", "responseHeaders", "responseBody", "transport", "cause", "network", "tls"]) {
     if (key in context) response[key] = context[key];
   }
+  if (!("status" in response) && "status" in context) response.status = context.status;
   return Object.keys(response).length ? response : null;
 }

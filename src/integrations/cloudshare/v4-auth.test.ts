@@ -29,7 +29,7 @@ describe("createV4TokenProvider", () => {
     const { http } = stubHttp([tokenResponse("jwt-abc")]);
     const send = vi.spyOn(http, "send");
 
-    const provider = createV4TokenProvider({ ...baseOpts, http });
+    const provider = createV4TokenProvider({ ...baseOpts, http, onAcquisition: () => undefined });
     const token = await provider.getToken();
 
     expect(token).toBe("jwt-abc");
@@ -57,7 +57,7 @@ describe("createV4TokenProvider", () => {
   it("caches the token and does not re-request before the expiry margin", async () => {
     const { http, calls } = stubHttp([tokenResponse("jwt-1"), tokenResponse("jwt-2")]);
     let nowMs = 1_000_000;
-    const provider = createV4TokenProvider({ ...baseOpts, http, now: () => nowMs });
+    const provider = createV4TokenProvider({ ...baseOpts, http, now: () => nowMs, onAcquisition: () => undefined });
 
     expect(await provider.getToken()).toBe("jwt-1");
     nowMs += 100_000; // 100s later, well within 300s validity
@@ -73,6 +73,7 @@ describe("createV4TokenProvider", () => {
       http,
       now: () => nowMs,
       safetyMarginMs: 30_000,
+      onAcquisition: () => undefined,
     });
 
     expect(await provider.getToken()).toBe("jwt-1");
@@ -83,7 +84,7 @@ describe("createV4TokenProvider", () => {
 
   it("raises CloudShareAuthError on a non-200 token response", async () => {
     const { http } = stubHttp([{ status: 401, body: "unauthorized" }]);
-    const provider = createV4TokenProvider({ ...baseOpts, http });
+    const provider = createV4TokenProvider({ ...baseOpts, http, onAcquisition: () => undefined });
     await expect(provider.getToken()).rejects.toBeInstanceOf(CloudShareAuthError);
   });
 
@@ -95,7 +96,7 @@ describe("createV4TokenProvider", () => {
         headers: { "Retry-After": "7", "X-RateLimit-Remaining": "0" },
       },
     ]);
-    const provider = createV4TokenProvider({ ...baseOpts, http });
+    const provider = createV4TokenProvider({ ...baseOpts, http, onAcquisition: () => undefined });
 
     const result = provider.getToken();
     await expect(result).rejects.toBeInstanceOf(CloudShareRateLimitError);
@@ -127,7 +128,7 @@ describe("createV4TokenProvider", () => {
         headers: { "Retry-After": "60" },
       },
     ]);
-    const provider = createV4TokenProvider({ ...baseOpts, http });
+    const provider = createV4TokenProvider({ ...baseOpts, http, onAcquisition: () => undefined });
 
     await expect(provider.getToken()).rejects.toMatchObject({
       name: "CloudShareRateLimitError",
@@ -139,7 +140,7 @@ describe("createV4TokenProvider", () => {
 
   it("raises CloudShareAuthError on a malformed token body", async () => {
     const { http } = stubHttp([{ status: 200, body: "{\"not\":\"a token\"}" }]);
-    const provider = createV4TokenProvider({ ...baseOpts, http });
+    const provider = createV4TokenProvider({ ...baseOpts, http, onAcquisition: () => undefined });
     await expect(provider.getToken()).rejects.toBeInstanceOf(CloudShareAuthError);
   });
 });

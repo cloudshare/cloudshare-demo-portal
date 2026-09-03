@@ -2239,7 +2239,7 @@ async function extensionFailure(
     ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure");
   const loggedError = loggedErrorOverride ?? EXTEND_UNCONFIRMED;
 
-  await recordExtensionExchangeSteps(
+  if (!deps.cloudshareObserver) await recordExtensionExchangeSteps(
     deps,
     request,
     correlationId,

@@ -28,6 +28,8 @@ export interface V4TokenAcquisitionEvent {
   readonly status?: number;
   readonly durationMs: number;
   readonly integrationSurface: "cloudshare.v4.oauth.token";
+  readonly failureMode?: "transport_failure" | "http_failure";
+  readonly causeClassification?: "timeout" | "dns" | "connection" | "unknown";
 }
 
 export interface V4TokenProviderOptions {
@@ -40,7 +42,7 @@ export interface V4TokenProviderOptions {
   readonly now?: () => number;
   /** Refresh this many ms before the real expiry. Defaults to 30s. */
   readonly safetyMarginMs?: number;
-  readonly onAcquisition?: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
+  readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
 }
 
 interface CachedToken {
@@ -79,6 +81,8 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         outcome: "failure",
         durationMs: Math.max(0, now() - startedAtMs),
         integrationSurface: "cloudshare.v4.oauth.token",
+        failureMode: "transport_failure",
+        causeClassification: classifyTransportCause(cause),
       });
       throw new CloudShareAuthError("v4 token request failed to send", {
         method: "POST",
@@ -97,6 +101,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         status: response.status,
         durationMs: Math.max(0, now() - startedAtMs),
         integrationSurface: "cloudshare.v4.oauth.token",
+        failureMode: "http_failure",
       });
       const rateLimitClassification = classifyTokenRateLimit(response.status, response.body);
       if (rateLimitClassification) {
@@ -183,11 +188,19 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
 
   async function notifyAcquisition(event: V4TokenAcquisitionEvent): Promise<void> {
     try {
-      await opts.onAcquisition?.(event);
+      await opts.onAcquisition(event);
     } catch {
       // Diagnostics must not break CloudShare authentication.
     }
   }
+}
+
+function classifyTransportCause(cause: unknown): "timeout" | "dns" | "connection" | "unknown" {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  if (/timeout|timed out|abort/i.test(message)) return "timeout";
+  if (/dns|ENOTFOUND|EAI_AGAIN/i.test(message)) return "dns";
+  if (/connect|ECONN|socket/i.test(message)) return "connection";
+  return "unknown";
 }
 
 

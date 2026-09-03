@@ -100,7 +100,7 @@ The certification side does not yet have a universal automatic transport recorde
   - Records unknown target, missing signature, invalid signature, invalid payload, accepted webhook, signature verification, and reconcile outcomes.
   - Keeps invalid or unresolvable traffic metadata-only until Customer ownership is established.
 
-## What certification still does not provide
+## Pre-implementation baseline (before PR #423)
 
 The certification side is the parity baseline, not the finished shared solution.
 
@@ -108,7 +108,11 @@ The certification side is the parity baseline, not the finished shared solution.
 - `src/integrations/cloudshare/v4-auth.ts` performs OAuth token acquisition directly and throws typed errors with request/response context, but it does not emit a standalone metadata-only authentication step on success or failure.
 - Current coverage therefore depends on higher-level runtime code remembering to call `diagnostics.record()` or to use callback-based explicit instrumentation.
 
-Conclusion: certification proves the required evidence shape, filtering, support UI, and security model, but not yet a single shared capture seam that can guarantee universal coverage.
+Conclusion at baseline: certification proved the required evidence shape, filtering, support UI, and security model, but not yet a single shared capture seam that could guarantee universal coverage.
+
+## Implemented result at the exact PR #423 head
+
+PR #423 adds the shared observation seam, fail-closed ordinary trace paths, mandatory OAuth acquisition observation, and duplicate-safe retained-enrollment exchange recording. The statements above are historical baseline findings, not claims about the implemented head. Review and QA must verify the exact PR commit SHA and rerun the documented gates.
 
 ## Highest shared seam that can guarantee universal CloudShare capture
 
