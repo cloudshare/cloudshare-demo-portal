@@ -2124,35 +2124,30 @@ only one worker owns each reconciliation pass.
 
 ---
 
-## GAP-35 — Live default extension outcome awaits an eligible retained Trial Environment
+## GAP-35 — Live default extension outcome for a retained Trial Environment
 
 | Field | Detail |
 |---|---|
-| **Status** | Live-provider confirmation incomplete |
-| **Verified live** | Partial — authenticated v3 connectivity and the Certalis Sales-Pro preflight read passed on 2026-09-01; the Sales Admin Trial Offerings UI contained no Offering or retained enrollment eligible for a safe extension. |
+| **Status** | Confirmed |
+| **Verified live** | Yes — the real Sales Admin UI extended one disposable retained Trial Environment on 2026-09-03 and reconciled the provider expiry before reporting success. |
 
 **Observed behaviour**
 
-The Certalis Sales Admin browser flow loaded against the live Customer connection and showed an
-empty Trial Offering catalogue. The focused live checks also confirmed a real signed v3 `ping` and
-the v3 Project-member preflight used by the Sales UI. No archived or otherwise explicitly eligible
-retained Trial Environment was available to invoke the extension operation, so Certalis did not
-send a speculative `PUT /api/v3/envs/actions/extend` request and did not assert a provider default
-duration, response status, or expiry transition.
+The Certalis Sales Admin browser flow resolved one exact Customer-scoped retained Environment,
+read its current state, and sent the documented bodyless
+`PUT /api/v3/envs/actions/extend?envId=...` request. CloudShare returned 200. A post-operation
+`getextended` read changed the provider expiration from `2026-09-04T13:19:10Z` to
+`2026-09-05T13:19:10Z`, an exact 24-hour retention increase. The CloudShare UI independently
+showed remaining runtime increase from 47 minutes to 1 hour 47 minutes, an exact 60-minute runtime
+increase. Protected diagnostic correlation `df3fab1e-7eb8-4dad-8c05-8dc2f009cbe3` retains the
+resolution, pre-read, PUT, and post-read exchanges without exposing provider identifiers in the
+ordinary portal UI.
 
 **Impact on Certalis Sales Trial use**
 
-The portal remains fail-closed: it only enables the one-time extension when an exact
-Customer-scoped owner-email and Project observation resolves an eligible v3 Environment and the
-post-operation readback proves that its expiration changed. Until a disposable eligible retained
-Environment is available, the live default extension result is an explicit deployment/QA gap, not
-a documented CloudShare behaviour.
-
-**Action required (if applicable):**
-
-Provision or identify a disposable retained Trial Environment owned by the configured Customer,
-then run the Sales Admin UI flow once and record the protected preflight, `PUT`, and expiry-change
-readback evidence without exposing provider identifiers or sponsored links.
+The verified tenant default is two-dimensional: one extension adds 60 minutes of runtime and moves
+the deletion/retention expiry forward by 24 hours. Certalis does not assume those durations in code;
+it remains fail-closed and reports success only after the provider expiry readback changes.
 
 **Code reference:** `src/integrations/cloudshare/sales-environment.ts`,
 `src/api/sales-trial-enrollment.ts`
