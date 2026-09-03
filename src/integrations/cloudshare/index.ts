@@ -1,14 +1,13 @@
 import {
   createCloudShareClient,
   type CloudShareClient,
-  type CloudShareRequestObservation,
   type CloudShareRequestObserver,
   type CloudShareEndpoints,
 } from "./client";
 import { createFetchHttpClient } from "./http";
 import { createFixtureHttpClient } from "./fixtures";
 import { bundledFixtures } from "./fixtures/index";
-import { createV4TokenProvider, createV4TokenAcquisitionNoopObserver, type V4TokenAcquisitionEvent } from "./v4-auth";
+import { createV4TokenProvider, type V4TokenAcquisitionEvent } from "./v4-auth";
 
 export type { CloudShareRequestObservation, CloudShareRequestObserver } from "./client";
 export type { V4TokenAcquisitionEvent } from "./v4-auth";
@@ -37,7 +36,7 @@ export {
   createCloudShareDiagnosticObserver,
   createCloudShareWorkflowObserver,
 } from "./diagnostic-observer";
-export type { CloudShareWorkflowObservationContext } from "@/domain/cloudshare-connection";
+export type { CloudShareWorkflowObservationContext } from "@/ports/cloudshare-observation";
 
 export interface CloudShareObservationPort extends CloudShareRequestObserver {
   readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void> | void;

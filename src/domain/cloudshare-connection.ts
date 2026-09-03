@@ -3,7 +3,7 @@ import type {
   CloudShareRequestObservation,
   V4TokenAcquisitionEvent,
 } from "@/integrations/cloudshare";
-import type { DiagnosticActor, DiagnosticSubject } from "./diagnostic-log";
+import type { CloudShareWorkflowObservationContext } from "@/ports/cloudshare-observation";
 import { CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE } from "./cloudshare-rate-limit-message";
 import {
   CloudShareError,
@@ -42,16 +42,7 @@ export function buildCloudShareWebhookPath(webhookPathToken: string): string {
   return `/api/webhooks/cloudshare/${encodeURIComponent(webhookPathToken)}`;
 }
 
-export type CloudShareWorkflowObservationContext = {
-  readonly actor: DiagnosticActor;
-  readonly subject: DiagnosticSubject | (() => DiagnosticSubject);
-  readonly correlationId: string;
-  readonly source: string;
-  readonly externalIds?: Record<string, string>;
-  readonly candidateEmail?: string | null;
-  readonly examId?: string | null;
-  readonly examAttemptId?: string | null;
-};
+export type { CloudShareWorkflowObservationContext } from "@/ports/cloudshare-observation";
 
 type CloudShareClientObservationCallbacks = {
   readonly onRequest?: (event: CloudShareRequestObservation) => Promise<void> | void;

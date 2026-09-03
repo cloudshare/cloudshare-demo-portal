@@ -13,7 +13,6 @@ import {
 } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { getExamAttemptScoreRuntime } from "./exam-attempt-score-runtime";
-import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 export interface CompletedExamScoreCaptureDeps {
   readonly attempts: Pick<ExamAttemptRepository, "findById">;
