@@ -203,3 +203,18 @@ Baseline gaps:
 ## Result
 
 The certification portal provided the correct protected diagnostics contract, Customer-scoped support access pattern, and many explicit successful-read and mutation recordings. PR #423 adds the missing shared CloudShare transport-plus-auth instrumentation seam, feeds the existing `DiagnosticRecorder` model, preserves ordered child exchanges, and lets Trial Offerings and retained enrollments navigate to exact protected workflow logs.
+
+### Certification OAuth correlation inventory (exact-head update)
+
+The composition root now always creates the mandatory Customer-scoped observer with a per-client correlation and ordered sequence. A narrower workflow observer is composed alongside it where a certification operation has an authoritative parent. The narrower row is not duplicated: each callback writes one Customer row and, when supplied, one distinct workflow row.
+
+| Production path | authoritative workflow anchor |
+| --- | --- |
+| Individual Exam scheduling | Exam before attempt reservation (the narrowest existing parent) |
+| Cohort Exam Session publication, retirement, aggregate Guided Journey and participant monitoring | Cohort Exam Session |
+| Cohort participant admission | ExamAttempt |
+| Candidate-dashboard and explicit environment correlation | ExamAttempt |
+| External lease validation | ExamAttempt |
+| Resource/catalogue reads without a narrower workflow | Customer-scoped default |
+
+Both OAuth acquisition and subsequent v3/v4 requests use the same correlation and monotonic sequence within each observer. OAuth request and response evidence remains absent from both rows.

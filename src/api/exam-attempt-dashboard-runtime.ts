@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ExamClock } from "@/domain/exam-clock";
@@ -337,7 +338,6 @@ async function correlateCandidateAttemptEnvironments(
   }
 
   const correlationId = (deps.newCorrelationId ?? randomUUID)();
-  const trainingDelivery = createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection));
   for (const examAttemptId of examAttemptIds) {
     const launch = await deps.launches.findByExamAttemptId(examAttemptId);
     const trainingId = launch?.trainingId;
@@ -345,6 +345,12 @@ async function correlateCandidateAttemptEnvironments(
       ? `/v4/trainings/${trainingId}/students`
       : "/v4/trainings/{trainingId}/students";
 
+    const trainingDelivery = createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+      actor: { type: "system", id: "candidate-dashboard" }, customerId,
+      subject: { type: "exam_attempt", id: examAttemptId }, correlationId,
+      source: "candidate-portal", examAttemptId,
+      externalIds: trainingId ? { trainingId } : undefined,
+    })));
     try {
       await correlateEnvironmentForExamAttempt(
         {

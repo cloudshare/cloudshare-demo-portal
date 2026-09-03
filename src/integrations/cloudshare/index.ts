@@ -33,7 +33,11 @@ export type {
 } from "./client";
 export { createFixtureHttpClient, loadFixturesFromDir, type FixtureMap } from "./fixtures";
 export { pingCloudShareV3 } from "./ping";
-export { createCloudShareDiagnosticObserver } from "./diagnostic-observer";
+export {
+  createCloudShareDiagnosticObserver,
+  createCloudShareWorkflowObserver,
+  type CloudShareWorkflowObservationContext,
+} from "./diagnostic-observer";
 
 export interface CloudShareObservationPort extends CloudShareRequestObserver {
   readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
@@ -45,14 +49,10 @@ export function createCloudShareNoopObservationPort(): CloudShareObservationPort
 }
 
 export function composeCloudShareObservers<TRequest>(
-  first?: (event: TRequest) => Promise<void> | void,
-  second?: (event: TRequest) => Promise<void> | void,
+  ...observers: readonly (((event: TRequest) => Promise<void> | void) | undefined)[]
 ): (event: TRequest) => Promise<void> {
   return async (event) => {
-    await Promise.allSettled([
-      Promise.resolve().then(() => first?.(event)),
-      Promise.resolve().then(() => second?.(event)),
-    ]);
+    await Promise.allSettled(observers.map((observer) => Promise.resolve().then(() => observer?.(event))));
   };
 }
 

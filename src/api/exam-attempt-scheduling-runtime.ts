@@ -39,6 +39,7 @@ import {
 } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 export interface ExamAttemptSchedulingRuntimeDeps {
   readonly exams: ExamRepository;
@@ -145,7 +146,16 @@ export async function scheduleExamAttemptRuntime(
     };
   }
 
-  const cloudshare = deps.cloudshare.forConnection(connection);
+  const cloudshare = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+    actor: { type: "candidate", id: request.candidateId, email: request.candidateEmail },
+    customerId: request.customerId,
+    // The attempt has not been reserved yet; Exam is the narrowest authoritative parent.
+    subject: { type: "exam", id: exam.id },
+    correlationId,
+    source: "candidate-portal",
+    examId: exam.id,
+    candidateEmail: request.candidateEmail,
+  }));
   const snapshotGuardFailure = await guardRuntimeBlueprintSnapshot(deps, {
     source: "candidate-portal",
     operation: "exam_attempt.schedule",

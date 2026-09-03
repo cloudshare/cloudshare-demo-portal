@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { loadConfig, secretValues, type Config } from "@/config";
 import { createLogger, type Logger } from "@/observability/logger";
@@ -12,7 +13,7 @@ import {
   type PortalSessionStore,
 } from "@/auth";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
-import { createCloudShareDiagnosticObserver, composeCloudShareObservers } from "@/integrations/cloudshare";
+import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import {
   createCloudShareEnvironmentSimulator,
@@ -443,13 +444,16 @@ export function getServices(): Services {
   );
   const cloudshareClientFactory: CloudShareClientFactory = {
     forConnection: (connection, options) => {
-      const observer = createCloudShareDiagnosticObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId });
+      const observer = createCloudShareDiagnosticObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId, correlationId: randomUUID() });
+      const workflowObserver = options?.workflow
+        ? createCloudShareWorkflowObserver({ diagnostics: diagnosticRecorder, customerId: connection.customerId, ...options.workflow })
+        : undefined;
       return withLocalCohortRateLimitQaFixture(createCloudShareIntegrationForConnection({
         mode: config.runtime.mode,
         trace: traceCloudShare,
         observer: {
-          onRequest: composeCloudShareObservers(options?.onRequest, observer.onRequest),
-          onAcquisition: composeCloudShareObservers(options?.onAcquisition, observer.onAcquisition),
+          onRequest: composeCloudShareObservers(options?.onRequest, workflowObserver?.onRequest, observer.onRequest),
+          onAcquisition: composeCloudShareObservers(options?.onAcquisition, workflowObserver?.onAcquisition, observer.onAcquisition),
         },
         connection: {
           customerId: connection.customerId,

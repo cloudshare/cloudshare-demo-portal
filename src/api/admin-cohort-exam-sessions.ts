@@ -33,6 +33,7 @@ import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/trai
 import type { Logger } from "@/observability/logger";
 import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 export interface AdminCohortExamSessionDeps {
   readonly exams: ExamRepository;
@@ -280,7 +281,15 @@ export async function handlePublishCohortExamSession(
       };
     }
 
-    const cloudshareClient = deps.cloudshare.forConnection(connection);
+    const cloudshareClient = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+      actor: request.actor,
+      customerId: request.customerId,
+      subject: { type: "cohort_exam_session", id: claimedSession.id },
+      correlationId,
+      source: "admin-exams",
+      examId: exam.id,
+      externalIds: { cohortExamSessionId: claimedSession.id },
+    }));
     const trainingDelivery = createCloudShareTrainingDelivery(cloudshareClient);
     let created;
     try {

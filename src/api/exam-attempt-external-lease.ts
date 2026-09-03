@@ -16,6 +16,8 @@ import {
   type ExpiredCloudShareExternalLease,
   type UnknownCloudShareExternalLease,
 } from "@/integrations/cloudshare/external-lease";
+import { randomUUID } from "node:crypto";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 export interface ExamAttemptExternalLeaseDeps {
   readonly launches: LabLaunchRepository;
@@ -90,7 +92,12 @@ export async function inspectExamAttemptExternalLease(
     });
   }
 
-  const client = deps.cloudshare.forConnection(connection);
+  const client = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+    actor: { type: "system", id: "external-lease-inspection" }, customerId: input.customerId,
+    subject: { type: "exam_attempt", id: input.examAttemptId }, correlationId: randomUUID(),
+    source: "candidate-portal", examAttemptId: input.examAttemptId,
+    externalIds: Object.fromEntries(Object.entries({ trainingId, experienceId, environmentId: environmentExternalId }).filter(([, value]) => value !== null)) as Record<string, string>,
+  }));
   const inspectedLease = environmentExternalId
     ? await inspectCloudShareEnvironmentLease(client, environmentExternalId)
     : trainingId

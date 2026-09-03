@@ -1,6 +1,7 @@
 import type {
   CloudShareClient,
   CloudShareRequestObservation,
+  CloudShareWorkflowObservationContext,
   V4TokenAcquisitionEvent,
 } from "@/integrations/cloudshare";
 import { CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE } from "./cloudshare-rate-limit-message";
@@ -47,6 +48,8 @@ export interface CloudShareClientFactory {
     options?: {
       readonly onRequest?: (event: CloudShareRequestObservation) => Promise<void> | void;
       readonly onAcquisition?: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
+      /** Optional authoritative workflow anchor for request and OAuth diagnostics. */
+      readonly workflow?: CloudShareWorkflowObservationContext;
     },
   ): CloudShareClient;
 }

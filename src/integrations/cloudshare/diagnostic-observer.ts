@@ -1,4 +1,4 @@
-import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type { DiagnosticActor, DiagnosticRecorder, DiagnosticSubject } from "@/domain/diagnostic-log";
 import type { CloudShareRequestObservation } from "./client";
 import type { V4TokenAcquisitionEvent } from "./v4-auth";
 import { projectCloudShareFailureContext } from "./diagnostic-failure-projection";
@@ -7,7 +7,10 @@ import { projectCloudShareFailureContext } from "./diagnostic-failure-projection
 export function createCloudShareDiagnosticObserver(input: {
   readonly diagnostics: DiagnosticRecorder;
   readonly customerId: string;
+  /** One correlation thread per factory-created Customer observer. */
+  readonly correlationId?: string;
 }) {
+  let sequence = 0;
   const recordRequest = (event: CloudShareRequestObservation) => {
     const projectedFailure = projectCloudShareFailureContext(event.error?.context);
     const oauthFailure = projectedFailure?.request === null && projectedFailure.response === null;
@@ -15,10 +18,12 @@ export function createCloudShareDiagnosticObserver(input: {
       occurredAt: new Date(event.occurredAt), source: "cloudshare-integration",
       operation: "cloudshare.request", outcome: event.outcome, customerId: input.customerId,
       actor: { type: "system", id: "cloudshare" }, subject: { type: "customer", id: input.customerId },
+      ...(input.correlationId ? { correlationId: input.correlationId } : {}),
       message: event.outcome === "failure" ? "CloudShare request failed." : "CloudShare request completed.",
       request: event.result?.request as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.request : projectFailureRequest(event.error?.context)) ?? null,
       response: event.result?.response as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.response : projectFailureResponse(event.error?.context)) ?? null,
       details: {
+        ...(input.correlationId ? { sequence: ++sequence } : {}),
         durationMs: event.durationMs,
         integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,
         ...(event.error?.context?.failureMode ? { failureMode: event.error.context.failureMode } : {}),
@@ -31,9 +36,11 @@ export function createCloudShareDiagnosticObserver(input: {
     occurredAt: new Date(event.occurredAt), source: "cloudshare-integration", operation: "cloudshare.oauth.token",
     outcome: event.outcome, customerId: input.customerId, actor: { type: "system", id: "cloudshare" },
     subject: { type: "customer", id: input.customerId }, message: event.outcome === "failure" ? "CloudShare OAuth exchange failed." : "CloudShare OAuth exchange completed.",
+    ...(input.correlationId ? { correlationId: input.correlationId } : {}),
     request: null,
     response: null,
     details: {
+      ...(input.correlationId ? { sequence: ++sequence } : {}),
       durationMs: event.durationMs,
       integrationSurface: event.integrationSurface,
       status: event.status ?? null,
@@ -42,6 +49,80 @@ export function createCloudShareDiagnosticObserver(input: {
     },
   });
   return { onRequest: recordRequest, onAcquisition: recordAcquisition };
+}
+
+/**
+ * A per-operation observer that gives all CloudShare wire activity one stable
+ * diagnostic thread. The composition root combines this with its mandatory
+ * Customer-scoped observer; this observer deliberately writes only the one
+ * workflow row for each callback.
+ */
+export interface CloudShareWorkflowObservationContext {
+  readonly actor: DiagnosticActor;
+  readonly subject: DiagnosticSubject | (() => DiagnosticSubject);
+  readonly correlationId: string;
+  readonly source: string;
+  readonly externalIds?: Record<string, string>;
+  readonly candidateEmail?: string | null;
+  readonly examId?: string | null;
+  readonly examAttemptId?: string | null;
+}
+
+export function createCloudShareWorkflowObserver(input: {
+  readonly diagnostics: DiagnosticRecorder;
+  readonly customerId: string;
+} & CloudShareWorkflowObservationContext) {
+  let sequence = 0;
+  const subject = () => typeof input.subject === "function" ? input.subject() : input.subject;
+  const anchor = () => ({
+    customerId: input.customerId,
+    actor: input.actor,
+    subject: subject(),
+    correlationId: input.correlationId,
+    ...(input.externalIds ? { externalIds: input.externalIds } : {}),
+    ...(input.candidateEmail !== undefined ? { candidateEmail: input.candidateEmail } : {}),
+    ...(input.examId !== undefined ? { examId: input.examId } : {}),
+    ...(input.examAttemptId !== undefined ? { examAttemptId: input.examAttemptId } : {}),
+  });
+  return {
+    onRequest: async (event: CloudShareRequestObservation) => {
+      const projectedFailure = projectCloudShareFailureContext(event.error?.context);
+      const oauthFailure = projectedFailure?.request === null && projectedFailure.response === null;
+      sequence += 1;
+      await input.diagnostics.record({
+        occurredAt: new Date(event.occurredAt), source: input.source,
+        operation: "cloudshare.request", outcome: event.outcome,
+        ...anchor(),
+        message: event.outcome === "failure" ? "CloudShare request failed." : "CloudShare request completed.",
+        request: event.result?.request as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.request : projectFailureRequest(event.error?.context)) ?? null,
+        response: event.result?.response as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.response : projectFailureResponse(event.error?.context)) ?? null,
+        details: {
+          sequence, durationMs: event.durationMs,
+          integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,
+          ...(event.result ? { host: event.result.host } : {}),
+          ...(event.error?.context?.failureMode ? { failureMode: event.error.context.failureMode } : {}),
+          ...(event.error?.context?.causeClassification ? { causeClassification: event.error.context.causeClassification } : {}),
+          ...(event.error ? { error: oauthFailure ? projectErrorMetadata(event.error) : event.error } : {}),
+        },
+      });
+    },
+    onAcquisition: async (event: V4TokenAcquisitionEvent) => {
+      sequence += 1;
+      await input.diagnostics.record({
+        occurredAt: new Date(event.occurredAt), source: input.source,
+        operation: "cloudshare.oauth.token", outcome: event.outcome,
+        ...anchor(),
+        message: event.outcome === "failure" ? "CloudShare OAuth exchange failed." : "CloudShare OAuth exchange completed.",
+        request: null, response: null,
+        details: {
+          sequence, durationMs: event.durationMs, integrationSurface: event.integrationSurface,
+          ...(event.status !== undefined ? { status: event.status } : {}),
+          ...(event.failureMode ? { failureMode: event.failureMode } : {}),
+          ...(event.causeClassification ? { causeClassification: event.causeClassification } : {}),
+        },
+      });
+    },
+  };
 }
 
 function projectErrorMetadata(error: CloudShareRequestObservation["error"]): Record<string, unknown> | null {

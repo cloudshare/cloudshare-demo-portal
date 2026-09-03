@@ -41,6 +41,7 @@ import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/trai
 import type { Logger } from "@/observability/logger";
 import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 export interface CohortExamSessionJoinRuntimeDeps {
   readonly exams: ExamRepository;
@@ -363,7 +364,17 @@ export async function joinCohortExamSessionRuntime(
     };
   }
 
-  const cloudshare = deps.cloudshare.forConnection(connection);
+  const cloudshare = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+    actor: { type: "candidate", id: request.candidateId, email: request.candidateEmail },
+    customerId: request.customerId,
+    subject: { type: "exam_attempt", id: attemptId },
+    correlationId,
+    source: "candidate-portal",
+    examId: exam.id,
+    examAttemptId: attemptId,
+    candidateEmail: request.candidateEmail,
+    externalIds,
+  }));
   const trainingDelivery = createCloudShareTrainingDelivery(cloudshare);
   const recordCompletedAdmissionSteps = async (
     completed:

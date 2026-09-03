@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type {
   CloudShareClientFactory,
@@ -118,7 +119,15 @@ export async function handleRetireCohortExamSession(
       return { status: 409, body: { error: "CloudShare is not connected for this customer." } };
     }
 
-    const trainingDelivery = createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection));
+    const trainingDelivery = createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+      actor: request.actor,
+      customerId: request.customerId,
+      subject: { type: "cohort_exam_session", id: session.id },
+      correlationId,
+      source: "admin-exams",
+      examId: exam.id,
+      externalIds: { trainingId: session.cloudShareTrainingId, experienceId: session.cloudShareExperienceId },
+    })));
     const participantRead = await trainingDelivery.readParticipants(session.cloudShareTrainingId);
     const attempts = await deps.attempts.listBySessionId(request.customerId, session.id);
     const warning = buildRetireWarning(participantRead.participants, attempts.length);

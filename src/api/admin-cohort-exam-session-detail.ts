@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
@@ -286,7 +287,11 @@ async function readCloudShareAggregateProgress(
   }
 
   const trainingDelivery = createCloudShareTrainingDelivery(
-    deps.cloudshare.forConnection(connection),
+    deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+      actor: { type: "admin", id: "cohort-session-detail" }, customerId: input.customerId,
+      subject: { type: "cohort_exam_session", id: input.session.session.id }, correlationId: input.correlationId,
+      source: "admin-exams", examId: input.examId, externalIds: { experienceId },
+    })),
   );
 
   try {
@@ -435,7 +440,11 @@ async function readCloudShareParticipants(
     };
   }
 
-  const trainingDelivery = createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection));
+  const trainingDelivery = createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+    actor: { type: "admin", id: "cohort-session-detail" }, customerId: input.customerId,
+    subject: { type: "cohort_exam_session", id: input.session.session.id }, correlationId: input.correlationId,
+    source: "admin-exams", examId: input.examId, externalIds: { trainingId, ...(experienceId ? { experienceId } : {}) },
+  })));
 
   try {
     const result = await trainingDelivery.readParticipants(trainingId);

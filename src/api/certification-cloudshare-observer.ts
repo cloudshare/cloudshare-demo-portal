@@ -1,0 +1,32 @@
+import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
+import type { DiagnosticActor, DiagnosticSubject } from "@/domain/diagnostic-log";
+
+/**
+ * The one caller-facing seam for certification CloudShare wire observations.
+ * It keeps the factory interface small while ensuring its OAuth and request
+ * callbacks carry the same authoritative support thread.
+ */
+export function certificationCloudShareWorkflow(input: {
+  readonly actor: DiagnosticActor | null | undefined;
+  readonly customerId: string;
+  readonly subject: DiagnosticSubject;
+  readonly correlationId: string;
+  readonly source: string;
+  readonly examId?: string;
+  readonly examAttemptId?: string;
+  readonly candidateEmail?: string;
+  readonly externalIds?: Record<string, string>;
+}): NonNullable<Parameters<CloudShareClientFactory["forConnection"]>[1]> {
+  return {
+    workflow: {
+      actor: input.actor ?? { type: "system", id: "certification-workflow" },
+      subject: input.subject,
+      correlationId: input.correlationId,
+      source: input.source,
+      ...(input.examId ? { examId: input.examId } : {}),
+      ...(input.examAttemptId ? { examAttemptId: input.examAttemptId } : {}),
+      ...(input.candidateEmail ? { candidateEmail: input.candidateEmail } : {}),
+      ...(input.externalIds ? { externalIds: input.externalIds } : {}),
+    },
+  };
+}

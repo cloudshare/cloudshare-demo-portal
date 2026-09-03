@@ -20,6 +20,7 @@ import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/trai
 import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import { projectProtectedCloudShareExchange } from "./protected-cloudshare-exchange";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 export interface EnsureExamAttemptEnvironmentCorrelationDeps {
   readonly attempts: ExamAttemptRepository;
@@ -63,11 +64,17 @@ export async function ensureExamAttemptEnvironmentCorrelation(
     return { actionableEnvironmentId: null };
   }
 
+  const correlationId = (deps.newCorrelationId ?? randomUUID)();
   try {
     const result = await correlateEnvironmentForExamAttempt(
       {
         launches: deps.launches,
-        participants: createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection)),
+        participants: createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+          actor: { type: "system", id: input.operation }, customerId: attempt.customerId,
+          subject: { type: "exam_attempt", id: input.examAttemptId }, correlationId,
+          source: "candidate-portal", examAttemptId: input.examAttemptId,
+          candidateEmail: launch.participantEmail, externalIds: { trainingId: launch.trainingId },
+        }))),
       },
       { examAttemptId: input.examAttemptId },
     );
@@ -75,7 +82,6 @@ export async function ensureExamAttemptEnvironmentCorrelation(
       actionableEnvironmentId: result.correlated ? result.environmentId : null,
     };
   } catch (error) {
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const diagnostic: Record<string, unknown> = {
       correlationId,
       customerId: attempt.customerId,
