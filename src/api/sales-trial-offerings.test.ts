@@ -8,6 +8,7 @@ import type {
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import {
+  CLOUDSHARE_ERROR_DISCRIMINANT,
   CloudShareRequestError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
@@ -2602,6 +2603,46 @@ describe("Sales Trial Offering API", () => {
       outcome: "failure", details: expect.objectContaining({ failureMode: "cloudshare_oauth_token", integrationSurface: "cloudshare.v4.oauth.token" }),
     }));
     expect(createSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("recognizes a branded OAuth token 504 across a reloaded module boundary", async () => {
+    const repository = createOfferingRepository();
+    await savePublishDraft(repository, "offering-reloaded-oauth");
+    const reloadedModuleError = Object.assign(new Error("gateway timeout"), {
+      name: "CloudShareRequestError",
+      cloudShareErrorBoundaryDiscriminant: CLOUDSHARE_ERROR_DISCRIMINANT,
+      status: 504,
+      context: {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        responseStatus: 504,
+      },
+    });
+    const result = await handlePublishSalesTrialOffering(createDeps(repository, {
+      deliveryFactory: {
+        forConnection: vi.fn().mockReturnValue({
+          createSession: vi.fn().mockRejectedValue(reloadedModuleError),
+        }),
+      },
+    }), {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1" },
+      id: "offering-reloaded-oauth",
+    });
+
+    expect(result).toMatchObject({
+      status: 502,
+      body: {
+        error: "CloudShare authentication failed before the Sales Trial Offering was created. Review support diagnostics and retry.",
+      },
+    });
+    expect(await repository.findById("customer-1", "offering-reloaded-oauth")).toMatchObject({
+      status: "draft",
+      externalId: null,
+      cloudShareSalesExperienceId: null,
+      attentionReason: null,
+    });
   });
 
   it("does not trust forged OAuth-looking context on an untyped Error", async () => {
