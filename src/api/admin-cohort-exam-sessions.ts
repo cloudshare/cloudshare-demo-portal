@@ -242,6 +242,15 @@ export async function handlePublishCohortExamSession(
         body: { error: "CloudShare is not connected for this customer." },
       };
     }
+    const observation = certificationCloudShareWorkflow({
+      actor: request.actor,
+      customerId: request.customerId,
+      subject: { type: "cohort_exam_session", id: session.id },
+      correlationId,
+      source: "admin-exams",
+      examId: exam.id,
+      externalIds: { cohortExamSessionId: session.id, projectId: exam.projectId, blueprintId: exam.blueprintId },
+    });
     const snapshotGuardFailure = await guardRuntimeBlueprintSnapshot(deps, {
       source: "admin-exams",
       operation: "cohort_exam_session.publish",
@@ -254,6 +263,7 @@ export async function handlePublishCohortExamSession(
       projectId: exam.projectId,
       blueprintId: exam.blueprintId,
       savedSnapshotId: exam.snapshotId,
+      observation,
     });
     if (snapshotGuardFailure) {
       return {
@@ -281,15 +291,7 @@ export async function handlePublishCohortExamSession(
       };
     }
 
-    const cloudshareClient = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
-      actor: request.actor,
-      customerId: request.customerId,
-      subject: { type: "cohort_exam_session", id: claimedSession.id },
-      correlationId,
-      source: "admin-exams",
-      examId: exam.id,
-      externalIds: { cohortExamSessionId: claimedSession.id },
-    }));
+    const cloudshareClient = deps.cloudshare.forConnection(connection, observation);
     const trainingDelivery = createCloudShareTrainingDelivery(cloudshareClient);
     let created;
     try {

@@ -334,6 +334,17 @@ export async function joinCohortExamSessionRuntime(
     actor: { type: "candidate", id: request.candidateId, email: request.candidateEmail },
     subject: { type: "exam_attempt", id: attemptId },
   } as const;
+  const observation = certificationCloudShareWorkflow({
+    actor: { type: "candidate", id: request.candidateId, email: request.candidateEmail },
+    customerId: request.customerId,
+    subject: { type: "exam_attempt", id: attemptId },
+    correlationId,
+    source: "candidate-portal",
+    examId: exam.id,
+    examAttemptId: attemptId,
+    candidateEmail: request.candidateEmail,
+    externalIds: { ...externalIds, projectId: exam.projectId, blueprintId: exam.blueprintId },
+  });
 
   const snapshotGuardFailure = await guardRuntimeBlueprintSnapshot(deps, {
     source: "candidate-portal",
@@ -349,6 +360,7 @@ export async function joinCohortExamSessionRuntime(
     projectId: exam.projectId,
     blueprintId: exam.blueprintId,
     savedSnapshotId: exam.snapshotId,
+    observation,
   });
   if (snapshotGuardFailure) {
     await recoverCandidateAdmissionAttempt({ attempts: deps.attempts }, attemptId);
@@ -364,17 +376,7 @@ export async function joinCohortExamSessionRuntime(
     };
   }
 
-  const cloudshare = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
-    actor: { type: "candidate", id: request.candidateId, email: request.candidateEmail },
-    customerId: request.customerId,
-    subject: { type: "exam_attempt", id: attemptId },
-    correlationId,
-    source: "candidate-portal",
-    examId: exam.id,
-    examAttemptId: attemptId,
-    candidateEmail: request.candidateEmail,
-    externalIds,
-  }));
+  const cloudshare = deps.cloudshare.forConnection(connection, observation);
   const trainingDelivery = createCloudShareTrainingDelivery(cloudshare);
   const recordCompletedAdmissionSteps = async (
     completed:

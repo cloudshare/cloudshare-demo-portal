@@ -1,5 +1,6 @@
 import type {
   CloudShareClientFactory,
+  CloudShareClientObservationOptions,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
@@ -50,6 +51,8 @@ export interface RuntimeBlueprintSnapshotGuardRequest {
   readonly projectId: string;
   readonly blueprintId: string;
   readonly savedSnapshotId: string;
+  /** Reuse the caller's operation context when the guard precedes more CloudShare work. */
+  readonly observation?: CloudShareClientObservationOptions;
 }
 
 export interface RuntimeBlueprintSnapshotGuardFailure {
@@ -158,7 +161,7 @@ function resolveAuthoringSource(
   connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>,
   request: RuntimeBlueprintSnapshotGuardRequest,
 ): CloudShareExamAuthoringSource {
-  const candidate = factory.forConnection(connection, certificationCloudShareWorkflow({
+  const candidate = factory.forConnection(connection, request.observation ?? certificationCloudShareWorkflow({
     actor: request.actor,
     customerId: request.customerId,
     subject: request.subject,

@@ -2,6 +2,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import { randomUUID } from "node:crypto";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EnvironmentStateSource } from "@/domain/environment";
@@ -262,5 +263,5 @@ async function resolveCompletionEnvironmentSource(
     return deps.environmentSource;
   }
 
-  return createCloudShareEnvironmentSource(deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "system", id: "heartbeat-completion" }, customerId, subject: { type: "exam_attempt", id: examAttemptId }, correlationId: `heartbeat-completion:${examAttemptId}`, source: "runtime", examId, examAttemptId })));
+  return createCloudShareEnvironmentSource(deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "system", id: "heartbeat-completion" }, customerId, subject: { type: "exam_attempt", id: examAttemptId }, correlationId: randomUUID(), source: "runtime", examId, examAttemptId, externalIds: { lifecycleParent: `heartbeat-completion:${examAttemptId}` } })));
 }

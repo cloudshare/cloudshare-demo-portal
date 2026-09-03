@@ -130,6 +130,7 @@ export async function suspendExamAttemptRuntime(
   request: SuspendResumeRuntimeRequest,
 ): Promise<SuspendResumeResponse> {
   const { examAttemptId } = request;
+  const operationCorrelationId = (deps.newCorrelationId ?? randomUUID)();
   let anchors: RuntimeDiagnosticAnchors = {
     source: "runtime" as const,
     customerId: null as string | null,
@@ -188,7 +189,7 @@ export async function suspendExamAttemptRuntime(
     const commandResult = await suspendExam(
       {
         ...deps,
-        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
+        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId, operationCorrelationId)),
       },
       {
         examAttemptId,
@@ -255,6 +256,7 @@ export async function resumeExamAttemptRuntime(
   deps: ResumeHandlerDeps,
   request: SuspendResumeRuntimeRequest,
 ): Promise<SuspendResumeResponse> {
+  const operationCorrelationId = (deps.newCorrelationId ?? randomUUID)();
   const { examAttemptId } = request;
   let anchors: RuntimeDiagnosticAnchors = {
     source: "runtime" as const,
@@ -429,7 +431,7 @@ export async function resumeExamAttemptRuntime(
     const result = await resumeExam(
       {
         ...deps,
-        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
+        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId, operationCorrelationId)),
       },
       {
         examAttemptId,
@@ -466,7 +468,7 @@ export async function resumeExamAttemptRuntime(
       },
     };
   } catch (err) {
-    const recovered = await tryRecoverAlreadyActiveResume(deps, examAttemptId, anchors, err);
+    const recovered = await tryRecoverAlreadyActiveResume(deps, examAttemptId, anchors, err, operationCorrelationId);
     if (recovered) {
       return recovered;
     }
@@ -519,6 +521,7 @@ export async function runHeartbeatAutoSuspendRuntime(
   deps: HeartbeatAutoSuspendHandlerDeps,
   examAttemptId: string,
 ): Promise<void> {
+  const operationCorrelationId = (deps.newCorrelationId ?? randomUUID)();
   const attempt = await deps.attempts.findById(examAttemptId);
   const anchors = {
     source: "runtime" as const,
@@ -537,7 +540,7 @@ export async function runHeartbeatAutoSuspendRuntime(
     const commandResult = await suspendExam(
       {
         ...deps,
-        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
+        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId, operationCorrelationId)),
       },
       {
         examAttemptId,
@@ -608,6 +611,7 @@ function commandResultToDiagnostic(
 async function resolveCustomerEnvironmentAccess(
   deps: SuspendHandlerDeps | ResumeHandlerDeps | HeartbeatAutoSuspendHandlerDeps,
   examAttemptId: string,
+  correlationId: string,
 ): Promise<Pick<SuspendExamDeps, "controller" | "source">> {
   const attempt = await deps.attempts.findById(examAttemptId);
   if (!attempt?.customerId) {
@@ -628,7 +632,7 @@ async function resolveCustomerEnvironmentAccess(
     );
   }
 
-  const client = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "system", id: "exam-runtime" }, customerId: attempt.customerId, subject: { type: "exam_attempt", id: examAttemptId }, correlationId: `exam-runtime:${examAttemptId}`, source: "runtime", examId: attempt.examId ?? undefined, examAttemptId }));
+  const client = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "system", id: "exam-runtime" }, customerId: attempt.customerId, subject: { type: "exam_attempt", id: examAttemptId }, correlationId, source: "runtime", examId: attempt.examId ?? undefined, examAttemptId, externalIds: { lifecycleParent: `exam-runtime:${examAttemptId}` } }));
   return {
     controller: createCloudShareEnvironmentController(client),
     source: createCloudShareEnvironmentSource(client),
@@ -669,6 +673,7 @@ async function tryRecoverAlreadyActiveResume(
   examAttemptId: string,
   anchors: RuntimeDiagnosticAnchors,
   err: unknown,
+  operationCorrelationId: string,
 ): Promise<SuspendResumeResponse | null> {
   if (!isCloudShareFailure(err)) {
     return null;
@@ -680,7 +685,7 @@ async function tryRecoverAlreadyActiveResume(
       return null;
     }
 
-    const access = await resolveCustomerEnvironmentAccess(deps, examAttemptId);
+    const access = await resolveCustomerEnvironmentAccess(deps, examAttemptId, operationCorrelationId);
     const environmentExternalId =
       launch.environmentExternalId ?? launch.environmentId ?? null;
     if (!environmentExternalId) {

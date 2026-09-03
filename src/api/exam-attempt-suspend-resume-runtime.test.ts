@@ -542,6 +542,27 @@ describe("suspendExamAttemptRuntime", () => {
     expect(globalSource.getEnvironmentState).not.toHaveBeenCalled();
   });
 
+  it("gives separate suspend operations distinct workflow correlations while retaining the ExamAttempt subject", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn().mockResolvedValue({ envStatus: "Suspended" }),
+      requestV4: activeParticipantRequestV4(),
+    });
+    const cloudshare = { forConnection: vi.fn().mockReturnValue(customerClient) } satisfies CloudShareClientFactory;
+    let next = 0;
+    const newCorrelationId = () => `operation-${++next}`;
+
+    await suspendExamAttemptRuntime(await makeSuspendDeps({ cloudshare, newCorrelationId }), { examAttemptId: "ea-1" });
+    await suspendExamAttemptRuntime(await makeSuspendDeps({ cloudshare, newCorrelationId }), { examAttemptId: "ea-1" });
+
+    const workflowOptions = vi.mocked(cloudshare.forConnection).mock.calls.map(([, options]) => options)
+      .filter((options) => options?.scope === "workflow" && options.workflow.externalIds?.lifecycleParent === "exam-runtime:ea-1");
+    expect(workflowOptions).toHaveLength(2);
+    expect(new Set(workflowOptions.map((options) => options!.scope === "workflow" ? options.workflow.correlationId : null)).size).toBe(2);
+    expect(workflowOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: "workflow", workflow: expect.objectContaining({ subject: { type: "exam_attempt", id: "ea-1" }, externalIds: { lifecycleParent: "exam-runtime:ea-1" } }) }),
+    ]));
+  });
+
   it("discovers the training participant environment ID before suspend when the launch was created without one", async () => {
     const launches = makeLaunches({
       id: "launch-1",

@@ -146,7 +146,7 @@ export async function scheduleExamAttemptRuntime(
     };
   }
 
-  const cloudshare = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+  const observation = certificationCloudShareWorkflow({
     actor: { type: "candidate", id: request.candidateId, email: request.candidateEmail },
     customerId: request.customerId,
     // The attempt has not been reserved yet; Exam is the narrowest authoritative parent.
@@ -155,7 +155,8 @@ export async function scheduleExamAttemptRuntime(
     source: "candidate-portal",
     examId: exam.id,
     candidateEmail: request.candidateEmail,
-  }));
+    externalIds: { projectId: exam.projectId, blueprintId: exam.blueprintId },
+  });
   const snapshotGuardFailure = await guardRuntimeBlueprintSnapshot(deps, {
     source: "candidate-portal",
     operation: "exam_attempt.schedule",
@@ -173,6 +174,7 @@ export async function scheduleExamAttemptRuntime(
     projectId: exam.projectId,
     blueprintId: exam.blueprintId,
     savedSnapshotId: exam.snapshotId,
+    observation,
   });
   if (snapshotGuardFailure) {
     return {
@@ -186,6 +188,8 @@ export async function scheduleExamAttemptRuntime(
       },
     };
   }
+
+  const cloudshare = deps.cloudshare.forConnection(connection, observation);
 
   const trainingDelivery = createCloudShareTrainingDelivery(
     cloudshare,
@@ -451,6 +455,7 @@ function toProvisioningDiagnostic(
       responseStatus: typeof (cause as { status?: unknown } | undefined)?.status === "number" ? (cause as { status: number }).status : causeContext?.status,
     };
   }
+
   if (isCloudShareRateLimitError(cause) || cause instanceof CloudShareRequestError) {
     return {
       ...base,
