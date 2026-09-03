@@ -292,6 +292,7 @@ const documentedSalesTracePatterns = [
 ] as const;
 
 function sanitizeOrdinaryTracePath(path: string): string {
+  if (path === "/v4/trainings" || path === "/api/v3/ping") return path;
   const v4Training = path.match(/^\/v4\/trainings\/([^/]+)(?:\/(.*))?$/);
   if (v4Training) return "/v4/trainings/{trainingId}";
   const v3Environment = path.match(/^\/api\/v3\/envs\/([^/]+)(?:\/(.*))?$/);
