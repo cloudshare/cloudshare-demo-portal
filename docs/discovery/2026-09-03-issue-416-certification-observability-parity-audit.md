@@ -4,11 +4,11 @@ Date: 2026-09-03
 
 ## Status
 
-Issue [#416](https://github.com/swinster/cloudshare-demo-portal/issues/416) remains implementation-blocked by open issue [#418](https://github.com/swinster/cloudshare-demo-portal/issues/418) and draft PR [#420](https://github.com/swinster/cloudshare-demo-portal/pull/420). As of 2026-09-03, overlapping production changes to retained Trial enrollment projections, extension diagnostics, and mutable live Trial assets should not begin. This audit is the allowed prerequisite work called out in #416.
+Issue [#418](https://github.com/swinster/cloudshare-demo-portal/issues/418) is merged and its retained-enrollment seams are now the baseline for #416. The implementation in PR [#423](https://github.com/swinster/cloudshare-demo-portal/pull/423) is on the pushed feature head; remaining gates are exact-head review and required live/browser/human QA, not an open implementation dependency.
 
 Current checkout state at audit time:
 
-- `git status --short --branch`: detached `HEAD`
+- The audit was refreshed against the current `feature/issue-416-trial-workflow-observability` head; the working branch is pushed and is not detached.
 - `git rev-parse HEAD`: `fa9a0dc6295724dadfd6d90770b7f3fad0b67a5b`
 
 ## Scope
@@ -179,7 +179,7 @@ Current gaps:
 
 ## Constraints for the eventual implementation
 
-- Rebase from the final merged `#418` head before touching production code.
+- Preserve the final merged `#418` behavior as the production parity baseline during review and QA.
 - Do not duplicate diagnostics logic at individual screens.
 - Do not regress certification-side successful-read coverage while making the seam shared.
 - Do not render provider bodies, tokens, sponsored links, provider IDs, or protected evidence on ordinary sales or participant surfaces.
