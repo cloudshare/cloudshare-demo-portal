@@ -27,6 +27,9 @@ export async function handleGetSalesDiagnosticLog(
   request: AdminRequest & { readonly customerId: string },
 ): Promise<AdminResponse> {
   const requestedSource = request.query.source?.trim();
+  const requestedLimit = parseLimit(request.query.limit);
+  const requestedOffset = parseOffset(request.query.offset);
+  if (requestedOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) return { status: 400, body: { error: "sales_diagnostic_offset_exceeds_maximum", maxOffset: SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET } };
   if (requestedSource && !isSalesDiagnosticSource(requestedSource)) {
     return { status: 400, body: { error: "unsupported_sales_diagnostic_source" } };
   }
@@ -38,21 +41,12 @@ export async function handleGetSalesDiagnosticLog(
   }
 
   if (request.query.subjectId) {
-    const subjectEntries = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId.trim(), requestedOffsetFor(request.query), requestedLimitFor(request.query));
-    return { status: 200, body: { entries: subjectEntries.slice(requestedOffsetFor(request.query), requestedOffsetFor(request.query) + requestedLimitFor(request.query)).map(salesBearerSafeProjection), page: { limit: requestedLimitFor(request.query), offset: requestedOffsetFor(request.query), returned: Math.min(requestedLimitFor(request.query), subjectEntries.length - requestedOffsetFor(request.query)), hasMore: subjectEntries.length > requestedOffsetFor(request.query) + requestedLimitFor(request.query), nextOffset: subjectEntries.length > requestedOffsetFor(request.query) + requestedLimitFor(request.query) ? requestedOffsetFor(request.query) + requestedLimitFor(request.query) : null } } };
+    const subjectEntries = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId.trim(), requestedOffset, requestedLimit);
+    const pageEntries = subjectEntries.slice(requestedOffset, requestedOffset + requestedLimit);
+    const hasMore = subjectEntries.length > requestedOffset + requestedLimit;
+    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore, nextOffset: hasMore ? requestedOffset + requestedLimit : null } } };
   }
 
-  const requestedLimit = parseLimit(request.query.limit);
-  const requestedOffset = parseOffset(request.query.offset);
-  if (requestedOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) {
-    return {
-      status: 400,
-      body: {
-        error: "sales_diagnostic_offset_exceeds_maximum",
-        maxOffset: SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET,
-      },
-    };
-  }
   const requiredEntriesPerSource = requestedOffset + requestedLimit + 1;
   const sourceEntries = await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({
     deps,
@@ -61,7 +55,7 @@ export async function handleGetSalesDiagnosticLog(
     source,
     requiredEntries: request.query.subjectId ? SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1 : requiredEntriesPerSource,
   })));
-  const entries = filterCausalSubjectEntries(sourceEntries.flat(), request.query.subjectId?.trim())
+  const entries = sourceEntries.flat()
     .slice()
     .sort((left: Record<string, unknown>, right: Record<string, unknown>) => String(right.occurredAt).localeCompare(String(left.occurredAt)));
   const pageEntries = entries.slice(requestedOffset, requestedOffset + requestedLimit);
@@ -82,43 +76,17 @@ export async function handleGetSalesDiagnosticLog(
   };
 }
 
-function requestedLimitFor(query: AdminRequest["query"]): number { return parseLimit(query.limit); }
-function requestedOffsetFor(query: AdminRequest["query"]): number { return parseOffset(query.offset); }
-
 async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
   const base = { ...query, source: undefined, subjectId, limit: String(offset + limit + 1), offset: "0" };
-  const direct = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat();
+  const direct = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => (entry.subject as Record<string, unknown> | null)?.id === subjectId);
   const enrollment = direct.find((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment" && (entry.subject as Record<string, unknown> | null)?.id === subjectId);
   const offeringId = (enrollment?.externalIds as Record<string, unknown> | null)?.offeringId;
   if (typeof offeringId !== "string") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
-  const parent = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId }, source, requiredEntries: offset + limit + 1 })))).flat();
+  const parent = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
+    const subject = entry.subject as Record<string, unknown> | null;
+    return subject?.type === "sales_trial_offering" && subject.id === offeringId;
+  });
   return [...new Map([...direct, ...parent].map((entry) => [entry.id, entry])).values()].sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
-}
-
-/** A retained enrollment and its parent Offering are one support workflow. */
-function filterCausalSubjectEntries(entries: readonly Record<string, unknown>[], subjectId?: string): readonly Record<string, unknown>[] {
-  if (!subjectId) return entries;
-  const direct = entries.filter((entry) => {
-    const subject = entry.subject as Record<string, unknown> | null | undefined;
-    const externalIds = entry.externalIds as Record<string, unknown> | null | undefined;
-    return subject?.id === subjectId || externalIds?.salesTrialEnrollmentId === subjectId || externalIds?.offeringId === subjectId;
-  });
-  const enrollmentSubjectMatch = direct.some((entry) => {
-    const subject = entry.subject as Record<string, unknown> | null | undefined;
-    return subject?.type === "sales_trial_enrollment" && subject.id === subjectId;
-  });
-  if (!enrollmentSubjectMatch) return direct;
-  const offeringIds = new Set(direct.flatMap((entry) => {
-    const externalIds = entry.externalIds as Record<string, unknown> | null | undefined;
-    const subject = entry.subject as Record<string, unknown> | null | undefined;
-    return [externalIds?.offeringId, subject?.type === "sales_trial_offering" ? subject.id : undefined].filter((value): value is string => typeof value === "string");
-  }));
-  return entries.filter((entry) => {
-    if (direct.includes(entry)) return true;
-    const externalIds = entry.externalIds as Record<string, unknown> | null | undefined;
-    const subject = entry.subject as Record<string, unknown> | null | undefined;
-    return subject?.type === "sales_trial_offering" && (offeringIds.has(externalIds?.offeringId as string) || offeringIds.has(subject.id as string));
-  });
 }
 
 /** Entries have already crossed the direction-aware recorder seam. This
