@@ -79,24 +79,40 @@ export async function handleGetSalesDiagnosticLog(
 }
 
 async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
-  const base = { ...query, source: undefined, subjectId, limit: String(SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1), offset: "0" };
-  const direct = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1 })))).flat().filter((entry) => {
+  const base = { ...query, source: undefined, subjectId, limit: String(offset + limit + 1), offset: "0" };
+  const direct = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
-    return subject?.id === subjectId && (query.source === "sales-trial-offerings" ? subject.type === "sales_trial_offering" : subject.type === "sales_trial_enrollment");
+    return subject?.id === subjectId && (subject.type === "sales_trial_offering" || subject.type === "sales_trial_enrollment");
   });
-  if (query.source === "sales-trial-offerings") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
-  const enrollment = direct.find((entry) => {
+  const hasOffering = direct.some((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_offering");
+  const enrollmentEntries = direct.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
+  if (!enrollmentEntries.length) return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  const lineage = await readExactEnrollmentLineage(deps, customerId, query, subjectId);
+  const enrollment = lineage.find((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
     const externalIds = entry.externalIds as Record<string, unknown> | null;
     return subject?.type === "sales_trial_enrollment" && subject.id === subjectId && typeof externalIds?.offeringId === "string";
   });
   const offeringId = (enrollment?.externalIds as Record<string, unknown> | null)?.offeringId;
-  if (typeof offeringId !== "string") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  if (typeof offeringId !== "string") return enrollmentEntries.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
   const parent = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
     return subject?.type === "sales_trial_offering" && subject.id === offeringId;
   });
-  return [...new Map([...direct, ...parent].map((entry) => [entry.id, entry])).values()].sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  return [...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()].sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+}
+
+async function readExactEnrollmentLineage(deps: DiagnosticLogHandlerDeps, customerId: string, query: AdminRequest["query"], subjectId: string): Promise<readonly Record<string, unknown>[]> {
+  const entries: Record<string, unknown>[] = [];
+  let offset = 0;
+  while (true) {
+    const response = await handleGetDiagnosticLog(deps, { customerId, query: { ...query, source: "sales-trial-enrollment", subjectId, limit: String(SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT), offset: String(offset) } });
+    const body = response.body as DiagnosticPageBody;
+    entries.push(...body.entries.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment" && (entry.subject as Record<string, unknown> | null)?.id === subjectId));
+    if (!body.page.hasMore || body.page.nextOffset === null) break;
+    offset = body.page.nextOffset;
+  }
+  return entries;
 }
 
 /** Entries have already crossed the direction-aware recorder seam. This
