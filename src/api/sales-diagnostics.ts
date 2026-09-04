@@ -91,8 +91,11 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
     if (!enrollmentReader) throw new Error("Sales diagnostics enrollment reader is not configured");
     enrollment = await enrollmentReader.findById(customerId, subjectId);
   }
-  const base = { ...query, source: undefined, subjectId, subjectType: requestedType, limit: String(offset + limit + 1), offset: "0" };
-  const sources: SalesDiagnosticSource[] = requestedType === "sales_trial_offering" ? ["sales-trial-offerings"] : ["sales-trial-enrollment"];
+  const base = { ...query, subjectId, subjectType: requestedType, limit: String(offset + limit + 1), offset: "0" };
+  const requestedSource = query.source;
+  const sources: SalesDiagnosticSource[] = requestedType === "sales_trial_offering"
+    ? (requestedSource === undefined || requestedSource === "sales-trial-offerings" ? ["sales-trial-offerings"] : [])
+    : (requestedSource === undefined ? ["sales-trial-enrollment"] : requestedSource === "sales-trial-enrollment" ? ["sales-trial-enrollment"] : []);
   const direct = (await Promise.all(sources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
     return subject?.id === subjectId && (subject.type === "sales_trial_offering" || subject.type === "sales_trial_enrollment");
@@ -102,10 +105,12 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
   const offeringId = enrollment?.salesTrialOfferingId;
   if (!enrollmentEntries.length && typeof offeringId !== "string") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
   if (typeof offeringId !== "string") return enrollmentEntries.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
-  const parent = (await Promise.all((['sales-trial-offerings'] as SalesDiagnosticSource[]).map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
+  const parent = requestedSource === undefined || requestedSource === "sales-trial-offerings"
+    ? (await Promise.all(["sales-trial-offerings" as SalesDiagnosticSource].map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
     return subject?.type === "sales_trial_offering" && subject.id === offeringId;
-  });
+    })
+    : [];
   return [...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()].sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
 }
 

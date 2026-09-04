@@ -241,4 +241,18 @@ describe("Sales diagnostics handler", () => {
     expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toContain("record");
     expect(repo.findById).not.toHaveBeenCalled();
   });
+
+  it("partitions explicit enrollment evidence by requested Sales source", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "monitor", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, message: "child", occurredAt: new Date("2026-09-04T10:00:00Z") });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "monitor", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "parent", occurredAt: new Date("2026-09-04T10:01:00Z") });
+    const repo = enrollmentRepo();
+    const deps = { diagnostics, salesTrialEnrollments: repo, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } };
+    const child = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", source: "sales-trial-enrollment" } });
+    const parent = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", source: "sales-trial-offerings" } });
+    const unrelated = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", source: "sales-records" } });
+    expect((child.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["child"]);
+    expect((parent.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["parent"]);
+    expect((unrelated.body as { entries: unknown[] }).entries).toEqual([]);
+  });
 });
