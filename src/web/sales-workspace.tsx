@@ -78,6 +78,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
       ...((intent.tab === "records" || intent.tab === "sessions") && intent.opportunityId ? { opportunityId: intent.opportunityId } : {}),
       ...(intent.tab === "support" && intent.correlationId ? { correlationId: intent.correlationId } : {}),
       ...(intent.tab === "support" && intent.source ? { source: intent.source } : {}),
+      ...(intent.tab === "support" && intent.subjectType ? { subjectType: intent.subjectType } : {}),
       ...(intent.tab === "support" && intent.subjectId ? { subjectId: intent.subjectId } : {}),
     };
     const href = buildSalesWorkspaceHref(intent);
@@ -123,7 +124,7 @@ function salesTabIcon(tab: SalesTab): string {
 }
 
 function salesRoutesMatch(left: SalesWorkspaceRouteState, right: SalesWorkspaceRouteState): boolean {
-  return left.tab === right.tab && left.itemView === right.itemView && left.sessionView === right.sessionView && left.sessionId === right.sessionId && left.sessionStatus === right.sessionStatus && left.queueView === right.queueView && left.queueSearch === right.queueSearch && left.queueSort === right.queueSort && left.queueOffset === right.queueOffset && left.participantsOpen === right.participantsOpen && left.itemId === right.itemId && left.accountId === right.accountId && left.opportunityId === right.opportunityId && left.correlationId === right.correlationId && left.source === right.source && left.subjectId === right.subjectId;
+  return left.tab === right.tab && left.itemView === right.itemView && left.sessionView === right.sessionView && left.sessionId === right.sessionId && left.sessionStatus === right.sessionStatus && left.queueView === right.queueView && left.queueSearch === right.queueSearch && left.queueSort === right.queueSort && left.queueOffset === right.queueOffset && left.participantsOpen === right.participantsOpen && left.itemId === right.itemId && left.accountId === right.accountId && left.opportunityId === right.opportunityId && left.correlationId === right.correlationId && left.source === right.source && left.subjectType === right.subjectType && left.subjectId === right.subjectId;
 }
 
 function PortalSectionIntro({ title, description }: { title: string; description: string }) {

@@ -45,8 +45,8 @@ export async function handleGetSalesDiagnosticLog(
     return { ...response, body: projectDiagnosticPage(response.body) };
   }
 
-  if (request.query.subjectId) {
-    const subjectEntries = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId.trim(), requestedOffset, requestedLimit);
+  if (causalTrialQuery) {
+    const subjectEntries = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId!.trim(), requestedOffset, requestedLimit);
     const pageEntries = subjectEntries.slice(requestedOffset, requestedOffset + requestedLimit);
     const candidateNextOffset = requestedOffset + pageEntries.length;
     const hasMore = subjectEntries.length > candidateNextOffset && candidateNextOffset <= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
@@ -85,6 +85,12 @@ export async function handleGetSalesDiagnosticLog(
 
 async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentDependency }, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
   const requestedType = query.subjectType;
+  const enrollmentReader = deps.salesTrialEnrollments as SalesTrialEnrollmentReader | undefined;
+  let enrollment = null;
+  if (requestedType === "sales_trial_enrollment") {
+    if (!enrollmentReader) throw new Error("Sales diagnostics enrollment reader is not configured");
+    enrollment = await enrollmentReader.findById(customerId, subjectId);
+  }
   const base = { ...query, source: undefined, subjectId, subjectType: requestedType, limit: String(offset + limit + 1), offset: "0" };
   const sources: SalesDiagnosticSource[] = requestedType === "sales_trial_offering" ? ["sales-trial-offerings"] : ["sales-trial-enrollment"];
   const direct = (await Promise.all(sources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
@@ -93,11 +99,8 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
   });
   if (requestedType === "sales_trial_offering") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
   const enrollmentEntries = direct.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
-  if (!enrollmentEntries.length) return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
-  const enrollmentReader = deps.salesTrialEnrollments as SalesTrialEnrollmentReader | undefined;
-  if (!enrollmentReader) throw new Error("Sales diagnostics enrollment reader is not configured");
-  const enrollment = await enrollmentReader.findById(customerId, subjectId);
   const offeringId = enrollment?.salesTrialOfferingId;
+  if (!enrollmentEntries.length && typeof offeringId !== "string") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
   if (typeof offeringId !== "string") return enrollmentEntries.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
   const parent = (await Promise.all((['sales-trial-offerings'] as SalesDiagnosticSource[]).map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;

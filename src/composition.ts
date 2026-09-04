@@ -674,7 +674,7 @@ export function getCandidateSuspendResumeServices(): CandidateSuspendResumeServi
 }
 
 function isReusableServices(services: Services): boolean {
-  return typeof services.dispose === "function" && isReusableFeatureModules(services.featureModules);
+  return typeof services.dispose === "function" && typeof services.salesTrialEnrollments?.findById === "function" && isReusableFeatureModules(services.featureModules);
 }
 
 export function disposeStaleServices(services: unknown): void {
