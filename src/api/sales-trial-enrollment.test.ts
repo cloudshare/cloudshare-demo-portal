@@ -1591,6 +1591,36 @@ describe("Sales Trial offering entry", () => {
 });
 
 describe("Sales Trial offering monitoring", () => {
+  it("wires the shared observer through participant property retrieval and preserves OAuth metadata-only evidence", async () => {
+    const observed: unknown[] = [];
+    const { deps, diagnosticRepository, readSession, enrollments } = createDeps({
+      cloudshareObserver: () => ({
+        scope: "sales_trial_offering",
+        correlationId: "monitor-correlation",
+        onRequest: vi.fn((event) => { observed.push(event); }),
+        onAcquisition: vi.fn((event) => { observed.push(event); }),
+      }),
+      deliveryFactory: {
+        forConnection: vi.fn((_connection, options) => ({
+          readSession,
+          listParticipants: vi.fn().mockResolvedValue({ participants: [], request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: { participants: [] } } }),
+          ensureParticipantCorrelationProperties: vi.fn(async () => {
+            await options?.onAcquisition?.({ occurredAt: "2026-09-04T10:00:00Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token", request: { method: "POST", path: "/oauth/token", body: { client_secret: "secret" } }, response: { status: 200, body: { access_token: "token" } } });
+            await options?.onRequest?.({ occurredAt: "2026-09-04T10:00:01Z", outcome: "success", durationMs: 1, result: { request: { method: "GET", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: [] }, integrationSurface: "cloudshare.v4.sales.user_properties" } });
+            return { requiredKeys: [], availableKeys: [], requests: [], responses: [], request: { method: "GET", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: [] } };
+          }),
+        })),
+      },
+    });
+    await enrollments.save({ id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1", email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: "remote-1", invitationStatus: "sent", participationStatus: "inProgress", cloudShareRosterEnvironmentReference: "env-1", environmentStatus: "Ready", observedExpirationTime: "2026-09-04T11:00:00.000Z", firstJoined: new Date("2026-09-04T10:30:00Z"), status: "active", attentionReason: null, lastLaunchedAt: null, lastReconciledAt: null, createdAt: new Date("2026-09-04T10:00:00Z"), updatedAt: new Date("2026-09-04T10:00:00Z") });
+    await handleListSalesTrialOfferingParticipants(deps, { customerId: "customer-1", offeringId: "offering-1", actor: { type: "admin", id: "admin-1", email: "admin@example.test" } });
+    expect(observed).toHaveLength(2);
+    const rows = await diagnosticRepository.query({ source: "sales-trial-enrollment" });
+    expect(rows.some((row) => row.details?.integrationSurface === "cloudshare.v4.oauth.token")).toBe(true);
+    expect(JSON.stringify(rows)).not.toContain("secret");
+    expect(JSON.stringify(rows)).not.toContain("token");
+  });
+
   it("records a successful CloudShare roster read under the Trial Offering", async () => {
     const { deps, diagnosticRepository } = createDeps();
 

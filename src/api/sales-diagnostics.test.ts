@@ -55,6 +55,38 @@ describe("Sales diagnostics handler", () => {
     expect(entries.map((entry) => `${entry.source}:${entry.subject.id}`)).toEqual(["sales-trial-enrollment:enrollment-1", "sales-trial-offerings:offering-1"]);
   });
 
+  it("returns only the exact enrollment and parent offering evidence in timestamp order", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const add = (input: Parameters<typeof diagnostics.append>[0]) => diagnostics.append(input);
+    await add({ source: "sales-trial-enrollment", operation: "enrollment.read", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, externalIds: { offeringId: "offering-1" }, message: "enrollment 504", occurredAt: new Date("2026-09-04T10:01:00Z") });
+    await add({ source: "sales-trial-offerings", operation: "offering.read", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "parent 504", occurredAt: new Date("2026-09-04T10:02:00Z") });
+    await add({ source: "sales-trial-offerings", operation: "offering.read", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "parent recovered", occurredAt: new Date("2026-09-04T10:03:00Z") });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", limit: "10" } });
+    expect(response).toMatchObject({ status: 200, body: { page: { returned: 3, hasMore: false, nextOffset: null } } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["parent recovered", "parent 504", "enrollment 504"]);
+  });
+
+  it("excludes sibling enrollment, other Customer evidence, and typed external-ID collisions", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "x", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, externalIds: { offeringId: "offering-1" }, message: "exact" });
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "x", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "sibling" }, externalIds: { offeringId: "offering-1" }, message: "sibling" });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "x", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "enrollment-1" }, message: "collision" });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "x", outcome: "failure", customerId: "other", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "other customer" });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectId: "enrollment-1" } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["exact"]);
+  });
+
+  it("paginates causal evidence and rejects offsets beyond the maximum", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    for (let i = 0; i < 3; i++) await diagnostics.append({ source: i === 0 ? "sales-trial-enrollment" : "sales-trial-offerings", operation: "x", outcome: "success", customerId: "customer-certalis", subject: { type: i === 0 ? "sales_trial_enrollment" : "sales_trial_offering", id: i === 0 ? "enrollment-1" : "offering-1" }, externalIds: i === 0 ? { offeringId: "offering-1" } : undefined, message: String(i), occurredAt: new Date(2026, 8, 4, 10, i) });
+    const deps = { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } };
+    const page = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", offset: "2", limit: "1" } });
+    expect(page).toMatchObject({ status: 200, body: { page: { returned: 1, hasMore: false, nextOffset: null } } });
+    const empty = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", offset: "10", limit: "1" } });
+    expect(empty).toMatchObject({ status: 200, body: { page: { returned: 0, hasMore: false } } });
+    await expect(handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", offset: "5001" } })).resolves.toMatchObject({ status: 400 });
+  });
+
   it("returns correlated participant reconciliation evidence through the aggregate Sales Support feed", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     await diagnostics.append({ source: "sales-session-participants", operation: "sales.demo_session.participants.reconciled", outcome: "failure", customerId: "customer-certalis", correlationId: "corr-participants-failed", message: "CloudShare could not reconcile Sales Participant monitoring", occurredAt: new Date("2026-07-17T00:00:00.000Z") });

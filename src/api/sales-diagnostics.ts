@@ -78,7 +78,10 @@ export async function handleGetSalesDiagnosticLog(
 
 async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
   const base = { ...query, source: undefined, subjectId, limit: String(offset + limit + 1), offset: "0" };
-  const direct = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => (entry.subject as Record<string, unknown> | null)?.id === subjectId);
+  const direct = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
+    const subject = entry.subject as Record<string, unknown> | null;
+    return subject?.id === subjectId && subject.type === "sales_trial_enrollment";
+  });
   const enrollment = direct.find((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment" && (entry.subject as Record<string, unknown> | null)?.id === subjectId);
   const offeringId = (enrollment?.externalIds as Record<string, unknown> | null)?.offeringId;
   if (typeof offeringId !== "string") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
