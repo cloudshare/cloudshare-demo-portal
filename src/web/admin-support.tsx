@@ -267,9 +267,9 @@ function DiagnosticFilterBanner(props: { readonly label?: string; readonly value
 
 function renderInvestigationScope(kind: "enrollment" | "Offering", id: string, source?: string) {
   const matchingSource = kind === "enrollment" ? "sales-trial-enrollment" : "sales-trial-offerings";
-  if (!source) return <>Investigating {kind} <span style={{ fontFamily: "monospace" }}>{id}</span>{kind === "enrollment" ? " and its parent Offering workflow evidence." : "."}</>;
-  if (source === matchingSource) return <>Investigating {kind} <span style={{ fontFamily: "monospace" }}>{id}</span> evidence in Source <span style={{ fontFamily: "monospace" }}>{source}</span>.</>;
-  return <>Investigation starts at {kind} <span style={{ fontFamily: "monospace" }}>{id}</span>; Source filter <span style={{ fontFamily: "monospace" }}>{source}</span> is applied to returned events.</>;
+  if (!source) return <>{kind === "enrollment" ? <>Investigating enrollment <span style={{ fontFamily: "monospace" }}>{id}</span> and its parent Offering workflow evidence.</> : <>Investigating Offering <span style={{ fontFamily: "monospace" }}>{id}</span> evidence.</>}</>;
+  if (source === matchingSource) return <>{kind === "enrollment" ? <>Investigating enrollment <span style={{ fontFamily: "monospace" }}>{id}</span> evidence only in Source <span style={{ fontFamily: "monospace" }}>{source}</span>.</> : <>Investigating Offering <span style={{ fontFamily: "monospace" }}>{id}</span> evidence in Source <span style={{ fontFamily: "monospace" }}>{source}</span>.</>}</>;
+  return <>Investigation starts at {kind} <span style={{ fontFamily: "monospace" }}>{id}</span>; Source <span style={{ fontFamily: "monospace" }}>{source}</span> has no matching {kind === "enrollment" ? "enrollment or parent Offering workflow" : "workflow"} evidence for this {kind === "enrollment" ? "enrollment" : "Offering"}.</>;
 }
 
 function SupportError(props: { readonly message: string; readonly onDismiss: () => void }) {
