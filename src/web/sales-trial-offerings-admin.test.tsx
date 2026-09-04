@@ -95,16 +95,18 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(screen.getByRole("button", { name: "Extend environment for Ari Visitor" })).toBeTruthy();
     expect(screen.queryByText("remote-1")).toBeNull();
 
-    const workflowLogButtons = screen.getAllByRole("button", { name: "View workflow logs" });
+    const workflowLogButtons = screen.getAllByRole("button", { name: "View workflow evidence" });
     await user.click(workflowLogButtons[0]!);
     expect(onNavigate).toHaveBeenLastCalledWith({
       tab: "support",
+      subjectType: "sales_trial_offering",
       subjectId: "offering-1",
     });
 
     await user.click(workflowLogButtons[1]!);
     expect(onNavigate).toHaveBeenLastCalledWith({
       tab: "support",
+      subjectType: "sales_trial_enrollment",
       subjectId: "enrollment-1",
     });
   });
