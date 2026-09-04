@@ -1592,11 +1592,12 @@ describe("Sales Trial offering entry", () => {
 });
 
   it("uses the recorder-backed observer for retained enrollment property diagnostics", async () => {
+    let ensureParticipantCorrelationProperties: ReturnType<typeof vi.fn>;
     const { deps, diagnosticRepository, createSponsoredLink } = createDeps({
       cloudshareObserver: ({ customerId, actor, correlationId, subject }) => createSalesTrialCloudShareObserver({ diagnostics: deps.diagnostics, customerId, actor, correlationId, subject, source: "sales-trial-enrollment", candidateEmail: request.participant.email }),
       deliveryFactory: { forConnection: vi.fn((_connection, options) => ({
         readSession: vi.fn().mockResolvedValue({ id: "sales-1", status: "inProgress", end: "2026-08-30T17:00", request: { method: "GET", path: "/sales/sales-1" }, response: { status: 200, body: {} } }),
-        ensureParticipantCorrelationProperties: vi.fn(async () => { await options!.onAcquisition({ occurredAt: "2026-08-30T10:00:00Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token", status: 200 }); await options!.onRequest({ occurredAt: "2026-08-30T10:00:01Z", outcome: "success", durationMs: 1, result: { integrationSurface: "cloudshare.v4.sales.user_properties", request: { method: "GET", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: { marker: "protected-provider-body" } } } }); await options!.onRequest({ occurredAt: "2026-08-30T10:00:02Z", outcome: "success", durationMs: 1, result: { integrationSurface: "cloudshare.v4.sales.user_properties", request: { method: "POST", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: { marker: "protected-provider-body" } } } }); await options!.onRequest({ occurredAt: "2026-08-30T10:00:03Z", outcome: "failure", durationMs: 1, error: new CloudShareRequestError("failed", 503, { method: "POST", path: "/sales/sales-1/users/properties", integrationSurface: "cloudshare.v4.sales.user_properties", responseStatus: 503 }) }); throw new CloudShareRequestError("failed", 503, { method: "POST", path: "/sales/sales-1/users/properties", responseStatus: 503 }); }),
+        ensureParticipantCorrelationProperties: ensureParticipantCorrelationProperties = vi.fn(async () => { await options!.onAcquisition({ occurredAt: "2026-08-30T10:00:00Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token", status: 200 }); await options!.onRequest({ occurredAt: "2026-08-30T10:00:01Z", outcome: "success", durationMs: 1, result: { integrationSurface: "cloudshare.v4.sales.user_properties", request: { method: "GET", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: { marker: "protected-provider-body" } } } }); await options!.onRequest({ occurredAt: "2026-08-30T10:00:02Z", outcome: "success", durationMs: 1, result: { integrationSurface: "cloudshare.v4.sales.user_properties", request: { method: "POST", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: { marker: "protected-provider-body" } } } }); await options!.onRequest({ occurredAt: "2026-08-30T10:00:03Z", outcome: "failure", durationMs: 1, error: new CloudShareRequestError("failed", 503, { method: "POST", path: "/sales/sales-1/users/properties", integrationSurface: "cloudshare.v4.sales.user_properties", responseStatus: 503 }) }); throw new CloudShareRequestError("failed", 503, { method: "POST", path: "/sales/sales-1/users/properties", responseStatus: 503 }); }),
         listParticipants: vi.fn().mockResolvedValue({ participants: [], request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: {} } }), registerParticipants: vi.fn(), updateParticipantCorrelation: vi.fn(), createSponsoredLink,
       })) },
     });
@@ -1604,7 +1605,22 @@ describe("Sales Trial offering entry", () => {
     const rows = await diagnosticRepository.query({ source: "sales-trial-enrollment", operation: "sales_trial.cloudshare.request" });
     const oauth = await diagnosticRepository.query({ source: "sales-trial-enrollment", operation: "sales_trial.cloudshare.oauth_token" });
     const ordered = [...rows].reverse();
-    expect(result.status).toBe(404); expect(rows).toHaveLength(3); expect(ordered.map((row) => row.details?.sequence)).toEqual([2, 3, 4]); expect(rows.every((row) => row.subject?.type === "sales_trial_enrollment" && row.subject.id === "enrollment-1")).toBe(true); expect(oauth[0]).toMatchObject({ request: null, response: null }); expect(JSON.stringify(result)).not.toContain("protected-provider-body");
+    expect(result.status).toBe(404);
+    expect(ensureParticipantCorrelationProperties).toHaveBeenCalledOnce();
+    expect(ordered.map((row) => row.details?.sequence)).toEqual([2, 3, 4]);
+    expect(rows).toHaveLength(3);
+    const allChildren = [...rows, ...oauth];
+    expect(allChildren.every((row) => row.correlationId && row.subject?.type === "sales_trial_enrollment" && row.subject.id === "enrollment-1")).toBe(true);
+    expect(ordered).toMatchObject([
+      { request: { method: "GET", path: "/sales/sales-1/users/properties" }, response: { status: 200 }, outcome: "success" },
+      { request: { method: "POST", path: "/sales/sales-1/users/properties" }, response: { status: 200 }, outcome: "success" },
+      { request: { method: "POST", path: "/sales/sales-1/users/properties" }, response: { status: 503 }, outcome: "failure" },
+    ]);
+    expect(JSON.stringify(rows)).toContain("protected-provider-body");
+    expect(oauth).toHaveLength(1);
+    expect(oauth[0]).toMatchObject({ request: null, response: null });
+    expect(JSON.stringify(oauth[0])).not.toMatch(/client_secret|access_token|oauth-secret|bearer-value/i);
+    expect(JSON.stringify(result)).not.toContain("protected-provider-body");
   });
 
 describe("Sales Trial offering monitoring", () => {
