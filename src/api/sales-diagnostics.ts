@@ -53,7 +53,7 @@ export async function handleGetSalesDiagnosticLog(
     customerId: request.customerId,
     query: request.query.subjectId ? { ...request.query, subjectId: undefined } : request.query,
     source,
-    requiredEntries: requiredEntriesPerSource,
+    requiredEntries: request.query.subjectId ? SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1 : requiredEntriesPerSource,
   })));
   const entries = filterCausalSubjectEntries(sourceEntries.flat(), request.query.subjectId?.trim())
     .slice()
