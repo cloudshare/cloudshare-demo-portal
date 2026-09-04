@@ -1603,7 +1603,7 @@ describe("Sales Trial offering monitoring", () => {
       deliveryFactory: {
         forConnection: vi.fn((_connection, options) => ({
           readSession,
-          listParticipants: vi.fn().mockResolvedValue({ participants: [], request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: { participants: [] } } }),
+          listParticipants: vi.fn().mockResolvedValue({ participants: [{ id: "remote-1", firstName: "Ari", lastName: "Visitor", email: "visitor@example.test", invitationStatus: "sent", participationStatus: "inProgress", firstJoined: "2026-09-04T10:30:00Z", environmentId: "env-1", envStatus: "Ready", customProperties: { certalisSalesTrialEnrollmentId: "enrollment-1", certalisSalesTrialParticipantUserId: "trial-user-1" } }], request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: { participants: [] } } }),
           ensureParticipantCorrelationProperties: vi.fn(async () => {
             await options?.onAcquisition?.({ occurredAt: "2026-09-04T10:00:00Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token", request: { method: "POST", path: "/oauth/token", body: { client_secret: "secret" } }, response: { status: 200, body: { access_token: "token" } } });
             await options?.onRequest?.({ occurredAt: "2026-09-04T10:00:01Z", outcome: "success", durationMs: 1, result: { request: { method: "GET", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: [] }, integrationSurface: "cloudshare.v4.sales.user_properties" } });
