@@ -1592,7 +1592,7 @@ describe("Sales Trial offering entry", () => {
 });
 
   it("uses the recorder-backed observer for retained enrollment property diagnostics", async () => {
-    let ensureParticipantCorrelationProperties: ReturnType<typeof vi.fn>;
+    let ensureParticipantCorrelationProperties: ReturnType<typeof vi.fn> = vi.fn();
     const { deps, diagnosticRepository, createSponsoredLink } = createDeps({
       cloudshareObserver: ({ customerId, actor, correlationId, subject }) => createSalesTrialCloudShareObserver({ diagnostics: deps.diagnostics, customerId, actor, correlationId, subject, source: "sales-trial-enrollment", candidateEmail: request.participant.email }),
       deliveryFactory: { forConnection: vi.fn((_connection, options) => ({
