@@ -8,6 +8,7 @@ export interface DiagnosticLogFilters {
   readonly integrationSurface?: string;
   readonly correlationId?: string;
   readonly subjectId?: string;
+  readonly subjectType?: string;
   readonly externalId?: string;
   readonly from?: string;
   readonly to?: string;
@@ -119,6 +120,7 @@ export function normaliseDiagnosticLogFilters(
       ? { correlationId: normaliseOptionalText(filters.correlationId) }
       : {}),
     ...(normaliseOptionalText(filters.subjectId) ? { subjectId: normaliseOptionalText(filters.subjectId) } : {}),
+    ...(normaliseOptionalText(filters.subjectType) ? { subjectType: normaliseOptionalText(filters.subjectType) } : {}),
     ...(normaliseOptionalText(filters.externalId)
       ? { externalId: normaliseOptionalText(filters.externalId) }
       : {}),
@@ -201,6 +203,8 @@ export function parseAdminConsoleRouteState(input: {
   readonly source?: string | readonly string[];
   readonly integrationSurface?: string | readonly string[];
   readonly correlationId?: string | readonly string[];
+  readonly subjectId?: string | readonly string[];
+  readonly subjectType?: string | readonly string[];
   readonly externalId?: string | readonly string[];
   readonly from?: string | readonly string[];
   readonly to?: string | readonly string[];
@@ -235,6 +239,8 @@ export function parseAdminConsoleRouteState(input: {
       source: readRouteValue(input.source),
       integrationSurface: readRouteValue(input.integrationSurface),
       correlationId: readRouteValue(input.correlationId),
+      subjectId: readRouteValue(input.subjectId),
+      subjectType: readRouteValue(input.subjectType),
       externalId: readRouteValue(input.externalId),
       from: readRouteValue(input.from),
       to: readRouteValue(input.to),

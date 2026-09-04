@@ -162,9 +162,24 @@ describe("AdminSupportFeature", () => {
     expect(screen.getByText(/subject ID \(enrollment or parent Offering\)/)).toBeTruthy();
     await user.clear(screen.getByLabelText("Subject ID"));
     await user.type(screen.getByLabelText("Subject ID"), "offering-1");
+    await waitFor(() => expect((screen.getByRole("button", { name: "Apply Filters" }) as HTMLButtonElement).disabled).toBe(false));
     await user.click(screen.getByRole("button", { name: "Apply Filters" }));
     expect(fetchAdmin).toHaveBeenLastCalledWith("/api/sales/diagnostics?subjectId=offering-1&limit=50&offset=0");
     await user.click(screen.getByRole("button", { name: "Clear Filters" }));
     expect(screen.queryByText(/subject ID \(enrollment or parent Offering\)/)).toBeNull();
+  });
+
+  it("shows and sends the typed investigation subject alongside a colliding ID", async () => {
+    const user = userEvent.setup();
+    const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: false, nextOffset: null } }));
+    render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_enrollment", subjectId: "same-id" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
+    expect((screen.getByLabelText("Investigation subject type") as HTMLInputElement).value).toBe("sales_trial_enrollment");
+    expect(screen.getByText(/investigation subject type/)).toBeTruthy();
+    await waitFor(() => expect((screen.getByRole("button", { name: "Apply Filters" }) as HTMLButtonElement).disabled).toBe(false));
+    await user.click(screen.getByRole("button", { name: "Apply Filters" }));
+    await waitFor(() => expect(fetchAdmin).toHaveBeenLastCalledWith("/api/sales/diagnostics?subjectId=same-id&subjectType=sales_trial_enrollment&limit=50&offset=0"));
+    await user.clear(screen.getByLabelText("Investigation subject type"));
+    await user.click(screen.getByRole("button", { name: "Apply Filters" }));
+    expect(fetchAdmin).toHaveBeenLastCalledWith("/api/sales/diagnostics?subjectId=same-id&limit=50&offset=0");
   });
 });

@@ -28,4 +28,10 @@ describe("Sales workspace shell routes", () => {
     expect(buildSalesWorkspaceHref({ tab: "support", source: "sales-trial-offerings", subjectId: "offering-1" })).toBe("/sales?tab=support&source=sales-trial-offerings&subjectId=offering-1");
     expect(parseSalesWorkspaceRouteState({ tab: "support", source: "sales-trial-offerings", subjectId: "offering-1" })).toMatchObject({ tab: "support", source: "sales-trial-offerings", subjectId: "offering-1" });
   });
+
+  it("keeps colliding IDs distinct by typed investigation subject", () => {
+    expect(buildSalesWorkspaceHref({ tab: "support", subjectType: "sales_trial_offering", subjectId: "same-id" })).toBe("/sales?tab=support&subjectType=sales_trial_offering&subjectId=same-id");
+    expect(buildSalesWorkspaceHref({ tab: "support", subjectType: "sales_trial_enrollment", subjectId: "same-id" })).toBe("/sales?tab=support&subjectType=sales_trial_enrollment&subjectId=same-id");
+    expect(parseSalesWorkspaceRouteState({ tab: "support", subjectType: "sales_trial_enrollment", subjectId: "same-id" })).toMatchObject({ subjectType: "sales_trial_enrollment", subjectId: "same-id" });
+  });
 });

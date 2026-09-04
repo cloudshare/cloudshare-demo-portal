@@ -44,6 +44,7 @@ type NavigationIntent = {
   readonly tab: "support";
   readonly correlationId?: string | null;
   readonly source?: string | null;
+  readonly subjectType?: string | null;
   readonly subjectId?: string | null;
 };
 
@@ -445,7 +446,7 @@ export function SalesTrialOfferingsAdmin({
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
             <button type="button" style={offering.status !== "draft" || lifecycleInFlight !== null ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft" || lifecycleInFlight !== null} onClick={() => void lifecycle(offering.id, "publish")}>{lifecycleInFlight === `${offering.id}:publish` ? "Publishing…" : "Publish"}</button>
             <button type="button" style={offering.status !== "published" || lifecycleInFlight !== null ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published" || lifecycleInFlight !== null} onClick={() => { if (window.confirm("End this Trial Offering now and unpublish it from the portal?")) void lifecycle(offering.id, "end"); }}>{lifecycleInFlight === `${offering.id}:end` ? "Ending…" : "End trial"}</button>
-          <button type="button" style={secondaryButtonStyle} onClick={() => openSupport({ subjectId: offering.id })}>View workflow logs</button>
+          <button type="button" style={secondaryButtonStyle} onClick={() => openSupport({ subjectType: "sales_trial_offering", subjectId: offering.id })}>View workflow evidence</button>
             {offering.status === "published" || offering.status === "ending" || offering.status === "ended" || offering.status === "unpublished" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
           </div>
           {monitoringOfferingId === offering.id ? <section aria-label="Participant monitoring" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem", overflowX: "auto", width: "100%" }}>
@@ -492,7 +493,7 @@ export function SalesTrialOfferingsAdmin({
                       return (
                     <div style={{ display: "grid", gap: "0.5rem", justifyItems: "start" }}>
                       <span>{participant.environment.value ?? participant.envStatus ?? "Not assigned"}</span>
-                      <button type="button" style={secondaryButtonStyle} onClick={() => openSupport({ subjectId: participant.id })}>View workflow logs</button>
+                      <button type="button" style={secondaryButtonStyle} onClick={() => openSupport({ subjectType: "sales_trial_enrollment", subjectId: participant.id })}>View workflow evidence</button>
                       {participant.extend ? (
                         <>
                           <button
