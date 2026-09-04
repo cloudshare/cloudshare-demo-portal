@@ -202,11 +202,11 @@ describe("AdminSupportFeature", () => {
     const { rerender } = render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", source: "sales-trial-enrollment" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
     await waitFor(() => expect(document.body.textContent).toContain("Investigating enrollment enrollment-1 evidence only in Source sales-trial-enrollment."));
     await act(async () => { rerender(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", source: "sales-trial-offerings" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />); });
-    expect(document.body.textContent).toContain("Investigation starts at enrollment enrollment-1; Source sales-trial-offerings has no matching enrollment or parent Offering workflow evidence for this enrollment.");
+    expect(document.body.textContent).toContain("Investigating parent Offering workflow evidence for enrollment enrollment-1 only in Source sales-trial-offerings.");
     await act(async () => { rerender(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_offering", subjectId: "offering-1", source: "sales-trial-offerings" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />); });
     expect(document.body.textContent).toContain("Investigating Offering offering-1 evidence in Source sales-trial-offerings.");
     await act(async () => { rerender(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_offering", subjectId: "offering-1", source: "sales-trial-enrollment" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />); });
-    expect(document.body.textContent).toContain("Investigation starts at Offering offering-1; Source sales-trial-enrollment has no matching workflow evidence for this Offering.");
+    expect(document.body.textContent).toContain("Investigation starts at Offering offering-1; Source sales-trial-enrollment has no matching Offering workflow evidence.");
     await act(async () => { rerender(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", source: "sales-records" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />); });
     expect(document.body.textContent).toContain("Source sales-records has no matching enrollment or parent Offering workflow evidence");
   });
