@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
   const query = Object.fromEntries(new URL(request.url).searchParams.entries());
   const response = await handleGetSalesDiagnosticLog(
-    buildAdminDiagnosticLogDeps(services),
+    { ...buildAdminDiagnosticLogDeps(services), salesTrialEnrollments: services.salesTrialEnrollments },
     { query, customerId: session.customerId },
   );
 

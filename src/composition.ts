@@ -43,6 +43,8 @@ import { createPrismaCohortExamSessionRepository } from "@/persistence/prisma-co
 import { createPrismaCohortMonitoringObservationRepository } from "@/persistence/prisma-cohort-monitoring-observation-repository";
 import { createPrismaExamAttemptRepository } from "@/persistence/prisma-exam-attempt-repository";
 import { createPrismaLabLaunchRepository } from "@/persistence/prisma-lab-launch-repository";
+import { createPrismaSalesTrialEnrollmentRepository } from "@/persistence/prisma-sales-trial-enrollment-repository";
+import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 import { createPrismaAdminMonitoringAttemptRepository } from "@/persistence/prisma-admin-monitoring-attempt-repository";
 import { createPrismaAdminCandidateRepository } from "@/persistence/prisma-admin-candidate-repository";
 import { createPrismaEnvironmentRepository } from "@/persistence/prisma-environment-repository";
@@ -352,6 +354,7 @@ export interface Services {
   eventLog: EventLogRepository;
   /** Typed, append-only diagnostic log — the Support read model (ADR-004). */
   diagnostics: DiagnosticLogRepository;
+  salesTrialEnrollments: SalesTrialEnrollmentRepository;
   /** Redaction-applying write seam every instrumented flow records through. */
   diagnosticRecorder: DiagnosticRecorder;
   adminMonitoringAttempts: AdminMonitoringAttemptRepository;
@@ -388,6 +391,7 @@ export function getServices(): Services {
   const config = loadConfig(process.env);
   const prisma = new PrismaClient();
   const diagnostics = createPrismaDiagnosticLogRepository(prisma);
+  const salesTrialEnrollments = createPrismaSalesTrialEnrollmentRepository(prisma);
   const logger = createLogger({
     secrets: secretValues(config),
     sink: (line: string) => {
@@ -607,6 +611,7 @@ export function getServices(): Services {
     resources,
     eventLog,
     diagnostics,
+    salesTrialEnrollments,
     diagnosticRecorder,
     adminMonitoringAttempts,
     adminCandidates,

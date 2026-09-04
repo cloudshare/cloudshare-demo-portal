@@ -5,6 +5,7 @@ import {
   type DiagnosticLogHandlerDeps,
 } from "./admin";
 import { redactDiagnosticInput, type DiagnosticLogEntryInput } from "@/domain/diagnostic-log";
+import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 
 const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-items", "sales-demo-sessions", "sales-session-reconciliation", "sales-session-participants", "sales-project-members", "sales-participant-launch", "sales-trial-offerings", "sales-trial-enrollment"] as const;
 const SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT = 500;
@@ -23,7 +24,7 @@ type DiagnosticPageBody = {
  * can investigate either stream without crossing Customer boundaries.
  */
 export async function handleGetSalesDiagnosticLog(
-  deps: DiagnosticLogHandlerDeps,
+  deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentRepository },
   request: AdminRequest & { readonly customerId: string },
 ): Promise<AdminResponse> {
   const requestedSource = request.query.source?.trim();
@@ -34,7 +35,7 @@ export async function handleGetSalesDiagnosticLog(
     return { status: 400, body: { error: "unsupported_sales_diagnostic_source" } };
   }
 
-  const causalTrialQuery = Boolean(request.query.subjectId && (requestedSource === "sales-trial-enrollment" || requestedSource === "sales-trial-offerings"));
+  const causalTrialQuery = Boolean(request.query.subjectId && (request.query.subjectType === "sales_trial_enrollment" || request.query.subjectType === "sales_trial_offering"));
   if (requestedSource && !causalTrialQuery) {
     const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
     return { ...response, body: projectDiagnosticPage(response.body) };
@@ -78,28 +79,30 @@ export async function handleGetSalesDiagnosticLog(
   };
 }
 
-async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
-  const base = { ...query, source: undefined, subjectId, limit: String(offset + limit + 1), offset: "0" };
-  const direct = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
+async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentRepository }, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
+  const base = { ...query, source: undefined, subjectId, subjectType: undefined, operation: undefined, outcome: undefined, correlationId: undefined, limit: String(offset + limit + 1), offset: "0" };
+  const direct = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, operation: undefined, outcome: undefined, correlationId: undefined }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
     return subject?.id === subjectId && (subject.type === "sales_trial_offering" || subject.type === "sales_trial_enrollment");
   });
   const hasOffering = direct.some((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_offering");
   const enrollmentEntries = direct.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
   if (!enrollmentEntries.length) return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
-  const lineage = await readExactEnrollmentLineage(deps, customerId, query, subjectId);
-  const enrollment = lineage.find((entry) => {
+  const enrollment = deps.salesTrialEnrollments?.findById ? await deps.salesTrialEnrollments.findById(customerId, subjectId) : null;
+  const lineage = enrollment ? [{ subject: { type: "sales_trial_enrollment", id: subjectId }, externalIds: { offeringId: enrollment.salesTrialOfferingId } }] : await readExactEnrollmentLineage(deps, customerId, query, subjectId);
+  const enrollmentEntry = lineage.find((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
     const externalIds = entry.externalIds as Record<string, unknown> | null;
     return subject?.type === "sales_trial_enrollment" && subject.id === subjectId && typeof externalIds?.offeringId === "string";
   });
-  const offeringId = (enrollment?.externalIds as Record<string, unknown> | null)?.offeringId;
+  const offeringId = (enrollmentEntry?.externalIds as Record<string, unknown> | null)?.offeringId;
   if (typeof offeringId !== "string") return enrollmentEntries.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
   const parent = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
     return subject?.type === "sales_trial_offering" && subject.id === offeringId;
   });
-  return [...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()].sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  const lineageEntries = lineage.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
+  return [...new Map([...enrollmentEntries, ...lineageEntries, ...parent].map((entry) => [entry.id, entry])).values()].sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
 }
 
 async function readExactEnrollmentLineage(deps: DiagnosticLogHandlerDeps, customerId: string, query: AdminRequest["query"], subjectId: string): Promise<readonly Record<string, unknown>[]> {
