@@ -3,6 +3,7 @@ import {
   createCloudShareClientFactory,
   createFeatureModules,
   disposeStaleServices,
+  isReusableServices,
   isReusableFeatureModules,
   type FeatureModuleInputs,
 } from "./composition";
@@ -188,6 +189,16 @@ describe("composition feature modules", () => {
         candidateSuspendResume: {},
       }),
     ).toBe(false);
+  });
+
+  it("rejects a stale reusable service shape missing Sales Trial enrollment lookup", () => {
+    const modules = createFeatureModules(createInputs());
+    const dispose = vi.fn();
+    const stale = { dispose, featureModules: modules, salesTrialEnrollments: {} };
+
+    expect(isReusableServices(stale as never)).toBe(false);
+    disposeStaleServices(stale);
+    expect(dispose).toHaveBeenCalledOnce();
   });
 
 

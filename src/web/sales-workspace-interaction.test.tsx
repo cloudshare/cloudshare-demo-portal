@@ -613,6 +613,35 @@ describe("SalesWorkspace interaction", () => {
     });
   });
 
+  it("composes workflow evidence navigation with canonical subject filters and reacts to type-only route changes", async () => {
+    const user = userEvent.setup();
+    const diagnosticsRequests: URL[] = [];
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://localhost:3000");
+      if (url.pathname === "/api/sales/items") return json({ activeItems: [] });
+      if (url.pathname === "/api/sales/timezones") return json({ timezones: [] });
+      if (url.pathname === "/api/sales/trial-offerings") {
+        return json({ offerings: [{ id: "same-id", title: "Windows Trial", description: "", itemId: "item-1", start: "2026-08-30T09:00", end: null, timeZone: "UTC", salesProEmail: "owner@example.test", salesProDisplayName: "Owner Example", status: "published", attentionReason: null }] });
+      }
+      if (url.pathname === "/api/sales/diagnostics") {
+        diagnosticsRequests.push(url);
+        return json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: false, nextOffset: null } });
+      }
+      return json({ error: `Unexpected request ${url.pathname}` }, 500);
+    });
+
+    const view = render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "trial-offerings" }} />);
+    await user.click(await screen.findByRole("button", { name: "View workflow evidence" }));
+    await waitFor(() => expect(diagnosticsRequests.at(-1)?.searchParams.get("subjectType")).toBe("sales_trial_offering"));
+    expect(diagnosticsRequests.at(-1)?.searchParams.get("subjectId")).toBe("same-id");
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=support&subjectType=sales_trial_offering&subjectId=same-id");
+
+    view.rerender(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "support", subjectType: "sales_trial_enrollment", subjectId: "same-id" }} />);
+    await waitFor(() => expect(diagnosticsRequests.at(-1)?.searchParams.get("subjectType")).toBe("sales_trial_enrollment"));
+    expect(diagnosticsRequests.at(-1)?.searchParams.get("subjectId")).toBe("same-id");
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
   it("keeps a successfully-created needs-attention Session non-retryable and linked to Sales Support", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {

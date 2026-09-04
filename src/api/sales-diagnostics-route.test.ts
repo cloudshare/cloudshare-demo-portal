@@ -225,4 +225,17 @@ describe("Sales diagnostics HTTP isolation", () => {
       query: { customerId: "customer-certalis", source: "runtime" },
     });
   });
+
+  it("passes the composed Sales Trial enrollment reader into the Sales diagnostics handler", async () => {
+    const salesTrialEnrollments = { findById: vi.fn() };
+    mockGetServices.mockReturnValue({ salesTrialEnrollments });
+    mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
+
+    await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=sales-trial-enrollment"));
+
+    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(
+      expect.objectContaining({ diagnostics: "deps", salesTrialEnrollments }),
+      expect.objectContaining({ customerId: "customer-certalis" }),
+    );
+  });
 });
