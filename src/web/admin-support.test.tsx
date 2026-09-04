@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -186,13 +186,24 @@ describe("AdminSupportFeature", () => {
     const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: false, nextOffset: null } }));
     const { rerender } = render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_enrollment", subjectId: "enrollment-1" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
 
+    await waitFor(() => expect(fetchAdmin).toHaveBeenCalled());
     expect(screen.getByLabelText("Investigation starting subject type")).toBeTruthy();
     expect(screen.getByLabelText("Investigation starting subject ID")).toBeTruthy();
     expect(screen.getByText((_, element) => element?.textContent === "Investigating enrollment enrollment-1 and its parent Offering workflow evidence.")).toBeTruthy();
     expect(screen.queryByText(/Filtered to investigation subject type/)).toBeNull();
     expect(screen.queryByText(/Filtered to subject ID \(enrollment or parent Offering\)/)).toBeNull();
 
-    rerender(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_offering", subjectId: "offering-1" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
+    await act(async () => { rerender(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_offering", subjectId: "offering-1" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />); });
     expect(screen.getByText((_, element) => element?.textContent === "Investigating Offering offering-1.")).toBeTruthy();
+  });
+
+  it("qualifies investigation scope when a source partition is present", async () => {
+    const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: false, nextOffset: null } }));
+    const { rerender } = render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", source: "sales-trial-enrollment" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
+    await waitFor(() => expect(document.body.textContent).toContain("Investigating enrollment enrollment-1 evidence in Source sales-trial-enrollment."));
+    await act(async () => { rerender(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", source: "sales-trial-offerings" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />); });
+    expect(document.body.textContent).toContain("Investigation starts at enrollment enrollment-1; Source filter sales-trial-offerings is applied to returned events.");
+    await act(async () => { rerender(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectType: "sales_trial_offering", subjectId: "offering-1", source: "sales-trial-enrollment" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />); });
+    expect(document.body.textContent).toContain("Investigation starts at Offering offering-1; Source filter sales-trial-enrollment is applied to returned events.");
   });
 });

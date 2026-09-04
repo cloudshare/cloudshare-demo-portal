@@ -245,8 +245,8 @@ export function AdminSupportFeature(props: {
       {diagnosticPage ? <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center", marginBottom: "0.75rem" }}><div style={{ color: colors.textSecondary }}>Showing {diagnosticPage.returned} entries starting at row {diagnosticPage.offset + 1}.</div><div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}><button {...extensionHydrationProps} onClick={() => void loadDiagnostics(Math.max(diagnosticPage.offset - DIAGNOSTIC_PAGE_LIMIT, 0))} disabled={loading || diagnosticPage.offset === 0} style={{ padding: "0.4rem 1rem" }}>Previous</button><button {...extensionHydrationProps} onClick={() => diagnosticPage.nextOffset !== null && void loadDiagnostics(diagnosticPage.nextOffset)} disabled={loading || !diagnosticPage.hasMore} style={{ padding: "0.4rem 1rem" }}>Next</button></div></div> : null}
       {diagnosticFilters.examAttemptId ? <DiagnosticFilterBanner label="exam attempt ID" value={diagnosticFilters.examAttemptId} /> : null}
       {!diagnosticFilters.examAttemptId && diagnosticFilters.correlationId ? <DiagnosticFilterBanner label="correlation ID" value={diagnosticFilters.correlationId} /> : null}
-      {diagnosticFilters.subjectType === "sales_trial_enrollment" && diagnosticFilters.subjectId ? <DiagnosticFilterBanner>Investigating enrollment <span style={{ fontFamily: "monospace" }}>{diagnosticFilters.subjectId}</span> and its parent Offering workflow evidence.</DiagnosticFilterBanner> : null}
-      {diagnosticFilters.subjectType === "sales_trial_offering" && diagnosticFilters.subjectId ? <DiagnosticFilterBanner>Investigating Offering <span style={{ fontFamily: "monospace" }}>{diagnosticFilters.subjectId}</span>.</DiagnosticFilterBanner> : null}
+      {diagnosticFilters.subjectType === "sales_trial_enrollment" && diagnosticFilters.subjectId ? <DiagnosticFilterBanner>{renderInvestigationScope("enrollment", diagnosticFilters.subjectId, diagnosticFilters.source)}</DiagnosticFilterBanner> : null}
+      {diagnosticFilters.subjectType === "sales_trial_offering" && diagnosticFilters.subjectId ? <DiagnosticFilterBanner>{renderInvestigationScope("Offering", diagnosticFilters.subjectId, diagnosticFilters.source)}</DiagnosticFilterBanner> : null}
       {!(diagnosticFilters.subjectType && diagnosticFilters.subjectId && (diagnosticFilters.subjectType === "sales_trial_enrollment" || diagnosticFilters.subjectType === "sales_trial_offering")) && diagnosticFilters.subjectType ? <DiagnosticFilterBanner label="investigation subject type" value={diagnosticFilters.subjectType} /> : null}
       {!(diagnosticFilters.subjectType && diagnosticFilters.subjectId && (diagnosticFilters.subjectType === "sales_trial_enrollment" || diagnosticFilters.subjectType === "sales_trial_offering")) && diagnosticFilters.subjectId ? <DiagnosticFilterBanner label="investigation starting subject ID" value={diagnosticFilters.subjectId} /> : null}
       {diagnosticEntries ? <DiagnosticLogTable entries={diagnosticEntries} expandedDiagnosticId={expandedDiagnosticId} onToggleExpanded={(id) => setExpandedDiagnosticId((current) => current === id ? null : id)} onOpenExamAttempt={openExamAttemptDiagnostics} /> : null}
@@ -263,6 +263,13 @@ function mergeLockedDiagnosticFilters(
 
 function DiagnosticFilterBanner(props: { readonly label?: string; readonly value?: string; readonly children?: React.ReactNode }) {
   return <div style={{ marginBottom: "0.75rem", padding: "0.65rem 0.8rem", border: "1px solid #dbe4ff", borderRadius: "8px", background: "#f5f8ff", color: "#123" }}>{props.children ?? <>Filtered to {props.label} <span style={{ fontFamily: "monospace" }}>{props.value}</span>.</>}</div>;
+}
+
+function renderInvestigationScope(kind: "enrollment" | "Offering", id: string, source?: string) {
+  const matchingSource = kind === "enrollment" ? "sales-trial-enrollment" : "sales-trial-offerings";
+  if (!source) return <>Investigating {kind} <span style={{ fontFamily: "monospace" }}>{id}</span>{kind === "enrollment" ? " and its parent Offering workflow evidence." : "."}</>;
+  if (source === matchingSource) return <>Investigating {kind} <span style={{ fontFamily: "monospace" }}>{id}</span> evidence in Source <span style={{ fontFamily: "monospace" }}>{source}</span>.</>;
+  return <>Investigation starts at {kind} <span style={{ fontFamily: "monospace" }}>{id}</span>; Source filter <span style={{ fontFamily: "monospace" }}>{source}</span> is applied to returned events.</>;
 }
 
 function SupportError(props: { readonly message: string; readonly onDismiss: () => void }) {
