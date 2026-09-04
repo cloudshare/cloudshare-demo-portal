@@ -1612,7 +1612,7 @@ describe("Sales Trial offering monitoring", () => {
         })),
       },
     });
-    await enrollments.save({ id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1", email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: "remote-1", invitationStatus: "sent", participationStatus: "inProgress", cloudShareRosterEnvironmentReference: "env-1", environmentStatus: "Ready", observedExpirationTime: "2026-09-04T11:00:00.000Z", firstJoined: new Date("2026-09-04T10:30:00Z"), status: "active", attentionReason: null, lastLaunchedAt: null, lastReconciledAt: null, createdAt: new Date("2026-09-04T10:00:00Z"), updatedAt: new Date("2026-09-04T10:00:00Z") });
+    await enrollments.save({ id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1", email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: "remote-1", invitationStatus: "sent", participationStatus: "inProgress", cloudShareRosterEnvironmentReference: "env-1", environmentStatus: "Ready", observedExpirationTime: "2026-09-04T11:00:00.000Z", firstJoined: new Date("2026-09-04T10:30:00Z"), status: "active", attentionReason: null, lastLaunchedAt: null, lastReconciledAt: new Date("2026-09-04T10:30:00Z"), createdAt: new Date("2026-09-04T10:00:00Z"), updatedAt: new Date("2026-09-04T10:00:00Z") });
     await handleListSalesTrialOfferingParticipants(deps, { customerId: "customer-1", offeringId: "offering-1", actor: { type: "admin", id: "admin-1", email: "admin@example.test" } });
     expect(observed).toHaveLength(2);
     const rows = await diagnosticRepository.query({ source: "sales-trial-enrollment" });
