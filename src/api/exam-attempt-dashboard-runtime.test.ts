@@ -577,6 +577,63 @@ describe("getExamAttemptDashboardRuntime", () => {
     expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
   });
 
+  it("shares one sequence allocator across every attempt in a dashboard correlation", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    for (const suffix of ["one", "two"]) {
+      await attempts.save({
+        id: `attempt-${suffix}`,
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        examId: "exam-1",
+        status: "ready",
+        scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+        createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      });
+      await launches.save({
+        id: `launch-${suffix}`,
+        examAttemptId: `attempt-${suffix}`,
+        candidateId: "candidate-1",
+        participantEmail: `candidate-${suffix}@helioscx.demo`,
+        trainingId: `training-${suffix}`,
+        experienceId: `training-${suffix}`,
+        loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+        status: "launched",
+        createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      });
+    }
+    const client = {
+      requestV3: vi.fn(),
+      requestV3Text: vi.fn(),
+      requestV4: vi.fn().mockResolvedValue({ count: 0, items: [] }),
+      requestV4Detailed: vi.fn(),
+    } as unknown as ReturnType<CloudShareClientFactory["forConnection"]>;
+    const cloudshare = { forConnection: vi.fn().mockReturnValue(client) } satisfies CloudShareClientFactory;
+
+    await getExamAttemptDashboardRuntime(
+      {
+        repository: exams,
+        attempts,
+        launches,
+        connections: makeConnectionRepository(),
+        cloudshare,
+        logger: makeLogger(),
+        newCorrelationId: () => "dashboard-correlation",
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    const workflows = vi.mocked(cloudshare.forConnection).mock.calls
+      .map(([, options]) => options)
+      .filter((options) => options?.scope === "workflow" && options.workflow.actor.id === "candidate-dashboard");
+    expect(workflows).toHaveLength(2);
+    if (workflows[0]?.scope !== "workflow" || workflows[1]?.scope !== "workflow") throw new Error("expected workflow observations");
+    expect(workflows.map((options) => options.workflow.correlationId)).toEqual(["dashboard-correlation", "dashboard-correlation"]);
+    expect(workflows[0].workflow.sequenceAllocator).toBe(workflows[1].workflow.sequenceAllocator);
+    expect([workflows[0].workflow.sequenceAllocator?.next(), workflows[1].workflow.sequenceAllocator?.next()]).toEqual([1, 2]);
+  });
+
   it("keeps a cross-realm OAuth rate-limit failure metadata-only", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();

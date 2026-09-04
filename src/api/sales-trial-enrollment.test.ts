@@ -1633,7 +1633,7 @@ describe("Sales Trial offering monitoring", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
     const [entry] = await diagnosticRepository.query({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "success",
     });
@@ -2292,7 +2292,7 @@ describe("Sales Trial offering monitoring", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
     const [failure] = await diagnosticRepository.query({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
     });
@@ -2402,7 +2402,7 @@ describe("Sales Trial offering monitoring", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
     const [failure] = await diagnosticRepository.query({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
     });
@@ -2468,7 +2468,7 @@ describe("Sales Trial offering monitoring", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
     const [failure] = await diagnosticRepository.query({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
     });
@@ -2665,7 +2665,7 @@ describe("Sales Trial offering monitoring", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
     const [failure] = await diagnosticRepository.query({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
     });
@@ -2729,7 +2729,7 @@ describe("Sales Trial offering monitoring", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
     const [failure] = await diagnosticRepository.query({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
     });

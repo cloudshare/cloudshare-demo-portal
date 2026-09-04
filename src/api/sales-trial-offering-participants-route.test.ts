@@ -191,6 +191,28 @@ describe("Sales Trial offering participants route", () => {
       ],
       correlationId: expect.any(String),
     });
+    const services = mockGetServices.mock.results[0]?.value;
+    const observer = services.cloudshareClientFactory.forConnection.mock.calls[0]?.[1];
+    expect(observer).toMatchObject({ scope: "custom_observer" });
+    await observer.onRequest({
+      occurredAt: "2026-08-30T10:05:00.000Z",
+      outcome: "success",
+      durationMs: 5,
+      result: {
+        integrationSurface: "cloudshare.v4.sales.participants",
+        host: "api.accelerate.cloudshare.com",
+        request: { method: "GET", path: "/sales/sales-1/participants" },
+        response: { status: 200, body: { participants: [] } },
+      },
+    });
+    await expect(diagnosticsRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales_trial.cloudshare.request",
+    })).resolves.toEqual([
+      expect.objectContaining({
+        subject: { type: "sales_trial_offering", id: "offering-1" },
+      }),
+    ]);
   });
 
   it("records protected provider diagnostics through the real route wiring when the roster read fails", async () => {
@@ -223,7 +245,7 @@ describe("Sales Trial offering participants route", () => {
     );
     const body = await response.json();
     const [failure] = await diagnosticsRepository.query({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
     });

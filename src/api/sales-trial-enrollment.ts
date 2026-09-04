@@ -569,7 +569,7 @@ export async function handleListSalesTrialOfferingParticipants(
   );
   await deps.diagnostics?.record({
     occurredAt: rosterObservedAt,
-    source: "sales-trial-enrollment",
+    source: "sales-trial-offerings",
     operation: "sales_trial.offering.monitoring.read_participants",
     outcome: "success",
     customerId: request.customerId,
@@ -1874,7 +1874,7 @@ async function monitoringFailure(
 
   await Promise.allSettled([
     deps.diagnostics?.record({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
       level: "warn",

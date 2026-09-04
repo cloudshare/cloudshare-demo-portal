@@ -57,6 +57,36 @@ describe("Sales diagnostics handler", () => {
     expect(entries.map((entry) => `${entry.source}:${entry.subject.id}`)).toEqual(["sales-trial-enrollment:enrollment-1", "sales-trial-offerings:offering-1"]);
   });
 
+  it("keeps legacy offering-subject monitoring rows visible in unfiltered causal views", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "success",
+      customerId: "customer-certalis",
+      subject: { type: "sales_trial_offering", id: "offering-1" },
+      message: "legacy offering monitoring",
+      occurredAt: new Date("2026-09-04T10:00:00.000Z"),
+    });
+    const deps = {
+      diagnostics,
+      salesTrialEnrollments: enrollmentRepo(),
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    };
+
+    const offering = await handleGetSalesDiagnosticLog(deps, {
+      customerId: "customer-certalis",
+      query: { subjectId: "offering-1", subjectType: "sales_trial_offering" },
+    });
+    const enrollment = await handleGetSalesDiagnosticLog(deps, {
+      customerId: "customer-certalis",
+      query: { subjectId: "enrollment-1", subjectType: "sales_trial_enrollment" },
+    });
+
+    expect((offering.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["legacy offering monitoring"]);
+    expect((enrollment.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["legacy offering monitoring"]);
+  });
+
   it("returns offering evidence for the exact offering link query", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     await diagnostics.append({ source: "sales-trial-offerings", operation: "offering.read", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "504", occurredAt: new Date("2026-09-04T10:00:00Z") });

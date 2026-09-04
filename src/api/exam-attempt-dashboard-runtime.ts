@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
+import { createCloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ExamClock } from "@/domain/exam-clock";
@@ -338,6 +339,7 @@ async function correlateCandidateAttemptEnvironments(
   }
 
   const correlationId = (deps.newCorrelationId ?? randomUUID)();
+  const sequenceAllocator = createCloudShareWorkflowSequenceAllocator();
   for (const examAttemptId of examAttemptIds) {
     const launch = await deps.launches.findByExamAttemptId(examAttemptId);
     const trainingId = launch?.trainingId;
@@ -349,6 +351,7 @@ async function correlateCandidateAttemptEnvironments(
       actor: { type: "system", id: "candidate-dashboard" }, customerId,
       subject: { type: "exam_attempt", id: examAttemptId }, correlationId,
       source: "candidate-portal", examAttemptId,
+      sequenceAllocator,
       externalIds: trainingId ? { trainingId } : undefined,
     })));
     try {

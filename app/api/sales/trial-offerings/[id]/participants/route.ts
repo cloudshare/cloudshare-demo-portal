@@ -39,7 +39,7 @@ export async function GET(
           ),
       },
       cloudshareObserver: ({ customerId, actor, correlationId, subject }) => {
-        const observer = createSalesTrialCloudShareObserver({ diagnostics: services.diagnosticRecorder, customerId, actor, correlationId, source: "sales-trial-enrollment", subject });
+        const observer = createSalesTrialCloudShareObserver({ diagnostics: services.diagnosticRecorder, customerId, actor, correlationId, source: "sales-trial-offerings", subject });
         return observer;
       },
       diagnostics: services.diagnosticRecorder,
