@@ -492,7 +492,7 @@ export function SalesTrialOfferingsAdmin({
                       return (
                     <div style={{ display: "grid", gap: "0.5rem", justifyItems: "start" }}>
                       <span>{participant.environment.value ?? participant.envStatus ?? "Not assigned"}</span>
-                      <button type="button" style={secondaryButtonStyle} onClick={() => openSupport({ source: "sales-trial-enrollment", subjectId: participant.id })}>View workflow logs</button>
+                      <button type="button" style={secondaryButtonStyle} onClick={() => openSupport({ subjectId: participant.id })}>View workflow logs</button>
                       {participant.extend ? (
                         <>
                           <button

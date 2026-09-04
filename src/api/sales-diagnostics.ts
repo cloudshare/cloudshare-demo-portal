@@ -31,7 +31,8 @@ export async function handleGetSalesDiagnosticLog(
     return { status: 400, body: { error: "unsupported_sales_diagnostic_source" } };
   }
 
-  if (requestedSource) {
+  const causalTrialQuery = Boolean(request.query.subjectId && (requestedSource === "sales-trial-enrollment" || requestedSource === "sales-trial-offerings"));
+  if (requestedSource && !causalTrialQuery) {
     const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
     return { ...response, body: projectDiagnosticPage(response.body) };
   }
@@ -51,7 +52,7 @@ export async function handleGetSalesDiagnosticLog(
   const sourceEntries = await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({
     deps,
     customerId: request.customerId,
-    query: request.query.subjectId ? { ...request.query, subjectId: undefined } : request.query,
+    query: request.query.subjectId ? { ...request.query, subjectId: undefined, ...(causalTrialQuery ? { source: undefined } : {}) } : request.query,
     source,
     requiredEntries: request.query.subjectId ? SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1 : requiredEntriesPerSource,
   })));
@@ -84,6 +85,11 @@ function filterCausalSubjectEntries(entries: readonly Record<string, unknown>[],
     const externalIds = entry.externalIds as Record<string, unknown> | null | undefined;
     return subject?.id === subjectId || Object.values(externalIds ?? {}).some((value) => value === subjectId);
   });
+  const enrollmentSubjectMatch = direct.some((entry) => {
+    const subject = entry.subject as Record<string, unknown> | null | undefined;
+    return subject?.type === "sales_trial_enrollment" && subject.id === subjectId;
+  });
+  if (!enrollmentSubjectMatch) return direct;
   const offeringIds = new Set(direct.flatMap((entry) => {
     const externalIds = entry.externalIds as Record<string, unknown> | null | undefined;
     const subject = entry.subject as Record<string, unknown> | null | undefined;
@@ -93,7 +99,7 @@ function filterCausalSubjectEntries(entries: readonly Record<string, unknown>[],
     if (direct.includes(entry)) return true;
     const externalIds = entry.externalIds as Record<string, unknown> | null | undefined;
     const subject = entry.subject as Record<string, unknown> | null | undefined;
-    return offeringIds.has(externalIds?.offeringId as string) || (subject?.type === "sales_trial_offering" && offeringIds.has(subject.id as string));
+    return subject?.type === "sales_trial_offering" && (offeringIds.has(externalIds?.offeringId as string) || offeringIds.has(subject.id as string));
   });
 }
 

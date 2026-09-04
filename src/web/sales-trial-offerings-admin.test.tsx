@@ -106,7 +106,6 @@ describe("Sales Trial Offerings admin monitoring", () => {
     await user.click(workflowLogButtons[1]!);
     expect(onNavigate).toHaveBeenLastCalledWith({
       tab: "support",
-      source: "sales-trial-enrollment",
       subjectId: "enrollment-1",
     });
   });
