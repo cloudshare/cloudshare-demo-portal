@@ -55,6 +55,32 @@ describe("Sales diagnostics handler", () => {
     expect(entries.map((entry) => `${entry.source}:${entry.subject.id}`)).toEqual(["sales-trial-enrollment:enrollment-1", "sales-trial-offerings:offering-1"]);
   });
 
+  it("returns offering evidence for the exact offering link query", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "offering.read", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "504", occurredAt: new Date("2026-09-04T10:00:00Z") });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "offering.read", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "recovered", occurredAt: new Date("2026-09-04T10:01:00Z") });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-trial-offerings", subjectId: "offering-1" } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["recovered", "504"]);
+  });
+
+  it("resolves an enrollment parent from older lineage evidence beyond the first page", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "summary", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, externalIds: { offeringId: "offering-1" }, message: "parent-link", occurredAt: new Date("2026-09-04T09:00:00Z") });
+    for (let index = 0; index < 3; index += 1) await diagnostics.append({ source: "sales-trial-enrollment", operation: "observer", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, message: `observer-${index}`, occurredAt: new Date(`2026-09-04T10:0${index}:00Z`) });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "offering.read", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "parent", occurredAt: new Date("2026-09-04T08:00:00Z") });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-trial-enrollment", subjectId: "enrollment-1", limit: "2" } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["observer-2", "observer-1"]);
+    const all = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-trial-enrollment", subjectId: "enrollment-1", limit: "10" } });
+    expect((all.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toContain("parent");
+  });
+
+  it("does not advertise an inaccessible next page at the aggregate offset boundary", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    for (let index = 0; index < 5003; index += 1) await diagnostics.append({ source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", message: String(index), occurredAt: new Date(2026, 8, 4, 0, 0, index % 60) });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { offset: "5000", limit: "3" } });
+    expect(response).toMatchObject({ status: 200, body: { page: { hasMore: false, nextOffset: null } } });
+  });
+
   it("returns only the exact enrollment and parent offering evidence in timestamp order", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     const add = (input: Parameters<typeof diagnostics.append>[0]) => diagnostics.append(input);

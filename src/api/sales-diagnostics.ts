@@ -43,8 +43,9 @@ export async function handleGetSalesDiagnosticLog(
   if (request.query.subjectId) {
     const subjectEntries = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId.trim(), requestedOffset, requestedLimit);
     const pageEntries = subjectEntries.slice(requestedOffset, requestedOffset + requestedLimit);
-    const hasMore = subjectEntries.length > requestedOffset + requestedLimit;
-    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore, nextOffset: hasMore ? requestedOffset + requestedLimit : null } } };
+    const candidateNextOffset = requestedOffset + pageEntries.length;
+    const hasMore = subjectEntries.length > candidateNextOffset && candidateNextOffset <= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
+    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore, nextOffset: hasMore ? candidateNextOffset : null } } };
   }
 
   const requiredEntriesPerSource = requestedOffset + requestedLimit + 1;
@@ -59,7 +60,8 @@ export async function handleGetSalesDiagnosticLog(
     .slice()
     .sort((left: Record<string, unknown>, right: Record<string, unknown>) => String(right.occurredAt).localeCompare(String(left.occurredAt)));
   const pageEntries = entries.slice(requestedOffset, requestedOffset + requestedLimit);
-  const hasMore = entries.length > requestedOffset + pageEntries.length;
+  const candidateNextOffset = requestedOffset + pageEntries.length;
+  const hasMore = entries.length > candidateNextOffset && candidateNextOffset <= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
 
   return {
     status: 200,
@@ -70,19 +72,24 @@ export async function handleGetSalesDiagnosticLog(
         offset: requestedOffset,
         returned: pageEntries.length,
         hasMore,
-        nextOffset: hasMore ? requestedOffset + pageEntries.length : null,
+        nextOffset: hasMore ? candidateNextOffset : null,
       },
     },
   };
 }
 
 async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
-  const base = { ...query, source: undefined, subjectId, limit: String(offset + limit + 1), offset: "0" };
-  const direct = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
+  const base = { ...query, source: undefined, subjectId, limit: String(SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1), offset: "0" };
+  const direct = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1 })))).flat().filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
-    return subject?.id === subjectId && subject.type === "sales_trial_enrollment";
+    return subject?.id === subjectId && (query.source === "sales-trial-offerings" ? subject.type === "sales_trial_offering" : subject.type === "sales_trial_enrollment");
   });
-  const enrollment = direct.find((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment" && (entry.subject as Record<string, unknown> | null)?.id === subjectId);
+  if (query.source === "sales-trial-offerings") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  const enrollment = direct.find((entry) => {
+    const subject = entry.subject as Record<string, unknown> | null;
+    const externalIds = entry.externalIds as Record<string, unknown> | null;
+    return subject?.type === "sales_trial_enrollment" && subject.id === subjectId && typeof externalIds?.offeringId === "string";
+  });
   const offeringId = (enrollment?.externalIds as Record<string, unknown> | null)?.offeringId;
   if (typeof offeringId !== "string") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
   const parent = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
