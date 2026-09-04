@@ -70,8 +70,9 @@ describe("Sales diagnostics handler", () => {
     await diagnostics.append({ source: "sales-trial-offerings", operation: "offering.read", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "parent", occurredAt: new Date("2026-09-04T08:00:00Z") });
     const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-trial-enrollment", subjectId: "enrollment-1", limit: "2" } });
     expect((response.body as { entries: Array<{ message: string }> }).entries).toHaveLength(2);
-    const all = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-trial-enrollment", subjectId: "enrollment-1", limit: "10" } });
-    expect((all.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toContain("parent");
+    const tail = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-trial-enrollment", subjectId: "enrollment-1", offset: "5000", limit: "10" } });
+    expect(tail).toMatchObject({ status: 200, body: { page: { returned: 4, hasMore: false, nextOffset: null } } });
+    expect((tail.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(expect.arrayContaining(["parent-link", "parent"]));
   });
 
   it("does not advertise an inaccessible next page at the aggregate offset boundary", async () => {
