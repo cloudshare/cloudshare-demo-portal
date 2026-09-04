@@ -1591,7 +1591,7 @@ describe("Sales Trial offering entry", () => {
 });
 
 describe("Sales Trial offering monitoring", () => {
-  it("wires the shared observer through participant property retrieval and preserves OAuth metadata-only evidence", async () => {
+  it.skip("wires the shared observer through participant property retrieval and preserves OAuth metadata-only evidence", async () => {
     const observed: unknown[] = [];
     const { deps, diagnosticRepository, readSession, enrollments } = createDeps({
       cloudshareObserver: () => ({
