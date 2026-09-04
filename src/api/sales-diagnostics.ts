@@ -55,10 +55,9 @@ export async function handleGetSalesDiagnosticLog(
     source,
     requiredEntries: requiredEntriesPerSource,
   })));
-  const entries = filterCausalSubjectEntries(sourceEntries
-    .flat()
-    , request.query.subjectId?.trim())
-    .sort((left, right) => String(right.occurredAt).localeCompare(String(left.occurredAt)));
+  const entries = filterCausalSubjectEntries(sourceEntries.flat(), request.query.subjectId?.trim())
+    .slice()
+    .sort((left: Record<string, unknown>, right: Record<string, unknown>) => String(right.occurredAt).localeCompare(String(left.occurredAt)));
   const pageEntries = entries.slice(requestedOffset, requestedOffset + requestedLimit);
   const hasMore = entries.length > requestedOffset + pageEntries.length;
 
