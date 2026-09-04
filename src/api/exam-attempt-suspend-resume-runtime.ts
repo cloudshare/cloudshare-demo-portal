@@ -350,6 +350,7 @@ export async function resumeExamAttemptRuntime(
         source: "runtime",
         actorType: "candidate",
         message: "CloudShare external lease inspection failed during exam resume",
+        correlationId: operationCorrelationId,
       });
       if (externalLease.kind === "expired") {
         await reconcileExpiredExamAttemptExternalLease(deps, {
@@ -361,6 +362,7 @@ export async function resumeExamAttemptRuntime(
           source: "runtime",
           actorType: "candidate",
           message: "ExamAttempt expired from authoritative CloudShare external lease reconciliation",
+          correlationId: operationCorrelationId,
         });
         await deps.diagnostics?.record({
           ...anchors,

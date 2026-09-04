@@ -399,10 +399,20 @@ describe("getExamAttemptScoreRuntime", () => {
         },
       },
     });
+    expect(scoreEntry?.correlationId).toBe("corr-123");
+    expect(deps.createScoreRetriever).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ scope: "workflow", workflow: expect.objectContaining({ correlationId: "corr-123" }) }),
+    );
+    expect(deps.audit.write).toHaveBeenCalledWith(expect.objectContaining({ correlationId: "corr-123" }));
   });
 
   it("returns no score available when Guided Journey progress is absent", async () => {
-    const deps = makeDeps({ progress: null });
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const deps = {
+      ...makeDeps({ progress: null }),
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+    };
 
     const result = await getExamAttemptScoreRuntime(deps, makeRuntimeRequest());
 
@@ -422,6 +432,7 @@ describe("getExamAttemptScoreRuntime", () => {
     expect(deps.audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         examAttemptId: "attempt-1",
+        correlationId: "corr-123",
         action: "score_retrieved",
         outcome: "success",
         details: {
@@ -431,6 +442,13 @@ describe("getExamAttemptScoreRuntime", () => {
         },
       }),
     );
+    expect(deps.createScoreRetriever).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ scope: "workflow", workflow: expect.objectContaining({ correlationId: "corr-123" }) }),
+    );
+    await expect(diagnosticRepository.query({ operation: "exam_attempt.score.retrieve", outcome: "success" })).resolves.toEqual([
+      expect.objectContaining({ correlationId: "corr-123" }),
+    ]);
   });
 
   it("returns 502 with a correlation id when CloudShare retrieval fails", async () => {

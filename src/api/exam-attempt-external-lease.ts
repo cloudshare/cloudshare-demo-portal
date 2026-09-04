@@ -143,6 +143,7 @@ export async function reconcileExpiredExamAttemptExternalLease(
     readonly source: string;
     readonly actorType: "candidate" | "admin" | "system";
     readonly message: string;
+    readonly correlationId?: string | null;
   },
 ): Promise<void> {
   if (input.inspection.kind !== "expired" || !deps.attempts) {
@@ -169,6 +170,7 @@ export async function reconcileExpiredExamAttemptExternalLease(
     candidateEmail: input.candidateEmail ?? null,
     examId: input.examId ?? attempt.examId,
     examAttemptId: input.inspection.examAttemptId,
+    correlationId: input.correlationId ?? null,
     actor: makeActor(input.actorType, input.candidateId ?? attempt.candidateId, input.candidateEmail),
     subject: { type: "exam_attempt", id: input.inspection.examAttemptId },
     externalIds: toExternalIds(input.inspection),
@@ -204,6 +206,7 @@ export async function recordExamAttemptExternalLeaseInspectionFailure(
     readonly source: string;
     readonly actorType: "candidate" | "admin" | "system";
     readonly message: string;
+    readonly correlationId?: string | null;
   },
 ): Promise<void> {
   if (input.inspection.kind !== "unknown" || !input.inspection.failureMode) {
@@ -220,6 +223,7 @@ export async function recordExamAttemptExternalLeaseInspectionFailure(
     candidateEmail: input.candidateEmail ?? null,
     examId: input.examId ?? null,
     examAttemptId: input.inspection.examAttemptId,
+    correlationId: input.correlationId ?? null,
     actor: makeActor(input.actorType, input.candidateId ?? null, input.candidateEmail),
     subject: { type: "exam_attempt", id: input.inspection.examAttemptId },
     externalIds: toExternalIds(input.inspection),
