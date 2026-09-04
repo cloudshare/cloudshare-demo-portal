@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { handleGetSalesDiagnosticLog } from "./sales-diagnostics";
+import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 
 describe("Sales diagnostics handler", () => {
-  const enrollmentRepo = (offeringId = "offering-1") => ({ findById: vi.fn().mockResolvedValue({ salesTrialOfferingId: offeringId }) });
+  const enrollmentRepo = (offeringId = "offering-1"): Pick<SalesTrialEnrollmentRepository, "findById"> & { findById: NonNullable<SalesTrialEnrollmentRepository["findById"]> } => ({ findById: vi.fn().mockResolvedValue({ salesTrialOfferingId: offeringId }) });
   it("keeps the authenticated Customer scope while allowing an owned Item source", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
 

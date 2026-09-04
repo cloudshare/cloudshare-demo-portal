@@ -13,6 +13,10 @@ const SALES_DIAGNOSTIC_MAX_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET = 5_000;
 
 type SalesDiagnosticSource = typeof SALES_DIAGNOSTIC_SOURCES[number];
+type SalesTrialEnrollmentReader = Pick<SalesTrialEnrollmentRepository, "findById"> & {
+  readonly findById: NonNullable<SalesTrialEnrollmentRepository["findById"]>;
+};
+type SalesTrialEnrollmentDependency = SalesTrialEnrollmentReader | SalesTrialEnrollmentRepository;
 type DiagnosticPageBody = {
   readonly entries: readonly Record<string, unknown>[];
   readonly page: { readonly hasMore: boolean; readonly nextOffset: number | null };
@@ -24,7 +28,7 @@ type DiagnosticPageBody = {
  * can investigate either stream without crossing Customer boundaries.
  */
 export async function handleGetSalesDiagnosticLog(
-  deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentRepository },
+  deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentDependency },
   request: AdminRequest & { readonly customerId: string },
 ): Promise<AdminResponse> {
   const requestedSource = request.query.source?.trim();
@@ -79,7 +83,7 @@ export async function handleGetSalesDiagnosticLog(
   };
 }
 
-async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentRepository }, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
+async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentDependency }, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
   const requestedType = query.subjectType;
   const base = { ...query, source: undefined, subjectId, subjectType: requestedType, limit: String(offset + limit + 1), offset: "0" };
   const sources: SalesDiagnosticSource[] = requestedType === "sales_trial_offering" ? ["sales-trial-offerings"] : ["sales-trial-enrollment"];
@@ -90,7 +94,9 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
   if (requestedType === "sales_trial_offering") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
   const enrollmentEntries = direct.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
   if (!enrollmentEntries.length) return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
-  const enrollment = deps.salesTrialEnrollments?.findById ? await deps.salesTrialEnrollments.findById(customerId, subjectId) : null;
+  const enrollmentReader = deps.salesTrialEnrollments as SalesTrialEnrollmentReader | undefined;
+  if (!enrollmentReader) throw new Error("Sales diagnostics enrollment reader is not configured");
+  const enrollment = await enrollmentReader.findById(customerId, subjectId);
   const offeringId = enrollment?.salesTrialOfferingId;
   if (typeof offeringId !== "string") return enrollmentEntries.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
   const parent = (await Promise.all((['sales-trial-offerings'] as SalesDiagnosticSource[]).map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
