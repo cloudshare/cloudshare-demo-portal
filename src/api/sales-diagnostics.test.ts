@@ -42,6 +42,16 @@ describe("Sales diagnostics handler", () => {
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-trial-enrollment", correlationId: "corr-trial-extend-failed" }));
   });
 
+  it("follows a retained enrollment subject to its parent offering workflow evidence", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "sales.trial_offering.monitor.read_participants", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, externalIds: { offeringId: "offering-1" }, message: "504", occurredAt: new Date("2026-09-04T10:00:00.000Z") });
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "sales.trial_enrollment.monitor.read_participants", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, externalIds: { offeringId: "offering-1", salesTrialEnrollmentId: "enrollment-1" }, message: "504", occurredAt: new Date("2026-09-04T10:01:00.000Z") });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectId: "enrollment-1" } });
+    expect(response.status).toBe(200);
+    const entries = (response.body as { entries: Array<{ source: string; subject: { id?: string } }> }).entries;
+    expect(entries.map((entry) => `${entry.source}:${entry.subject.id}`)).toEqual(["sales-trial-enrollment:enrollment-1", "sales-trial-offerings:offering-1"]);
+  });
+
   it("returns correlated participant reconciliation evidence through the aggregate Sales Support feed", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     await diagnostics.append({ source: "sales-session-participants", operation: "sales.demo_session.participants.reconciled", outcome: "failure", customerId: "customer-certalis", correlationId: "corr-participants-failed", message: "CloudShare could not reconcile Sales Participant monitoring", occurredAt: new Date("2026-07-17T00:00:00.000Z") });

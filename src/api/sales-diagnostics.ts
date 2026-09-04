@@ -51,12 +51,13 @@ export async function handleGetSalesDiagnosticLog(
   const sourceEntries = await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({
     deps,
     customerId: request.customerId,
-    query: request.query,
+    query: request.query.subjectId ? { ...request.query, subjectId: undefined } : request.query,
     source,
     requiredEntries: requiredEntriesPerSource,
   })));
-  const entries = sourceEntries
+  const entries = filterCausalSubjectEntries(sourceEntries
     .flat()
+    , request.query.subjectId?.trim())
     .sort((left, right) => String(right.occurredAt).localeCompare(String(left.occurredAt)));
   const pageEntries = entries.slice(requestedOffset, requestedOffset + requestedLimit);
   const hasMore = entries.length > requestedOffset + pageEntries.length;
@@ -74,6 +75,27 @@ export async function handleGetSalesDiagnosticLog(
       },
     },
   };
+}
+
+/** A retained enrollment and its parent Offering are one support workflow. */
+function filterCausalSubjectEntries(entries: readonly Record<string, unknown>[], subjectId?: string): readonly Record<string, unknown>[] {
+  if (!subjectId) return entries;
+  const direct = entries.filter((entry) => {
+    const subject = entry.subject as Record<string, unknown> | null | undefined;
+    const externalIds = entry.externalIds as Record<string, unknown> | null | undefined;
+    return subject?.id === subjectId || Object.values(externalIds ?? {}).some((value) => value === subjectId);
+  });
+  const offeringIds = new Set(direct.flatMap((entry) => {
+    const externalIds = entry.externalIds as Record<string, unknown> | null | undefined;
+    const subject = entry.subject as Record<string, unknown> | null | undefined;
+    return [externalIds?.offeringId, subject?.type === "sales_trial_offering" ? subject.id : undefined].filter((value): value is string => typeof value === "string");
+  }));
+  return entries.filter((entry) => {
+    if (direct.includes(entry)) return true;
+    const externalIds = entry.externalIds as Record<string, unknown> | null | undefined;
+    const subject = entry.subject as Record<string, unknown> | null | undefined;
+    return offeringIds.has(externalIds?.offeringId as string) || (subject?.type === "sales_trial_offering" && offeringIds.has(subject.id as string));
+  });
 }
 
 /** Entries have already crossed the direction-aware recorder seam. This
