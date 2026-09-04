@@ -158,13 +158,13 @@ describe("AdminSupportFeature", () => {
     const user = userEvent.setup();
     const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: false, nextOffset: null } }));
     render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ subjectId: "enrollment-1" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
-    expect(screen.getByLabelText("Subject ID")).toHaveValue("enrollment-1");
-    expect(screen.getByText(/subject ID \(enrollment or parent Offering\)/)).toBeInTheDocument();
+    expect((screen.getByLabelText("Subject ID") as HTMLInputElement).value).toBe("enrollment-1");
+    expect(screen.getByText(/subject ID \(enrollment or parent Offering\)/)).toBeTruthy();
     await user.clear(screen.getByLabelText("Subject ID"));
     await user.type(screen.getByLabelText("Subject ID"), "offering-1");
     await user.click(screen.getByRole("button", { name: "Apply Filters" }));
     expect(fetchAdmin).toHaveBeenLastCalledWith("/api/sales/diagnostics?subjectId=offering-1&limit=50&offset=0");
     await user.click(screen.getByRole("button", { name: "Clear Filters" }));
-    expect(screen.queryByText(/subject ID \(enrollment or parent Offering\)/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/subject ID \(enrollment or parent Offering\)/)).toBeNull();
   });
 });
