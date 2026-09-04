@@ -37,6 +37,11 @@ export async function handleGetSalesDiagnosticLog(
     return { ...response, body: projectDiagnosticPage(response.body) };
   }
 
+  if (request.query.subjectId) {
+    const subjectEntries = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId.trim(), requestedOffsetFor(request.query), requestedLimitFor(request.query));
+    return { status: 200, body: { entries: subjectEntries.slice(requestedOffsetFor(request.query), requestedOffsetFor(request.query) + requestedLimitFor(request.query)).map(salesBearerSafeProjection), page: { limit: requestedLimitFor(request.query), offset: requestedOffsetFor(request.query), returned: Math.min(requestedLimitFor(request.query), subjectEntries.length - requestedOffsetFor(request.query)), hasMore: subjectEntries.length > requestedOffsetFor(request.query) + requestedLimitFor(request.query), nextOffset: subjectEntries.length > requestedOffsetFor(request.query) + requestedLimitFor(request.query) ? requestedOffsetFor(request.query) + requestedLimitFor(request.query) : null } } };
+  }
+
   const requestedLimit = parseLimit(request.query.limit);
   const requestedOffset = parseOffset(request.query.offset);
   if (requestedOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) {
@@ -52,7 +57,7 @@ export async function handleGetSalesDiagnosticLog(
   const sourceEntries = await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({
     deps,
     customerId: request.customerId,
-    query: request.query.subjectId ? { ...request.query, subjectId: undefined, ...(causalTrialQuery ? { source: undefined } : {}) } : request.query,
+    query: request.query,
     source,
     requiredEntries: request.query.subjectId ? SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1 : requiredEntriesPerSource,
   })));
@@ -77,13 +82,26 @@ export async function handleGetSalesDiagnosticLog(
   };
 }
 
+function requestedLimitFor(query: AdminRequest["query"]): number { return parseLimit(query.limit); }
+function requestedOffsetFor(query: AdminRequest["query"]): number { return parseOffset(query.offset); }
+
+async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
+  const base = { ...query, source: undefined, subjectId, limit: String(offset + limit + 1), offset: "0" };
+  const direct = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat();
+  const enrollment = direct.find((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment" && (entry.subject as Record<string, unknown> | null)?.id === subjectId);
+  const offeringId = (enrollment?.externalIds as Record<string, unknown> | null)?.offeringId;
+  if (typeof offeringId !== "string") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  const parent = (await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId }, source, requiredEntries: offset + limit + 1 })))).flat();
+  return [...new Map([...direct, ...parent].map((entry) => [entry.id, entry])).values()].sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+}
+
 /** A retained enrollment and its parent Offering are one support workflow. */
 function filterCausalSubjectEntries(entries: readonly Record<string, unknown>[], subjectId?: string): readonly Record<string, unknown>[] {
   if (!subjectId) return entries;
   const direct = entries.filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null | undefined;
     const externalIds = entry.externalIds as Record<string, unknown> | null | undefined;
-    return subject?.id === subjectId || Object.values(externalIds ?? {}).some((value) => value === subjectId);
+    return subject?.id === subjectId || externalIds?.salesTrialEnrollmentId === subjectId || externalIds?.offeringId === subjectId;
   });
   const enrollmentSubjectMatch = direct.some((entry) => {
     const subject = entry.subject as Record<string, unknown> | null | undefined;
