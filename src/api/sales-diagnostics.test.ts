@@ -223,4 +223,22 @@ describe("Sales diagnostics handler", () => {
 
     expect(response).toMatchObject({ status: 200, body: { page: { limit: 100, returned: 1, hasMore: false, nextOffset: null } } });
   });
+
+  it("resolves the enrollment parent even when filters exclude child events", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "monitor", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "504", occurredAt: new Date("2026-09-04T10:00:00Z") });
+    const repo = enrollmentRepo();
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, salesTrialEnrollments: repo, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", outcome: "failure", operation: "monitor" } });
+    expect(repo.findById).toHaveBeenCalledWith("customer-certalis", "enrollment-1");
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["504"]);
+  });
+
+  it("keeps untyped subject IDs on the generic aggregate path", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-records", operation: "record.read", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_record", id: "record-1" }, message: "record" });
+    const repo = enrollmentRepo();
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, salesTrialEnrollments: repo, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectId: "record-1" } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toContain("record");
+    expect(repo.findById).not.toHaveBeenCalled();
+  });
 });
