@@ -18,6 +18,7 @@ import {
 } from "@/integrations/cloudshare/external-lease";
 import { randomUUID } from "node:crypto";
 import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
+import type { CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 
 export interface ExamAttemptExternalLeaseDeps {
   readonly launches: LabLaunchRepository;
@@ -63,6 +64,8 @@ export async function inspectExamAttemptExternalLease(
     readonly examAttemptId: string;
     readonly customerId?: string | null;
     readonly environmentExternalId?: string | null;
+    readonly correlationId?: string;
+    readonly sequenceAllocator?: CloudShareWorkflowSequenceAllocator;
   },
 ): Promise<CloudShareLeaseInspection> {
   const launch = await deps.launches.findByExamAttemptId(input.examAttemptId);
@@ -94,8 +97,9 @@ export async function inspectExamAttemptExternalLease(
 
   const client = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
     actor: { type: "system", id: "external-lease-inspection" }, customerId: input.customerId,
-    subject: { type: "exam_attempt", id: input.examAttemptId }, correlationId: randomUUID(),
+    subject: { type: "exam_attempt", id: input.examAttemptId }, correlationId: input.correlationId ?? randomUUID(),
     source: "candidate-portal", examAttemptId: input.examAttemptId,
+    ...(input.sequenceAllocator ? { sequenceAllocator: input.sequenceAllocator } : {}),
     externalIds: Object.fromEntries(Object.entries({ trainingId, experienceId, environmentId: environmentExternalId }).filter(([, value]) => value !== null)) as Record<string, string>,
   }));
   const inspectedLease = environmentExternalId

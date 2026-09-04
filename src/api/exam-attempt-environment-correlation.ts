@@ -21,6 +21,7 @@ import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diag
 import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import { projectProtectedCloudShareExchange } from "./protected-cloudshare-exchange";
 import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
+import type { CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 
 export interface EnsureExamAttemptEnvironmentCorrelationDeps {
   readonly attempts: ExamAttemptRepository;
@@ -47,6 +48,8 @@ export async function ensureExamAttemptEnvironmentCorrelation(
       | "exam_resume"
       | "exam_complete"
       | "heartbeat_auto_suspend";
+    readonly correlationId?: string;
+    readonly sequenceAllocator?: CloudShareWorkflowSequenceAllocator;
   },
 ): Promise<ExamAttemptEnvironmentCorrelationResult> {
   const attempt = await deps.attempts.findById(input.examAttemptId);
@@ -64,7 +67,7 @@ export async function ensureExamAttemptEnvironmentCorrelation(
     return { actionableEnvironmentId: null };
   }
 
-  const correlationId = (deps.newCorrelationId ?? randomUUID)();
+  const correlationId = input.correlationId ?? (deps.newCorrelationId ?? randomUUID)();
   try {
     const result = await correlateEnvironmentForExamAttempt(
       {
@@ -73,6 +76,7 @@ export async function ensureExamAttemptEnvironmentCorrelation(
           actor: { type: "system", id: input.operation }, customerId: attempt.customerId,
           subject: { type: "exam_attempt", id: input.examAttemptId }, correlationId,
           source: "candidate-portal", examAttemptId: input.examAttemptId,
+          ...(input.sequenceAllocator ? { sequenceAllocator: input.sequenceAllocator } : {}),
           candidateEmail: launch.participantEmail, externalIds: { trainingId: launch.trainingId },
         }))),
       },

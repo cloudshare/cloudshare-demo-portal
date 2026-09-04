@@ -172,6 +172,7 @@ export async function getExamAttemptScoreRuntime(
 
   const scoreCorrelationId = (deps.newCorrelationId ?? randomUUID)();
   const observation = scoreObservation(attempt, request.customerId, scoreCorrelationId);
+  const scoreAnchors = { ...anchors, correlationId: scoreCorrelationId };
   try {
     const resolvedParticipantId = await resolveLaunchParticipantId(
       deps,
@@ -182,13 +183,14 @@ export async function getExamAttemptScoreRuntime(
       examAttemptId,
       launch,
       observation,
+      scoreCorrelationId,
     );
     if (!resolvedParticipantId.ok) {
       return resolvedParticipantId.response;
     }
 
     await deps.diagnostics?.record({
-      ...anchors,
+      ...scoreAnchors,
       level: "info",
       operation: "exam_attempt.score.correlate_environment",
       outcome: "success",
@@ -234,6 +236,7 @@ export async function getExamAttemptScoreRuntime(
         examAttemptId,
         candidateId: attempt.candidateId,
         examId: attempt.examId,
+        correlationId: scoreCorrelationId,
         action: "score_retrieved",
         outcome: "success",
         details: {
@@ -244,7 +247,7 @@ export async function getExamAttemptScoreRuntime(
         occurredAt: new Date(result.retrievedAt),
       });
       await deps.diagnostics?.record({
-        ...anchors,
+        ...scoreAnchors,
         level: "info",
         operation: "exam_attempt.score.retrieve",
         outcome: "success",
@@ -290,6 +293,7 @@ export async function getExamAttemptScoreRuntime(
       examAttemptId,
       candidateId: attempt.candidateId,
       examId: attempt.examId,
+      correlationId: scoreCorrelationId,
       action: "score_retrieved",
       outcome: "success",
       details: {
@@ -303,7 +307,7 @@ export async function getExamAttemptScoreRuntime(
     });
 
     await deps.diagnostics?.record({
-      ...anchors,
+      ...scoreAnchors,
       level: "info",
       operation: "exam_attempt.score.retrieve",
       outcome: "success",
@@ -358,7 +362,7 @@ export async function getExamAttemptScoreRuntime(
       return { status: 404, body: { error: "no lab launch found for exam attempt" } };
     }
     if (error instanceof ScoreRetrievalError) {
-      const correlationId = (deps.newCorrelationId ?? randomUUID)();
+      const correlationId = scoreCorrelationId;
       const diagnostic = buildScoreRetrievalDiagnostic(
         correlationId,
         request.customerId,
@@ -394,7 +398,7 @@ export async function getExamAttemptScoreRuntime(
         occurredAt: deps.now?.() ?? new Date(),
       });
       await deps.diagnostics?.record({
-        ...anchors,
+        ...scoreAnchors,
         level: "warn",
         operation: "exam_attempt.score.retrieve",
         outcome: "failure",
@@ -458,6 +462,7 @@ async function resolveLaunchParticipantId(
   examAttemptId: string,
   launch: NonNullable<Awaited<ReturnType<LabLaunchRepository["findByExamAttemptId"]>>>,
   observation: CloudShareClientObservationOptions,
+  correlationId: string,
 ): Promise<
   | { ok: true; participantId: string }
   | { ok: false; response: ExamAttemptScoreRuntimeResponse }
@@ -467,7 +472,6 @@ async function resolveLaunchParticipantId(
   }
 
   if (!launch.trainingId || !launch.participantEmail) {
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const diagnostic = {
       correlationId,
       customerId,
@@ -525,7 +529,6 @@ async function resolveLaunchParticipantId(
       { examAttemptId },
     );
   } catch (error) {
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const diagnostic = buildParticipantResolutionDiagnostic(
       correlationId,
       customerId,
@@ -568,16 +571,15 @@ async function resolveLaunchParticipantId(
     return { ok: true, participantId: refreshedLaunch.participantId };
   }
 
-  const missingCorrelationId = (deps.newCorrelationId ?? randomUUID)();
   const diagnostic = buildParticipantResolutionDiagnostic(
-    missingCorrelationId,
+    correlationId,
     customerId,
     examAttemptId,
     launch,
     "missing_participant_id",
   );
   await deps.diagnostics?.record({
-    ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch, missingCorrelationId),
+    ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch, correlationId),
     level: "warn",
     operation: "exam_attempt.score.correlate_environment",
     outcome: "failure",
@@ -592,7 +594,7 @@ async function resolveLaunchParticipantId(
     examAttemptId,
     candidateId,
     launch.experienceId,
-    missingCorrelationId,
+    correlationId,
     diagnostic,
     "Score retrieval failed.",
   );
@@ -601,7 +603,7 @@ async function resolveLaunchParticipantId(
     ok: false,
     response: {
       status: 502,
-      body: { error: "score retrieval failed", correlationId: missingCorrelationId },
+      body: { error: "score retrieval failed", correlationId },
     },
   };
 }

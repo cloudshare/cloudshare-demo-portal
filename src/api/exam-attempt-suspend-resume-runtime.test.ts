@@ -543,6 +543,8 @@ describe("suspendExamAttemptRuntime", () => {
   });
 
   it("gives separate suspend operations distinct workflow correlations while retaining the ExamAttempt subject", async () => {
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
     const customerClient = makeCloudShareClient({
       requestV3: vi.fn().mockResolvedValue({ envStatus: "Suspended" }),
       requestV4: activeParticipantRequestV4(),
@@ -551,13 +553,20 @@ describe("suspendExamAttemptRuntime", () => {
     let next = 0;
     const newCorrelationId = () => `operation-${++next}`;
 
-    await suspendExamAttemptRuntime(await makeSuspendDeps({ cloudshare, newCorrelationId }), { examAttemptId: "ea-1" });
-    await suspendExamAttemptRuntime(await makeSuspendDeps({ cloudshare, newCorrelationId }), { examAttemptId: "ea-1" });
+    await suspendExamAttemptRuntime(await makeSuspendDeps({ cloudshare, diagnostics, newCorrelationId }), { examAttemptId: "ea-1" });
+    await suspendExamAttemptRuntime(await makeSuspendDeps({ cloudshare, diagnostics, newCorrelationId }), { examAttemptId: "ea-1" });
 
     const workflowOptions = vi.mocked(cloudshare.forConnection).mock.calls.map(([, options]) => options)
-      .filter((options) => options?.scope === "workflow" && options.workflow.externalIds?.lifecycleParent === "exam-runtime:ea-1");
-    expect(workflowOptions).toHaveLength(2);
-    expect(new Set(workflowOptions.map((options) => options!.scope === "workflow" ? options.workflow.correlationId : null)).size).toBe(2);
+      .filter((options) => options?.scope === "workflow" && options.workflow.subject.id === "ea-1");
+    expect(workflowOptions).toHaveLength(4);
+    expect(workflowOptions.map((options) => options!.scope === "workflow" ? options.workflow.correlationId : null)).toEqual([
+      "operation-1",
+      "operation-1",
+      "operation-2",
+      "operation-2",
+    ]);
+    const summaries = await diagnosticRepository.query({ operation: "exam_attempt.suspend", outcome: "success" });
+    expect(summaries.map((entry) => entry.correlationId).sort()).toEqual(["operation-1", "operation-2"]);
     expect(workflowOptions).toEqual(expect.arrayContaining([
       expect.objectContaining({ scope: "workflow", workflow: expect.objectContaining({ subject: { type: "exam_attempt", id: "ea-1" }, externalIds: { lifecycleParent: "exam-runtime:ea-1" } }) }),
     ]));

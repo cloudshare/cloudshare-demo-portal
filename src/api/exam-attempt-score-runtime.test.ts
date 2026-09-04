@@ -434,15 +434,21 @@ describe("getExamAttemptScoreRuntime", () => {
   });
 
   it("returns 502 with a correlation id when CloudShare retrieval fails", async () => {
-    const deps = makeDeps({
-      progressError: new CloudShareTransportError("timeout", {
-        method: "GET",
-        host: "api.accelerate.cloudshare.com",
-        path: "/guided-journey/progress/exp-1/student-1",
-        integrationSurface: "cloudshare.v4.guided_journey.progress",
-        cause: "ETIMEDOUT",
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    let nextCorrelation = 0;
+    const deps = {
+      ...makeDeps({
+        progressError: new CloudShareTransportError("timeout", {
+          method: "GET",
+          host: "api.accelerate.cloudshare.com",
+          path: "/guided-journey/progress/exp-1/student-1",
+          integrationSurface: "cloudshare.v4.guided_journey.progress",
+          cause: "ETIMEDOUT",
+        }),
       }),
-    });
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+      newCorrelationId: () => `score-operation-${++nextCorrelation}`,
+    };
 
     const result = await getExamAttemptScoreRuntime(deps, makeRuntimeRequest());
 
@@ -450,13 +456,13 @@ describe("getExamAttemptScoreRuntime", () => {
       status: 502,
       body: {
         error: "score retrieval failed",
-        correlationId: "corr-123",
+        correlationId: "score-operation-1",
       },
     });
     expect(deps.logger.warn).toHaveBeenCalledWith(
       "candidate score retrieval failed",
       expect.objectContaining({
-        correlationId: "corr-123",
+        correlationId: "score-operation-1",
         examAttemptId: "attempt-1",
         attemptedOperation: "get_guided_journey_progress",
         failureMode: "transport",
@@ -477,6 +483,16 @@ describe("getExamAttemptScoreRuntime", () => {
         }),
       }),
     );
+    expect(deps.createScoreRetriever).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        scope: "workflow",
+        workflow: expect.objectContaining({ correlationId: "score-operation-1" }),
+      }),
+    );
+    await expect(diagnosticRepository.query({ operation: "exam_attempt.score.retrieve", outcome: "failure" })).resolves.toEqual([
+      expect.objectContaining({ correlationId: "score-operation-1" }),
+    ]);
   });
 
   it("returns 429 with metadata-only diagnostics when OAuth score retrieval is throttled", async () => {
