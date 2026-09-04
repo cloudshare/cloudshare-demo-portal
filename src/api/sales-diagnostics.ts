@@ -59,7 +59,7 @@ export async function handleGetSalesDiagnosticLog(
     customerId: request.customerId,
     query: request.query,
     source,
-    requiredEntries: request.query.subjectId ? SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1 : requiredEntriesPerSource,
+    requiredEntries: requiredEntriesPerSource,
   })));
   const entries = sourceEntries.flat()
     .slice()

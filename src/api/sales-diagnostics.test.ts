@@ -105,11 +105,11 @@ describe("Sales diagnostics handler", () => {
     expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["enrollment", "parent"]);
   });
 
-  it("does not advertise an inaccessible next page at the aggregate offset boundary", async () => {
+  it("returns the full generic-subject page without advertising an inaccessible next page at the offset boundary", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
-    for (let index = 0; index < 5003; index += 1) await diagnostics.append({ source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", message: String(index), occurredAt: new Date(2026, 8, 4, 0, 0, index % 60) });
-    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { offset: "5000", limit: "3" } });
-    expect(response).toMatchObject({ status: 200, body: { page: { hasMore: false, nextOffset: null } } });
+    for (let index = 0; index < 5501; index += 1) await diagnostics.append({ source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_record", id: "record-1" }, message: String(index), occurredAt: new Date(2026, 8, 4, 0, 0, index % 60) });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectId: "record-1", offset: "5000", limit: "500" } });
+    expect(response).toMatchObject({ status: 200, body: { page: { returned: 500, hasMore: false, nextOffset: null } } });
   });
 
   it("returns only the exact enrollment and parent offering evidence in timestamp order", async () => {
