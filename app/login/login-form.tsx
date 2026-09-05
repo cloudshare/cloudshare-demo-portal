@@ -42,7 +42,7 @@ export function LoginForm({ initialError, initialEmail, returnTo = null }: Login
         return;
       }
 
-      window.location.assign(data.redirectTo ?? (
+      window.location.replace(data.redirectTo ?? (
         data.session?.role === "admin"
           ? data.session.workspace === "sales"
             ? "/sales"

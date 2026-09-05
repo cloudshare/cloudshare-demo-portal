@@ -38,7 +38,7 @@ export function SalesTrialLoginForm({
         return;
       }
 
-      window.location.assign(data.redirectTo ?? "/sales-trial");
+      window.location.replace(data.redirectTo ?? "/sales-trial");
     } catch {
       setError("Sign in failed");
     } finally {

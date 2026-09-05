@@ -135,7 +135,7 @@ export async function suspendLabAttempt(
   throwIfPortalSessionExpired(response.status);
 
   if (response.status === 202) {
-    const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+    const labStatus = await reconcileLabStatus(fetchImpl, examAttemptId);
     return {
       kind: "pending",
       labStatus,
@@ -151,7 +151,7 @@ export async function suspendLabAttempt(
   }
 
   if (response.status === 409) {
-    const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+    const labStatus = await reconcileLabStatus(fetchImpl, examAttemptId);
     if (labStatus?.status === "completed") {
       return {
         kind: "completed",
@@ -187,7 +187,7 @@ export async function resumeLabAttempt(
   const detail = await response.json().catch(() => ({}));
   throwIfPortalSessionExpired(response.status);
   if (response.status === 202) {
-    const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+    const labStatus = await reconcileLabStatus(fetchImpl, examAttemptId);
     return {
       kind: "pending",
       labStatus,
@@ -210,7 +210,7 @@ export async function resumeLabAttempt(
   }
 
   if (response.status === 409) {
-    const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+    const labStatus = await reconcileLabStatus(fetchImpl, examAttemptId);
     if (labStatus?.status === "completed") {
       return {
         kind: "completed",
@@ -225,7 +225,7 @@ export async function resumeLabAttempt(
     };
   }
 
-  const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+  const labStatus = await reconcileLabStatus(fetchImpl, examAttemptId);
   if (labStatus?.openPeriodClosed === true) {
     return {
       kind: "blocked",
@@ -275,7 +275,7 @@ export async function endLabAttempt(
   throwIfPortalSessionExpired(response.status);
 
   if (response.status === 202) {
-    const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+    const labStatus = await reconcileLabStatus(fetchImpl, examAttemptId);
     return {
       kind: "pending",
       labStatus,
@@ -295,7 +295,7 @@ export async function endLabAttempt(
   }
 
   if (response.status === 409) {
-    const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+    const labStatus = await reconcileLabStatus(fetchImpl, examAttemptId);
     if (labStatus?.status === "completed") {
       return {
         kind: "completed",
@@ -317,6 +317,20 @@ function readError(json: unknown, fallback: string): string {
     return (json as { error: string }).error;
   }
   return fallback;
+}
+
+async function reconcileLabStatus(
+  fetchImpl: FetchLike,
+  examAttemptId: string,
+): Promise<CandidateLabStatus | null> {
+  try {
+    return await loadCandidateLabStatus(fetchImpl, examAttemptId);
+  } catch (error) {
+    if (isLabPortalSessionExpiredError(error)) {
+      throw error;
+    }
+    return null;
+  }
 }
 
 class PortalSessionExpiredError extends Error {

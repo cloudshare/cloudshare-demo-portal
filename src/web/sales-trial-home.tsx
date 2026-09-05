@@ -113,7 +113,9 @@ export function SalesTrialHome({
     try {
       const response = await fetchImpl("/api/auth/logout", { method: "POST" });
       if (response.status === 401) {
-        handleSessionExpired();
+        setSessionExpired(false);
+        router.replace("/sales-trial/login");
+        router.refresh();
         return;
       }
       if (!response.ok) throw new Error(`Logout failed (${response.status})`);

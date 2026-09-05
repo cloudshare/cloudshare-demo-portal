@@ -34,6 +34,34 @@ describe("Sales Trial participant home", () => {
     expect(html).not.toContain("Sales Sessions");
   });
 
+  it("treats a logout 401 as signed out without creating an expiry return loop", async () => {
+    const user = userEvent.setup();
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 401 });
+
+    render(
+      <SalesTrialHome
+        email="visitor@example.test"
+        firstName="Ari"
+        fetchImpl={fetchImpl as typeof fetch}
+        initialOfferings={[{
+          id: "offering-1",
+          title: "Helios Trial",
+          description: "Shared trial",
+          start: "2026-08-30T09:00",
+          end: "2026-08-30T17:00",
+          timeZone: "UTC",
+        }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(routerReplace).toHaveBeenCalledWith("/sales-trial/login"));
+    expect(routerReplace).not.toHaveBeenCalledWith("/sales-trial/login?returnTo=%2Fsales-trial");
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledWith("/api/auth/logout", { method: "POST" });
+  });
+
   it("renders offering cards with wrapped action layout that stays constrained-width friendly", () => {
     const view = render(
       <SalesTrialHome
