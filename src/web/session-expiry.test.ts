@@ -84,4 +84,22 @@ describe("portal session expiry helpers", () => {
     expect(onExpired).not.toHaveBeenCalled();
     expect(clearIntervalFn).toHaveBeenCalledWith(123);
   });
+
+  it("schedules a server-deadline check and coalesces concurrent validation", async () => {
+    vi.useFakeTimers();
+    const setTimeoutFn = vi.fn().mockReturnValue(456);
+    const clearTimeoutFn = vi.fn();
+    let resolve!: (value: { status: number; json: () => Promise<unknown> }) => void;
+    const fetchImpl = vi.fn(() => new Promise<{ status: number; json: () => Promise<unknown> }>(r => { resolve = r; }));
+    const watchdog = startPortalSessionWatchdog({ fetchImpl, onExpired: vi.fn(), setIntervalFn: vi.fn().mockReturnValue(1), clearIntervalFn: vi.fn(), setTimeoutFn, clearTimeoutFn });
+    const first = watchdog.checkNow();
+    const second = watchdog.checkNow();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    resolve({ status: 200, json: async () => ({ serverNowMs: 1_000, session: { expiresAtMs: 2_000 } }) });
+    await Promise.all([first, second]);
+    expect(setTimeoutFn).toHaveBeenCalledWith(expect.any(Function), 1_000);
+    watchdog.stop();
+    expect(clearTimeoutFn).toHaveBeenCalledWith(456);
+    vi.useRealTimers();
+  });
 });
