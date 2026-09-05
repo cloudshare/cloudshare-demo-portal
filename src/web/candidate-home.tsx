@@ -49,7 +49,7 @@ export {
 
 interface CandidateHomeProps {
   readonly email: string;
-  readonly initialRoute: CandidateTaskRoute;
+  readonly initialRoute?: CandidateTaskRoute;
 }
 
 type ScheduleFeedback = {
@@ -91,7 +91,7 @@ export function CandidateAttemptStatusFilterButtons({
 }
 
 
-export function CandidateHome({ email, initialRoute }: CandidateHomeProps) {
+export function CandidateHome({ email, initialRoute = { task: "current", attemptId: null, examId: null } }: CandidateHomeProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeTaskHeadingRef = useRef<HTMLHeadingElement | null>(null);

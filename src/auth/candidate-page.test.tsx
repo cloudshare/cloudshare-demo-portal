@@ -55,11 +55,11 @@ describe("candidate page", () => {
     });
   });
 
-  it("redirects anonymous users to /login", async () => {
+  it("redirects anonymous users to /login with a safe candidate return target", async () => {
     mockGetPortalSession.mockResolvedValue(null);
 
     await expect(CandidatePage({ searchParams: Promise.resolve({}) })).rejects.toThrow("redirect:/login");
-    expect(mockRedirect).toHaveBeenCalledWith("/login");
+    expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fcandidate");
   });
 
   it("redirects admins away from candidate delivery", async () => {

@@ -127,7 +127,7 @@ describe("CandidateHome route-backed task flow", () => {
                 {
                   id: "attempt-ready",
                   examId: "exam-1",
-                  scheduledFor: "2026-08-23T16:00:00.000Z",
+                  scheduledFor: "2026-10-23T16:00:00.000Z",
                   status: "ready",
                 },
               ],
