@@ -37,6 +37,7 @@ interface PortalSessionWatchdogOptions {
   readonly addEventListenerFn?: (type: string, listener: () => void) => void;
   readonly removeEventListenerFn?: (type: string, listener: () => void) => void;
   readonly isDocumentVisible?: () => boolean;
+  readonly nowMs?: () => number;
 }
 
 export class PortalSessionExpiredError extends Error {
@@ -62,7 +63,11 @@ export async function checkPortalSession(
   return (await observePortalSession(fetchImpl)).state;
 }
 
-async function observePortalSession(fetchImpl: FetchLike): Promise<PortalSessionObservation> {
+async function observePortalSession(
+  fetchImpl: FetchLike,
+  nowMs: () => number = Date.now,
+): Promise<PortalSessionObservation> {
+  const requestStartedAtMs = nowMs();
   try {
     const response = await fetchImpl("/api/auth/session", {
       cache: "no-store",
@@ -85,10 +90,11 @@ async function observePortalSession(fetchImpl: FetchLike): Promise<PortalSession
     const serverNowMs = typeof body === "object" && body !== null
       ? (body as { serverNowMs?: unknown }).serverNowMs
       : null;
+    const requestElapsedMs = Math.max(0, nowMs() - requestStartedAtMs);
     return {
       state: "active",
       deadlineDelayMs: typeof expiresAtMs === "number" && typeof serverNowMs === "number"
-        ? Math.max(0, expiresAtMs - serverNowMs)
+        ? Math.max(0, expiresAtMs - serverNowMs - requestElapsedMs)
         : null,
     };
   } catch {
@@ -113,6 +119,7 @@ export function startPortalSessionWatchdog({
     else if (typeof window !== "undefined") window.removeEventListener(type, listener);
   },
   isDocumentVisible = () => typeof document === "undefined" || document.visibilityState !== "hidden",
+  nowMs = Date.now,
 }: PortalSessionWatchdogOptions): {
   readonly checkNow: () => Promise<void>;
   readonly stop: () => void;
@@ -149,7 +156,7 @@ export function startPortalSessionWatchdog({
 
     if (inFlight) return inFlight;
     inFlight = (async () => {
-      const observation = await observePortalSession(fetchImpl);
+      const observation = await observePortalSession(fetchImpl, nowMs);
       if (stopped || observedExpiredSession) return;
       if (observation.state === "expired") {
         observedExpiredSession = true;

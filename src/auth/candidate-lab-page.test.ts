@@ -105,6 +105,18 @@ describe("candidate lab page", () => {
     });
   });
 
+  it("renders the protected fallback when no exam attempt id is present", async () => {
+    const page = await CandidateLabPage({ searchParams: Promise.resolve({}) });
+
+    expect(page).toMatchObject({
+      type: expect.any(Function),
+      props: {
+        title: "Launch lab",
+        message: "Missing examAttemptId.",
+      },
+    });
+  });
+
   it("defaults unknown attempt statuses to ready", async () => {
     const page = await CandidateLabPage({
       searchParams: Promise.resolve({

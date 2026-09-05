@@ -91,7 +91,7 @@ describe("portal session expiry helpers", () => {
     const clearTimeoutFn = vi.fn();
     let resolve!: (value: { status: number; json: () => Promise<unknown> }) => void;
     const fetchImpl = vi.fn(() => new Promise<{ status: number; json: () => Promise<unknown> }>(r => { resolve = r; }));
-    const watchdog = startPortalSessionWatchdog({ fetchImpl, onExpired: vi.fn(), setIntervalFn: vi.fn().mockReturnValue(1), clearIntervalFn: vi.fn(), setTimeoutFn, clearTimeoutFn });
+    const watchdog = startPortalSessionWatchdog({ fetchImpl, onExpired: vi.fn(), setIntervalFn: vi.fn().mockReturnValue(1), clearIntervalFn: vi.fn(), setTimeoutFn, clearTimeoutFn, nowMs: () => 100 });
     const first = watchdog.checkNow();
     const second = watchdog.checkNow();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -101,6 +101,28 @@ describe("portal session expiry helpers", () => {
     watchdog.stop();
     expect(clearTimeoutFn).toHaveBeenCalledWith(456);
     vi.useRealTimers();
+  });
+
+  it("subtracts session-check latency from the server-relative deadline", async () => {
+    const setTimeoutFn = vi.fn().mockReturnValue(456);
+    const times = [100, 600];
+    const watchdog = startPortalSessionWatchdog({
+      fetchImpl: vi.fn().mockResolvedValue({
+        status: 200,
+        json: async () => ({ serverNowMs: 1_000, session: { expiresAtMs: 2_000 } }),
+      }),
+      onExpired: vi.fn(),
+      setIntervalFn: vi.fn().mockReturnValue(1),
+      clearIntervalFn: vi.fn(),
+      setTimeoutFn,
+      clearTimeoutFn: vi.fn(),
+      nowMs: () => times.shift() ?? 600,
+    });
+
+    await watchdog.checkNow();
+
+    expect(setTimeoutFn).toHaveBeenCalledWith(expect.any(Function), 500);
+    watchdog.stop();
   });
 
   it("removes an idle rendered session when its server deadline validation expires", async () => {

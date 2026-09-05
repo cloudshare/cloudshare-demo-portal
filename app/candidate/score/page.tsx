@@ -6,8 +6,8 @@ import { getPortalSessionServices } from "@/composition";
 import { getPortalHomePath, getPortalSession } from "@/auth/portal-session";
 import { ScoreDisplay } from "@/web/score-display";
 import { pageShellStyle } from "@/web/page-shell";
-import { PortalPageHeader } from "@/web/portal-page-header";
 import { getExpiredPortalLoginPath } from "@/auth/portal-return-target";
+import { ProtectedPortalFallback } from "@/web/protected-portal-fallback";
 
 /**
  * Candidate score page. Shown after the lab session completes.
@@ -33,15 +33,7 @@ export default async function CandidateScorePage({
 
   if (!examAttemptId) {
     return (
-      <main style={pageShellStyle}>
-        <PortalPageHeader
-          eyebrow="Candidate score"
-          title="Session complete"
-          description="Review your final Guided Journey result and any CloudShare scoring limitations for this ExamAttempt."
-          email={session.email}
-        />
-        <p style={{ color: "#555" }}>Missing examAttemptId.</p>
-      </main>
+      <ProtectedPortalFallback title="Session complete" message="Missing examAttemptId." />
     );
   }
 

@@ -28,6 +28,7 @@ import { CandidateLabShell } from "./candidate-lab-shell";
 import { SalesTrialHome } from "./sales-trial-home";
 import { SalesWorkspace } from "./sales-workspace";
 import { ScoreDisplay } from "./score-display";
+import { ProtectedPortalFallback } from "./protected-portal-fallback";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -129,6 +130,19 @@ describe("idle expiry on protected portal surfaces", () => {
     expect(screen.getByText("Candidate score")).not.toBeNull();
     await expireLatestWatchdog();
     expect(screen.queryByText("Candidate score")).toBeNull();
+    expect(router.replace).toHaveBeenCalledWith("/login");
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Launch lab", "Missing examAttemptId."],
+    ["Session complete", "Missing examAttemptId."],
+  ])("removes an idle malformed Candidate fallback: %s", async (title, message) => {
+    window.history.replaceState({}, "", "/candidate/invalid");
+    render(<ProtectedPortalFallback title={title} message={message} />);
+    expect(screen.getByText(title)).not.toBeNull();
+    await expireLatestWatchdog();
+    expect(screen.queryByText(title)).toBeNull();
     expect(router.replace).toHaveBeenCalledWith("/login");
     expect(router.refresh).not.toHaveBeenCalled();
   });
