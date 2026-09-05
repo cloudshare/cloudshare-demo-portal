@@ -105,6 +105,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [submittingExamId, setSubmittingExamId] = useState<string | null>(null);
   const [submittingSessionId, setSubmittingSessionId] = useState<string | null>(null);
   const [scheduleDrafts, setScheduleDrafts] = useState<Record<string, string>>({});
@@ -155,6 +156,8 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       refreshInFlight = true;
       if (showLoading) {
         setLoading(true);
+      } else {
+        setRefreshing(true);
       }
       try {
         if (!cancelled) {
@@ -173,6 +176,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       } finally {
         if (!cancelled) {
           setLoading(false);
+          setRefreshing(false);
         }
         refreshInFlight = false;
       }
@@ -431,6 +435,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       ) : null}
 
       <section style={{ display: "grid", gap: "1rem" }}>
+        {refreshing ? <p role="status" aria-live="polite" style={{ ...mutedPanelStyle, margin: 0 }}>Refreshing candidate delivery status…</p> : null}
         <section style={taskShellStyle} aria-label="Candidate delivery tasks">
           <div style={sectionHeaderStyle}>
             <div>
@@ -492,6 +497,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                 </p>
                 <h2
                   ref={activeTaskHeadingRef}
+                  onBlur={() => setFocusedTaskHeading(null)}
                   tabIndex={-1}
                   style={{
                     ...sectionTitleStyle,
@@ -683,6 +689,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                 <p style={eyebrowLabelStyle}>Scheduling task</p>
                 <h2
                   ref={activeTaskHeadingRef}
+                  onBlur={() => setFocusedTaskHeading(null)}
                   tabIndex={-1}
                   style={{
                     ...sectionTitleStyle,
