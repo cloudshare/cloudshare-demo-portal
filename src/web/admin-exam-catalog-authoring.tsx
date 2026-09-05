@@ -253,6 +253,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
   const [diagnostic, setDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [loading, setLoading] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const projectRequestRef = useRef(0);
   const blueprintRequestRef = useRef(0);
   const catalogLoadingCountRef = useRef(0);
@@ -372,7 +373,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
       const data = await response.json() as { activeExams?: ExamRecord[]; archivedExams?: ExamRecord[]; error?: string };
       if (!response.ok) { setError(data.error ?? "Failed to load exam catalog"); return; }
       const active = data.activeExams ?? []; const archived = data.archivedExams ?? [];
-      setActiveExams(active); setArchivedExams(archived); props.onCatalogChange?.({ activeExams: active, archivedExams: archived });
+      setActiveExams(active); setArchivedExams(archived); setCatalogLoaded(true); props.onCatalogChange?.({ activeExams: active, archivedExams: archived });
     } catch (caught) { if (!isAdminSessionExpiredError(caught)) setError("Failed to load exam catalog"); }
     finally { endCatalogLoading(); }
   }
@@ -457,7 +458,8 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
   }, [defaultSnapshot, compatibleRegions, selectedAllowedRegionIds]);
 
   if (!props.active) return null;
-  const authoring = props.examView === "create" || props.examView === "edit";
+  const missingEditExam = props.examView === "edit" && catalogLoaded && (!props.focusedExamId || !allExams.some((exam) => exam.id === props.focusedExamId));
+  const authoring = (props.examView === "create" || props.examView === "edit") && !missingEditExam;
   const effectiveTime = selectedPolicy?.runtimeLeaseMinutes ?? timeLimitMinutes;
   const duplicateWarning = getDuplicateExamResourceTupleWarning({ exams: allExams, currentExamId: editingExamId, projectId: selectedProjectId, blueprintId: selectedBlueprintId, snapshotId: defaultSnapshot?.id ?? null, policyId: selectedPolicyId, deliveryAvailability });
   const compactFieldStyle = {
@@ -468,9 +470,10 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
     {catalogLoading ? <ExamCatalogLoadingOverlay /> : null}
     {error ? <div role="alert" style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.5rem" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}><p style={{ margin: 0 }}>{error}</p><button type="button" onClick={() => { setError(null); setCorrelationId(null); }} style={{ padding: "0.25rem 0.55rem" }}>Dismiss</button></div>{correlationId ? <p style={{ margin: 0, fontSize: "0.85rem" }}>Open <strong>Support Diagnostics</strong> filtered by correlation ID <button type="button" onClick={() => props.onNavigate(createCorrelationDiagnosticsNavigationIntent(correlationId))} style={{ color: colors.info, fontFamily: "monospace", fontWeight: 700, overflowWrap: "anywhere", border: 0, padding: 0, background: "transparent", cursor: "pointer" }}>{correlationId}</button>.</p> : null}</div> : null}
     <div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}>
+      {missingEditExam ? <div role="alert" style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.5rem" }}><strong>That Exam is no longer available.</strong><span>The requested edit route was not opened. Return to the current catalog to choose an available Exam.</span><button type="button" onClick={navigateCatalog} style={secondaryButtonStyle}>Return to Exam catalog</button></div> : null}
       <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
         <div><h2 style={{ margin: 0 }}>Exam Catalog</h2><p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>Overview of Exams and delivery options for Helios CX.</p></div>
-          {props.examView !== "sessions" && props.examView !== "session" ? <button type="button" onClick={() => { resetForm(); props.onNavigate({ tab: "exams", examView: "create" }); }} disabled={loading} style={primaryButtonStyle}>Create Exam</button> : null}
+          {props.examView !== "sessions" && props.examView !== "session" && !missingEditExam ? <button type="button" onClick={() => { resetForm(); props.onNavigate({ tab: "exams", examView: "create" }); }} disabled={loading} style={primaryButtonStyle}>Create Exam</button> : null}
       </div>
       <nav aria-label="Exam workspace"><ol style={{ display: "flex", gap: "0.45rem", margin: 0, padding: 0, listStyle: "none" }}><li>{props.examView === "catalog" ? <span aria-current="page">Catalog overview</span> : <button type="button" onClick={navigateCatalog} style={secondaryButtonStyle}>Catalog overview</button>}</li>{authoring ? <li aria-current="page">{props.examView === "edit" ? "Edit Exam" : "Create Exam"}</li> : null}</ol></nav>
     </div>

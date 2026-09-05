@@ -129,4 +129,46 @@ describe("AdminConsole browser request dispatch", () => {
       });
     }
   });
+
+  it("keeps a deleted Exam edit deep link out of create-capable authoring", async () => {
+    const originalWindowFetch = window.fetch;
+    const browserFetch = vi.fn(function (this: unknown, input: RequestInfo | URL) {
+      if (this !== window) throw new TypeError("Browser fetch must retain its Window receiver");
+      if (String(input) === "/api/admin/exams") return Promise.resolve(json({ activeExams: [], archivedExams: [] }));
+      if (String(input).startsWith("/api/admin/exam-authoring/")) return Promise.resolve(json({ projects: [], regions: [] }));
+      throw new Error(`Unexpected browser fetch: ${String(input)}`);
+    });
+    vi.stubGlobal("fetch", browserFetch);
+    Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
+    try {
+      render(<AdminConsole email="admin@helioscx.demo" initialExamView="edit" initialExamId="missing-exam" />);
+      expect(await screen.findByText("That Exam is no longer available.")).toBeTruthy();
+      expect(screen.queryByText("Project-first Exam authoring")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Create Exam" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Return to Exam catalog" })).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+      Object.defineProperty(window, "fetch", { configurable: true, value: originalWindowFetch, writable: true });
+    }
+  });
+
+  it("moves focus to the admin content landmark when the route-backed view changes", async () => {
+    const originalWindowFetch = window.fetch;
+    const browserFetch = vi.fn(function (this: unknown, input: RequestInfo | URL) {
+      if (this !== window) throw new TypeError("Browser fetch must retain its Window receiver");
+      return Promise.resolve(json(String(input).includes("/api/admin/exams") ? { activeExams: [], archivedExams: [] } : {}));
+    });
+    vi.stubGlobal("fetch", browserFetch);
+    Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
+    try {
+      const { rerender } = render(<AdminConsole email="admin@helioscx.demo" />);
+      const content = await screen.findByRole("main");
+      await waitFor(() => expect(content.querySelector("[data-route-focus]")).toBeTruthy());
+      rerender(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="diagnostics" />);
+      await waitFor(() => expect(document.activeElement).toBe(content.querySelector("[data-route-focus]")));
+    } finally {
+      vi.unstubAllGlobals();
+      Object.defineProperty(window, "fetch", { configurable: true, value: originalWindowFetch, writable: true });
+    }
+  });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -64,6 +64,7 @@ export function AdminConsole({
   const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>(initialDiagnosticFilters);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const routeFocusRef = useRef<HTMLDivElement>(null);
 
   const handleAdminSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({
     currentPath: () => `${window.location.pathname}${window.location.search}`,
@@ -93,6 +94,10 @@ export function AdminConsole({
     setTab(next.tab); setExamView(nextExamView); setFocusedExamId(next.examId ?? null); setFocusedCohortSessionId(next.cohortSessionId ?? null); setSupportView(nextSupportView); setDeliveryView(nextDeliveryView); setDiagnosticFilters(nextDiagnosticFilters);
   }
 
+  useEffect(() => {
+    routeFocusRef.current?.focus();
+  }, [tab, examView, focusedExamId, focusedCohortSessionId, supportView, deliveryView]);
+
   async function logout() {
     setLoggingOut(true);
     try { await fetch("/api/auth/logout", { method: "POST" }); }
@@ -108,7 +113,7 @@ export function AdminConsole({
       const active = item.intent.tab === tab && (item.intent.supportView ?? "monitoring") === supportView && (item.key === "monitoring" || (item.intent.deliveryView ?? null) === deliveryView) && (item.intent.tab !== "exams" || examView === "catalog");
       return <li key={item.key}><Link href={buildAdminNavigationHref(item.intent)} aria-current={active ? "page" : undefined} className={styles.adminNavigationLink}>{item.label}</Link></li>;
     })}</ul></nav>
-    <div className={styles.adminContent}>
+    <div ref={routeFocusRef} tabIndex={-1} data-route-focus className={styles.adminContent}>
     {initialRouteNotice ? <div role="alert" style={{ ...mutedPanelStyle, marginBottom: "1rem", borderColor: colors.warning }}>{initialRouteNotice}</div> : null}
     <AdminCandidateRosterFeature active={tab === "candidates"} fetchAdmin={fetchAdmin} />
     <CloudShareConnectionFeature active={tab === "configuration"} fetchAdmin={fetchAdmin} getNavigationHref={getNavigationHref} onNavigate={navigateAdmin} />
