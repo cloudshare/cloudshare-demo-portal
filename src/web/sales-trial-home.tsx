@@ -96,6 +96,10 @@ export function SalesTrialHome({
       if (!blocked) {
         return;
       }
+      if (blocked.status === 401) {
+        handleSessionExpired();
+        return;
+      }
       setLaunchError(blocked.message);
       setOpenOfferingId(null);
     }
@@ -104,7 +108,7 @@ export function SalesTrialHome({
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [openOfferingId]);
+  }, [handleSessionExpired, openOfferingId]);
 
   async function signOut(): Promise<void> {
     if (loggingOut) return;

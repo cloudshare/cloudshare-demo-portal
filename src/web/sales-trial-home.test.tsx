@@ -260,6 +260,46 @@ describe("Sales Trial participant home", () => {
     expect(screen.getByRole("alert").textContent).not.toContain("cloudshare.com");
   });
 
+  it("replaces the rendered participant portal after a correlated launch 401", async () => {
+    const user = userEvent.setup();
+    const openTrialWindow = vi.fn().mockReturnValue({ reused: false });
+    window.history.replaceState({}, "", "/sales-trial");
+
+    render(
+      <SalesTrialHome
+        email="visitor@example.test"
+        firstName="Ari"
+        openTrialWindow={openTrialWindow}
+        initialOfferings={[{
+          id: "offering-1",
+          title: "Helios Trial",
+          description: "Shared trial",
+          start: "2026-08-30T09:00",
+          end: "2026-08-30T17:00",
+          timeZone: "UTC",
+        }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open trial window" }));
+    await act(async () => {
+      window.dispatchEvent(new MessageEvent("message", {
+        origin: "http://localhost:3000",
+        data: {
+          type: "certalis:sales-trial-entry-blocked",
+          offeringId: "offering-1",
+          status: 401,
+          message: "Your portal session has expired. Log in again to continue.",
+        },
+      }));
+    });
+
+    await waitFor(() => expect(routerReplace).toHaveBeenCalledWith("/sales-trial/login?returnTo=%2Fsales-trial"));
+    expect(screen.queryByText("Your Sales Trial sign-in is active")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(openTrialWindow).toHaveBeenCalledOnce();
+  });
+
   it("fetches active Trial Offerings only once across render and rerender when no initial offerings are provided", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

@@ -64,11 +64,15 @@ export async function GET(
         error: "Unauthorized.",
       }),
     ]);
-    return new NextResponse("Unauthorized.", {
+    return new NextResponse(buildEnterSalesTrialOfferingBlockedPage({
+      offeringId,
+      status: 401,
+      message: "Your portal session has expired. Log in again to continue.",
+    }), {
       status: 401,
       headers: {
         "cache-control": "no-store",
-        "content-type": "text/plain; charset=utf-8",
+        "content-type": "text/html; charset=utf-8",
       },
     });
   }

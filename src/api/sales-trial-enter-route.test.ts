@@ -147,7 +147,11 @@ describe("Sales Trial enter route", () => {
     );
 
     expect(response.status).toBe(401);
-    expect(await response.text()).toBe("Unauthorized.");
+    const html = await response.text();
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(html).toContain('"status":401');
+    expect(html).toContain('"offeringId":"offering-1"');
+    expect(html).toContain("window.opener.postMessage");
     expect(mockHandleEnterSalesTrialOffering).not.toHaveBeenCalled();
     expect(mockDiagnosticRecord).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -188,7 +192,10 @@ describe("Sales Trial enter route", () => {
     );
 
     expect(response.status).toBe(401);
-    expect(await response.text()).toBe("Unauthorized.");
+    const html = await response.text();
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(html).toContain('"status":401');
+    expect(html).toContain("window.opener.postMessage");
     expect(mockHandleEnterSalesTrialOffering).not.toHaveBeenCalled();
     expect(mockDiagnosticRecord).toHaveBeenCalledWith(
       expect.objectContaining({
