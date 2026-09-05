@@ -1166,7 +1166,7 @@ describe("SalesWorkspace interaction", () => {
     await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith("/sales?tab=sessions&opportunityId=opp-1&sessionId=session-now&status=in_progress"));
     expect(screen.queryByRole("combobox", { name: "Operational view" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Sessions" })).not.toBeNull();
-    expect(await screen.findByRole("button", { name: "Acme live demo" })).not.toBeNull();
+    expect(await screen.findByRole("link", { name: "Acme live demo" })).not.toBeNull();
     expect(window.sessionStorage.getItem(salesSessionProvisionDraftKey("sales-admin@certalis.demo"))).toBeNull();
   });
 

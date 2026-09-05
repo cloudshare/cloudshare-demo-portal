@@ -29,6 +29,8 @@ import { SalesTrialHome } from "./sales-trial-home";
 import { SalesWorkspace } from "./sales-workspace";
 import { ScoreDisplay } from "./score-display";
 import { ProtectedPortalFallback } from "./protected-portal-fallback";
+import { SalesWorkspaceChrome } from "./sales-workspace-chrome";
+import { SalesSessionWorkspace } from "./sales-session-workspace";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -90,6 +92,32 @@ describe("idle expiry on protected portal surfaces", () => {
     expect(screen.queryByRole("complementary", { name: "Sales workspace navigation" })).toBeNull();
     expect(router.replace).toHaveBeenCalledWith("/login?returnTo=%2Fsales%3Ftab%3Ditems");
     expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("removes an idle dedicated Session workspace chrome and child", async () => {
+    window.history.replaceState({}, "", "/sales/sessions/session-1?area=activity");
+    render(<SalesWorkspaceChrome email="sales-admin@certalis.demo" activeTab="sessions"><p>Protected Session content</p></SalesWorkspaceChrome>);
+    expect(screen.getByText("Protected Session content")).not.toBeNull();
+    await expireLatestWatchdog();
+    expect(screen.queryByText("Protected Session content")).toBeNull();
+    expect(screen.queryByRole("complementary", { name: "Sales workspace navigation" })).toBeNull();
+    expect(router.replace).toHaveBeenCalledWith("/login");
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("unmounts the composed Session workspace once after a request-time 401 without replay", async () => {
+    window.history.replaceState({}, "", "/sales/sessions/session-1?area=activity");
+    const fetchSpy = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/workspace")) return new Response(JSON.stringify({ error: "Session expired" }), { status: 401 });
+      return json({ session: { expiresAtMs: Date.now() + 60_000 }, serverNowMs: Date.now() });
+    });
+    render(<SalesWorkspaceChrome email="sales-admin@certalis.demo" activeTab="sessions"><SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" /></SalesWorkspaceChrome>);
+    await screen.findByText("Your session has expired. Sign in again to continue.");
+    expect(screen.queryByRole("complementary", { name: "Sales workspace navigation" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Activity" })).toBeNull();
+    expect(router.replace).toHaveBeenCalledTimes(1);
+    expect(router.replace).toHaveBeenCalledWith("/login");
+    expect(fetchSpy.mock.calls.filter(([input]) => String(input).includes("/workspace"))).toHaveLength(1);
   });
 
   it("removes an idle Candidate home", async () => {

@@ -29,6 +29,7 @@ function scopeForPath(pathname: string): PortalReturnScope | null {
   return null;
 }
 
+
 function hasOnlyQueryKeys(searchParams: URLSearchParams, keys: readonly string[]): boolean {
   const allowed = new Set(keys);
   return [...searchParams.keys()].every((key) => allowed.has(key));

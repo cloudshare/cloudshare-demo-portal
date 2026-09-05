@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createAdminAuthenticatedRequest } from "./admin-authenticated-request";
 import { primaryButtonStyle } from "./button-styles";
 import { cardStyle } from "./card-styles";
-import type { SalesNavigationIntent, SalesSessionQueueView, SalesWorkspaceRouteState } from "./sales-shell-route";
+import { buildSalesWorkspaceHref, salesQueueScrollStorageKey, type SalesNavigationIntent, type SalesSessionQueueView, type SalesWorkspaceRouteState } from "./sales-shell-route";
 import styles from "./sales-sessions-workbench.module.css";
 import { getExpiredPortalLoginPath } from "../auth/portal-return-target";
 
@@ -28,7 +28,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
   const [recordOptions, setRecordOptions] = useState<SalesRecordOptions>({});
   const [optionsError, setOptionsError] = useState<string | null>(null);
   const [queueReload, setQueueReload] = useState(0);
-  const selectedRef = useRef<HTMLButtonElement | null>(null);
+  const selectedRef = useRef<HTMLAnchorElement | null>(null);
   const view = route.queueView ?? "active";
   const sort = route.queueSort ?? "start_desc";
   const offset = route.queueOffset ?? 0;
@@ -72,7 +72,25 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
       selectedRef.current.scrollIntoView({ block: "nearest" });
     }
   }, [result?.response.target?.state, route.sessionId]);
+  useEffect(() => {
+    if (result?.response.target?.state !== "available" || !route.sessionId) return;
+    const queueHref = buildSalesWorkspaceHref({ tab: "sessions", sessionView: "manage", sessionId: route.sessionId, queueView: view, queueSearch: search, queueSort: sort, queueOffset: offset, accountId: route.accountId, opportunityId: route.opportunityId });
+    const key = salesQueueScrollStorageKey(queueHref);
+    const saved = window.sessionStorage.getItem(key);
+    if (!saved) return;
+    window.sessionStorage.removeItem(key);
+    const position = Number(saved);
+    if (Number.isFinite(position) && position >= 0) window.scrollTo(0, position);
+  }, [result?.response.target?.state, route.accountId, route.opportunityId, route.queueSearch, route.queueSort, route.queueView, route.sessionId, search, sort, offset, view]);
   const navigate = (changes: Partial<SalesNavigationIntent>) => onNavigate({ tab: "sessions", sessionView: "manage", queueView: view, queueSearch: search, queueSort: sort, queueOffset: offset, accountId: route.accountId, opportunityId: route.opportunityId, ...changes, preserveScroll: true });
+  const selectedQueueHref = (sessionId: string) => buildSalesWorkspaceHref({ tab: "sessions", sessionView: "manage", sessionId, queueView: view, queueSearch: search, queueSort: sort, queueOffset: offset, accountId: route.accountId, opportunityId: route.opportunityId });
+  const workspaceHref = (sessionId: string) => `/sales/sessions/${encodeURIComponent(sessionId)}?from=${encodeURIComponent(selectedQueueHref(sessionId))}`;
+  const rememberOpenedSession = (event: React.MouseEvent<HTMLAnchorElement>, sessionId: string) => {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || (event.currentTarget.target && event.currentTarget.target !== "_self")) return;
+    const queueHref = selectedQueueHref(sessionId);
+    window.sessionStorage.setItem(salesQueueScrollStorageKey(queueHref), String(window.scrollY));
+    window.history.replaceState(window.history.state, "", queueHref);
+  };
   const data = result?.response ?? null;
   const displayedRequest = result?.request;
   const rows = data?.rows ?? [];
@@ -111,7 +129,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
         <table className={styles.table}>
           <thead><tr><th scope="col" className={styles.sessionColumn}>Session</th><th scope="col" className={styles.relationshipColumn}>Relationship</th><th scope="col" className={styles.timeColumn}>Time window</th><th scope="col" className={styles.statusColumn}>Certalis operation</th><th scope="col" className={styles.statusColumn}>CloudShare Experience</th><th scope="col" className={styles.environmentColumn}>Participant Environment</th><th scope="col" className={styles.attentionColumn}>Attention</th></tr></thead>
           <tbody>{rows.map((row) => <tr key={row.id} data-selected={route.sessionId === row.id ? "true" : undefined}>
-            <th scope="row"><button ref={route.sessionId === row.id ? selectedRef : undefined} type="button" aria-current={route.sessionId === row.id ? "true" : undefined} className={styles.sessionLink} onClick={() => navigate({ sessionId: row.id })}>{row.sessionName}</button><span className={styles.secondaryLine}>Revision {row.revision}</span></th>
+            <th scope="row"><a ref={route.sessionId === row.id ? selectedRef : undefined} aria-current={route.sessionId === row.id ? "true" : undefined} className={styles.sessionLink} href={workspaceHref(row.id)} onClick={(event) => rememberOpenedSession(event, row.id)}>{row.sessionName}</a><span className={styles.secondaryLine}>Revision {row.revision}</span></th>
             <td><span className={styles.primaryLine}>{row.accountName}</span><span className={styles.secondaryLine}>{row.opportunityName}</span></td>
             <td><span className={styles.timeLine}><span className={styles.timeLabel}>Start</span><time dateTime={row.start}>{row.start}</time></span><span className={styles.timeLine}><span className={styles.timeLabel}>End</span><time dateTime={row.end}>{row.end}</time></span><span className={styles.secondaryLine}>CloudShare time zone: {row.timeZone}</span></td>
             <td><StatusDimension label="Certalis operation" value={row.operation.value} detail={row.operation.source === "certalis_persistence" ? "Recorded by Certalis persistence." : `Certalis source: ${formatStatus(row.operation.source)}.`} /></td>

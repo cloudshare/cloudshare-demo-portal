@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -35,7 +35,7 @@ describe("Sales Sessions workbench", () => {
     });
     const onNavigate = vi.fn();
     render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={onNavigate} />);
-    await screen.findByRole("button", { name: "Acme evaluation" });
+    await screen.findByRole("link", { name: "Acme evaluation" });
 
     expect(screen.getByText("Session queue")).not.toBeNull();
     expect(screen.getByText("Active Sessions")).not.toBeNull();
@@ -51,7 +51,7 @@ describe("Sales Sessions workbench", () => {
     await user.click(screen.getByRole("button", { name: "Apply" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Session queue sort" }), "name_asc");
     await user.click(screen.getByRole("button", { name: "Next page" }));
-    await user.click(screen.getByRole("button", { name: "Acme evaluation" }));
+    expect(screen.getByRole("link", { name: "Acme evaluation" }).getAttribute("href")).toContain("/sales/sessions/session-1?");
     await user.click(screen.getByRole("button", { name: "Provision a Session" }));
 
     expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ queueView: "needs_attention" }));
@@ -60,7 +60,6 @@ describe("Sales Sessions workbench", () => {
     expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ queueSearch: "Acme" }));
     expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ queueSort: "name_asc" }));
     expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ queueOffset: 25 }));
-    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-1" }));
     expect(onNavigate).toHaveBeenCalledWith({ tab: "sessions", sessionView: "provision" });
     expect(window.fetch).not.toHaveBeenCalledWith(expect.stringContaining("reconcile"), expect.anything());
   });
@@ -75,14 +74,42 @@ describe("Sales Sessions workbench", () => {
       });
     });
     const { rerender } = render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", queueSearch: "first", sessionId: "session-1" }} onNavigate={vi.fn()} />);
-    const selected = await screen.findByRole("button", { name: "Acme evaluation" });
+    const selected = await screen.findByRole("link", { name: "Acme evaluation" });
     await waitFor(() => expect(document.activeElement).toBe(selected));
     expect((screen.getByRole("textbox", { name: "Search Sessions" }) as HTMLInputElement).value).toBe("first");
 
     rerender(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", queueSearch: "restored" }} onNavigate={vi.fn()} />);
     expect((screen.getByRole("textbox", { name: "Search Sessions" }) as HTMLInputElement).value).toBe("restored");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
-    await screen.findByRole("button", { name: "Acme evaluation" });
+    await screen.findByRole("link", { name: "Acme evaluation" });
+  });
+
+  it("records the selected Session in the queue history entry before opening its workspace", async () => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
+      ? json({ accounts: [], opportunities: [] })
+      : json({ view: "history", offset: 25, limit: 25, total: 26, rows: [row] }));
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", queueView: "history", queueSearch: "Acme", queueSort: "name_asc", queueOffset: 25 }} onNavigate={vi.fn()} />);
+
+    const sessionLink = await screen.findByRole("link", { name: "Acme evaluation" });
+    sessionLink.addEventListener("click", (event) => event.preventDefault());
+    fireEvent.click(sessionLink);
+
+    expect(replaceState).toHaveBeenCalledWith(window.history.state, "", "/sales?tab=sessions&sessionId=session-1&queue=history&q=Acme&sort=name_asc&offset=25");
+  });
+
+  it.each([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }])("does not rewrite queue history for a modified or non-primary Session link click: %o", async (clickOptions) => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
+      ? json({ accounts: [], opportunities: [] })
+      : json({ view: "history", offset: 0, limit: 25, total: 1, rows: [row] }));
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", queueView: "history" }} onNavigate={vi.fn()} />);
+
+    const sessionLink = await screen.findByRole("link", { name: "Acme evaluation" });
+    sessionLink.addEventListener("click", (event) => event.preventDefault());
+    fireEvent.click(sessionLink, clickOptions);
+
+    expect(replaceState).not.toHaveBeenCalled();
   });
 
   it("restores a selected Opportunity outside the first bounded options page", async () => {
@@ -119,11 +146,11 @@ describe("Sales Sessions workbench", () => {
     });
     const onNavigate = vi.fn();
     const rendered = render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={onNavigate} />);
-    expect(await screen.findByRole("button", { name: "Acme evaluation" })).not.toBeNull();
+    expect(await screen.findByRole("link", { name: "Acme evaluation" })).not.toBeNull();
 
     rendered.rerender(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", queueSearch: "changed" }} onNavigate={onNavigate} />);
     expect((await screen.findByRole("alert")).textContent).toContain("Queue temporarily unavailable");
-    expect(screen.getByRole("button", { name: "Acme evaluation" })).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Acme evaluation" })).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Open Sales support" }));
     expect(onNavigate).toHaveBeenCalledWith({ tab: "support" });
     await user.click(screen.getByRole("button", { name: "Retry queue" }));
@@ -165,14 +192,14 @@ describe("Sales Sessions workbench", () => {
     const rendered = render(<SalesSessionsWorkbench route={route} onNavigate={(intent) => {
       rendered.rerender(<SalesSessionsWorkbench route={{ ...route, queueView: intent.queueView ?? "active" }} onNavigate={() => undefined} />);
     }} />);
-    expect(await screen.findByRole("button", { name: "Acme evaluation" })).not.toBeNull();
+    expect(await screen.findByRole("link", { name: "Acme evaluation" })).not.toBeNull();
 
     await user.click(screen.getByRole("button", { name: "History" }));
 
     expect(screen.getByRole("heading", { name: "Sessions" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "History" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText("Active Sessions")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Acme evaluation" })).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Acme evaluation" })).not.toBeNull();
     const queueFrame = screen.getByRole("region", { name: "Active Sessions" });
     const visibleHeading = screen.getByText("Active Sessions");
     expect(queueFrame.getAttribute("aria-labelledby")).toBe(visibleHeading.id);

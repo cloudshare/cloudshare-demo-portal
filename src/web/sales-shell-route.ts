@@ -101,6 +101,10 @@ export function buildSalesWorkspaceHref(route: SalesNavigationIntent): string {
   return `/sales?${params.toString()}`;
 }
 
+/** Browser-history restoration is primary; this key covers the explicit
+ * workspace return link after a reload without putting viewport state in URLs. */
+export function salesQueueScrollStorageKey(href: string): string { return `sales-queue-scroll:${href}`; }
+
 export function parseSalesWorkspaceRouteState(input: {
   readonly tab?: string | readonly string[];
   readonly view?: string | readonly string[];

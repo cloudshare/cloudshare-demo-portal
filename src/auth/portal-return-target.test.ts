@@ -54,4 +54,9 @@ describe("portal expired-session return targets", () => {
     expect(getSafePortalTargetFromSearchParams("/sales", { tab: "sessions", queue: "history", sort: "name_asc", offset: "20" })).toBe("/sales?tab=sessions&queue=history&sort=name_asc&offset=20");
     expect(getSafePortalTargetFromSearchParams("/sales", { accountId: "another-customer" })).toBe("/sales");
   });
+
+  it("rejects unverifiable dedicated Session resource routes", () => {
+    expect(getExpiredPortalLoginPath("/sales/sessions/session-1?area=activity")).toBeNull();
+    expect(getExpiredPortalLoginPath("/sales/sessions/session-1?area=activity&from=%2Fsales%3Ftab%3Dsessions")).toBeNull();
+  });
 });
