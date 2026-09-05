@@ -191,8 +191,11 @@ describe("CandidateHome route-backed task flow", () => {
     await act(async () => routed.rerender(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: "attempt-scheduled", examId: null }} />));
     const heading = await screen.findByRole("heading", { name: "Choose an exam" });
     await waitFor(() => expect(document.activeElement).toBe(heading));
+    expect(heading.style.outline).not.toBe("");
+    expect(heading.style.outlineOffset).not.toBe("");
     await act(async () => heading.blur());
-    expect(heading.style.boxShadow).toBe("");
+    expect(heading.style.outline).toBe("");
+    expect(heading.style.outlineOffset).toBe("");
   });
 
   it("shows background refresh progress without stealing a focused task control", async () => {
@@ -201,13 +204,13 @@ describe("CandidateHome route-backed task flow", () => {
     const browserFetch = vi.fn((input: RequestInfo | URL) => {
       if (String(input) !== "/api/candidate/exams") return Promise.resolve(new Response(null, { status: 200 }));
       calls += 1;
-      if (calls === 1) return Promise.resolve(json({ exams: [], attempts: [] }));
+      if (calls === 1) return Promise.resolve(json({ exams: [{ id: "exam-1", title: "Foundations", description: "", timeLimitMinutes: 60, openPeriodMinutes: 60, storageLeaseMinutes: 60, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] }], attempts: [{ id: "attempt-1", examId: "exam-1", examTitle: "Foundations", scheduledFor: "2026-10-23T16:00:00.000Z", status: "ready" }] }));
       return new Promise<Response>((resolve) => { releaseRefresh = resolve; });
     });
     vi.stubGlobal("fetch", browserFetch);
     Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
     const rendered = render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: null, examId: null }} />);
-    const control = await screen.findByRole("button", { name: /^Schedule exam/ }).catch(() => screen.getByRole("button", { name: /Current ExamAttempt/ }));
+    const control = await screen.findByRole("button", { name: /Current ExamAttempt/ });
     control.focus();
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(await screen.findByText("Refreshing candidate delivery status…")).toBeTruthy();
