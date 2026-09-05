@@ -1230,6 +1230,7 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
   const [activeExams, setActiveExams] = useState<ExamRecord[]>([]);
   const [archivedExams, setArchivedExams] = useState<ExamRecord[]>([]);
   const [sessionsByExamId, setSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
+  const [sessionsLoadedByExamId, setSessionsLoadedByExamId] = useState<Record<string, boolean>>({});
   const sessionsCacheRef = useRef<Record<string, CohortExamSessionRecord[]>>({});
   const sessionLoadsRef = useRef(new Map<string, Promise<void>>());
   const [formsByExamId, setFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
@@ -1240,6 +1241,7 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
   const focusedKeyRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorCorrelationId, setErrorCorrelationId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -1281,7 +1283,7 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
         setSessionsByExamId((current) => ({ ...current, [examId]: sessions }));
       } catch (caught) {
         if (!isAdminSessionExpiredError(caught)) setError("Failed to load Cohort Exam Sessions");
-      } finally { sessionLoadsRef.current.delete(examId); }
+      } finally { setSessionsLoadedByExamId((current) => ({ ...current, [examId]: true })); sessionLoadsRef.current.delete(examId); }
     })();
     sessionLoadsRef.current.set(examId, request);
     return request;
@@ -1299,6 +1301,7 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
       if (!response.ok) { setError(data.error ?? "Failed to load exam catalog"); return; }
       const nextActive = data.activeExams ?? [];
       setActiveExams(nextActive); setArchivedExams(data.archivedExams ?? []);
+      setCatalogLoaded(true);
       if (loadAllSessions) await Promise.all(nextActive.map((exam) => ensureSessions(exam.id)));
     } catch (caught) {
       if (!isAdminSessionExpiredError(caught)) setError("Failed to load exam catalog");
@@ -1350,7 +1353,10 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
     try {
       const response = await props.fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions/${encodeURIComponent(sessionId)}`);
       const data = await response.json() as { monitoring?: CohortExamSessionMonitoringView; error?: string };
-      if (!response.ok || !data.monitoring) { if (key === focusedKeyRef.current) setError(data.error ?? "Failed to load Cohort Exam Session detail"); return; }
+      if (!response.ok || !data.monitoring) {
+        if (key === focusedKeyRef.current && response.status !== 404) setError(data.error ?? "Failed to load Cohort Exam Session detail");
+        return;
+      }
       if (key !== focusedKeyRef.current) return;
       setMonitoringDetail(data.monitoring); setMonitoringDetailKey(key); setMonitoringLastCheckedAt(new Date().toISOString());
     } catch (caught) { if (key === focusedKeyRef.current && !isAdminSessionExpiredError(caught)) setError("Failed to load Cohort Exam Session detail"); }
@@ -1379,20 +1385,27 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
 
   if (!props.active) return null;
   const hasFocusedMonitoring = props.supportMonitoringActive && focusedSession && focusedExam;
+  const staleExamTarget = Boolean(props.focusedExamId && catalogLoaded && !focusedExam);
+  const staleSessionTarget = Boolean(props.focusedExamId && props.focusedCohortSessionId && sessionsLoadedByExamId[props.focusedExamId] && !focusedSession);
+  const staleTarget = staleExamTarget || staleSessionTarget;
+  const staleTargetCopy = staleExamTarget
+    ? "The requested Exam is no longer available in the current catalog. Return to the catalog and choose an available Exam."
+    : "The requested Cohort Exam Session is no longer available. Return to the session list and choose an available Session.";
   const currentMonitoringDetail = monitoringDetailKey === focusedKey ? monitoringDetail : null;
   return <section aria-busy={catalogLoading} style={{ display: "grid", gap: "1rem", position: "relative", overflow: "hidden" }}>
     {catalogLoading ? <ExamCatalogLoadingOverlay /> : null}
     {error ? <div role="alert" style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.5rem" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}><p style={{ margin: 0 }}>{error}</p><button type="button" onClick={() => { setError(null); setErrorCorrelationId(null); }} style={{ padding: "0.25rem 0.55rem" }}>Dismiss</button></div>{errorCorrelationId ? <p style={{ margin: 0, fontSize: "0.85rem" }}>Open <strong>Support Diagnostics</strong> filtered by correlation ID <CorrelationDiagnosticsLink correlationId={errorCorrelationId} getNavigationHref={props.getNavigationHref} onNavigate={props.onNavigate} />.</p> : null}</div> : null}
     {message ? <div role="status" style={alertPanelStyle.success}>{message}</div> : null}
+    {staleTarget ? <div role="alert" style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.5rem" }}><strong>This route target is no longer available.</strong><span>{staleTargetCopy}</span><button type="button" onClick={() => props.onNavigate({ tab: "exams", examView: staleSessionTarget ? "sessions" : "catalog", ...(staleSessionTarget && props.focusedExamId ? { examId: props.focusedExamId } : {}) })} style={secondaryButtonStyle}>{staleSessionTarget ? "Return to Cohort Exam Sessions" : "Return to Exam catalog"}</button></div> : null}
     {(props.examView === "sessions" || props.examView === "session") && focusedExam ? <>
       <div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><div><h2 style={{ margin: 0 }}>Exam Catalog</h2><p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>Overview of Exams and delivery options for Helios CX.</p></div><ExamWorkspaceBreadcrumbs examView={props.examView} focusedExamTitle={focusedExam.title} focusedSessionName={focusedSession?.session.name ?? null} onNavigateToCatalog={() => props.onNavigate({ tab: "exams", examView: "catalog" })} onNavigateToSessions={() => props.onNavigate({ tab: "exams", examView: "sessions", examId: focusedExam.id })} /></div>
       {props.examView === "sessions" ? <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}><div><h3 style={{ margin: 0 }}>Cohort Exam Sessions</h3><p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>{focusedExam.title} · {formatExamDeliveryAvailability(focusedExam.deliveryAvailability)}</p><CohortSessionDraftOnlyNotice /></div><button type="button" onClick={() => props.onNavigate({ tab: "exams", examView: "catalog" })} style={secondaryButtonStyle}>Back to catalog</button></div>{isCohortSessionAuthoringAvailable(focusedExam.deliveryAvailability) ? <CohortSessionDraftControls examId={focusedExam.id} form={formFor(focusedExam.id)} sessions={focusedSessions} loading={loading} onChange={(patch) => updateForm(focusedExam.id, patch)} onCreate={() => void createDraft(focusedExam.id)} onSelect={(session) => { setSelectedSession(session); props.onNavigate({ tab: "exams", examView: "session", examId: focusedExam.id, cohortSessionId: session.session.id }); }} /> : <span style={{ color: colors.textSecondary }}>Cohort Exam Sessions are unavailable for individual-only Exams.</span>}</div> : null}
       {props.examView === "session" && focusedSession ? <CohortSessionWorkspacePanel examTitle={focusedExam.title} session={focusedSession} loading={loading} onBack={() => props.onNavigate({ tab: "exams", examView: "sessions", examId: focusedExam.id })} onPublish={() => void lifecycle(focusedExam.id, focusedSession.session.id, "publish")} onCloseAdmission={() => void lifecycle(focusedExam.id, focusedSession.session.id, "close-admission")} onRetire={() => void lifecycle(focusedExam.id, focusedSession.session.id, "retire")} getNavigationHref={props.getNavigationHref} onNavigate={props.onNavigate} onOpenMonitoring={() => props.onNavigate({ tab: "support", supportView: "monitoring", examId: focusedExam.id, cohortSessionId: focusedSession.session.id })} /> : null}
-      {props.examView === "session" && props.focusedCohortSessionId && !focusedSession ? <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.5rem" }}><p style={{ margin: 0 }}>Cohort Exam Session detail is not loaded yet.</p><button type="button" onClick={() => void loadSessions(focusedExam.id)} style={secondaryButtonStyle}>Refresh Cohort Sessions</button></div> : null}
+      {props.examView === "session" && props.focusedCohortSessionId && !focusedSession && !staleTarget ? <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.5rem" }}><p style={{ margin: 0 }}>Cohort Exam Session detail is still loading.</p><button type="button" onClick={() => void loadSessions(focusedExam.id)} style={secondaryButtonStyle}>Refresh Cohort Sessions</button></div> : null}
     </> : null}
     {props.supportMonitoringActive ? <>
       {hasFocusedMonitoring ? <CohortSessionWorkspacePanel mode="monitoring" examTitle={focusedExam.title} session={focusedSession} detail={currentMonitoringDetail} loading={loading} lastCheckedAt={monitoringDetailKey === focusedKey ? monitoringLastCheckedAt : null} onRefresh={() => void loadMonitoringDetail(focusedExam.id, focusedSession.session.id)} onBack={() => props.onNavigate({ tab: "support", supportView: "monitoring" })} onPublish={() => undefined} getNavigationHref={props.getNavigationHref} onNavigate={props.onNavigate} /> : null}
-      {!hasFocusedMonitoring ? <CohortSessionMonitoringList sessions={monitoredSessions} onOpen={(examId, cohortSessionId) => props.onNavigate({ tab: "support", supportView: "monitoring", examId, cohortSessionId })} /> : null}
+      {!hasFocusedMonitoring && !staleTarget ? <CohortSessionMonitoringList sessions={monitoredSessions} onOpen={(examId, cohortSessionId) => props.onNavigate({ tab: "support", supportView: "monitoring", examId, cohortSessionId })} /> : null}
     </> : null}
   </section>;
 }

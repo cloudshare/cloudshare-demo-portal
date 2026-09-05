@@ -171,4 +171,28 @@ describe("AdminConsole browser request dispatch", () => {
       Object.defineProperty(window, "fetch", { configurable: true, value: originalWindowFetch, writable: true });
     }
   });
+
+  it("explains stale Exam Session and Support Monitoring targets instead of showing aggregate fallbacks", async () => {
+    const originalWindowFetch = window.fetch;
+    const browserFetch = vi.fn(function (this: unknown, input: RequestInfo | URL) {
+      if (this !== window) throw new TypeError("Browser fetch must retain its Window receiver");
+      if (String(input) === "/api/admin/exams") return Promise.resolve(json({ activeExams: [], archivedExams: [] }));
+      if (String(input).includes("/cohort-sessions")) return Promise.resolve(json({ sessions: [] }));
+      if (String(input).includes("/api/admin/monitoring")) return Promise.resolve(json({ monitoring: { attempts: [], historyPage: { entries: [], nextOffset: null } } }));
+      return Promise.resolve(json({}));
+    });
+    vi.stubGlobal("fetch", browserFetch);
+    Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
+    try {
+      const first = render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="missing-exam" />);
+      expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("The requested Exam is no longer available in the current catalog."))).toBe(true);
+      first.unmount();
+      render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialDeliveryView="cohort" initialExamId="missing-exam" initialCohortSessionId="missing-session" />);
+      expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("The requested Exam is no longer available in the current catalog."))).toBe(true);
+      expect(screen.queryByText("No Cohort Exam Sessions match the current monitoring view.")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+      Object.defineProperty(window, "fetch", { configurable: true, value: originalWindowFetch, writable: true });
+    }
+  });
 });

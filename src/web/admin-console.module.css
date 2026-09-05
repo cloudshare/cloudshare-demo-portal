@@ -51,6 +51,11 @@
   min-width: 0;
 }
 
+.adminContent:focus-visible {
+  outline: 3px solid rgba(15, 109, 102, 0.55);
+  outline-offset: 4px;
+}
+
 @media (max-width: 760px) {
   .adminWorkspace {
     grid-template-columns: minmax(0, 1fr);
