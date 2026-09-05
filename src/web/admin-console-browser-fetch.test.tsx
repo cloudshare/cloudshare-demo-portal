@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { AdminConsole } from "./admin-console";
@@ -190,9 +191,15 @@ describe("AdminConsole browser request dispatch", () => {
       const first = render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="exam-1" initialCohortSessionId="missing-session" />);
       expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("The requested Cohort Exam Session is no longer available."))).toBe(true);
       first.unmount();
-      render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialDeliveryView="cohort" initialExamId="exam-1" initialCohortSessionId="missing-session" />);
+      const second = render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialDeliveryView="cohort" initialExamId="exam-1" initialCohortSessionId="missing-session" />);
       expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("The requested Cohort Exam Session is no longer available."))).toBe(true);
       expect(screen.queryByText("No Cohort Exam Sessions match the current monitoring view.")).toBeNull();
+      second.unmount();
+      const missingExamView = render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialDeliveryView="cohort" initialExamId="missing-exam" initialCohortSessionId="missing-session" />);
+      expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("no longer available in the current monitoring scope"))).toBe(true);
+      await userEvent.click(screen.getByRole("button", { name: "Return to Session Monitoring" }));
+      expect(routerPush).toHaveBeenCalledWith("/admin?tab=support&delivery=cohort");
+      missingExamView.unmount();
     } finally {
       vi.unstubAllGlobals();
       Object.defineProperty(window, "fetch", { configurable: true, value: originalWindowFetch, writable: true });

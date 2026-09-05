@@ -1393,7 +1393,9 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
   const staleMonitoringDetail = Boolean(props.supportMonitoringActive && focusedSession && focusedKey === monitoringDetailMissingKey);
   const staleTarget = staleExamTarget || staleSessionTarget || staleMonitoringDetail;
   const staleTargetCopy = staleExamTarget
-    ? "The requested Exam is no longer available in the current catalog. Return to the catalog and choose an available Exam."
+    ? (props.supportMonitoringActive
+      ? "The requested Exam is no longer available in the current monitoring scope. Return to Session Monitoring and choose a current monitoring view."
+      : "The requested Exam is no longer available in the current catalog. Return to the catalog and choose an available Exam.")
     : "The requested Cohort Exam Session is no longer available. Return to the session list and choose an available Session.";
   const currentMonitoringDetail = monitoringDetailKey === focusedKey ? monitoringDetail : null;
   return <section aria-busy={catalogLoading} style={{ display: "grid", gap: "1rem", position: "relative", overflow: "hidden" }}>
