@@ -1,7 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { createCloudShareClient, type CloudShareRateLimitCooldownStore } from "./client";
+import {
+  createCloudShareClient as createCloudShareClientBase,
+  createCloudShareNoopRequestObserver,
+  type CloudShareClientOptions,
+  type CloudShareRateLimitCooldownStore,
+  type CloudShareRequestObservation,
+  type CloudShareRequestObserver,
+} from "./client";
 import { createFixtureHttpClient, loadFixturesFromDir } from "./fixtures";
 import { pingCloudShareV3 } from "./ping";
 import {
@@ -19,6 +26,19 @@ const endpoints = {
 };
 
 const stubTokenProvider: V4TokenProvider = { getToken: async () => "test-bearer" };
+
+type TestClientOptions = Omit<CloudShareClientOptions, "observer"> & {
+  readonly observer?: CloudShareRequestObserver;
+  readonly onRequest?: (event: CloudShareRequestObservation) => Promise<void> | void;
+};
+
+function createCloudShareClient(options: TestClientOptions) {
+  const { onRequest, observer, ...clientOptions } = options;
+  return createCloudShareClientBase({
+    ...clientOptions,
+    observer: observer ?? (onRequest ? { onRequest } : createCloudShareNoopRequestObserver()),
+  });
+}
 
 /** HttpClient that records the last request and returns a fixed response. */
 function capturingHttp(response: HttpResponse): {
@@ -86,6 +106,25 @@ function sequentialHttp(...responses: HttpResponse[]): { http: HttpClient; calls
 }
 
 describe("createCloudShareClient — v4", () => {
+  it("observes each wire attempt when a safe read retries after 429", async () => {
+    const onRequest = vi.fn();
+    const { http } = sequentialHttp(
+      { status: 429, headers: { "retry-after": "0" }, body: "{\"error\":\"busy\"}" },
+      ok([{ id: "p1", name: "Proj" }]),
+    );
+    const client = createCloudShareClient({
+      http, endpoints, tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      sleep: async () => undefined, random: () => 0, onRequest,
+    });
+
+    await expect(client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema })).resolves.toEqual([{ id: "p1", name: "Proj" }]);
+    expect(onRequest).toHaveBeenCalledTimes(2);
+    expect(onRequest.mock.calls.map(([event]) => event.outcome)).toEqual(["failure", "success"]);
+    expect(onRequest.mock.calls[0]?.[0]).toMatchObject({ error: { context: { status: 429 } } });
+    expect(onRequest.mock.calls[0]?.[0].occurredAt).toBeDefined();
+    expect(onRequest.mock.calls[0]?.[0].durationMs).toEqual(expect.any(Number));
+  });
   it("returns schema-validated data and sends a Bearer token", async () => {
     const { http, last } = capturingHttp(ok([{ id: "p1", name: "Proj" }]));
     const client = clientWith(http);
@@ -99,6 +138,39 @@ describe("createCloudShareClient — v4", () => {
     expect(data).toEqual([{ id: "p1", name: "Proj" }]);
     expect(last()?.url).toBe("https://api.accelerate.cloudshare.com/v4/projects");
     expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
+  });
+
+  it("observes successful detailed requests with complete exchange evidence", async () => {
+    const onRequest = vi.fn();
+    const { http } = capturingHttp(ok([{ id: "p1", name: "Proj" }]));
+    const client = createCloudShareClient({
+      http, endpoints, tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      newToken: () => "tokfixed01", now: () => 1_700_000_000_000, onRequest,
+    });
+
+    await client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema });
+
+    expect(onRequest).toHaveBeenCalledWith(expect.objectContaining({
+      occurredAt: "2023-11-14T22:13:20.000Z", outcome: "success", durationMs: 0,
+      result: expect.objectContaining({
+        request: expect.objectContaining({ method: "GET", path: "/v4/projects" }),
+        response: expect.objectContaining({ status: 200 }),
+      }),
+    }));
+  });
+
+  it("observes failed requests without allowing diagnostics to alter the error", async () => {
+    const onRequest = vi.fn().mockRejectedValue(new Error("recorder offline"));
+    const { http } = capturingHttp({ status: 503, body: "offline" });
+    const client = createCloudShareClient({
+      http, endpoints, tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" }, onRequest,
+    });
+
+    await expect(client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }))
+      .rejects.toThrow();
+    expect(onRequest).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure" }));
   });
 
   it("accepts an explicitly documented empty v4 success response while retaining request evidence", async () => {
@@ -655,7 +727,7 @@ describe("createCloudShareClient — v4", () => {
         message: "cloudshare request sent",
         fields: expect.objectContaining({
           customerId: "customer-helios",
-          path: "/v4/guided-journey/progress/exp-1/student-1",
+          path: "/v4/guided-journey/{providerId}",
           integrationSurface: "cloudshare.v4",
         }),
       }),
@@ -666,11 +738,38 @@ describe("createCloudShareClient — v4", () => {
         message: "cloudshare response received",
         fields: expect.objectContaining({
           customerId: "customer-helios",
-          path: "/v4/guided-journey/progress/exp-1/student-1",
+          path: "/v4/guided-journey/{providerId}",
           integrationSurface: "cloudshare.v4",
         }),
       }),
     );
+  });
+
+  it.each([
+    ["v4", "/projects/PRJ6f8K2/blueprints/BP9q4Lm7", "/v4/projects/{providerId}"],
+    ["v4", "/experiences/EXP7v2Nc5/participants/PT4m8Xa1", "/v4/experiences/{providerId}"],
+    ["v4", "/trainings/TRN8b3Qp6/users/properties/PROP5d9Ks2", "/v4/trainings/{trainingId}"],
+    ["v4", "/guided-journey/progress/EXP3h7Rt9/PT6k2Wm4", "/v4/guided-journey/{providerId}"],
+    ["v4", "/ZXQ8f2Lm5/CHD4p7Nv1", "/v4/[REDACTED_ROUTE]"],
+    ["v3", "/projects/PRJ2x8Kd4/blueprints/BP7m3Qv9", "/api/v3/[REDACTED_ROUTE]"],
+    ["v3", "/envs/ENV9r4Tk2/actions/getextended", "/api/v3/envs/{environmentId}"],
+    ["v3", "/ZXQ5n8Lp3/CHD7w2Fs6", "/api/v3/[REDACTED_ROUTE]"],
+  ] as const)("removes opaque provider identifiers from ordinary %s traces", async (version, path, expectedPath) => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(ok({ ok: true }));
+    const client = createCloudShareClient({
+      http, endpoints, tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" }, trace,
+      newToken: () => "tokfixed01", now: () => 1_700_000_000_000,
+    });
+    const schema = z.object({ ok: z.boolean() });
+    if (version === "v4") await client.requestV4({ method: "GET", path, schema });
+    else await client.requestV3({ method: "GET", path, schema });
+    const serialized = JSON.stringify(trace.mock.calls);
+    expect(serialized).toContain(expectedPath);
+    for (const segment of path.split("/").filter((part) => /\d/.test(part) && !/^v[34]$/.test(part))) {
+      expect(serialized).not.toContain(segment);
+    }
   });
 
   it("retains response headers and preserves ordinary TLS support metadata", async () => {

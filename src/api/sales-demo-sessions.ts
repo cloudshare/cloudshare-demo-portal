@@ -16,6 +16,7 @@ import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integration
 import { CloudShareAuthError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError } from "@/integrations/cloudshare/errors";
 import { SalesItemProvisioningReadError, SalesItemProvisioningValidationError, type SalesItemProvisioningValidator } from "@/integrations/cloudshare/sales-item-provisioning";
 import { createCloudShareProjectMemberSource, type CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
+import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 const bodySchema = z.object({
   opportunityId: z.string().trim().min(1), itemId: z.string().trim().min(1),
@@ -127,7 +128,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       return reservationPersistenceFailure(deps, request, reservation, correlationId, now, error, clearedAmbiguousReservation);
     }
   }
-  const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+  const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" }));
   let createDispatched = false;
   try {
     const validator = deps.itemProvisioningValidator ?? deps.itemProvisioningValidatorFactory?.forConnection(connection);
@@ -135,7 +136,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     await recordResourceReads(deps, request, correlationId, item.id, item.project.id, resourceReads, "success");
     // Re-read immediately before POST /sales. This deliberately accepts the
     // narrow race after this check; a cached or Item-stored member is never used.
-    const projectMembers = deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection) ?? createCloudShareProjectMemberSource((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+    const projectMembers = deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection) ?? createCloudShareProjectMemberSource((deps.cloudshare ?? missingClientFactory).forConnection(connection, { scope: "customer_default", reason: "catalogue_resource_read" }));
     let memberRead: Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>;
     try { memberRead = await projectMembers.listActiveProjectMembers(item.project.id); }
     catch (error) { throw new SalesProjectMemberReadError(error); }
@@ -206,11 +207,8 @@ function toDeliveryInput(input: SessionBody, item: { name: string; project: { id
 function opaqueCloudShareId(value: string): string { return value.replaceAll("-", ""); }
 function isChronological(input: SessionBody): boolean { return input.end > input.start; }
 const missingClientFactory: Pick<CloudShareClientFactory, "forConnection"> = { forConnection() { throw new Error("Sales Delivery is not configured."); } };
-function cloudShareEvidence(error: unknown): { request: Record<string, unknown>; response: Record<string, unknown> } | undefined {
-  if (!(error instanceof Error) || !("context" in error)) return undefined;
-  const context = (error as { context?: Record<string, unknown> }).context;
-  if (!context) return undefined;
-  return { request: { method: context.method, path: context.path, query: context.requestQuery, headers: context.requestHeaders, body: context.requestBody }, response: { status: context.responseStatus ?? context.status, headers: context.responseHeaders, body: context.responseBody, transport: context.cause, network: context.network, tls: context.tls } };
+function cloudShareEvidence(error: unknown): { request: Record<string, unknown> | null; response: Record<string, unknown> | null } | undefined {
+  return projectCloudShareFailureEvidence(error);
 }
 function isMainSalesProValidationFailure(error: unknown): boolean {
   if (!(error instanceof Error)) return false;

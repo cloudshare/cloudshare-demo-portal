@@ -224,7 +224,7 @@ export function AdminSupportFeature(props: {
   const textFilters: readonly { readonly key: Exclude<keyof DiagnosticLogFilters, "outcome">; readonly label: string; readonly placeholder: string }[] = [
     { key: "examAttemptId", label: "Exam attempt ID", placeholder: "attempt-123" }, { key: "correlationId", label: "Correlation ID", placeholder: "corr-123" }, { key: "candidateEmail", label: "Candidate email", placeholder: "candidate@helioscx.demo" }, { key: "examId", label: "Exam ID", placeholder: "exam-123" }, { key: "externalId", label: "CloudShare / external ID", placeholder: "env-123" }, { key: "operation", label: "Operation", placeholder: "exam_attempt.resume" }, { key: "source", label: "Source", placeholder: "runtime" }, { key: "integrationSurface", label: "Integration surface", placeholder: "cloudshare.v4.environment" }, { key: "from", label: "From (UTC ISO)", placeholder: "2026-06-21T10:00:00.000Z" }, { key: "to", label: "To (UTC ISO)", placeholder: "2026-06-21T11:00:00.000Z" },
   ];
-  const threadFilters = textFilters.slice(0, 5);
+  const threadFilters = [textFilters[0], { key: "subjectType", label: "Investigation starting subject type", placeholder: "sales_trial_enrollment or sales_trial_offering" }, { key: "subjectId", label: "Investigation starting subject ID", placeholder: "sales-trial-enrollment-id or sales-trial-offering-id" }, ...textFilters.slice(1, 5)] as const;
   const eventFilters = textFilters.slice(5);
   const visibleEventFilters = eventFilters.filter((filter) => !props.lockedDiagnosticFilters?.[filter.key]);
   const renderTextFilter = (filter: typeof textFilters[number]) => <label key={filter.key} style={{ display: "grid", gap: "0.35rem" }}><span>{filter.label}</span><input {...extensionHydrationProps} value={diagnosticFilters[filter.key] ?? ""} onChange={(event) => setDiagnosticFilters((current) => ({ ...current, [filter.key]: event.target.value }))} placeholder={filter.placeholder} /></label>;
@@ -245,6 +245,10 @@ export function AdminSupportFeature(props: {
       {diagnosticPage ? <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center", marginBottom: "0.75rem" }}><div style={{ color: colors.textSecondary }}>Showing {diagnosticPage.returned} entries starting at row {diagnosticPage.offset + 1}.</div><div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}><button {...extensionHydrationProps} onClick={() => void loadDiagnostics(Math.max(diagnosticPage.offset - DIAGNOSTIC_PAGE_LIMIT, 0))} disabled={loading || diagnosticPage.offset === 0} style={{ padding: "0.4rem 1rem" }}>Previous</button><button {...extensionHydrationProps} onClick={() => diagnosticPage.nextOffset !== null && void loadDiagnostics(diagnosticPage.nextOffset)} disabled={loading || !diagnosticPage.hasMore} style={{ padding: "0.4rem 1rem" }}>Next</button></div></div> : null}
       {diagnosticFilters.examAttemptId ? <DiagnosticFilterBanner label="exam attempt ID" value={diagnosticFilters.examAttemptId} /> : null}
       {!diagnosticFilters.examAttemptId && diagnosticFilters.correlationId ? <DiagnosticFilterBanner label="correlation ID" value={diagnosticFilters.correlationId} /> : null}
+      {diagnosticFilters.subjectType === "sales_trial_enrollment" && diagnosticFilters.subjectId ? <DiagnosticFilterBanner>{renderInvestigationScope("enrollment", diagnosticFilters.subjectId, diagnosticFilters.source)}</DiagnosticFilterBanner> : null}
+      {diagnosticFilters.subjectType === "sales_trial_offering" && diagnosticFilters.subjectId ? <DiagnosticFilterBanner>{renderInvestigationScope("Offering", diagnosticFilters.subjectId, diagnosticFilters.source)}</DiagnosticFilterBanner> : null}
+      {!(diagnosticFilters.subjectType && diagnosticFilters.subjectId && (diagnosticFilters.subjectType === "sales_trial_enrollment" || diagnosticFilters.subjectType === "sales_trial_offering")) && diagnosticFilters.subjectType ? <DiagnosticFilterBanner label="investigation subject type" value={diagnosticFilters.subjectType} /> : null}
+      {!(diagnosticFilters.subjectType && diagnosticFilters.subjectId && (diagnosticFilters.subjectType === "sales_trial_enrollment" || diagnosticFilters.subjectType === "sales_trial_offering")) && diagnosticFilters.subjectId ? <DiagnosticFilterBanner label="investigation starting subject ID" value={diagnosticFilters.subjectId} /> : null}
       {diagnosticEntries ? <DiagnosticLogTable entries={diagnosticEntries} expandedDiagnosticId={expandedDiagnosticId} onToggleExpanded={(id) => setExpandedDiagnosticId((current) => current === id ? null : id)} onOpenExamAttempt={openExamAttemptDiagnostics} /> : null}
     </section>
   );
@@ -257,8 +261,19 @@ function mergeLockedDiagnosticFilters(
   return normaliseDiagnosticLogFilters({ ...filters, ...lockedFilters });
 }
 
-function DiagnosticFilterBanner(props: { readonly label: string; readonly value: string }) {
-  return <div style={{ marginBottom: "0.75rem", padding: "0.65rem 0.8rem", border: "1px solid #dbe4ff", borderRadius: "8px", background: "#f5f8ff", color: "#123" }}>Filtered to {props.label} <span style={{ fontFamily: "monospace" }}>{props.value}</span>.</div>;
+function DiagnosticFilterBanner(props: { readonly label?: string; readonly value?: string; readonly children?: React.ReactNode }) {
+  return <div style={{ marginBottom: "0.75rem", padding: "0.65rem 0.8rem", border: "1px solid #dbe4ff", borderRadius: "8px", background: "#f5f8ff", color: "#123" }}>{props.children ?? <>Filtered to {props.label} <span style={{ fontFamily: "monospace" }}>{props.value}</span>.</>}</div>;
+}
+
+function renderInvestigationScope(kind: "enrollment" | "Offering", id: string, source?: string) {
+  if (kind === "enrollment") {
+    if (!source) return <>Investigating enrollment <span style={{ fontFamily: "monospace" }}>{id}</span> and its parent Offering workflow evidence.</>;
+    if (source === "sales-trial-enrollment") return <>Investigating enrollment <span style={{ fontFamily: "monospace" }}>{id}</span> evidence only in Source <span style={{ fontFamily: "monospace" }}>{source}</span>.</>;
+    if (source === "sales-trial-offerings") return <>Investigating parent Offering workflow evidence for enrollment <span style={{ fontFamily: "monospace" }}>{id}</span> only in Source <span style={{ fontFamily: "monospace" }}>{source}</span>.</>;
+    return <>Investigation starts at enrollment <span style={{ fontFamily: "monospace" }}>{id}</span>; Source <span style={{ fontFamily: "monospace" }}>{source}</span> has no matching enrollment or parent Offering workflow evidence.</>;
+  }
+  if (!source || source === "sales-trial-offerings") return <>Investigating Offering <span style={{ fontFamily: "monospace" }}>{id}</span> evidence{source ? <> in Source <span style={{ fontFamily: "monospace" }}>{source}</span></> : null}.</>;
+  return <>Investigation starts at Offering <span style={{ fontFamily: "monospace" }}>{id}</span>; Source <span style={{ fontFamily: "monospace" }}>{source}</span> has no matching Offering workflow evidence.</>;
 }
 
 function SupportError(props: { readonly message: string; readonly onDismiss: () => void }) {

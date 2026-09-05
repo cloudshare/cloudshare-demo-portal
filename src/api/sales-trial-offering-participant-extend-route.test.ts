@@ -280,36 +280,7 @@ describe("Sales Trial participant extend route", () => {
       }),
       details: expect.objectContaining({
         attemptedOperation: "observe_extended_environment",
-        httpExchanges: expect.arrayContaining([
-          expect.objectContaining({
-            request: expect.objectContaining({
-              method: "GET",
-              path: "/api/v3/envs",
-              query: { ownerEmail: "visitor@example.test", brief: "false" },
-            }),
-          }),
-          expect.objectContaining({
-            request: expect.objectContaining({
-              method: "GET",
-              path: "/api/v3/envs/actions/getextended",
-              query: { envId: "opaque-v3-env-1" },
-            }),
-          }),
-          expect.objectContaining({
-            request: expect.objectContaining({
-              method: "PUT",
-              path: "/api/v3/envs/actions/extend",
-              query: { envId: "opaque-v3-env-1" },
-            }),
-          }),
-          expect.objectContaining({
-            request: expect.objectContaining({
-              method: "GET",
-              path: "/api/v3/envs/actions/getextended",
-              query: { envId: "opaque-v3-env-1" },
-            }),
-          }),
-        ]),
+        exchangeCount: 4,
       }),
     });
   });

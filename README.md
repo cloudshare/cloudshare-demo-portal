@@ -262,12 +262,17 @@ All CloudShare access goes through the typed adapter seam in
 wire formats directly. Build a client with `createCloudShareIntegration`:
 
 ```ts
-import { createCloudShareIntegration } from "@/integrations/cloudshare";
+import {
+  createCloudShareIntegration,
+  createCloudShareNoopObservationPort,
+} from "@/integrations/cloudshare";
 
 const cloudshare = createCloudShareIntegration({
   mode: config.runtime.mode, // "live" | "fixture"
   v4: { clientId, clientSecret },
   v3: { apiId, apiKey },
+  // This isolated example intentionally does not persist diagnostics.
+  observer: createCloudShareNoopObservationPort(),
 });
 
 const regions = await cloudshare.requestV3({

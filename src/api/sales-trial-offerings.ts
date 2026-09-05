@@ -39,6 +39,7 @@ import {
 } from "@/integrations/cloudshare/errors";
 import type { CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 import type { SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
+import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 const writeSchema = z.object({
   title: z.string().trim().min(1).max(100),
@@ -69,20 +70,23 @@ export interface SalesTrialOfferingsDeps {
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
       >,
+      options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): SalesDelivery;
   };
   readonly salesEnvironmentFactory?: {
     forConnection(
       connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>,
+      options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): SalesEnvironmentSource;
   };
   readonly cloudshare?: Pick<CloudShareClientFactory, "forConnection">;
+  readonly cloudshareObserver?: (input: { customerId: string; actor: DiagnosticActor; correlationId: string; offeringId: string }) => Parameters<CloudShareClientFactory["forConnection"]>[1];
   readonly itemProvisioningValidator?: SalesItemProvisioningValidator;
   readonly itemProvisioningValidatorFactory?: {
     forConnection(
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
-      >,
+      >, options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): SalesItemProvisioningValidator;
   };
   readonly projectMembers?: CloudShareProjectMemberSource;
@@ -90,7 +94,7 @@ export interface SalesTrialOfferingsDeps {
     forConnection(
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
-      >,
+      >, options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): CloudShareProjectMemberSource;
   };
   readonly timezones?: Pick<SalesTimezoneCacheRepository, "find">;
@@ -396,10 +400,11 @@ export async function handlePublishSalesTrialOffering(
   let memberRead:
     | Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>
     | undefined;
+  const publishClientOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id });
   try {
     const validator =
       deps.itemProvisioningValidator ??
-      deps.itemProvisioningValidatorFactory?.forConnection(connection);
+      deps.itemProvisioningValidatorFactory?.forConnection(connection, publishClientOptions);
     const reads = (await validator?.revalidate(item)) ?? [];
     await recordResourceReads(
       deps,
@@ -413,7 +418,7 @@ export async function handlePublishSalesTrialOffering(
       "Catalogue Item resource revalidated before Sales Trial Offering publication",
     );
     const memberSource =
-      deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection);
+      deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection, publishClientOptions);
     memberRead = await memberSource?.listActiveProjectMembers(item.project.id);
     if (memberRead) {
       await recordProjectMemberRead(
@@ -478,9 +483,10 @@ export async function handlePublishSalesTrialOffering(
     });
   }
   const passphrase = opaqueCloudShareId(randomUUID());
+  const clientOptions = publishClientOptions;
   const delivery =
-    deps.deliveryFactory?.forConnection(connection) ??
-    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+    (clientOptions ? deps.deliveryFactory?.forConnection(connection, clientOptions) : deps.deliveryFactory?.forConnection(connection)) ??
+    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, clientOptions));
   const reservationUpdatedAt = (deps.now ?? (() => new Date()))();
   const reservation = {
     ...offering,
@@ -970,10 +976,11 @@ export async function handleEndSalesTrialOffering(
   };
   const connection = await deps.connections.findByCustomerId(request.customerId);
   if (!connection) return configurationFailure("cloudshare_connection_missing", "portal.cloudshare_connection");
-  const delivery = deps.deliveryFactory?.forConnection(connection) ??
-    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+  const observerOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id });
+  const delivery = (observerOptions ? deps.deliveryFactory?.forConnection(connection, observerOptions) : deps.deliveryFactory?.forConnection(connection)) ??
+    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, observerOptions));
   if (!delivery.updateSession) return configurationFailure("sales_delivery_update_missing", "cloudshare.v4.sales");
-  const environments = deps.salesEnvironmentFactory.forConnection(connection);
+  const environments = deps.salesEnvironmentFactory.forConnection(connection, observerOptions);
   if (!environments.observeById) return configurationFailure("environment_getextended_missing", "cloudshare.v3.envs.getextended");
   try {
     await renewLease();
@@ -1095,7 +1102,7 @@ async function legacyHandleEndSalesTrialOffering(
   }
   const delivery =
     deps.deliveryFactory?.forConnection(connection) ??
-    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" }));
   if (!delivery.updateSession) {
     return response(503, { error: "Sales Delivery update is not configured." });
   }
@@ -1401,38 +1408,11 @@ function isSalesCreateRequest(error: unknown): boolean {
 
 function cloudShareEvidence(error: unknown):
   | {
-      readonly request?: Record<string, unknown>;
-      readonly response?: Record<string, unknown>;
+      readonly request: Record<string, unknown> | null;
+      readonly response: Record<string, unknown> | null;
     }
   | undefined {
-  if (!(error instanceof CloudShareAuthError) &&
-    !(error instanceof CloudShareRequestError) &&
-    !(error instanceof CloudShareTransportError) &&
-    !(error instanceof CloudShareResponseError) &&
-    !isCloudShareErrorAcrossBoundaries(error)) {
-    return undefined;
-  }
-  const context = (error as { context?: Record<string, unknown> }).context;
-  if (!context) {
-    return undefined;
-  }
-  return {
-    request: {
-      method: context.method,
-      path: context.path,
-      query: context.requestQuery,
-      headers: context.requestHeaders,
-      body: context.requestBody,
-    },
-    response: {
-      status: context.responseStatus ?? context.status,
-      headers: context.responseHeaders,
-      body: context.responseBody,
-      cause: context.cause,
-      network: context.network,
-      tls: context.tls,
-    },
-  };
+  return projectCloudShareFailureEvidence(error);
 }
 
 const missingClientFactory: Pick<CloudShareClientFactory, "forConnection"> = {
@@ -1497,8 +1477,8 @@ async function publishFailure(
       itemId: offering.itemId,
       externalId,
     },
-    request: evidence?.request,
-    response: evidence?.response,
+    request: oauthTokenFailure ? null : evidence?.request,
+    response: oauthTokenFailure ? null : evidence?.response,
     details: {
       integrationSurface,
       failureMode,

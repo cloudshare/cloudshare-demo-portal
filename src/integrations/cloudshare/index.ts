@@ -1,12 +1,17 @@
 import {
   createCloudShareClient,
   type CloudShareClient,
+  type CloudShareRequestObserver,
   type CloudShareEndpoints,
 } from "./client";
 import { createFetchHttpClient } from "./http";
 import { createFixtureHttpClient } from "./fixtures";
 import { bundledFixtures } from "./fixtures/index";
-import { createV4TokenProvider } from "./v4-auth";
+import { createV4TokenProvider, type V4TokenAcquisitionEvent } from "./v4-auth";
+
+export type { CloudShareRequestObservation, CloudShareRequestObserver } from "./client";
+export type { V4TokenAcquisitionEvent } from "./v4-auth";
+export { createV4TokenAcquisitionNoopObserver } from "./v4-auth";
 
 /**
  * Public surface of the CloudShare integration. Other layers import only from
@@ -27,6 +32,28 @@ export type {
 } from "./client";
 export { createFixtureHttpClient, loadFixturesFromDir, type FixtureMap } from "./fixtures";
 export { pingCloudShareV3 } from "./ping";
+export {
+  createCloudShareDiagnosticObserver,
+  createCloudShareWorkflowObserver,
+} from "./diagnostic-observer";
+export type { CloudShareWorkflowObservationContext } from "@/ports/cloudshare-observation";
+
+export interface CloudShareObservationPort extends CloudShareRequestObserver {
+  readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
+}
+
+/** Explicit opt-out for tests and isolated live probes that do not persist diagnostics. */
+export function createCloudShareNoopObservationPort(): CloudShareObservationPort {
+  return { onRequest: () => undefined, onAcquisition: () => undefined };
+}
+
+export function composeCloudShareObservers<TRequest>(
+  ...observers: readonly (((event: TRequest) => Promise<void> | void) | undefined)[]
+): (event: TRequest) => Promise<void> {
+  return async (event) => {
+    await Promise.allSettled(observers.map((observer) => Promise.resolve().then(() => observer?.(event))));
+  };
+}
 
 /** Well-known CloudShare API roots; overridable for staging or a recording proxy. */
 export const CLOUDSHARE_DEFAULT_ENDPOINTS: CloudShareEndpoints = {
@@ -51,6 +78,7 @@ export interface CloudShareIntegrationOptions {
   readonly v3: { readonly apiId: string; readonly apiKey: string };
   readonly endpoints?: CloudShareEndpoints;
   readonly trace?: Parameters<typeof createCloudShareClient>[0]["trace"];
+  readonly observer: CloudShareObservationPort;
 }
 
 /**
@@ -72,6 +100,7 @@ export function createCloudShareIntegration(
     baseUrl: endpoints.v4BaseUrl,
     clientId: opts.v4.clientId,
     clientSecret: opts.v4.clientSecret,
+    onAcquisition: opts.observer.onAcquisition,
   });
 
   return createCloudShareClient({
@@ -81,6 +110,7 @@ export function createCloudShareIntegration(
     customerId: opts.customerId,
     v3: opts.v3,
     trace: opts.trace,
+    observer: opts.observer,
   });
 }
 
@@ -95,6 +125,7 @@ export function createCloudShareIntegrationForConnection(
     mode: opts.mode,
     endpoints: opts.endpoints,
     trace: opts.trace,
+    observer: opts.observer,
     customerId: opts.connection.customerId,
     v3: {
       apiId: opts.connection.apiId,

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   CloudShareError,
   createCloudShareIntegrationForConnection,
+  createCloudShareNoopObservationPort,
   pingCloudShareV3,
 } from "@/integrations/cloudshare";
 
@@ -124,6 +125,7 @@ describe("live CloudShare connection E2E", () => {
     async () => {
       const client = createCloudShareIntegrationForConnection({
         mode: "live",
+        observer: createCloudShareNoopObservationPort(),
         connection: { apiId, apiKey, webhookSecret },
       });
 

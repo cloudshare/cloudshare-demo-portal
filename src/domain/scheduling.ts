@@ -39,8 +39,11 @@ function describeProvisioningCause(cause: unknown): Record<string, unknown> {
     | { name?: string; status?: number; message?: string; context?: Record<string, unknown> }
     | undefined;
   const ctx = (err?.context ?? {}) as Record<string, unknown>;
+  const oauthFailure = isOAuthMetadataOnlyContext(ctx);
   const failureMode =
-    err?.name === "CloudShareRequestError"
+    err?.name === "CloudShareRateLimitError"
+      ? "rate_limit"
+      : err?.name === "CloudShareRequestError"
       ? "http_status"
       : err?.name === "CloudShareTransportError"
         ? "transport"
@@ -54,16 +57,17 @@ function describeProvisioningCause(cause: unknown): Record<string, unknown> {
     path: ctx.path ?? null,
     responseStatus:
       typeof err?.status === "number" ? err.status : (ctx.status ?? null),
-    responseBody: ctx.responseBody ?? null,
+    ...(!oauthFailure ? { responseBody: ctx.responseBody ?? null } : {}),
     error: cause instanceof Error ? cause.message : String(cause),
   };
 }
 
-function extractProvisioningRequest(cause: unknown): Record<string, unknown> | undefined {
+function extractProvisioningRequest(cause: unknown): Record<string, unknown> | null | undefined {
   const ctx = ((cause as { context?: Record<string, unknown> } | undefined)?.context ?? {}) as Record<
     string,
     unknown
   >;
+  if (isOAuthMetadataOnlyContext(ctx)) return null;
   const method = ctx.method;
   const path = ctx.path;
   const requestHeaders = ctx.requestHeaders;
@@ -85,9 +89,10 @@ function extractProvisioningRequest(cause: unknown): Record<string, unknown> | u
   };
 }
 
-function extractProvisioningResponse(cause: unknown): Record<string, unknown> | undefined {
+function extractProvisioningResponse(cause: unknown): Record<string, unknown> | null | undefined {
   const err = cause as { status?: number; context?: Record<string, unknown> } | undefined;
   const ctx = (err?.context ?? {}) as Record<string, unknown>;
+  if (isOAuthMetadataOnlyContext(ctx)) return null;
   const status = typeof err?.status === "number" ? err.status : ctx.status;
   const responseHeaders = ctx.responseHeaders;
   const responseBody = ctx.responseBody;
@@ -100,6 +105,11 @@ function extractProvisioningResponse(cause: unknown): Record<string, unknown> | 
     ...(responseHeaders !== undefined ? { headers: responseHeaders } : {}),
     ...(responseBody !== undefined ? { body: responseBody } : {}),
   };
+}
+
+/** Domain-level shape test only; concrete provider projection stays outside domain. */
+function isOAuthMetadataOnlyContext(context: Record<string, unknown>): boolean {
+  return context.integrationSurface === "cloudshare.v4.oauth.token";
 }
 
 function toDiagnosticRequestEvidence(
@@ -321,8 +331,8 @@ export async function scheduleExam(
       outcome: "failure",
       message: `CloudShare ${op.replace(/_/g, " ")} failed`,
       ...(externalIds ? { externalIds } : {}),
-      ...(request ? { request } : {}),
-      ...(response ? { response } : {}),
+      ...(request !== undefined ? { request } : {}),
+      ...(response !== undefined ? { response } : {}),
       details: { attemptedOperation: op, integrationSurface: PROVISIONING_SURFACE[op], ...describeProvisioningCause(cause) },
     });
   };

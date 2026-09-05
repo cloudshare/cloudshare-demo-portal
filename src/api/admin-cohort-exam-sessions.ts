@@ -31,7 +31,9 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 export interface AdminCohortExamSessionDeps {
   readonly exams: ExamRepository;
@@ -240,6 +242,15 @@ export async function handlePublishCohortExamSession(
         body: { error: "CloudShare is not connected for this customer." },
       };
     }
+    const observation = certificationCloudShareWorkflow({
+      actor: request.actor,
+      customerId: request.customerId,
+      subject: { type: "cohort_exam_session", id: session.id },
+      correlationId,
+      source: "admin-exams",
+      examId: exam.id,
+      externalIds: { cohortExamSessionId: session.id, projectId: exam.projectId, blueprintId: exam.blueprintId },
+    });
     const snapshotGuardFailure = await guardRuntimeBlueprintSnapshot(deps, {
       source: "admin-exams",
       operation: "cohort_exam_session.publish",
@@ -252,6 +263,7 @@ export async function handlePublishCohortExamSession(
       projectId: exam.projectId,
       blueprintId: exam.blueprintId,
       savedSnapshotId: exam.snapshotId,
+      observation,
     });
     if (snapshotGuardFailure) {
       return {
@@ -279,7 +291,7 @@ export async function handlePublishCohortExamSession(
       };
     }
 
-    const cloudshareClient = deps.cloudshare.forConnection(connection);
+    const cloudshareClient = deps.cloudshare.forConnection(connection, observation);
     const trainingDelivery = createCloudShareTrainingDelivery(cloudshareClient);
     let created;
     try {
@@ -596,11 +608,12 @@ export async function handlePublishCohortExamSession(
         sessionId: request.sessionId,
         ...toPublishFailureLogFields(error),
       });
+      const failureCause = unwrapTrainingDeliveryError(error);
       return {
-        status: isCloudShareRateLimitError(error) ? 429 : 502,
+        status: isCloudShareRateLimitError(failureCause) ? 429 : 502,
         body: {
           error:
-            isCloudShareRateLimitError(error)
+            isCloudShareRateLimitError(failureCause)
               ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
               : classifyCloudSharePublishFailure(error) === "reconciliation_required"
               ? "CloudShare publish outcome is unknown. Reconcile it before retrying this Cohort Exam Session. Check the diagnostic log for the correlation ID."
@@ -731,8 +744,8 @@ function toCloudShareHttpExchanges(
 }
 
 function toPublishFailureDiagnostic(error: unknown, attemptedOperation?: string): {
-  readonly request?: Record<string, unknown>;
-  readonly response?: Record<string, unknown>;
+  readonly request?: Record<string, unknown> | null;
+  readonly response?: Record<string, unknown> | null;
   readonly details: Record<string, unknown>;
 } {
   error = unwrapTrainingDeliveryError(error);
@@ -747,15 +760,17 @@ function toPublishFailureDiagnostic(error: unknown, attemptedOperation?: string)
     integrationSurface: context.integrationSurface ?? "cloudshare.v4.training",
     failureMode: inferPublishFailureMode(error),
   };
+  const projected = projectCloudShareFailureContext(context);
+  const oauthFailure = projected?.request === null && projected.response === null;
   return {
-    request: {
+    request: oauthFailure ? null : {
       method: context.method ?? "POST",
       path: context.path ?? "/v4/trainings",
       ...(context.requestQuery ? { query: context.requestQuery } : {}),
       ...(context.requestHeaders ? { headers: context.requestHeaders } : {}),
       ...(context.requestBody ? { body: context.requestBody } : {}),
     },
-    response:
+    response: oauthFailure ? null :
       context.responseHeaders || context.responseBody !== undefined || status !== undefined
         ? {
             ...(status !== undefined ? { status } : {}),
@@ -767,8 +782,8 @@ function toPublishFailureDiagnostic(error: unknown, attemptedOperation?: string)
       ...baseDetails,
       ...(attemptedOperation ? { attemptedOperation } : {}),
       ...(status !== undefined ? { responseStatus: status } : {}),
-      ...(context.cause ? { cause: context.cause } : {}),
-      ...(context.issues ? { issues: context.issues } : {}),
+      ...(!oauthFailure && context.cause ? { cause: context.cause } : {}),
+      ...(!oauthFailure && context.issues ? { issues: context.issues } : {}),
     },
   };
 }

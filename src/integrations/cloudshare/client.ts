@@ -87,6 +87,27 @@ export interface CloudShareDetailedResult<T> {
   readonly response: CloudShareResponseDiagnostics;
 }
 
+export interface CloudShareRequestObservation {
+  readonly occurredAt: string;
+  readonly outcome: "success" | "failure";
+  readonly durationMs: number;
+  readonly result?: CloudShareDetailedResult<unknown>;
+  readonly error?: {
+    readonly name: string;
+    readonly message: string;
+    readonly context?: Record<string, unknown>;
+  };
+}
+
+export interface CloudShareRequestObserver {
+  readonly onRequest: (event: CloudShareRequestObservation) => Promise<void> | void;
+}
+
+/** Explicit opt-out for tests and isolated probes that do not persist diagnostics. */
+export function createCloudShareNoopRequestObserver(): CloudShareRequestObserver {
+  return { onRequest: () => undefined };
+}
+
 export interface CloudShareClient {
   requestV4<T>(spec: V4RequestSpec<T>): Promise<T>;
   requestV3<T>(spec: V3RequestSpec<T>): Promise<T>;
@@ -119,6 +140,7 @@ export interface CloudShareClientOptions {
   readonly random?: () => number;
   /** Shared per-process/customer cooldown store. */
   readonly cooldownStore?: CloudShareRateLimitCooldownStore;
+  readonly observer: CloudShareRequestObserver;
 }
 
 interface CloudShareRateLimitCooldown {
@@ -270,9 +292,25 @@ const documentedSalesTracePatterns = [
 ] as const;
 
 function sanitizeOrdinaryTracePath(path: string): string {
+  const safeStaticPaths = new Set([
+    "/v4/experiences", "/v4/projects", "/v4/regions", "/v4/sales", "/v4/teams", "/v4/trainings",
+    "/api/v3/envs", "/api/v3/envs/actions/archive", "/api/v3/envs/actions/extend",
+    "/api/v3/envs/actions/getextended", "/api/v3/envs/actions/resume", "/api/v3/envs/actions/suspend",
+    "/api/v3/ping", "/api/v3/projects", "/api/v3/regions", "/api/v3/timezones",
+  ]);
+  if (safeStaticPaths.has(path)) return path;
+  const v4Training = path.match(/^\/v4\/trainings\/([^/]+)(?:\/(.*))?$/);
+  if (v4Training) return "/v4/trainings/{trainingId}";
+  const v3Environment = path.match(/^\/api\/v3\/envs\/([^/]+)(?:\/(.*))?$/);
+  if (v3Environment) return "/api/v3/envs/{environmentId}";
+  for (const prefix of ["/v4/projects/", "/v4/experiences/", "/v4/guided-journey/"]) {
+    if (path.startsWith(prefix)) return `${prefix}{providerId}`;
+  }
   const match = path.match(/^\/v4\/sales\/([^/]+)(?:\/(.*))?$/);
   if (!match) {
-    return path;
+    if (path.startsWith("/v4/")) return "/v4/[REDACTED_ROUTE]";
+    if (path.startsWith("/api/v3/")) return "/api/v3/[REDACTED_ROUTE]";
+    return REDACTED_SALES_ROUTE;
   }
 
   const tail = match[2];
@@ -511,6 +549,20 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
   ): Promise<CloudShareDetailedResult<T>> {
     const requestInfo = describeRequest(request.url);
     for (let attempt = 0; ; attempt += 1) {
+      const attemptStartedAtMs = getNowMs();
+      const attemptOccurredAt = new Date(attemptStartedAtMs).toISOString();
+      const observeAttemptFailure = async (error: unknown): Promise<void> => {
+        await notifyRequest({
+          occurredAt: attemptOccurredAt,
+          outcome: "failure",
+          durationMs: Math.max(0, getNowMs() - attemptStartedAtMs),
+          error: {
+            name: error instanceof Error ? error.name : "Error",
+            message: error instanceof Error ? error.message : String(error),
+            context: error instanceof CloudShareRequestError || error instanceof CloudShareResponseError || error instanceof CloudShareTransportError || error instanceof CloudShareRateLimitError ? error.context : undefined,
+          },
+        });
+      };
       if (attempt === 0) {
         throwIfCooldownActive(request, requestInfo);
       }
@@ -525,7 +577,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           failureMode: "transport",
           error: cause instanceof Error ? cause.message : String(cause),
         });
-        throw new CloudShareTransportError(
+        const error = new CloudShareTransportError(
           `CloudShare request to ${request.url} failed to reach the server`,
           {
             method: request.method,
@@ -538,6 +590,8 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             ...transportContext(cause),
           },
         );
+        await observeAttemptFailure(error);
+        throw error;
       }
 
       trace("info", "cloudshare response received", request, {
@@ -577,6 +631,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             },
           );
           updateCooldownFromRateLimit(rateLimitError);
+          await observeAttemptFailure(rateLimitError);
           if (isSafeRead(request.method) && attempt < MAX_READ_RETRY_ATTEMPTS) {
             const delayMs = computeReadRetryDelayMs(rateLimitError);
             if (delayMs !== null) {
@@ -587,18 +642,20 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           throw rateLimitError;
         }
 
-        throw new CloudShareRequestError(
+        const error = new CloudShareRequestError(
           `CloudShare request to ${request.url} returned ${response.status}`,
           response.status,
           context,
         );
+        await observeAttemptFailure(error);
+        throw error;
       }
 
       let json: unknown;
       try {
         json = response.body.trim() === "" && allowEmptyResponse ? undefined : JSON.parse(response.body);
       } catch {
-        throw new CloudShareResponseError(
+        const error = new CloudShareResponseError(
           `CloudShare response from ${request.url} was not valid JSON`,
           {
             method: request.method,
@@ -615,11 +672,13 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             tls: response.tls,
           },
         );
+        await observeAttemptFailure(error);
+        throw error;
       }
 
       const parsed = schema.safeParse(json);
       if (!parsed.success) {
-        throw new CloudShareResponseError(
+        const error = new CloudShareResponseError(
           `CloudShare response from ${request.url} did not match the expected schema`,
           {
             method: request.method,
@@ -637,10 +696,12 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             issues: parsed.error.issues.map((i) => i.message),
           },
         );
+        await observeAttemptFailure(error);
+        throw error;
       }
       clearCooldown();
       const requestQuery = sanitizeQuery(extractQuery(request.url));
-      return {
+      const result = {
         data: parsed.data,
         host: requestInfo.host,
         integrationSurface: requestInfo.integrationSurface,
@@ -665,6 +726,8 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           ...(response.tls ? { tls: response.tls } : {}),
         },
       };
+      await notifyRequest({ occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
+      return result;
     }
   }
 
@@ -754,6 +817,11 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
     const requestInfo = describeRequest(request.url);
     for (let attempt = 0; ; attempt += 1) {
+      const attemptStartedAtMs = getNowMs();
+      const attemptOccurredAt = new Date(attemptStartedAtMs).toISOString();
+      const observeTextFailure = async (error: unknown): Promise<void> => {
+        await notifyRequest({ occurredAt: attemptOccurredAt, outcome: "failure", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), error: { name: error instanceof Error ? error.name : "Error", message: error instanceof Error ? error.message : String(error), context: error instanceof CloudShareRequestError || error instanceof CloudShareResponseError || error instanceof CloudShareTransportError || error instanceof CloudShareRateLimitError ? error.context : undefined } });
+      };
       if (attempt === 0) {
         throwIfCooldownActive(request, requestInfo);
       }
@@ -768,7 +836,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           failureMode: "transport",
           error: cause instanceof Error ? cause.message : String(cause),
         });
-        throw new CloudShareTransportError(
+        const error = new CloudShareTransportError(
           `CloudShare request to ${unsignedUrl} failed to reach the server`,
           {
             method: spec.method,
@@ -781,6 +849,8 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             ...transportContext(cause),
           },
         );
+        await observeTextFailure(error);
+        throw error;
       }
 
       trace("info", "cloudshare response received", request, {
@@ -820,6 +890,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             },
           );
           updateCooldownFromRateLimit(rateLimitError);
+          await observeTextFailure(rateLimitError);
           if (isSafeRead(request.method) && attempt < MAX_READ_RETRY_ATTEMPTS) {
             const delayMs = computeReadRetryDelayMs(rateLimitError);
             if (delayMs !== null) {
@@ -830,16 +901,18 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           throw rateLimitError;
         }
 
-        throw new CloudShareRequestError(
+        const error = new CloudShareRequestError(
           `CloudShare request to ${unsignedUrl} returned ${response.status}`,
           response.status,
           context,
         );
+        await observeTextFailure(error);
+        throw error;
       }
 
       clearCooldown();
       const requestQuery = sanitizeQuery(extractQuery(request.url));
-      return {
+      const result = {
         data: response.body,
         host: requestInfo.host,
         integrationSurface: requestInfo.integrationSurface,
@@ -861,6 +934,16 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           ...(response.tls ? { tls: response.tls } : {}),
         },
       };
+      await notifyRequest({ occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
+      return result;
+    }
+  }
+
+  async function notifyRequest(event: CloudShareRequestObservation): Promise<void> {
+    try {
+      await opts.observer.onRequest(event);
+    } catch {
+      // Diagnostics must not break CloudShare traffic.
     }
   }
 

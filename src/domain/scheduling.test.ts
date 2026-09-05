@@ -22,6 +22,7 @@ import {
 } from "./lab-launch";
 import { createDiagnosticRecorder } from "./diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
+import { CloudShareRequestError } from "@/integrations/cloudshare";
 
 const SPONSORED_LINK_URL =
   "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token";
@@ -1133,20 +1134,17 @@ describe("scheduleExam", () => {
     });
   });
 
-  it("records a failure diagnostic for the failing CloudShare op and emits no later steps", async () => {
+  it("keeps OAuth failure evidence metadata-only for the failing provisioning step", async () => {
     const { exams, attempts, launches } = await setup();
     const repository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository });
 
-    const cloudShareError = Object.assign(new Error("forbidden"), {
-      name: "CloudShareRequestError",
-      status: 403,
-      context: {
-        integrationSurface: "cloudshare.v4.training.participant",
-        method: "POST",
-        path: "/trainings/training-1/students",
-        responseBody: '{"error":"forbidden"}',
-      },
+    const cloudShareError = new CloudShareRequestError("OAuth token exchange failed", 503, {
+      integrationSurface: "cloudshare.v4.oauth.token",
+      method: "POST",
+      path: "/oauth/token",
+      requestBody: { client_secret: "private-secret" },
+      responseBody: { access_token: "private-token" },
     });
 
     await expect(
@@ -1189,13 +1187,12 @@ describe("scheduleExam", () => {
     );
     expect(failure?.details).toMatchObject({
       failureMode: "http_status",
-      integrationSurface: "cloudshare.v4.training.participant",
-      responseStatus: 403,
+      integrationSurface: "cloudshare.v4.oauth.token",
+      responseStatus: 503,
     });
-    expect(failure?.response).toMatchObject({
-      status: 403,
-      body: '{"error":"forbidden"}',
-    });
+    expect(failure?.request).toBeNull();
+    expect(failure?.response).toBeNull();
+    expect(JSON.stringify(failure)).not.toMatch(/private-secret|private-token/);
   });
 
   it("records an exam_attempt.provisioning_failed entry with outcome failure when addParticipant throws", async () => {

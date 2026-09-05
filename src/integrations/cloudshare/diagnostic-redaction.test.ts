@@ -61,7 +61,7 @@ describe("projectCloudShareGenericLogValue", () => {
       correlationId: "correlation-1",
       failureMode: "http_status",
       response: { status: 503 },
-      path: "/provider/resource",
+      path: "/[REDACTED_ROUTE]",
     });
   });
 });

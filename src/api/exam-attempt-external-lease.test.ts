@@ -30,11 +30,13 @@ describe("recordExamAttemptExternalLeaseInspectionFailure", () => {
         source: "candidate-enter",
         actorType: "candidate",
         message: "CloudShare requests are cooling down",
+        correlationId: "lease-operation-1",
       },
     );
 
     expect(record).toHaveBeenCalledWith(expect.objectContaining({
       operation: "cloudshare.exam_attempt_external_lease.read",
+      correlationId: "lease-operation-1",
       details: expect.objectContaining({
         failureMode: "rate_limit",
         responseEvidence: "cached_prior",

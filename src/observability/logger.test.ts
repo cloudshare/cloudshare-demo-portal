@@ -81,7 +81,7 @@ describe("createLogger", () => {
     const raw = sink.mock.calls[0][0] as string;
     expect(raw.includes(protectedMarker)).toBe(false);
     expect(raw).toContain('"correlationId":"correlation-1"');
-    expect(raw).toContain('"path":"/provider/resource"');
+    expect(raw).toContain('"path":"/[REDACTED_ROUTE]"');
   });
 
   it("does not emit untrusted free text supplied as the ordinary log message", () => {

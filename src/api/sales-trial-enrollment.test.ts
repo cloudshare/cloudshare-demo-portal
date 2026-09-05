@@ -4,6 +4,7 @@ import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-
 import type { SalesTrialOffering } from "@/domain/sales-trial-offering";
 import type { SalesTrialEnrollment, SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 import {
+  CloudShareAuthError,
   CloudShareRequestError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare/errors";
@@ -13,6 +14,7 @@ import {
   handleListSalesTrialOfferingParticipants,
   handleExtendSalesTrialOfferingParticipant,
 } from "./sales-trial-enrollment";
+import { createSalesTrialCloudShareObserver } from "./sales-trial-cloudshare-diagnostics";
 
 function createOffering(overrides: Partial<SalesTrialOffering> = {}): SalesTrialOffering {
   return {
@@ -434,6 +436,38 @@ describe("Sales Trial offering entry", () => {
         details: expect.objectContaining({ failureMode: "provider_failure" }),
       }),
     );
+  });
+
+  it("keeps OAuth token failure evidence metadata-only during candidate entry", async () => {
+    const { deps, diagnosticRepository, readSession } = createDeps();
+    readSession.mockRejectedValue(
+      new CloudShareAuthError("OAuth token exchange returned 503", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        status: 503,
+        requestBody: { client_id: "private-client", client_secret: "private-secret" },
+        responseBody: { access_token: "private-token" },
+      }),
+    );
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.entered",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({ status: 404, body: { correlationId: expect.any(String) } });
+    expect(failure).toMatchObject({
+      request: null,
+      response: null,
+      details: expect.objectContaining({ failureMode: "provider_failure" }),
+    });
+    const persisted = JSON.stringify(failure);
+    expect(persisted).not.toContain("private-client");
+    expect(persisted).not.toContain("private-secret");
+    expect(persisted).not.toContain("private-token");
   });
 
   it("fails closed before enrollment mutation when CloudShare reports the offering has not started", async () => {
@@ -1525,9 +1559,99 @@ describe("Sales Trial offering entry", () => {
       }),
     });
   });
+
+  it("with a shared observer records one thrown extension summary without duplicate child steps", async () => {
+    const { deps, enrollments, diagnosticRepository, observe, extendById } = createDeps({
+      cloudshareObserver: () => ({ scope: "custom_observer", correlationId: "test-observer", onRequest: vi.fn(), onAcquisition: vi.fn() }),
+    });
+    await enrollments.save({
+      id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",
+      email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: "remote-1",
+      invitationStatus: "sent", participationStatus: "inProgress", cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Archived", observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT", firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active", attentionReason: null, lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"), lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"), updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    observe.mockResolvedValueOnce({ environmentId: "opaque-v3-env-1", statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT", exchanges: [] });
+    extendById.mockRejectedValueOnce(new CloudShareRequestError("extension failed", 503, { responseStatus: 503, path: "/api/v3/envs/actions/extend", integrationSurface: "cloudshare.v3.environments" }));
+
+    const result = await handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1", offeringId: "offering-1", enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    const summaries = await diagnosticRepository.query({ source: "sales-trial-enrollment", operation: "sales_trial.offering.environment.extend", outcome: "failure" });
+    const children = await diagnosticRepository.query({ source: "sales-trial-enrollment", operation: "sales_trial.offering.environment.extend.http_exchange" });
+    expect(result.status).toBe(502);
+    expect(summaries).toHaveLength(1);
+    expect(children).toHaveLength(0);
+    expect(summaries[0]).toMatchObject({
+      details: expect.objectContaining({ failureMode: "http_failure", exchangeCount: 1 }),
+    });
+    expect(summaries[0]?.details).not.toHaveProperty("httpExchanges");
+  });
 });
 
+  it("uses the recorder-backed observer for retained enrollment property diagnostics", async () => {
+    let ensureParticipantCorrelationProperties: ReturnType<typeof vi.fn> = vi.fn();
+    const { deps, diagnosticRepository, createSponsoredLink } = createDeps({
+      cloudshareObserver: ({ customerId, actor, correlationId, subject }) => createSalesTrialCloudShareObserver({ diagnostics: deps.diagnostics, customerId, actor, correlationId, subject, source: "sales-trial-enrollment", candidateEmail: request.participant.email }),
+      deliveryFactory: { forConnection: vi.fn((_connection, options) => ({
+        readSession: vi.fn().mockResolvedValue({ id: "sales-1", status: "inProgress", end: "2026-08-30T17:00", request: { method: "GET", path: "/sales/sales-1" }, response: { status: 200, body: {} } }),
+        ensureParticipantCorrelationProperties: ensureParticipantCorrelationProperties = vi.fn(async () => { await options!.onAcquisition({ occurredAt: "2026-08-30T10:00:00Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token", status: 200 }); await options!.onRequest({ occurredAt: "2026-08-30T10:00:01Z", outcome: "success", durationMs: 1, result: { integrationSurface: "cloudshare.v4.sales.user_properties", request: { method: "GET", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: { marker: "protected-provider-body" } } } }); await options!.onRequest({ occurredAt: "2026-08-30T10:00:02Z", outcome: "success", durationMs: 1, result: { integrationSurface: "cloudshare.v4.sales.user_properties", request: { method: "POST", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: { marker: "protected-provider-body" } } } }); await options!.onRequest({ occurredAt: "2026-08-30T10:00:03Z", outcome: "failure", durationMs: 1, error: new CloudShareRequestError("failed", 503, { method: "POST", path: "/sales/sales-1/users/properties", integrationSurface: "cloudshare.v4.sales.user_properties", responseStatus: 503 }) }); throw new CloudShareRequestError("failed", 503, { method: "POST", path: "/sales/sales-1/users/properties", responseStatus: 503 }); }),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [], request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: {} } }), registerParticipants: vi.fn(), updateParticipantCorrelation: vi.fn(), createSponsoredLink,
+      })) },
+    });
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const rows = await diagnosticRepository.query({ source: "sales-trial-enrollment", operation: "sales_trial.cloudshare.request" });
+    const oauth = await diagnosticRepository.query({ source: "sales-trial-enrollment", operation: "sales_trial.cloudshare.oauth_token" });
+    const ordered = [...rows].reverse();
+    expect(result.status).toBe(404);
+    expect(ensureParticipantCorrelationProperties).toHaveBeenCalledOnce();
+    expect(ordered.map((row) => row.details?.sequence)).toEqual([2, 3, 4]);
+    expect(rows).toHaveLength(3);
+    const allChildren = [...rows, ...oauth];
+    expect(allChildren.every((row) => row.correlationId && row.subject?.type === "sales_trial_enrollment" && row.subject.id === "enrollment-1")).toBe(true);
+    expect(ordered).toMatchObject([
+      { request: { method: "GET", path: "/sales/sales-1/users/properties" }, response: { status: 200 }, outcome: "success" },
+      { request: { method: "POST", path: "/sales/sales-1/users/properties" }, response: { status: 200 }, outcome: "success" },
+      { request: { method: "POST", path: "/sales/sales-1/users/properties" }, response: { status: 503 }, outcome: "failure" },
+    ]);
+    expect(JSON.stringify(rows)).toContain("protected-provider-body");
+    expect(oauth).toHaveLength(1);
+    expect(oauth[0]).toMatchObject({ request: null, response: null });
+    expect(JSON.stringify(oauth[0])).not.toMatch(/client_secret|access_token|oauth-secret|bearer-value/i);
+    expect(JSON.stringify(result)).not.toContain("protected-provider-body");
+  });
+
 describe("Sales Trial offering monitoring", () => {
+  it("records a successful CloudShare roster read under the Trial Offering", async () => {
+    const { deps, diagnosticRepository } = createDeps();
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "success",
+    });
+
+    expect(result).toMatchObject({ status: 200, body: { correlationId: expect.any(String) } });
+    expect(entry).toMatchObject({
+      customerId: "customer-1",
+      subject: { type: "sales_trial_offering", id: "offering-1" },
+      correlationId: result.body.correlationId,
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [] } },
+      details: {
+        integrationSurface: "cloudshare.v4.sales.participants",
+        attemptedOperation: "list_participants",
+      },
+    });
+  });
+
   it("fails closed when the roster has duplicate exact correlations", async () => {
     const { deps, enrollments, audit, listParticipants } = createDeps();
     await enrollments.save({
@@ -2168,7 +2292,7 @@ describe("Sales Trial offering monitoring", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
     const [failure] = await diagnosticRepository.query({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
     });
@@ -2278,7 +2402,7 @@ describe("Sales Trial offering monitoring", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
     const [failure] = await diagnosticRepository.query({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
     });
@@ -2344,7 +2468,7 @@ describe("Sales Trial offering monitoring", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
     const [failure] = await diagnosticRepository.query({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
     });
@@ -2541,7 +2665,7 @@ describe("Sales Trial offering monitoring", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
     const [failure] = await diagnosticRepository.query({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
     });
@@ -2585,9 +2709,72 @@ describe("Sales Trial offering monitoring", () => {
     expect(JSON.stringify(result.body)).not.toContain("203.0.113.10");
     expect(JSON.stringify(result.body)).not.toContain("secret");
   });
+
+  it("keeps OAuth token failure evidence metadata-only during Trial participant monitoring", async () => {
+    const { deps, diagnosticRepository, listParticipants } = createDeps();
+    listParticipants.mockRejectedValue(
+      new CloudShareAuthError("OAuth token exchange returned 503", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        status: 503,
+        requestBody: { client_id: "private-client", client_secret: "private-secret" },
+        responseBody: { access_token: "private-token" },
+      }),
+    );
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({ status: 502, body: { correlationId: expect.any(String) } });
+    expect(failure).toMatchObject({
+      request: null,
+      response: null,
+      details: expect.objectContaining({ failureMode: "http_failure" }),
+    });
+    const persisted = JSON.stringify(failure);
+    expect(persisted).not.toContain("private-client");
+    expect(persisted).not.toContain("private-secret");
+    expect(persisted).not.toContain("private-token");
+  });
 });
 
 describe("Sales Trial participant environment extension", () => {
+  it("records each confirmed extension exchange as an ordered enrollment workflow step", async () => {
+    const { deps, enrollments, diagnosticRepository } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",
+      email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: "remote-1",
+      invitationStatus: "notSent", participationStatus: "inProgress", cloudShareRosterEnvironmentReference: "opaque-v3-env-1",
+      environmentStatus: "Ready", observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT", firstJoined: null,
+      status: "active", attentionReason: null, lastLaunchedAt: new Date("2026-08-30T10:00:00.000Z"), lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"), updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+
+    const result = await handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1", offeringId: "offering-1", enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    const entries = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend.http_exchange",
+      correlationId: result.body.correlationId,
+    });
+
+    expect(result.status).toBe(200);
+    expect(entries).toHaveLength(4);
+    expect(entries.map((entry) => entry.details?.sequence).sort()).toEqual([1, 2, 3, 4]);
+    expect(entries.every((entry) => entry.subject?.id === "enrollment-1")).toBe(true);
+  });
+
   it("extends an exact retained environment mapping, reads back the provider state, and returns a safe monitoring projection", async () => {
     const { deps, enrollments, diagnosticRepository, audit, observe, extendById, observeById } = createDeps();
     await enrollments.save({

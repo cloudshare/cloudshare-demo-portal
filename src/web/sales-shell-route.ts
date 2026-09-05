@@ -30,6 +30,7 @@ export interface SalesWorkspaceRouteState {
   readonly correlationId?: string;
   readonly source?: string;
   readonly subjectId?: string;
+  readonly subjectType?: string;
 }
 
 /** A feature requests a Sales destination; only the shell turns it into browser history. */
@@ -50,6 +51,7 @@ export interface SalesNavigationIntent {
   readonly correlationId?: string | null;
   readonly source?: string | null;
   readonly subjectId?: string | null;
+  readonly subjectType?: string | null;
   /** Ephemeral creation evidence carried across the Provision-to-queue transition. */
   readonly creationNotice?: {
     readonly message: string;
@@ -95,7 +97,7 @@ export function buildSalesWorkspaceHref(route: SalesNavigationIntent): string {
       if (route.queueOffset && route.queueOffset > 0) params.set("offset", String(route.queueOffset));
     }
   }
-  if (route.tab === "support") { if (route.correlationId) params.set("correlationId", route.correlationId); if (route.source) params.set("source", route.source); if (route.subjectId) params.set("subjectId", route.subjectId); }
+  if (route.tab === "support") { if (route.correlationId) params.set("correlationId", route.correlationId); if (route.source) params.set("source", route.source); if (route.subjectType) params.set("subjectType", route.subjectType); if (route.subjectId) params.set("subjectId", route.subjectId); }
   return `/sales?${params.toString()}`;
 }
 
@@ -108,6 +110,7 @@ export function parseSalesWorkspaceRouteState(input: {
   readonly correlationId?: string | readonly string[];
   readonly source?: string | readonly string[];
   readonly subjectId?: string | readonly string[];
+  readonly subjectType?: string | readonly string[];
   readonly sessionId?: string | readonly string[];
   readonly status?: string | readonly string[];
   readonly participants?: string | readonly string[];
@@ -135,6 +138,7 @@ export function parseSalesWorkspaceRouteState(input: {
   const correlationId = tab === "support" ? readValue(input.correlationId) : undefined;
   const source = tab === "support" ? readValue(input.source) : undefined;
   const subjectId = tab === "support" ? readValue(input.subjectId) : undefined;
+  const subjectType = tab === "support" ? readValue(input.subjectType) : undefined;
   return {
     tab,
     itemView,
@@ -148,6 +152,7 @@ export function parseSalesWorkspaceRouteState(input: {
     ...(opportunityId ? { opportunityId } : {}),
     ...(correlationId ? { correlationId } : {}),
     ...(source ? { source } : {}), ...(subjectId ? { subjectId } : {}),
+    ...(subjectType ? { subjectType } : {}),
   };
 }
 

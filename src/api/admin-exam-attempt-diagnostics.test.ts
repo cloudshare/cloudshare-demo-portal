@@ -123,7 +123,7 @@ describe("refreshCloudShareEnvironmentStatus", () => {
       customerId: "customer-a",
       examAttemptId: "attempt-1",
     });
-    expect(entries).toEqual([
+    expect(entries).toEqual(expect.arrayContaining([
       expect.objectContaining({
         source: "admin-diagnostics",
         level: "warn",
@@ -137,7 +137,7 @@ describe("refreshCloudShareEnvironmentStatus", () => {
           reason: "missing_cloudshare_connection",
         }),
       }),
-    ]);
+    ]));
   });
 
   it("polls CloudShare environment state, persists it, and records the refresh diagnostic", async () => {
@@ -155,8 +155,15 @@ describe("refreshCloudShareEnvironmentStatus", () => {
     services.cloudshareConnections.findByCustomerId = vi.fn().mockResolvedValue(connection);
 
     await refreshCloudShareEnvironmentStatus(services, BASE_CONTEXT);
+    await refreshCloudShareEnvironmentStatus(services, BASE_CONTEXT);
 
-    expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledWith(connection);
+    expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledWith(connection, expect.objectContaining({ scope: "workflow" }));
+    const refreshScopes = vi.mocked(services.cloudshareClientFactory.forConnection).mock.calls.map(([, scope]) => scope)
+      .filter((scope) => scope?.scope === "workflow");
+    expect(new Set(refreshScopes.map((scope) => scope!.scope === "workflow" ? scope.workflow.correlationId : null)).size).toBe(2);
+    expect(refreshScopes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: "workflow", workflow: expect.objectContaining({ subject: { type: "exam_attempt", id: "attempt-1" }, externalIds: expect.objectContaining({ lifecycleParent: "admin-diagnostics:attempt-1" }) }) }),
+    ]));
     expect(services.environments.save).toHaveBeenCalledWith({
       environmentExternalId: "env-external-1",
       status: "running",
@@ -167,7 +174,7 @@ describe("refreshCloudShareEnvironmentStatus", () => {
       customerId: "customer-a",
       examAttemptId: "attempt-1",
     });
-    expect(entries).toEqual([
+    expect(entries).toEqual(expect.arrayContaining([
       expect.objectContaining({
         source: "admin-diagnostics",
         operation: "cloudshare.environment.reconcile",
@@ -185,7 +192,7 @@ describe("refreshCloudShareEnvironmentStatus", () => {
           observedAt: expect.any(String),
         }),
       }),
-    ]);
+    ]));
   });
 });
 

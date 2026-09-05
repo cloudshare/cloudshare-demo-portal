@@ -27,8 +27,13 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import { ensureExamAttemptEnvironmentCorrelation } from "./exam-attempt-environment-correlation";
+import {
+  createCloudShareWorkflowSequenceAllocator,
+  type CloudShareWorkflowSequenceAllocator,
+} from "@/ports/cloudshare-observation";
 import type { ExamClock } from "@/domain/exam-clock";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import { settleExamAttemptCompletion } from "./exam-attempt-completion-settlement";
@@ -129,13 +134,15 @@ export async function suspendExamAttemptRuntime(
   request: SuspendResumeRuntimeRequest,
 ): Promise<SuspendResumeResponse> {
   const { examAttemptId } = request;
+  const operationCorrelationId = (deps.newCorrelationId ?? randomUUID)();
+  const sequenceAllocator = createCloudShareWorkflowSequenceAllocator();
   let anchors: RuntimeDiagnosticAnchors = {
     source: "runtime" as const,
     customerId: null as string | null,
     candidateEmail: deps.candidateEmail ?? null,
     examId: null as string | null,
     examAttemptId,
-    correlationId: null as string | null,
+    correlationId: operationCorrelationId,
     actor: { type: "candidate" as const, id: null as string | null, email: deps.candidateEmail ?? null },
     subject: { type: "exam_attempt" as const, id: examAttemptId },
   };
@@ -155,7 +162,7 @@ export async function suspendExamAttemptRuntime(
       return { status: 404, body: { error: "exam attempt not found" } };
     }
     const reconciledAttempt = settlement.attempt;
-    anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
+    anchors = { ...anchorsForAttempt(reconciledAttempt, deps.candidateEmail), correlationId: operationCorrelationId };
     if (reconciledAttempt.status !== "in_progress") {
       await deps.diagnostics?.record({
         ...anchors,
@@ -183,11 +190,13 @@ export async function suspendExamAttemptRuntime(
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "exam_suspend",
+      correlationId: operationCorrelationId,
+      sequenceAllocator,
     });
     const commandResult = await suspendExam(
       {
         ...deps,
-        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
+        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId, operationCorrelationId, sequenceAllocator)),
       },
       {
         examAttemptId,
@@ -214,7 +223,7 @@ export async function suspendExamAttemptRuntime(
     });
     return { status: 200, body: { status: "suspended", examAttemptId } };
   } catch (err) {
-    const resp = await handleExamAttemptRuntimeError(deps, err, "suspend", examAttemptId, anchors);
+    const resp = await handleExamAttemptRuntimeError(deps, err, "suspend", examAttemptId, anchors, operationCorrelationId);
     if (resp.status !== 200) {
       const correlationId =
         typeof resp.body.correlationId === "string" ? resp.body.correlationId : undefined;
@@ -254,6 +263,8 @@ export async function resumeExamAttemptRuntime(
   deps: ResumeHandlerDeps,
   request: SuspendResumeRuntimeRequest,
 ): Promise<SuspendResumeResponse> {
+  const operationCorrelationId = (deps.newCorrelationId ?? randomUUID)();
+  const sequenceAllocator = createCloudShareWorkflowSequenceAllocator();
   const { examAttemptId } = request;
   let anchors: RuntimeDiagnosticAnchors = {
     source: "runtime" as const,
@@ -261,7 +272,7 @@ export async function resumeExamAttemptRuntime(
     candidateEmail: deps.candidateEmail ?? null,
     examId: null as string | null,
     examAttemptId,
-    correlationId: null as string | null,
+    correlationId: operationCorrelationId,
     actor: { type: "candidate" as const, id: null as string | null, email: deps.candidateEmail ?? null },
     subject: { type: "exam_attempt" as const, id: examAttemptId },
   };
@@ -281,7 +292,7 @@ export async function resumeExamAttemptRuntime(
       return { status: 404, body: { error: "exam attempt not found" } };
     }
     const reconciledAttempt = settlement.attempt;
-    anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
+    anchors = { ...anchorsForAttempt(reconciledAttempt, deps.candidateEmail), correlationId: operationCorrelationId };
     const resumeOpenPeriodEnd = await getResumeOpenPeriodEnd(deps, reconciledAttempt);
     const now = (deps.now ?? (() => new Date()))();
     const authoredOpenPeriodClosed = !!resumeOpenPeriodEnd && now.getTime() >= resumeOpenPeriodEnd.getTime();
@@ -319,12 +330,16 @@ export async function resumeExamAttemptRuntime(
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "exam_resume",
+      correlationId: operationCorrelationId,
+      sequenceAllocator,
     });
     if (!resumeOpenPeriodEnd || authoredOpenPeriodClosed) {
       const externalLease = await inspectExamAttemptExternalLease(deps, {
         examAttemptId,
         customerId: reconciledAttempt.customerId ?? null,
         environmentExternalId: correlation.actionableEnvironmentId,
+        correlationId: operationCorrelationId,
+        sequenceAllocator,
       });
       await recordExamAttemptExternalLeaseInspectionFailure(deps, {
         inspection: externalLease,
@@ -335,6 +350,7 @@ export async function resumeExamAttemptRuntime(
         source: "runtime",
         actorType: "candidate",
         message: "CloudShare external lease inspection failed during exam resume",
+        correlationId: operationCorrelationId,
       });
       if (externalLease.kind === "expired") {
         await reconcileExpiredExamAttemptExternalLease(deps, {
@@ -346,6 +362,7 @@ export async function resumeExamAttemptRuntime(
           source: "runtime",
           actorType: "candidate",
           message: "ExamAttempt expired from authoritative CloudShare external lease reconciliation",
+          correlationId: operationCorrelationId,
         });
         await deps.diagnostics?.record({
           ...anchors,
@@ -428,7 +445,7 @@ export async function resumeExamAttemptRuntime(
     const result = await resumeExam(
       {
         ...deps,
-        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
+        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId, operationCorrelationId, sequenceAllocator)),
       },
       {
         examAttemptId,
@@ -465,11 +482,11 @@ export async function resumeExamAttemptRuntime(
       },
     };
   } catch (err) {
-    const recovered = await tryRecoverAlreadyActiveResume(deps, examAttemptId, anchors, err);
+    const recovered = await tryRecoverAlreadyActiveResume(deps, examAttemptId, anchors, err, operationCorrelationId, sequenceAllocator);
     if (recovered) {
       return recovered;
     }
-    const resp = await handleExamAttemptRuntimeError(deps, err, "resume", examAttemptId, anchors);
+    const resp = await handleExamAttemptRuntimeError(deps, err, "resume", examAttemptId, anchors, operationCorrelationId);
     if (resp.status !== 200) {
       const correlationId =
         typeof resp.body.correlationId === "string" ? resp.body.correlationId : undefined;
@@ -518,6 +535,8 @@ export async function runHeartbeatAutoSuspendRuntime(
   deps: HeartbeatAutoSuspendHandlerDeps,
   examAttemptId: string,
 ): Promise<void> {
+  const operationCorrelationId = (deps.newCorrelationId ?? randomUUID)();
+  const sequenceAllocator = createCloudShareWorkflowSequenceAllocator();
   const attempt = await deps.attempts.findById(examAttemptId);
   const anchors = {
     source: "runtime" as const,
@@ -525,6 +544,7 @@ export async function runHeartbeatAutoSuspendRuntime(
     candidateEmail: deps.candidateEmail ?? null,
     examId: attempt?.examId ?? null,
     examAttemptId,
+    correlationId: operationCorrelationId,
     actor: { type: "candidate" as const, id: attempt?.candidateId ?? null, email: deps.candidateEmail ?? null },
     subject: { type: "exam_attempt" as const, id: examAttemptId },
   };
@@ -532,11 +552,13 @@ export async function runHeartbeatAutoSuspendRuntime(
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "heartbeat_auto_suspend",
+      correlationId: operationCorrelationId,
+      sequenceAllocator,
     });
     const commandResult = await suspendExam(
       {
         ...deps,
-        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
+        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId, operationCorrelationId, sequenceAllocator)),
       },
       {
         examAttemptId,
@@ -575,6 +597,7 @@ export async function runHeartbeatAutoSuspendRuntime(
         eventType: "cloudshare.heartbeat_auto_suspend.failed",
         logMessage: "heartbeat auto-suspend failed",
       },
+      operationCorrelationId,
     );
     throw err;
   }
@@ -607,6 +630,8 @@ function commandResultToDiagnostic(
 async function resolveCustomerEnvironmentAccess(
   deps: SuspendHandlerDeps | ResumeHandlerDeps | HeartbeatAutoSuspendHandlerDeps,
   examAttemptId: string,
+  correlationId: string,
+  sequenceAllocator: CloudShareWorkflowSequenceAllocator,
 ): Promise<Pick<SuspendExamDeps, "controller" | "source">> {
   const attempt = await deps.attempts.findById(examAttemptId);
   if (!attempt?.customerId) {
@@ -627,7 +652,7 @@ async function resolveCustomerEnvironmentAccess(
     );
   }
 
-  const client = deps.cloudshare.forConnection(connection);
+  const client = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "system", id: "exam-runtime" }, customerId: attempt.customerId, subject: { type: "exam_attempt", id: examAttemptId }, correlationId, source: "runtime", examId: attempt.examId ?? undefined, examAttemptId, sequenceAllocator, externalIds: { lifecycleParent: `exam-runtime:${examAttemptId}` } }));
   return {
     controller: createCloudShareEnvironmentController(client),
     source: createCloudShareEnvironmentSource(client),
@@ -668,6 +693,8 @@ async function tryRecoverAlreadyActiveResume(
   examAttemptId: string,
   anchors: RuntimeDiagnosticAnchors,
   err: unknown,
+  operationCorrelationId: string,
+  sequenceAllocator: CloudShareWorkflowSequenceAllocator,
 ): Promise<SuspendResumeResponse | null> {
   if (!isCloudShareFailure(err)) {
     return null;
@@ -679,7 +706,7 @@ async function tryRecoverAlreadyActiveResume(
       return null;
     }
 
-    const access = await resolveCustomerEnvironmentAccess(deps, examAttemptId);
+    const access = await resolveCustomerEnvironmentAccess(deps, examAttemptId, operationCorrelationId, sequenceAllocator);
     const environmentExternalId =
       launch.environmentExternalId ?? launch.environmentId ?? null;
     if (!environmentExternalId) {
@@ -778,6 +805,7 @@ async function handleExamAttemptRuntimeError(
   action: "suspend" | "resume",
   examAttemptId: string,
   anchors?: Pick<RuntimeDiagnosticAnchors, "customerId" | "candidateEmail" | "examId">,
+  operationCorrelationId?: string,
 ): Promise<SuspendResumeResponse> {
   if (err instanceof LabLaunchNotFoundError) {
     return { status: 404, body: { error: "no lab launch found for exam attempt" } };
@@ -802,12 +830,13 @@ async function handleExamAttemptRuntimeError(
       eventType: `cloudshare.exam_${action}.failed`,
       logMessage: `exam ${action} failed`,
     },
+    operationCorrelationId,
   );
   if (failure) {
     return failure;
   }
 
-  const correlationId = (deps.newCorrelationId ?? randomUUID)();
+  const correlationId = operationCorrelationId ?? (deps.newCorrelationId ?? randomUUID)();
   const diagnostic = {
     correlationId,
     examAttemptId,
@@ -830,9 +859,10 @@ async function reportFailureDiagnostic(
   examAttemptId: string,
   anchors: Pick<RuntimeDiagnosticAnchors, "customerId" | "candidateEmail" | "examId"> | undefined,
   spec: FailureHandlingSpec,
+  operationCorrelationId?: string,
 ): Promise<SuspendResumeResponse | null> {
   if (err instanceof CustomerEnvironmentAccessError) {
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    const correlationId = operationCorrelationId ?? (deps.newCorrelationId ?? randomUUID)();
     const diagnostic = {
       correlationId,
       examAttemptId,
@@ -852,7 +882,7 @@ async function reportFailureDiagnostic(
   }
 
   if (err instanceof ExamAttemptRuntimeError) {
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    const correlationId = operationCorrelationId ?? (deps.newCorrelationId ?? randomUUID)();
     const diagnostic = buildExamAttemptRuntimeDiagnostic(
       correlationId,
       spec.action,
@@ -881,7 +911,7 @@ async function reportFailureDiagnostic(
   }
 
   if (isCloudShareFailure(err)) {
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    const correlationId = operationCorrelationId ?? (deps.newCorrelationId ?? randomUUID)();
     const diagnostic = buildCloudShareDiagnostic(
       correlationId,
       spec.action,

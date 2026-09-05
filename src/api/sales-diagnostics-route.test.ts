@@ -79,6 +79,10 @@ describe("Sales diagnostics HTTP isolation", () => {
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(10, expect.anything(), {
       customerId: "customer-certalis",
+      query: { operation: "account.created", source: "cloudshare-integration", limit: "101", offset: "0" },
+    });
+    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), {
+      customerId: "customer-certalis",
       query: { source: "sales-items", operation: "item.resource_read" },
     });
   });
@@ -147,10 +151,7 @@ describe("Sales diagnostics HTTP isolation", () => {
     expect(body.entries[0].request.headers.authorization).toBe("[REDACTED]");
     expect(body.entries[0].request.query).toEqual({ envId: "opaque-v3-env-1" });
     expect(JSON.stringify(body)).not.toContain("private-auth");
-    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), {
-      customerId: "customer-certalis",
-      query: { source: "sales-trial-enrollment", correlationId: "corr-trial-extend-1", subjectId: "enrollment-1" },
-    });
+    expect(mockHandleGetDiagnosticLog.mock.calls.some(([, request]) => request.customerId === "customer-certalis" && request.query.source === "sales-trial-enrollment" && request.query.correlationId === "corr-trial-extend-1" && request.query.subjectId === "enrollment-1")).toBe(true);
   });
 
   it("applies the same bearer-safe projection to aggregate Sales diagnostics", async () => {
@@ -227,5 +228,18 @@ describe("Sales diagnostics HTTP isolation", () => {
       customerId: "customer-helios",
       query: { customerId: "customer-certalis", source: "runtime" },
     });
+  });
+
+  it("passes the composed Sales Trial enrollment reader into the Sales diagnostics handler", async () => {
+    const salesTrialEnrollments = { findById: vi.fn() };
+    mockGetServices.mockReturnValue({ salesTrialEnrollments });
+    mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
+
+    await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=sales-trial-enrollment"));
+
+    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(
+      expect.objectContaining({ diagnostics: "deps", salesTrialEnrollments }),
+      expect.objectContaining({ customerId: "customer-certalis" }),
+    );
   });
 });

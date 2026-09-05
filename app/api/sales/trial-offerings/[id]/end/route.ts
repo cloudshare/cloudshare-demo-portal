@@ -7,6 +7,7 @@ import { handleEndSalesTrialOffering } from "@/api/sales-trial-offerings";
 import { createPrismaSalesTrialOfferingRepository } from "@/persistence/prisma-sales-trial-offering-repository";
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import { createCloudShareSalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
+import { createSalesTrialCloudShareObserver } from "@/api/sales-trial-cloudshare-diagnostics";
 
 export async function POST(
   _request: Request,
@@ -28,12 +29,16 @@ export async function POST(
       items: { findById: async () => null },
       connections: services.cloudshareConnections,
       deliveryFactory: {
-        forConnection: (connection) =>
-          createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection)),
+        forConnection: (connection, options) =>
+          createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection, options)),
       },
       salesEnvironmentFactory: {
-        forConnection: (connection) =>
-          createCloudShareSalesEnvironmentSource(services.cloudshareClientFactory.forConnection(connection)),
+        forConnection: (connection, options) =>
+          createCloudShareSalesEnvironmentSource(services.cloudshareClientFactory.forConnection(connection, options)),
+      },
+      cloudshareObserver: ({ customerId, actor, correlationId, offeringId }) => {
+        const observer = createSalesTrialCloudShareObserver({ diagnostics: services.diagnosticRecorder, customerId, actor, correlationId, source: "sales-trial-offerings", subject: { type: "sales_trial_offering", id: offeringId }, externalIds: { offeringId } });
+        return observer;
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,

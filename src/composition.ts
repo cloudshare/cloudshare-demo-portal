@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { loadConfig, secretValues, type Config } from "@/config";
 import { createLogger, type Logger } from "@/observability/logger";
@@ -12,15 +13,12 @@ import {
   type PortalSessionStore,
 } from "@/auth";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
-import { createCloudShareIntegration } from "@/integrations/cloudshare";
+import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers, type CloudShareClient, type CloudShareMode } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
-import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
-import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
 import {
   createCloudShareEnvironmentSimulator,
   type CloudShareEnvironmentSimulator,
 } from "@/integrations/cloudshare/environment-simulator";
-import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { withLocalCohortRateLimitQaFixture } from "@/integrations/cloudshare/local-rate-limit-qa-fixture";
 import { createInMemoryWebhookIdempotencyStore } from "@/persistence/webhook-idempotency-store";
 import {
@@ -45,6 +43,8 @@ import { createPrismaCohortExamSessionRepository } from "@/persistence/prisma-co
 import { createPrismaCohortMonitoringObservationRepository } from "@/persistence/prisma-cohort-monitoring-observation-repository";
 import { createPrismaExamAttemptRepository } from "@/persistence/prisma-exam-attempt-repository";
 import { createPrismaLabLaunchRepository } from "@/persistence/prisma-lab-launch-repository";
+import { createPrismaSalesTrialEnrollmentRepository } from "@/persistence/prisma-sales-trial-enrollment-repository";
+import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 import { createPrismaAdminMonitoringAttemptRepository } from "@/persistence/prisma-admin-monitoring-attempt-repository";
 import { createPrismaAdminCandidateRepository } from "@/persistence/prisma-admin-candidate-repository";
 import { createPrismaEnvironmentRepository } from "@/persistence/prisma-environment-repository";
@@ -66,6 +66,8 @@ import type { ResourceRepository } from "@/domain/resource-sync";
 import type { EventLogRepository } from "@/domain/event-log";
 import type {
   CloudShareClientFactory,
+  CloudShareClientObservationOptions,
+  CloudShareConnectionRecord,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { AdminMonitoringAttemptRepository } from "@/domain/admin-monitoring";
@@ -124,6 +126,47 @@ export interface FeatureModules {
   readonly adminExamAuthoring: AdminExamAuthoringServices;
   readonly adminCohortExamSessions: AdminCohortExamSessionServices;
   readonly candidateSuspendResume: CandidateSuspendResumeServices;
+}
+
+/** The production factory seam; dependencies stay injectable for policy tests. */
+export function createCloudShareClientFactory(input: {
+  readonly diagnostics: DiagnosticRecorder;
+  readonly mode: CloudShareMode;
+  readonly trace?: Parameters<typeof createCloudShareIntegrationForConnection>[0]["trace"];
+  readonly createIntegration?: typeof createCloudShareIntegrationForConnection;
+  readonly decorateClient?: (client: CloudShareClient) => CloudShareClient;
+  readonly newCorrelationId?: () => string;
+}): CloudShareClientFactory {
+  const createIntegration = input.createIntegration ?? createCloudShareIntegrationForConnection;
+  const decorateClient = input.decorateClient ?? withLocalCohortRateLimitQaFixture;
+  const newCorrelationId = input.newCorrelationId ?? randomUUID;
+  return {
+    forConnection(connection: CloudShareConnectionRecord, options: CloudShareClientObservationOptions | undefined): CloudShareClient {
+      if (!options) throw new Error("CloudShare client construction requires an explicit observation scope.");
+      const defaultObserver = createCloudShareDiagnosticObserver({
+        diagnostics: input.diagnostics,
+        customerId: connection.customerId,
+        correlationId: newCorrelationId(),
+      });
+      const workflowObserver = options.scope === "workflow"
+        ? createCloudShareWorkflowObserver({ diagnostics: input.diagnostics, customerId: connection.customerId, ...options.workflow })
+        : undefined;
+      return decorateClient(createIntegration({
+        mode: input.mode,
+        trace: input.trace,
+        observer: {
+          onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest, defaultObserver.onRequest),
+          onAcquisition: composeCloudShareObservers(options.onAcquisition, workflowObserver?.onAcquisition, defaultObserver.onAcquisition),
+        },
+        connection: {
+          customerId: connection.customerId,
+          apiId: connection.apiId,
+          apiKey: connection.apiKey,
+          webhookSecret: connection.webhookSecret,
+        },
+      }));
+    },
+  };
 }
 
 export function createFeatureModules(services: FeatureModuleInputs): FeatureModules {
@@ -311,6 +354,7 @@ export interface Services {
   eventLog: EventLogRepository;
   /** Typed, append-only diagnostic log — the Support read model (ADR-004). */
   diagnostics: DiagnosticLogRepository;
+  salesTrialEnrollments: SalesTrialEnrollmentRepository;
   /** Redaction-applying write seam every instrumented flow records through. */
   diagnosticRecorder: DiagnosticRecorder;
   adminMonitoringAttempts: AdminMonitoringAttemptRepository;
@@ -347,6 +391,7 @@ export function getServices(): Services {
   const config = loadConfig(process.env);
   const prisma = new PrismaClient();
   const diagnostics = createPrismaDiagnosticLogRepository(prisma);
+  const salesTrialEnrollments = createPrismaSalesTrialEnrollmentRepository(prisma);
   const logger = createLogger({
     secrets: secretValues(config),
     sink: (line: string) => {
@@ -396,19 +441,6 @@ export function getServices(): Services {
 
   // CloudShare lab launch. The transport (live fetch vs fixture replay) is chosen
   // by PORTAL_MODE; the provisioner and launch flow are identical either way.
-  const cloudshare = createCloudShareIntegration({
-    mode: config.runtime.mode,
-    trace: traceCloudShare,
-    v4: {
-      clientId: config.secrets.cloudshareV4ClientId,
-      clientSecret: config.secrets.cloudshareV4ClientSecret,
-    },
-    v3: {
-      apiId: config.secrets.cloudshareV3ApiId,
-      apiKey: config.secrets.cloudshareV3ApiKey,
-    },
-  });
-  const trainingDelivery = createCloudShareTrainingDelivery(cloudshare);
   const labLaunches = createPrismaLabLaunchRepository(prisma);
 
   // Webhook receiver & polling source-of-truth. In demo mode the simulator is BOTH
@@ -423,10 +455,14 @@ export function getServices(): Services {
             config.secrets.webhookSecret,
         })
       : null;
-  const environmentSource: EnvironmentStateSource =
-    environmentSimulator ?? createCloudShareEnvironmentSource(cloudshare);
-  const environmentController: EnvironmentController =
-    environmentSimulator ?? createCloudShareEnvironmentController(cloudshare);
+  const environmentSource: EnvironmentStateSource = environmentSimulator ?? {
+    getEnvironmentState: async () => { throw new Error("Customer-scoped CloudShare connection required"); },
+  };
+  const environmentController: EnvironmentController = environmentSimulator ?? {
+    suspendEnvironment: async () => { throw new Error("Customer-scoped CloudShare connection required"); },
+    resumeEnvironment: async () => { throw new Error("Customer-scoped CloudShare connection required"); },
+    archiveEnvironment: async () => { throw new Error("Customer-scoped CloudShare connection required"); },
+  };
   const environments = createPrismaEnvironmentRepository(prisma);
   const webhookIdempotency = createInMemoryWebhookIdempotencyStore();
   const examClock = createExamClock({
@@ -434,7 +470,7 @@ export function getServices(): Services {
   });
   const eventLog = createInMemoryEventLogRepository();
 
-  const scoreRetriever = trainingDelivery;
+  const scoreRetriever = { getParticipantProgress: async () => { throw new Error("Customer-scoped CloudShare connection required"); } } as ScoreRetrievalProvider;
 
   const audit = createPrismaAuditRepository(prisma);
   const resources = createInMemoryResourceRepository();
@@ -453,19 +489,11 @@ export function getServices(): Services {
     prisma,
     cloudshareSecretBox,
   );
-  const cloudshareClientFactory: CloudShareClientFactory = {
-    forConnection: (connection) =>
-      withLocalCohortRateLimitQaFixture(createCloudShareIntegrationForConnection({
-        mode: config.runtime.mode,
-        trace: traceCloudShare,
-        connection: {
-          customerId: connection.customerId,
-          apiId: connection.apiId,
-          apiKey: connection.apiKey,
-          webhookSecret: connection.webhookSecret,
-        },
-      })),
-  };
+  const cloudshareClientFactory = createCloudShareClientFactory({
+    diagnostics: diagnosticRecorder,
+    mode: config.runtime.mode,
+    trace: traceCloudShare,
+  });
 
   // Heartbeat auto-suspend. The suspend function is pre-bound to the current
   // service instances so HeartbeatAutoSuspend stays free of framework concerns.
@@ -583,6 +611,7 @@ export function getServices(): Services {
     resources,
     eventLog,
     diagnostics,
+    salesTrialEnrollments,
     diagnosticRecorder,
     adminMonitoringAttempts,
     adminCandidates,
@@ -644,8 +673,8 @@ export function getCandidateSuspendResumeServices(): CandidateSuspendResumeServi
   return getServices().featureModules.candidateSuspendResume;
 }
 
-function isReusableServices(services: Services): boolean {
-  return typeof services.dispose === "function" && isReusableFeatureModules(services.featureModules);
+export function isReusableServices(services: Services): boolean {
+  return typeof services.dispose === "function" && typeof services.salesTrialEnrollments?.findById === "function" && isReusableFeatureModules(services.featureModules);
 }
 
 export function disposeStaleServices(services: unknown): void {

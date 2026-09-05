@@ -5,7 +5,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type { DiagnosticActor, DiagnosticRecorder, DiagnosticSubject } from "@/domain/diagnostic-log";
 import {
   hasContinuableSalesTrialEnvironment,
   type SalesTrialEnrollment,
@@ -37,6 +37,7 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare/errors";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 const TRIAL_CORRELATION_KEYS: readonly SalesParticipantCorrelationPropertyKey[] =
   SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS;
@@ -70,6 +71,7 @@ type Participant = {
 };
 
 export interface SalesTrialEnrollmentDeps {
+  readonly cloudshareObserver?: (input: { customerId: string; actor: DiagnosticActor; correlationId: string; subject: DiagnosticSubject | (() => DiagnosticSubject) }) => Parameters<CloudShareClientFactory["forConnection"]>[1];
   readonly offerings: Pick<SalesTrialOfferingRepository, "findById">;
   readonly items?: Pick<ItemRepository, "findById">;
   readonly enrollments: SalesTrialEnrollmentRepository;
@@ -80,13 +82,14 @@ export interface SalesTrialEnrollmentDeps {
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
       >,
+      options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): Pick<Required<SalesEnvironmentSource>, "observe" | "observeById" | "extendById">;
   };
   readonly deliveryFactory?: {
     forConnection(
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
-      >,
+      >, options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
     ): Pick<
       SalesDelivery,
       | "readSession"
@@ -258,9 +261,11 @@ export async function handleEnterSalesTrialOffering(
     return denied(deps, request, correlationId, "connection_missing");
   }
 
+  let observerSubject: DiagnosticSubject = { type: "sales_trial_offering", id: offering.id };
+  const observerOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, subject: () => observerSubject });
   const delivery =
-    deps.deliveryFactory?.forConnection(connection) ??
-    createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection));
+    (observerOptions ? deps.deliveryFactory?.forConnection(connection, observerOptions) : deps.deliveryFactory?.forConnection(connection)) ??
+    createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection, observerOptions));
   try {
     const session = await delivery.readSession(offering.cloudShareSalesExperienceId);
     if (!isLaunchableProviderSession(offering, session, isContinuedAccess)) {
@@ -322,6 +327,7 @@ export async function handleEnterSalesTrialOffering(
     );
   }
   let enrollment = reservation.enrollment;
+  observerSubject = { type: "sales_trial_enrollment", id: enrollment.id };
 
   try {
     const correlationEvidence = await delivery.ensureParticipantCorrelationProperties(
@@ -495,9 +501,10 @@ export async function handleListSalesTrialOfferingParticipants(
     }
     return { status: 404, body: { error: "Sales Trial Offering is unavailable." } };
   }
+  const monitoringOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, subject: { type: "sales_trial_offering", id: offering.id } });
   const delivery =
-    deps.deliveryFactory?.forConnection(connection) ??
-    createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection));
+    (monitoringOptions ? deps.deliveryFactory?.forConnection(connection, monitoringOptions) : deps.deliveryFactory?.forConnection(connection)) ??
+    createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection, monitoringOptions));
   let enrollments: Awaited<ReturnType<SalesTrialEnrollmentRepository["listByOffering"]>>;
   let remote: Awaited<ReturnType<SalesDelivery["listParticipants"]>>;
   let rosterObservedAt: Date;
@@ -560,6 +567,25 @@ export async function handleListSalesTrialOfferingParticipants(
       rosterObservedAt,
     ),
   );
+  await deps.diagnostics?.record({
+    occurredAt: rosterObservedAt,
+    source: "sales-trial-offerings",
+    operation: "sales_trial.offering.monitoring.read_participants",
+    outcome: "success",
+    customerId: request.customerId,
+    actor: request.actor,
+    subject: { type: "sales_trial_offering", id: request.offeringId },
+    correlationId,
+    message: "CloudShare Sales Trial participant roster read completed.",
+    externalIds: { offeringId: request.offeringId },
+    request: remote.request as unknown as Record<string, unknown>,
+    response: remote.response as unknown as Record<string, unknown>,
+    details: {
+      integrationSurface: "cloudshare.v4.sales.participants",
+      attemptedOperation: "list_participants",
+      participantCount: remote.participants.length,
+    },
+  });
   return {
     status: 200,
     body: {
@@ -704,7 +730,8 @@ export async function handleExtendSalesTrialOfferingParticipant(
       reconcileOnly = true;
     }
   }
-  const environments = deps.salesEnvironmentFactory.forConnection(connection);
+  const environmentOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, subject: { type: "sales_trial_enrollment", id: enrollment.id } });
+  const environments = deps.salesEnvironmentFactory.forConnection(connection, environmentOptions);
 
   try {
     const preflight = await environments.observe({
@@ -1332,6 +1359,7 @@ async function denied(
     error instanceof Error && "context" in error
       ? (error as { context?: Record<string, unknown> }).context
       : undefined;
+  const evidence = projectCloudShareFailureContext(context);
   await Promise.allSettled([
     deps.diagnostics?.record({
       source: "sales-trial-enrollment",
@@ -1347,23 +1375,10 @@ async function denied(
         offeringId: request.offeringId,
         ...(enrollmentId ? { salesTrialEnrollmentId: enrollmentId } : {}),
       },
-      ...(context
+      ...(evidence
         ? {
-            request: {
-              method: context.method,
-              path: context.path,
-              query: context.requestQuery,
-              headers: context.requestHeaders,
-              body: context.requestBody,
-            },
-            response: {
-              status: context.responseStatus ?? context.status,
-              headers: context.responseHeaders,
-              body: context.responseBody,
-              transport: context.transport,
-              network: context.network,
-              tls: context.tls,
-            },
+            request: evidence.request,
+            response: evidence.response,
           }
         : {}),
       details: {
@@ -1855,10 +1870,11 @@ async function monitoringFailure(
       : undefined;
   const integrationSurface = salesTrialIntegrationSurfaceForPath(context?.path);
   const attemptedOperation = salesTrialAttemptedOperationForPath(context?.path);
+  const evidence = projectCloudShareFailureContext(context);
 
   await Promise.allSettled([
     deps.diagnostics?.record({
-      source: "sales-trial-enrollment",
+      source: "sales-trial-offerings",
       operation: "sales_trial.offering.monitoring.read_participants",
       outcome: "failure",
       level: "warn",
@@ -1868,23 +1884,10 @@ async function monitoringFailure(
       correlationId,
       message,
       externalIds: { offeringId: request.offeringId },
-      ...(context
+      ...(evidence
         ? {
-            request: {
-              method: context.method,
-              path: context.path,
-              query: context.requestQuery,
-              headers: context.requestHeaders,
-              body: context.requestBody,
-            },
-            response: {
-              status: context.responseStatus ?? context.status,
-              headers: context.responseHeaders,
-              body: context.responseBody,
-              transport: context.transport,
-              network: context.network,
-              tls: context.tls,
-            },
+            request: evidence.request,
+            response: evidence.response,
           }
         : {}),
       details: {
@@ -1999,6 +2002,7 @@ async function recordExtensionSuccess(
     readonly response: unknown;
   }[],
 ): Promise<void> {
+  if (!deps.cloudshareObserver) await recordExtensionExchangeSteps(deps, request, correlationId, enrollment.id, canonicalEnvironmentId, httpExchanges);
   await Promise.allSettled([
     deps.diagnostics?.record({
       source: "sales-trial-enrollment",
@@ -2022,7 +2026,7 @@ async function recordExtensionSuccess(
         integrationSurface: "cloudshare.v3.environments",
         attemptedOperation: primaryExchange ? "extend_environment" : "observe_extended_environment",
         expirationTime,
-        httpExchanges,
+        ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
       },
     }),
     deps.audit?.write({
@@ -2047,6 +2051,48 @@ async function recordExtensionSuccess(
   ]);
 }
 
+async function recordExtensionExchangeSteps(
+  deps: SalesTrialEnrollmentDeps,
+  request: SalesTrialParticipantEnvironmentExtendRequest,
+  correlationId: string,
+  enrollmentId: string,
+  environmentId: string | undefined,
+  exchanges: readonly { readonly request: unknown; readonly response: unknown }[],
+): Promise<void> {
+  await Promise.allSettled(exchanges.map((exchange, index) => {
+    const response = exchange.response as { readonly status?: unknown };
+    const status = typeof response.status === "number" ? response.status : undefined;
+    return deps.diagnostics?.record({
+      occurredAt: (deps.now ?? (() => new Date()))(),
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend.http_exchange",
+      outcome: status !== undefined && status >= 200 && status < 300 ? "success" : "failure",
+      level: status !== undefined && status >= 200 && status < 300 ? "info" : "warn",
+      customerId: request.customerId,
+      actor: request.actor,
+      subject: { type: "sales_trial_enrollment", id: enrollmentId },
+      correlationId,
+      message: "CloudShare Sales Trial extension workflow step completed.",
+      externalIds: {
+        offeringId: request.offeringId,
+        salesTrialEnrollmentId: enrollmentId,
+        ...(environmentId ? { environmentId } : {}),
+      },
+      request: exchange.request as Record<string, unknown>,
+      response: exchange.response as Record<string, unknown>,
+      details: {
+        parentWorkflow: "sales_trial.offering.environment.extend",
+        sequence: index + 1,
+        totalSteps: exchanges.length,
+        integrationSurface: "cloudshare.v3.environments",
+        attemptedOperation: salesTrialAttemptedOperationForPath(
+          (exchange.request as { readonly path?: unknown }).path,
+        ),
+      },
+    });
+  }));
+}
+
 async function recordExtensionFailure(
   deps: SalesTrialEnrollmentDeps,
   request: SalesTrialParticipantEnvironmentExtendRequest,
@@ -2063,6 +2109,7 @@ async function recordExtensionFailure(
   const lastRequest = httpExchanges[httpExchanges.length - 1]?.request as
     | Record<string, unknown>
     | undefined;
+  if (!deps.cloudshareObserver) await recordExtensionExchangeSteps(deps, request, correlationId, subjectId, canonicalEnvironmentId, httpExchanges);
   await Promise.allSettled([
     deps.diagnostics?.record({
       source: "sales-trial-enrollment",
@@ -2085,7 +2132,7 @@ async function recordExtensionFailure(
         integrationSurface: "cloudshare.v3.environments",
         attemptedOperation: salesTrialAttemptedOperationForPath(lastRequest?.path),
         failureMode: reason,
-        httpExchanges,
+        ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
       },
     }),
     deps.audit?.write({
@@ -2136,25 +2183,7 @@ async function extensionFailure(
           readonly response: Record<string, unknown>;
         }
       | undefined) ?? null;
-  const requestExchange = context
-    ? {
-        request: {
-          method: context.method,
-          path: context.path,
-          query: context.requestQuery,
-          headers: context.requestHeaders,
-          body: context.requestBody,
-        },
-        response: {
-          status: context.responseStatus ?? context.status,
-          headers: context.responseHeaders,
-          body: context.responseBody,
-          transport: context.transport,
-          network: context.network,
-          tls: context.tls,
-        },
-      }
-    : fallbackExchange;
+  const requestExchange = projectCloudShareFailureContext(context) ?? fallbackExchange;
   const attemptedOperation = salesTrialAttemptedOperationForPath(
     requestExchange?.request?.path,
   );
@@ -2169,6 +2198,14 @@ async function extensionFailure(
     ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure");
   const loggedError = loggedErrorOverride ?? EXTEND_UNCONFIRMED;
 
+  if (!deps.cloudshareObserver) await recordExtensionExchangeSteps(
+    deps,
+    request,
+    correlationId,
+    subjectId,
+    canonicalEnvironmentId,
+    httpExchanges,
+  );
   await Promise.allSettled([
     deps.diagnostics?.record({
       source: "sales-trial-enrollment",
@@ -2195,7 +2232,7 @@ async function extensionFailure(
         integrationSurface: "cloudshare.v3.environments",
         attemptedOperation,
         failureMode,
-        httpExchanges,
+        ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
       },
     }),
     deps.audit?.write({

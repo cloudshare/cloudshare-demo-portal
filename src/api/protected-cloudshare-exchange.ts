@@ -1,5 +1,7 @@
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
+
 export interface ProtectedCloudShareExchange {
-  readonly request: Record<string, unknown>;
+  readonly request: Record<string, unknown> | null;
   readonly response: Record<string, unknown> | null;
   readonly transport: Record<string, unknown> | null;
 }
@@ -11,6 +13,14 @@ export interface ProtectedCloudShareExchange {
 export function projectProtectedCloudShareExchange(
   diagnostic: Record<string, unknown>,
 ): ProtectedCloudShareExchange {
+  const projected = projectCloudShareFailureContext({
+    method: diagnostic.method,
+    path: diagnostic.path,
+    integrationSurface: diagnostic.integrationSurface,
+  });
+  if (projected?.request === null && projected.response === null) {
+    return { request: null, response: null, transport: null };
+  }
   return {
     request: {
       method: diagnostic.method,

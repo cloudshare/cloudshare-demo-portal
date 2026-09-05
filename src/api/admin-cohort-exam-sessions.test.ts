@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createDraftExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
-import { CloudShareRequestError, CloudShareResponseError, CloudShareTransportError } from "@/integrations/cloudshare";
+import { CloudShareRateLimitError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError, createCloudShareWorkflowObserver } from "@/integrations/cloudshare";
 import { createInMemoryCohortExamSessionRepository } from "@/persistence/cohort-exam-session-repository";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
@@ -288,11 +288,11 @@ describe("admin Cohort Exam Session runtime", () => {
       },
     );
     const cloudshare: CloudShareClientFactory = {
-      forConnection: () =>
+      forConnection: vi.fn(() =>
         ({
           requestV3,
           requestV4Detailed,
-        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>),
     };
     await seedExam(exams);
     await handleCreateDraftCohortExamSession(
@@ -351,6 +351,14 @@ describe("admin Cohort Exam Session runtime", () => {
     );
 
     expect(response.status).toBe(200);
+    const [snapshotObservation, publishObservation] = vi.mocked(cloudshare.forConnection).mock.calls.map(([, options]) => options);
+    expect(publishObservation).toBe(snapshotObservation);
+    expect(publishObservation).toMatchObject({ scope: "workflow", workflow: { correlationId: "corr-cohort-publish-1", subject: { type: "cohort_exam_session", id: "cohort-session-1" } } });
+    if (!publishObservation || publishObservation.scope !== "workflow") throw new Error("expected workflow observation");
+    const observed = vi.fn();
+    await createCloudShareWorkflowObserver({ diagnostics: { record: observed } as never, customerId: "customer-1", ...publishObservation.workflow }).onAcquisition({ occurredAt: "2026-09-03T12:00:00.000Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token" });
+    await createCloudShareWorkflowObserver({ diagnostics: { record: observed } as never, customerId: "customer-1", ...publishObservation.workflow }).onRequest({ occurredAt: "2026-09-03T12:00:01.000Z", outcome: "success", durationMs: 1, result: { request: {}, response: {}, integrationSurface: "cloudshare.v4.training", host: "example.test" } } as never);
+    expect(observed.mock.calls.map(([entry]) => entry.details.sequence)).toEqual([1, 2]);
     expect(response.body).toMatchObject({
       session: {
         id: "cohort-session-1",
@@ -685,6 +693,34 @@ describe("admin Cohort Exam Session runtime", () => {
     });
     expect(retry.status).toBe(502);
     expect(requestV4Detailed).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an OAuth 429 publish failure metadata-only", async () => {
+    const { diagnosticsRepository, deps } = await makePublishFailureDeps(
+      new CloudShareRateLimitError("OAuth token request throttled", 429, "rate_limit", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        requestBody: { client_secret: "private-secret" },
+        responseBody: { access_token: "private-token" },
+      }),
+    );
+
+    const response = await handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+    const [entry] = await diagnosticsRepository.query({ operation: "cohort_exam_session.publish", outcome: "failure" });
+
+    expect(response.status).toBe(429);
+    expect(entry).toMatchObject({
+      request: null,
+      response: null,
+      details: { integrationSurface: "cloudshare.v4.oauth.token", failureMode: "rate_limit", responseStatus: 429 },
+    });
+    expect(JSON.stringify(entry)).not.toMatch(/private-secret|private-token/);
   });
 
   it("records attempted operation when training user-property creation returns incomplete keys after Experience creation", async () => {

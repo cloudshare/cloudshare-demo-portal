@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
+import { createCloudShareIntegrationForConnection, createCloudShareNoopObservationPort } from "@/integrations/cloudshare";
 import { createCloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 
 function certalisConnection() {
@@ -17,7 +17,11 @@ const connection = certalisConnection();
 
 describe("live Certalis Sales-Pro preflight probe", () => {
   it.runIf(connection)("reads active members for a live Certalis Project through the GUI contract", async () => {
-    const client = createCloudShareIntegrationForConnection({ mode: "live", connection: connection! });
+    const client = createCloudShareIntegrationForConnection({
+      mode: "live",
+      connection: connection!,
+      observer: createCloudShareNoopObservationPort(),
+    });
     const projects = await client.requestV3Detailed!({ method: "GET", path: "/projects", schema: z.array(z.object({ id: z.string().min(1), name: z.string().min(1) })) });
     const project = projects.data[0];
     expect(project).toBeDefined();

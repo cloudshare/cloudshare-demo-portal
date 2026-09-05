@@ -521,6 +521,7 @@ describe("suspendExamAttemptRuntime", () => {
     expect(resp.status).toBe(200);
     expect(cloudshare.forConnection).toHaveBeenCalledWith(
       expect.objectContaining({ customerId: "customer-1" }),
+      expect.objectContaining({ scope: "workflow" }),
     );
     expect(customerClient.requestV3Text).toHaveBeenNthCalledWith(
       1,
@@ -539,6 +540,40 @@ describe("suspendExamAttemptRuntime", () => {
     );
     expect(globalController.suspendEnvironment).not.toHaveBeenCalled();
     expect(globalSource.getEnvironmentState).not.toHaveBeenCalled();
+  });
+
+  it("gives separate suspend operations distinct workflow correlations while retaining the ExamAttempt subject", async () => {
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn().mockResolvedValue({ envStatus: "Suspended" }),
+      requestV4: activeParticipantRequestV4(),
+    });
+    const cloudshare = { forConnection: vi.fn().mockReturnValue(customerClient) } satisfies CloudShareClientFactory;
+    let next = 0;
+    const newCorrelationId = () => `operation-${++next}`;
+
+    await suspendExamAttemptRuntime(await makeSuspendDeps({ cloudshare, diagnostics, newCorrelationId }), { examAttemptId: "ea-1" });
+    await suspendExamAttemptRuntime(await makeSuspendDeps({ cloudshare, diagnostics, newCorrelationId }), { examAttemptId: "ea-1" });
+
+    const workflowOptions = vi.mocked(cloudshare.forConnection).mock.calls.map(([, options]) => options)
+      .filter((options) => options?.scope === "workflow" && options.workflow.subject.id === "ea-1");
+    expect(workflowOptions).toHaveLength(4);
+    expect(workflowOptions.map((options) => options!.scope === "workflow" ? options.workflow.correlationId : null)).toEqual([
+      "operation-1",
+      "operation-1",
+      "operation-2",
+      "operation-2",
+    ]);
+    const allocators = workflowOptions.map((options) => options!.scope === "workflow" ? options.workflow.sequenceAllocator : null);
+    expect(allocators[0]).toBe(allocators[1]);
+    expect(allocators[2]).toBe(allocators[3]);
+    expect(allocators[0]).not.toBe(allocators[2]);
+    const summaries = await diagnosticRepository.query({ operation: "exam_attempt.suspend", outcome: "success" });
+    expect(summaries.map((entry) => entry.correlationId).sort()).toEqual(["operation-1", "operation-2"]);
+    expect(workflowOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: "workflow", workflow: expect.objectContaining({ subject: { type: "exam_attempt", id: "ea-1" }, externalIds: { lifecycleParent: "exam-runtime:ea-1" } }) }),
+    ]));
   });
 
   it("discovers the training participant environment ID before suspend when the launch was created without one", async () => {
@@ -598,6 +633,12 @@ describe("suspendExamAttemptRuntime", () => {
       environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
       environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
     });
+    const workflowOptions = vi.mocked(cloudshare.forConnection).mock.calls.map(([, options]) => options)
+      .filter((options) => options?.scope === "workflow");
+    expect(workflowOptions).toHaveLength(2);
+    expect(workflowOptions.every((options) => options!.scope === "workflow" && options.workflow.correlationId === "corr-suspend")).toBe(true);
+    expect(workflowOptions[0]!.scope === "workflow" ? workflowOptions[0]!.workflow.sequenceAllocator : null)
+      .toBe(workflowOptions[1]!.scope === "workflow" ? workflowOptions[1]!.workflow.sequenceAllocator : null);
   });
 
   it("does not call CloudShare suspend with a pending placeholder envId and fails as not correlated yet", async () => {
@@ -1009,8 +1050,12 @@ describe("suspendExamAttemptRuntime", () => {
 
 describe("resumeExamAttemptRuntime", () => {
   it("returns 200 without loginUrl and with preservation limit on success", async () => {
+    const delegatedCloudShare = makeResumeCloudShareFactory();
+    const cloudshare = {
+      forConnection: vi.fn(delegatedCloudShare.forConnection),
+    } satisfies CloudShareClientFactory;
     const resp = await resumeExamAttemptRuntime(
-      await makeResumeDeps({ labs: makeLabs("https://new.lab.url") }),
+      await makeResumeDeps({ labs: makeLabs("https://new.lab.url"), cloudshare }),
       { examAttemptId: "ea-1" },
     );
     expect(resp.status).toBe(200);
@@ -1018,6 +1063,12 @@ describe("resumeExamAttemptRuntime", () => {
     expect(resp.body).not.toHaveProperty("loginUrl");
     expect(typeof resp.body.suspendedPreservationLimitMs).toBe("number");
     expect(JSON.stringify(resp.body)).not.toContain("loginUrl");
+    const workflowOptions = vi.mocked(cloudshare.forConnection).mock.calls.map(([, options]) => options)
+      .filter((options) => options?.scope === "workflow");
+    expect(workflowOptions).toHaveLength(2);
+    expect(workflowOptions.every((options) => options!.scope === "workflow" && options.workflow.correlationId === "corr-resume")).toBe(true);
+    expect(workflowOptions[0]!.scope === "workflow" ? workflowOptions[0]!.workflow.sequenceAllocator : null)
+      .toBe(workflowOptions[1]!.scope === "workflow" ? workflowOptions[1]!.workflow.sequenceAllocator : null);
   });
 
   it("reconciles runtime exhaustion before resume and completes the attempt instead", async () => {
@@ -1248,6 +1299,7 @@ describe("resumeExamAttemptRuntime", () => {
   });
 
   it("returns a portal-safe 409 when the correlated CloudShare environment has already expired", async () => {
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
     const customerClient = makeCloudShareClient({
       requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path === "/envs/ENVS2n38LTNdcC4sHsqnjRzg2") {
@@ -1273,7 +1325,7 @@ describe("resumeExamAttemptRuntime", () => {
         throw new Error(`unexpected v4 path ${spec.path}`);
       }) as unknown as CloudShareClient["requestV4"],
     });
-    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
     const deps = await makeResumeDeps({
       exams: undefined,
       cloudshare: {
@@ -1293,21 +1345,24 @@ describe("resumeExamAttemptRuntime", () => {
       currentStatus: "expired",
     });
     expect(customerClient.requestV3Text).not.toHaveBeenCalled();
-    expect(diagnostics.record).toHaveBeenCalledWith(
+    await expect(diagnosticRepository.query({ correlationId: "corr-resume" })).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({
         operation: "exam_attempt.resume",
         outcome: "failure",
+        correlationId: "corr-resume",
         message: "Exam resume failed: CloudShare lab has expired",
-        details: expect.objectContaining({
-          failureMode: "external_lease_expired",
-          environmentStatus: "deleted",
-        }),
+        details: expect.objectContaining({ failureMode: "external_lease_expired", environmentStatus: "deleted" }),
       }),
-    );
+      expect.objectContaining({
+        operation: "exam_attempt.expired",
+        outcome: "success",
+        correlationId: "corr-resume",
+      }),
+    ]));
     await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
       status: "expired",
     });
-    expect(diagnostics.record).toHaveBeenCalledWith(
+    await expect(diagnosticRepository.query({ operation: "exam_attempt.expired", correlationId: "corr-resume" })).resolves.toEqual([
       expect.objectContaining({
         operation: "exam_attempt.expired",
         outcome: "success",
@@ -1328,7 +1383,7 @@ describe("resumeExamAttemptRuntime", () => {
           attemptStatus: "expired",
         }),
       }),
-    );
+    ]);
   });
 
   it("reconciles an expired CloudShare lease before blocking resume after the authored open period closes", async () => {
@@ -1916,6 +1971,12 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
       environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
       environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
     });
+    const workflowOptions = vi.mocked(cloudshare.forConnection).mock.calls.map(([, options]) => options)
+      .filter((options) => options?.scope === "workflow");
+    expect(workflowOptions).toHaveLength(2);
+    expect(workflowOptions.every((options) => options!.scope === "workflow" && options.workflow.correlationId === "corr-suspend")).toBe(true);
+    expect(workflowOptions[0]!.scope === "workflow" ? workflowOptions[0]!.workflow.sequenceAllocator : null)
+      .toBe(workflowOptions[1]!.scope === "workflow" ? workflowOptions[1]!.workflow.sequenceAllocator : null);
   });
 
   it("does not call CloudShare suspend with a pending placeholder envId during heartbeat auto-suspend", async () => {

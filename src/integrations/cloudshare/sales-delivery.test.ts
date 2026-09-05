@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCloudShareClient } from "./client";
+import { createCloudShareClient, createCloudShareNoopRequestObserver } from "./client";
 import type { HttpClient } from "./http";
 import {
   createCloudShareSalesDelivery,
@@ -13,6 +13,7 @@ function deliveryForRoster(body: unknown) {
     endpoints: { v4BaseUrl: "https://api.accelerate.cloudshare.com/v4", v3BaseUrl: "https://use.cloudshare.com/api/v3" },
     tokenProvider: { getToken: async () => "test-bearer" },
     v3: { apiId: "api-id", apiKey: "api-key" },
+    observer: createCloudShareNoopRequestObserver(),
     newToken: () => "tokfixed01",
     now: () => 1_700_000_000_000,
   }));

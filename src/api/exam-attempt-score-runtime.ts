@@ -8,7 +8,7 @@ import {
 import type { ExamAttempt } from "@/domain/exam-attempt";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { AuditRepository } from "@/domain/audit-trail";
-import type { CloudShareConnectionRecord, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
+import type { CloudShareClientObservationOptions, CloudShareConnectionRecord, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
 import type { ParticipantLister } from "@/domain/environment-correlation";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
@@ -22,7 +22,9 @@ import {
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { projectCloudShareGenericLogValue, redactCloudShareAdminSupportValue } from "@/integrations/cloudshare/diagnostic-redaction";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 export interface ExamAttemptScoreRuntimeDeps {
   readonly exams: ExamRepository;
@@ -31,9 +33,11 @@ export interface ExamAttemptScoreRuntimeDeps {
   readonly connections: CloudShareConnectionRepository;
   readonly createScoreRetriever: (
     connection: CloudShareConnectionRecord,
+    observation: CloudShareClientObservationOptions,
   ) => ScoreRetrievalProvider;
   readonly createParticipantLister: (
     connection: CloudShareConnectionRecord,
+    observation: CloudShareClientObservationOptions,
   ) => ParticipantLister;
   readonly logger: Logger;
   readonly limitations: readonly string[];
@@ -166,6 +170,9 @@ export async function getExamAttemptScoreRuntime(
     };
   }
 
+  const scoreCorrelationId = (deps.newCorrelationId ?? randomUUID)();
+  const observation = scoreObservation(attempt, request.customerId, scoreCorrelationId);
+  const scoreAnchors = { ...anchors, correlationId: scoreCorrelationId };
   try {
     const resolvedParticipantId = await resolveLaunchParticipantId(
       deps,
@@ -175,13 +182,15 @@ export async function getExamAttemptScoreRuntime(
       attempt.candidateId,
       examAttemptId,
       launch,
+      observation,
+      scoreCorrelationId,
     );
     if (!resolvedParticipantId.ok) {
       return resolvedParticipantId.response;
     }
 
     await deps.diagnostics?.record({
-      ...anchors,
+      ...scoreAnchors,
       level: "info",
       operation: "exam_attempt.score.correlate_environment",
       outcome: "success",
@@ -192,7 +201,7 @@ export async function getExamAttemptScoreRuntime(
       },
     });
 
-    const scoreRetriever = deps.createScoreRetriever(connection);
+    const scoreRetriever = deps.createScoreRetriever(connection, observation);
     const scoreRetrieval = await getScoreProgressForDiagnostics(
       scoreRetriever,
       examAttemptId,
@@ -227,6 +236,7 @@ export async function getExamAttemptScoreRuntime(
         examAttemptId,
         candidateId: attempt.candidateId,
         examId: attempt.examId,
+        correlationId: scoreCorrelationId,
         action: "score_retrieved",
         outcome: "success",
         details: {
@@ -237,7 +247,7 @@ export async function getExamAttemptScoreRuntime(
         occurredAt: new Date(result.retrievedAt),
       });
       await deps.diagnostics?.record({
-        ...anchors,
+        ...scoreAnchors,
         level: "info",
         operation: "exam_attempt.score.retrieve",
         outcome: "success",
@@ -283,6 +293,7 @@ export async function getExamAttemptScoreRuntime(
       examAttemptId,
       candidateId: attempt.candidateId,
       examId: attempt.examId,
+      correlationId: scoreCorrelationId,
       action: "score_retrieved",
       outcome: "success",
       details: {
@@ -296,7 +307,7 @@ export async function getExamAttemptScoreRuntime(
     });
 
     await deps.diagnostics?.record({
-      ...anchors,
+      ...scoreAnchors,
       level: "info",
       operation: "exam_attempt.score.retrieve",
       outcome: "success",
@@ -351,7 +362,7 @@ export async function getExamAttemptScoreRuntime(
       return { status: 404, body: { error: "no lab launch found for exam attempt" } };
     }
     if (error instanceof ScoreRetrievalError) {
-      const correlationId = (deps.newCorrelationId ?? randomUUID)();
+      const correlationId = scoreCorrelationId;
       const diagnostic = buildScoreRetrievalDiagnostic(
         correlationId,
         request.customerId,
@@ -387,7 +398,7 @@ export async function getExamAttemptScoreRuntime(
         occurredAt: deps.now?.() ?? new Date(),
       });
       await deps.diagnostics?.record({
-        ...anchors,
+        ...scoreAnchors,
         level: "warn",
         operation: "exam_attempt.score.retrieve",
         outcome: "failure",
@@ -450,6 +461,8 @@ async function resolveLaunchParticipantId(
   candidateId: string,
   examAttemptId: string,
   launch: NonNullable<Awaited<ReturnType<LabLaunchRepository["findByExamAttemptId"]>>>,
+  observation: CloudShareClientObservationOptions,
+  correlationId: string,
 ): Promise<
   | { ok: true; participantId: string }
   | { ok: false; response: ExamAttemptScoreRuntimeResponse }
@@ -459,7 +472,6 @@ async function resolveLaunchParticipantId(
   }
 
   if (!launch.trainingId || !launch.participantEmail) {
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const diagnostic = {
       correlationId,
       customerId,
@@ -508,7 +520,7 @@ async function resolveLaunchParticipantId(
   }
 
   try {
-    const participants = deps.createParticipantLister(connection);
+    const participants = deps.createParticipantLister(connection, observation);
     await correlateEnvironmentForExamAttempt(
       {
         launches: deps.launches,
@@ -517,7 +529,6 @@ async function resolveLaunchParticipantId(
       { examAttemptId },
     );
   } catch (error) {
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const diagnostic = buildParticipantResolutionDiagnostic(
       correlationId,
       customerId,
@@ -560,7 +571,6 @@ async function resolveLaunchParticipantId(
     return { ok: true, participantId: refreshedLaunch.participantId };
   }
 
-  const correlationId = (deps.newCorrelationId ?? randomUUID)();
   const diagnostic = buildParticipantResolutionDiagnostic(
     correlationId,
     customerId,
@@ -622,6 +632,7 @@ function buildScoreRetrievalDiagnostic(
   };
 
   if (
+    isOAuthFailureContext(cause) ||
     cause instanceof CloudShareRequestError ||
     cause instanceof CloudShareTransportError ||
     cause instanceof CloudShareResponseError
@@ -673,6 +684,7 @@ function buildParticipantResolutionDiagnostic(
   }
 
   if (
+    isOAuthFailureContext(error) ||
     isCloudShareRateLimitError(error) ||
     error instanceof CloudShareRequestError ||
     error instanceof CloudShareTransportError ||
@@ -690,16 +702,35 @@ function buildParticipantResolutionDiagnostic(
 
 function toCloudShareDiagnostic(
   base: Record<string, unknown>,
-  cause: CloudShareRequestError | CloudShareTransportError | CloudShareResponseError,
+  cause: unknown,
 ): Record<string, unknown> {
+  const cloudShareCause = cause as CloudShareRequestError | CloudShareTransportError | CloudShareResponseError;
+  const projected = projectCloudShareFailureContext(cloudShareCause.context);
+  if (projected?.request === null && projected.response === null) {
+    const responseStatus = typeof (cause as { status?: unknown }).status === "number"
+      ? (cause as { status: number }).status
+      : typeof cloudShareCause.context?.responseStatus === "number"
+        ? cloudShareCause.context.responseStatus
+        : typeof cloudShareCause.context?.status === "number"
+          ? cloudShareCause.context.status
+          : undefined;
+    return {
+      ...base,
+      method: cloudShareCause.context?.method ?? base.method,
+      path: cloudShareCause.context?.path ?? base.path,
+      integrationSurface: cloudShareCause.context?.integrationSurface ?? base.integrationSurface,
+      failureMode: isCloudShareRateLimitError(cause) ? "rate_limit" : cause instanceof CloudShareTransportError ? "transport" : cause instanceof CloudShareResponseError ? "unexpected_response" : "http_status",
+      ...(responseStatus !== undefined ? { responseStatus } : {}),
+    };
+  }
   const shared = {
     ...base,
-    method: cause.context?.method ?? base.method,
-    path: cause.context?.path ?? base.path,
-    host: cause.context?.host,
-    integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
-    requestHeaders: redactDiagnosticSupportValue(cause.context?.requestHeaders),
-    requestBody: redactDiagnosticSupportValue(cause.context?.requestBody),
+    method: cloudShareCause.context?.method ?? base.method,
+    path: cloudShareCause.context?.path ?? base.path,
+    host: cloudShareCause.context?.host,
+    integrationSurface: cloudShareCause.context?.integrationSurface ?? base.integrationSurface,
+    requestHeaders: redactDiagnosticSupportValue(cloudShareCause.context?.requestHeaders),
+    requestBody: redactDiagnosticSupportValue(cloudShareCause.context?.requestBody),
   };
 
   if (isCloudShareRateLimitError(cause)) {
@@ -737,12 +768,22 @@ function toCloudShareDiagnostic(
   return {
     ...shared,
     failureMode: "unexpected_response",
-    responseHeaders: redactDiagnosticSupportValue(cause.context?.responseHeaders),
-    responseBody: redactDiagnosticSupportValue(cause.context?.responseBody),
-    network: cause.context?.network,
-    tls: cause.context?.tls,
-    issues: cause.context?.issues,
+    responseHeaders: redactDiagnosticSupportValue(cloudShareCause.context?.responseHeaders),
+    responseBody: redactDiagnosticSupportValue(cloudShareCause.context?.responseBody),
+    network: cloudShareCause.context?.network,
+    tls: cloudShareCause.context?.tls,
+    issues: cloudShareCause.context?.issues,
   };
+}
+
+function scoreObservation(attempt: Pick<ExamAttempt, "id" | "examId" | "candidateId">, customerId: string, correlationId: string): CloudShareClientObservationOptions {
+  return certificationCloudShareWorkflow({ actor: { type: "candidate", id: attempt.candidateId }, customerId, subject: { type: "exam_attempt", id: attempt.id }, correlationId, source: "runtime", examId: attempt.examId ?? undefined, examAttemptId: attempt.id });
+}
+
+function isOAuthFailureContext(error: unknown): boolean {
+  const context = (error as { context?: Record<string, unknown> } | null)?.context;
+  const projected = projectCloudShareFailureContext(context);
+  return projected?.request === null && projected.response === null;
 }
 
 async function writeScoreFailureAudit(
@@ -891,7 +932,9 @@ function toSupportDetailFields(
 
 function diagnosticRequestFields(
   diagnostic: Record<string, unknown>,
-): Record<string, unknown> {
+): Record<string, unknown> | null {
+  const projected = projectCloudShareFailureContext({ path: diagnostic.path, integrationSurface: diagnostic.integrationSurface });
+  if (projected?.request === null) return null;
   return {
     ...(asString(diagnostic.method) ? { method: asString(diagnostic.method)! } : {}),
     ...(asString(diagnostic.path) ? { path: asString(diagnostic.path)! } : {}),
@@ -904,7 +947,9 @@ function diagnosticRequestFields(
 
 function diagnosticResponseFields(
   diagnostic: Record<string, unknown>,
-): Record<string, unknown> {
+): Record<string, unknown> | null {
+  const projected = projectCloudShareFailureContext({ path: diagnostic.path, integrationSurface: diagnostic.integrationSurface });
+  if (projected?.response === null) return null;
   return {
     ...(asNumber(diagnostic.responseStatus) !== undefined
       ? { status: asNumber(diagnostic.responseStatus)! }

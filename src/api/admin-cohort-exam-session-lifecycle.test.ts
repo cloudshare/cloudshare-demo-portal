@@ -487,7 +487,7 @@ describe("admin cohort exam session lifecycle runtime", () => {
     });
   });
 
-  it("returns 429 with rate-limit diagnostics when CloudShare throttles Cohort Exam Session retirement", async () => {
+  it("returns 429 with metadata-only diagnostics when OAuth token acquisition is throttled during retirement", async () => {
     const { exams, sessions } = await seedPublishedSession();
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
@@ -505,10 +505,12 @@ describe("admin cohort exam session lifecycle runtime", () => {
       }))
       .mockRejectedValueOnce(
         new CloudShareRateLimitError("too many requests", 429, "rate_limit", {
-          method: "PUT",
-          path: "/v4/trainings/EXcohort-1",
-          integrationSurface: "cloudshare.v4.training.update",
+          method: "POST",
+          path: "/oauth/token",
+          integrationSurface: "cloudshare.v4.oauth.token",
+          requestBody: { client_secret: "private-secret" },
           responseHeaders: { "retry-after": "30" },
+          responseBody: { access_token: "private-token" },
         }),
       );
     const cloudshare: CloudShareClientFactory = {
@@ -568,15 +570,14 @@ describe("admin cohort exam session lifecycle runtime", () => {
     expect(entry).toMatchObject({
       correlationId: "corr-retire-rate-limit",
       details: {
-        integrationSurface: "cloudshare.v4.training.update",
+        integrationSurface: "cloudshare.v4.oauth.token",
         failureMode: "rate_limit",
         responseStatus: 429,
       },
-      response: {
-        status: 429,
-        headers: { "retry-after": "30" },
-      },
+      request: null,
+      response: null,
     });
+    expect(JSON.stringify(entry)).not.toMatch(/private-secret|private-token/);
   });
 
   it("does not retire the portal session when CloudShare never confirms the new end time", async () => {

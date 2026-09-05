@@ -53,6 +53,7 @@ function matchesQuery(entry: DiagnosticLogEntry, query: DiagnosticLogQuery): boo
     return false;
   }
   if (query.subjectId !== undefined && entry.subject?.id !== query.subjectId) return false;
+  if (query.subjectType !== undefined && entry.subject?.type !== query.subjectType) return false;
   if (
     query.candidateEmail !== undefined &&
     entry.candidateEmail?.toLowerCase() !== query.candidateEmail.toLowerCase()
@@ -238,6 +239,7 @@ export function createPrismaDiagnosticLogRepository(
         ...(query.source !== undefined ? { source: query.source } : {}),
         ...(query.correlationId !== undefined ? { correlationId: query.correlationId } : {}),
         ...(query.subjectId !== undefined ? { subjectId: query.subjectId } : {}),
+        ...(query.subjectType !== undefined ? { subjectType: query.subjectType } : {}),
         ...(occurredAt ? { occurredAt } : {}),
       };
 

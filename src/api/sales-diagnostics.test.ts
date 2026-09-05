@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { handleGetSalesDiagnosticLog } from "./sales-diagnostics";
+import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 
 describe("Sales diagnostics handler", () => {
+  const enrollmentRepo = (offeringId = "offering-1"): Pick<SalesTrialEnrollmentRepository, "findById"> & { findById: NonNullable<SalesTrialEnrollmentRepository["findById"]> } => ({ findById: vi.fn().mockResolvedValue({ salesTrialOfferingId: offeringId }) });
   it("keeps the authenticated Customer scope while allowing an owned Item source", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
 
@@ -24,6 +26,22 @@ describe("Sales diagnostics handler", () => {
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-demo-sessions", correlationId: "corr-1" }));
   });
 
+  it("returns Customer-scoped shared CloudShare exchanges through an explicit Sales Support source", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "cloudshare-integration", operation: "cloudshare.request", outcome: "success", customerId: "customer-certalis", correlationId: "corr-shared-1", message: "owned" });
+    await diagnostics.append({ source: "cloudshare-integration", operation: "cloudshare.request", outcome: "failure", customerId: "customer-other", correlationId: "corr-shared-1", message: "other Customer" });
+
+    const response = await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: { source: "cloudshare-integration", correlationId: "corr-shared-1" } },
+    );
+
+    expect(response).toMatchObject({
+      status: 200,
+      body: { entries: [expect.objectContaining({ source: "cloudshare-integration", message: "owned" })] },
+    });
+  });
+
   it("allows Project-member lookup failures to be correlated from Sales Support", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
     await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-project-members", correlationId: "corr-members-failed" } });
@@ -40,6 +58,106 @@ describe("Sales diagnostics handler", () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
     await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-trial-enrollment", correlationId: "corr-trial-extend-failed" } });
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-trial-enrollment", correlationId: "corr-trial-extend-failed" }));
+  });
+
+  it("follows a retained enrollment subject to its parent offering workflow evidence", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "sales.trial_offering.monitor.read_participants", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, externalIds: { offeringId: "offering-1" }, message: "504", occurredAt: new Date("2026-09-04T10:00:00.000Z") });
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "sales.trial_enrollment.monitor.read_participants", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, externalIds: { offeringId: "offering-1", salesTrialEnrollmentId: "enrollment-1" }, message: "504", occurredAt: new Date("2026-09-04T10:01:00.000Z") });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "unrelated", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-other" }, externalIds: { offeringId: "offering-other" }, message: "other", occurredAt: new Date("2026-09-04T10:02:00.000Z") });
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "unrelated", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-other" }, externalIds: { offeringId: "offering-other", salesTrialEnrollmentId: "enrollment-other" }, message: "other", occurredAt: new Date("2026-09-04T10:03:00.000Z") });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "other-customer", outcome: "failure", customerId: "customer-other", subject: { type: "sales_trial_offering", id: "offering-1" }, externalIds: { offeringId: "offering-1" }, message: "other", occurredAt: new Date("2026-09-04T10:04:00.000Z") });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, salesTrialEnrollments: enrollmentRepo(), logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", subjectType: "sales_trial_enrollment" } });
+    expect(response.status).toBe(200);
+    const entries = (response.body as { entries: Array<{ source: string; subject: { id?: string } }> }).entries;
+    expect(entries.map((entry) => `${entry.source}:${entry.subject.id}`)).toEqual(["sales-trial-enrollment:enrollment-1", "sales-trial-offerings:offering-1"]);
+  });
+
+  it("keeps legacy offering-subject monitoring rows visible in unfiltered causal views", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "success",
+      customerId: "customer-certalis",
+      subject: { type: "sales_trial_offering", id: "offering-1" },
+      message: "legacy offering monitoring",
+      occurredAt: new Date("2026-09-04T10:00:00.000Z"),
+    });
+    const deps = {
+      diagnostics,
+      salesTrialEnrollments: enrollmentRepo(),
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    };
+
+    const offering = await handleGetSalesDiagnosticLog(deps, {
+      customerId: "customer-certalis",
+      query: { subjectId: "offering-1", subjectType: "sales_trial_offering" },
+    });
+    const enrollment = await handleGetSalesDiagnosticLog(deps, {
+      customerId: "customer-certalis",
+      query: { subjectId: "enrollment-1", subjectType: "sales_trial_enrollment" },
+    });
+
+    expect((offering.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["legacy offering monitoring"]);
+    expect((enrollment.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["legacy offering monitoring"]);
+  });
+
+  it("returns offering evidence for the exact offering link query", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "offering.read", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "504", occurredAt: new Date("2026-09-04T10:00:00Z") });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "offering.read", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "recovered", occurredAt: new Date("2026-09-04T10:01:00Z") });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, salesTrialEnrollments: enrollmentRepo(), logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-trial-offerings", subjectId: "offering-1", subjectType: "sales_trial_offering" } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["recovered", "504"]);
+  });
+
+  it("resolves an enrollment parent through the bounded Customer-scoped repository seam", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "summary", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, message: "enrollment", occurredAt: new Date("2026-09-04T09:00:00Z") });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "summary", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "parent", occurredAt: new Date("2026-09-04T08:00:00Z") });
+    const repo = enrollmentRepo();
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, salesTrialEnrollments: repo, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", subjectType: "sales_trial_enrollment", limit: "10" } });
+    expect(repo.findById).toHaveBeenCalledWith("customer-certalis", "enrollment-1");
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["enrollment", "parent"]);
+  });
+
+  it("returns the full generic-subject page without advertising an inaccessible next page at the offset boundary", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    for (let index = 0; index < 5501; index += 1) await diagnostics.append({ source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_record", id: "record-1" }, message: String(index), occurredAt: new Date(2026, 8, 4, 0, 0, index % 60) });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectId: "record-1", offset: "5000", limit: "500" } });
+    expect(response).toMatchObject({ status: 200, body: { page: { returned: 500, hasMore: false, nextOffset: null } } });
+  });
+
+  it("returns only the exact enrollment and parent offering evidence in timestamp order", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const add = (input: Parameters<typeof diagnostics.append>[0]) => diagnostics.append(input);
+    await add({ source: "sales-trial-enrollment", operation: "enrollment.read", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, externalIds: { offeringId: "offering-1" }, message: "enrollment 504", occurredAt: new Date("2026-09-04T10:01:00Z") });
+    await add({ source: "sales-trial-offerings", operation: "offering.read", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "parent 504", occurredAt: new Date("2026-09-04T10:02:00Z") });
+    await add({ source: "sales-trial-offerings", operation: "offering.read", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "parent recovered", occurredAt: new Date("2026-09-04T10:03:00Z") });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, salesTrialEnrollments: enrollmentRepo(), logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", subjectType: "sales_trial_enrollment", limit: "10" } });
+    expect(response).toMatchObject({ status: 200, body: { page: { returned: 3, hasMore: false, nextOffset: null } } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["parent recovered", "parent 504", "enrollment 504"]);
+  });
+
+  it("excludes sibling enrollment, other Customer evidence, and typed external-ID collisions", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "x", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, externalIds: { offeringId: "offering-1" }, message: "exact" });
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "x", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "sibling" }, externalIds: { offeringId: "offering-1" }, message: "sibling" });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "x", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "enrollment-1" }, message: "collision" });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "x", outcome: "failure", customerId: "other", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "other customer" });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, salesTrialEnrollments: enrollmentRepo(), logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", subjectType: "sales_trial_enrollment" } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["exact"]);
+  });
+
+  it("paginates causal evidence and rejects offsets beyond the maximum", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    for (let i = 0; i < 3; i++) await diagnostics.append({ source: i === 0 ? "sales-trial-enrollment" : "sales-trial-offerings", operation: "x", outcome: "success", customerId: "customer-certalis", subject: { type: i === 0 ? "sales_trial_enrollment" : "sales_trial_offering", id: i === 0 ? "enrollment-1" : "offering-1" }, externalIds: i === 0 ? { offeringId: "offering-1" } : undefined, message: String(i), occurredAt: new Date(2026, 8, 4, 10, i) });
+    const deps = { diagnostics, salesTrialEnrollments: enrollmentRepo(), logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } };
+    const page = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", subjectType: "sales_trial_enrollment", offset: "2", limit: "1" } });
+    expect(page).toMatchObject({ status: 200, body: { page: { returned: 1, hasMore: false, nextOffset: null } } });
+    const empty = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", offset: "10", limit: "1" } });
+    expect(empty).toMatchObject({ status: 200, body: { page: { returned: 0, hasMore: false } } });
+    await expect(handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", offset: "5001" } })).resolves.toMatchObject({ status: 400 });
   });
 
   it("returns correlated participant reconciliation evidence through the aggregate Sales Support feed", async () => {
@@ -83,6 +201,7 @@ describe("Sales diagnostics handler", () => {
 
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-records" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-items" }));
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "cloudshare-integration" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-session-reconciliation" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-project-members" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-session-participants" }));
@@ -150,5 +269,37 @@ describe("Sales diagnostics handler", () => {
     );
 
     expect(response).toMatchObject({ status: 200, body: { page: { limit: 100, returned: 1, hasMore: false, nextOffset: null } } });
+  });
+
+  it("resolves the enrollment parent even when filters exclude child events", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "monitor", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "504", occurredAt: new Date("2026-09-04T10:00:00Z") });
+    const repo = enrollmentRepo();
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, salesTrialEnrollments: repo, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", outcome: "failure", operation: "monitor" } });
+    expect(repo.findById).toHaveBeenCalledWith("customer-certalis", "enrollment-1");
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["504"]);
+  });
+
+  it("keeps untyped subject IDs on the generic aggregate path", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-records", operation: "record.read", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_record", id: "record-1" }, message: "record" });
+    const repo = enrollmentRepo();
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, salesTrialEnrollments: repo, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { subjectId: "record-1" } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toContain("record");
+    expect(repo.findById).not.toHaveBeenCalled();
+  });
+
+  it("partitions explicit enrollment evidence by requested Sales source", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "monitor", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, message: "child", occurredAt: new Date("2026-09-04T10:00:00Z") });
+    await diagnostics.append({ source: "sales-trial-offerings", operation: "monitor", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, message: "parent", occurredAt: new Date("2026-09-04T10:01:00Z") });
+    const repo = enrollmentRepo();
+    const deps = { diagnostics, salesTrialEnrollments: repo, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } };
+    const child = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", source: "sales-trial-enrollment" } });
+    const parent = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", source: "sales-trial-offerings" } });
+    const unrelated = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectType: "sales_trial_enrollment", subjectId: "enrollment-1", source: "sales-records" } });
+    expect((child.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["child"]);
+    expect((parent.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["parent"]);
+    expect((unrelated.body as { entries: unknown[] }).entries).toEqual([]);
   });
 });
