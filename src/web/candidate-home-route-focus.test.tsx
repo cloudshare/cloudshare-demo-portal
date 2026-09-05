@@ -172,4 +172,26 @@ describe("CandidateHome route-backed task flow", () => {
       "Now showing Schedule exam.",
     );
   });
+
+  it("explains a scheduled current attempt and clears routed focus styling on blur", async () => {
+    const browserFetch = vi.fn((input: RequestInfo | URL) => input === "/api/candidate/exams"
+      ? Promise.resolve(json({ exams: [{ id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, storageLeaseMinutes: 2880, openPeriodMinutes: 120, scoreRetrievalEnabled: true, individualSchedulingEnabled: true, availableCohortSessions: [] }], attempts: [{ id: "attempt-scheduled", examId: "exam-1", examTitle: "Helios Fundamentals", scheduledFor: "2026-10-23T16:00:00.000Z", status: "scheduled" }] }))
+      : Promise.resolve(new Response(null, { status: 200 })));
+    vi.stubGlobal("fetch", browserFetch);
+    Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
+    currentSearchParams = new URLSearchParams("task=current&attemptId=attempt-scheduled");
+    const routed = render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: "attempt-scheduled", examId: null }} />);
+    expect(await screen.findByText(/scheduled.*enable entry.*access window/i)).toBeTruthy();
+    const user = userEvent.setup();
+    const scheduleButton = await screen.findByRole("button", { name: /^Schedule exam/ });
+    await user.click(scheduleButton);
+    expect(routerPush).toHaveBeenCalledWith("/candidate?task=schedule");
+    currentSearchParams = new URLSearchParams("task=schedule");
+    // The existing render represents the route transition after the browser navigation.
+    routed.rerender(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: "attempt-scheduled", examId: null }} />);
+    const heading = await screen.findByRole("heading", { name: "Choose an exam" });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    heading.blur();
+    expect(heading.style.boxShadow).toBe("");
+  });
 });
