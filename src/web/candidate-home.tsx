@@ -98,6 +98,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
   const activeTaskHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const hasLoadedResolvedRouteRef = useRef(false);
   const previousResolvedRouteKeyRef = useRef<string | null>(null);
+  const previousUrlRouteKeyRef = useRef<string | null>(null);
   const [dashboard, setDashboard] = useState<CandidateDashboardData>({
     exams: [],
     attempts: [],
@@ -376,13 +377,18 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       return;
     }
 
+    const urlRouteKey = searchParams.toString();
     if (!hasLoadedResolvedRouteRef.current) {
       hasLoadedResolvedRouteRef.current = true;
+      previousUrlRouteKeyRef.current = urlRouteKey;
       previousResolvedRouteKeyRef.current = resolvedRouteKey;
       return;
     }
 
-    if (previousResolvedRouteKeyRef.current === resolvedRouteKey) {
+    const routeNavigated = previousUrlRouteKeyRef.current !== urlRouteKey;
+    previousUrlRouteKeyRef.current = urlRouteKey;
+    if (!routeNavigated || previousResolvedRouteKeyRef.current === resolvedRouteKey) {
+      previousResolvedRouteKeyRef.current = resolvedRouteKey;
       return;
     }
 
@@ -390,7 +396,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
     setFocusedTaskHeading(resolvedRoute.activeTask);
     setAnnouncedTaskMessage(buildCandidateTaskAnnouncement(resolvedRoute));
     activeTaskHeadingRef.current?.focus({ preventScroll: true });
-  }, [loading, resolvedRoute, resolvedRouteKey]);
+  }, [loading, resolvedRoute, resolvedRouteKey, searchParams]);
 
   if (sessionExpired) {
     return null;
@@ -636,7 +642,9 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                   ) : (
                     <p style={mutedTaskCopyStyle}>
                       {resolvedRoute.activeTask === "current"
-                        ? "No live action is available for this route state."
+                        ? selectedAttempt.status === "scheduled"
+                          ? "Your ExamAttempt is scheduled. We will enable entry when the server confirms the access window is open."
+                          : "No live action is available for this route state."
                         : "This attempt remains here as durable history."}
                     </p>
                   )}
