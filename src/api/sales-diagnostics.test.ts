@@ -26,6 +26,22 @@ describe("Sales diagnostics handler", () => {
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-demo-sessions", correlationId: "corr-1" }));
   });
 
+  it("returns Customer-scoped shared CloudShare exchanges through an explicit Sales Support source", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "cloudshare-integration", operation: "cloudshare.request", outcome: "success", customerId: "customer-certalis", correlationId: "corr-shared-1", message: "owned" });
+    await diagnostics.append({ source: "cloudshare-integration", operation: "cloudshare.request", outcome: "failure", customerId: "customer-other", correlationId: "corr-shared-1", message: "other Customer" });
+
+    const response = await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: { source: "cloudshare-integration", correlationId: "corr-shared-1" } },
+    );
+
+    expect(response).toMatchObject({
+      status: 200,
+      body: { entries: [expect.objectContaining({ source: "cloudshare-integration", message: "owned" })] },
+    });
+  });
+
   it("allows Project-member lookup failures to be correlated from Sales Support", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
     await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-project-members", correlationId: "corr-members-failed" } });
@@ -185,6 +201,7 @@ describe("Sales diagnostics handler", () => {
 
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-records" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-items" }));
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "cloudshare-integration" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-session-reconciliation" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-project-members" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-session-participants" }));
