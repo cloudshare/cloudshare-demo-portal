@@ -4,6 +4,9 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionWorkspace } from "./sales-session-workspace";
 
+const router = vi.hoisted(() => ({ replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
+
 const data = { summary: { id: "session-1", sessionName: "Acme enablement", revision: 3, start: "2026-07-24T09:00:00.000Z", end: "2026-07-24T10:00:00.000Z", timeZone: "Europe/London", operation: { value: "correlated", source: "certalis_persistence" }, experience: { value: "notStarted", source: "schedule_prediction", freshness: "estimated" } }, participants: [{ id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", environment: { value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" } }], activity: [{ occurredAt: "2026-07-23T09:00:00.000Z", kind: "session_provision", summary: "Sales Session provision completed.", outcome: "success", actor: { type: "admin" }, subject: { type: "sales_demo_session", id: "session-1" }, correlationId: "corr-1" }], details: { accountName: "Acme", opportunityName: "Evaluation", itemName: "Enablement item", invitationMode: "Sales Pros and participants" } };
 
 describe("Sales Session workspace", () => {
@@ -41,6 +44,16 @@ describe("Sales Session workspace", () => {
     render(<SalesSessionWorkspace sessionId="missing" area="activity" queueHref="/sales?tab=sessions" />);
     expect((await screen.findByRole("alert")).textContent).toContain("This Sales Session is unavailable for this Customer.");
     expect(screen.getByRole("link", { name: "Back to Sessions" })).not.toBeNull();
+  });
+
+  it("removes protected workspace content and replaces history on an expired Session request", async () => {
+    window.history.replaceState({}, "", "/sales/sessions/session-1?area=activity&from=%2Fsales%3Ftab%3Dsessions");
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify({ error: "Session expired" }), { status: 401 }));
+    render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
+
+    expect(await screen.findByText("Your session has expired. Sign in again to continue.")).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Activity" })).toBeNull();
+    expect(router.replace).toHaveBeenCalledWith("/login?returnTo=%2Fsales%2Fsessions%2Fsession-1%3Farea%3Dactivity%26from%3D%252Fsales%253Ftab%253Dsessions");
   });
 
   it.each(["participants", "activity", "details"] as const)("moves focus to the %s heading after a fresh route load", async (area) => {

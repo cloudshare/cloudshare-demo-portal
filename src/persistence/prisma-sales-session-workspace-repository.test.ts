@@ -20,7 +20,7 @@ describe("Prisma Sales Session workspace repository", () => {
     const result = await repository.read("customer-a", "session-1");
 
     const query = findMany.mock.calls[0][0];
-    expect(query.where).toEqual({ customerId: "customer-a", subjectId: "session-1" });
+    expect(query.where).toEqual({ customerId: "customer-a", subjectId: "session-1", subjectType: { in: ["sales_demo_session", "sales_participant"] } });
     expect(query.select).not.toHaveProperty("requestJson");
     expect(query.select).not.toHaveProperty("responseJson");
     expect(query.select).not.toHaveProperty("detailsJson");

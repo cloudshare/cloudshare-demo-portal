@@ -54,4 +54,10 @@ describe("portal expired-session return targets", () => {
     expect(getSafePortalTargetFromSearchParams("/sales", { tab: "sessions", queue: "history", sort: "name_asc", offset: "20" })).toBe("/sales?tab=sessions&queue=history&sort=name_asc&offset=20");
     expect(getSafePortalTargetFromSearchParams("/sales", { accountId: "another-customer" })).toBe("/sales");
   });
+
+  it("allows a dedicated Sales Session GET target with a safe queue origin", () => {
+    const target = "/sales/sessions/session-1?area=activity&from=%2Fsales%3Ftab%3Dsessions%26queue%3Dhistory";
+    expect(getExpiredPortalLoginPath(target)).toBe("/login?returnTo=%2Fsales%2Fsessions%2Fsession-1%3Farea%3Dactivity%26from%3D%252Fsales%253Ftab%253Dsessions%2526queue%253Dhistory");
+    expect(getExpiredPortalLoginPath("/sales/sessions/session-1?area=activity&from=https%3A%2F%2Fattacker.invalid")).toBeNull();
+  });
 });

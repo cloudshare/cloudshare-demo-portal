@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createAdminAuthenticatedRequest } from "./admin-authenticated-request";
+import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
 import { statusBadgeStyle } from "./status-badge";
 import styles from "./sales-session-workspace.module.css";
 import type { SafeSalesSessionActivity, SalesSessionWorkspaceResponse } from "@/domain/sales-session-workspace";
@@ -11,21 +13,25 @@ type DiagnosticRecord = { readonly correlationId: string; readonly occurredAt: s
 type ActivityGroup = { readonly summary: string; readonly outcome: SafeSalesSessionActivity["outcome"]; readonly actor: string; readonly subject: string; readonly firstAt: string; readonly lastAt: string; readonly count: number; readonly diagnosticRecords: readonly DiagnosticRecord[] };
 
 export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly sessionId: string; readonly area: Area; readonly queueHref: string }) {
+  const router = useRouter();
   const [workspace, setWorkspace] = useState<SalesSessionWorkspaceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const areaHeading = useRef<HTMLHeadingElement>(null);
+  const handleSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { setSessionExpired(true); router.replace(path); } }), [router]);
   useEffect(() => {
     let live = true;
-    const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: () => window.location.assign("/login") });
+    const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });
     void request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace`, { cache: "no-store" }).then(async (response) => {
       const body = await response.json() as SalesSessionWorkspaceResponse & { error?: string };
       if (!response.ok) throw new Error(body.error ?? "The Sales Session could not be loaded.");
       if (live) setWorkspace(body);
     }).catch((cause) => { if (live) setError(cause instanceof Error ? cause.message : "The Sales Session could not be loaded."); });
     return () => { live = false; };
-  }, [sessionId]);
+  }, [handleSessionExpired, sessionId]);
   useEffect(() => { areaHeading.current?.focus(); }, [area, workspace?.summary.id]);
   const activity = useMemo(() => workspace ? groupSalesSessionActivity(workspace.activity) : [], [workspace]);
+  if (sessionExpired) return <main aria-live="polite"><p>Your session has expired. Sign in again to continue.</p></main>;
   if (error) return <section role="alert" className={styles.error}><h1>Sales Session unavailable</h1><p>{error}</p><a href={queueHref}>Back to Sessions</a></section>;
   if (!workspace) return <section aria-busy="true" aria-label="Sales Session workspace loading" className={styles.loading}>Loading Sales Session…</section>;
   const areaHref = (next: Area) => `/sales/sessions/${encodeURIComponent(sessionId)}?area=${next}&from=${encodeURIComponent(queueHref)}`;
