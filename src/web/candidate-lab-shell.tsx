@@ -16,6 +16,7 @@ import { accountLogoutButtonStyle, disabledButtonStyle, secondaryButtonStyle } f
 import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
 import { PortalPageHeader } from "./portal-page-header";
 import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
+import { startPortalSessionWatchdog } from "./session-expiry";
 
 type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 
@@ -43,6 +44,7 @@ export function CandidateLabShell({
       router.refresh();
     },
   }), [router]);
+  useEffect(() => { const watchdog = startPortalSessionWatchdog({ fetchImpl: fetch, onExpired: handleSessionExpired }); void watchdog.checkNow(); return () => watchdog.stop(); }, [handleSessionExpired]);
 
   useEffect(() => {
     let cancelled = false;

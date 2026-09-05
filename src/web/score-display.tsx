@@ -19,6 +19,7 @@ import { eyebrowLabelStyle } from "@/web/design-tokens";
 import { statusBadgeStyle } from "@/web/status-badge";
 import { PortalPageHeader } from "@/web/portal-page-header";
 import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
+import { startPortalSessionWatchdog } from "./session-expiry";
 
 interface ScoreDisplayProps {
   readonly examAttemptId: string;
@@ -76,6 +77,7 @@ export function ScoreDisplay({ examAttemptId, email }: ScoreDisplayProps) {
       router.refresh();
     },
   }), [router]);
+  useEffect(() => { const watchdog = startPortalSessionWatchdog({ fetchImpl: fetch, onExpired: handleSessionExpired }); void watchdog.checkNow(); return () => watchdog.stop(); }, [handleSessionExpired]);
 
   useEffect(() => {
     let cancelled = false;
