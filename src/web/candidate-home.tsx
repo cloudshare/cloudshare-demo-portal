@@ -31,6 +31,7 @@ import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
 import { eyebrowLabelStyle } from "./design-tokens";
 import { PortalPageHeader } from "./portal-page-header";
 import { CandidateExamCard } from "./candidate-exam-card";
+import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
 import {
   buildCandidateTaskHref,
   parseCandidateTaskRoute,
@@ -113,13 +114,16 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
   const [focusedTaskHeading, setFocusedTaskHeading] = useState<CandidateTaskView | null>(null);
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
 
-  const handleCandidateSessionExpired = useCallback(() => {
-    setSessionExpired(true);
-    setError(null);
-    setScheduleFeedback({});
-    router.replace("/login");
-    router.refresh();
-  }, [router]);
+  const handleCandidateSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({
+    currentPath: () => `${window.location.pathname}${window.location.search}`,
+    fallbackLoginPath: "/login",
+    replace: (path) => {
+      setSessionExpired(true);
+      setError(null);
+      setScheduleFeedback({});
+      router.replace(path);
+    },
+  }), [router]);
 
   useEffect(() => {
     if (sessionExpired) {
@@ -387,6 +391,10 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
     setAnnouncedTaskMessage(buildCandidateTaskAnnouncement(resolvedRoute));
     activeTaskHeadingRef.current?.focus({ preventScroll: true });
   }, [loading, resolvedRoute, resolvedRouteKey]);
+
+  if (sessionExpired) {
+    return null;
+  }
 
   return (
     <main style={pageShellStyle}>

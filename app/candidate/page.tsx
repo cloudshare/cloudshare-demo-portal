@@ -2,7 +2,7 @@ import React from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPortalSessionServices } from "@/composition";
-import { getPortalSession } from "@/auth/portal-session";
+import { getPortalHomePath, getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { CandidateHome } from "@/web/candidate-home";
 import { parseCandidateTaskRoute } from "@/web/candidate-task-route";
@@ -20,7 +20,7 @@ export default async function CandidatePage({
     redirect(getExpiredPortalLoginPath("/candidate") ?? "/login");
   }
   if (session.role !== "candidate") {
-    redirect("/admin");
+    redirect(getPortalHomePath(session));
   }
 
   return <CandidateHome email={session.email} initialRoute={parseCandidateTaskRoute(await (searchParams ?? Promise.resolve({})))} />;
