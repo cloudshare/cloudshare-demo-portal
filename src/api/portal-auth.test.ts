@@ -201,7 +201,9 @@ describe("handleGetPortalSession", () => {
         role: "admin",
         customerId: "customer-helios",
         workspace: "certification",
+        expiresAtMs: 1_700_000_060_000,
       },
+      serverNowMs: 1_700_000_000_000,
     });
   });
 

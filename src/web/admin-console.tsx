@@ -64,7 +64,6 @@ export function AdminConsole({
     replace: (path) => {
       setSessionExpired(true);
       router.replace(path);
-      router.refresh();
     },
   }), [router]);
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);

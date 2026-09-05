@@ -74,7 +74,6 @@ export function ScoreDisplay({ examAttemptId, email }: ScoreDisplayProps) {
     replace: (path) => {
       setSessionExpired(true);
       router.replace(path);
-      router.refresh();
     },
   }), [router]);
   useEffect(() => { const watchdog = startPortalSessionWatchdog({ fetchImpl: fetch, onExpired: handleSessionExpired }); void watchdog.checkNow(); return () => watchdog.stop(); }, [handleSessionExpired]);

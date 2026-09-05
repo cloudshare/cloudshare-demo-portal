@@ -22,7 +22,6 @@ export function SalesDiagnostics({ email }: { readonly email: string }) {
     replace: (path) => {
       setSessionExpired(true);
       router.replace(path);
-      router.refresh();
     },
   }), [router]);
   const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: handleSessionExpired }), [browserFetch, handleSessionExpired]);

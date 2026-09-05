@@ -258,7 +258,7 @@ export async function handleGetPortalSession(
           workspace: session.workspace,
           expiresAtMs: session.issuedAtMs + (deps.portalAuth.sessionTtlMs ?? DEFAULT_PORTAL_SESSION_TTL_MS),
       },
-      serverNowMs: Date.now(),
+      serverNowMs: deps.portalAuth.nowMs?.() ?? Date.now(),
     },
     session,
   };

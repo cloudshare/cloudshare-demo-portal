@@ -111,7 +111,6 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       setError(null);
       setScheduleFeedback({});
       router.replace(path);
-      router.refresh();
     },
   }), [router]);
 

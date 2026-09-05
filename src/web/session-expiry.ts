@@ -10,6 +10,11 @@ interface SessionResponse {
   readonly json?: () => Promise<unknown>;
 }
 
+interface PortalSessionObservation {
+  readonly state: PortalSessionState;
+  readonly deadlineDelayMs: number | null;
+}
+
 type FetchLike = (
   input: string,
   init?: RequestInit,
@@ -31,6 +36,7 @@ interface PortalSessionWatchdogOptions {
   readonly clearTimeoutFn?: (handle: TimeoutHandle) => void;
   readonly addEventListenerFn?: (type: string, listener: () => void) => void;
   readonly removeEventListenerFn?: (type: string, listener: () => void) => void;
+  readonly isDocumentVisible?: () => boolean;
 }
 
 export class PortalSessionExpiredError extends Error {
@@ -53,14 +59,40 @@ export function isPortalSessionExpiredError(
 export async function checkPortalSession(
   fetchImpl: FetchLike,
 ): Promise<PortalSessionState> {
+  return (await observePortalSession(fetchImpl)).state;
+}
+
+async function observePortalSession(fetchImpl: FetchLike): Promise<PortalSessionObservation> {
   try {
     const response = await fetchImpl("/api/auth/session", {
       cache: "no-store",
       headers: { accept: "application/json" },
     });
-    return isPortalSessionExpiredStatus(response.status) ? "expired" : "active";
+    if (isPortalSessionExpiredStatus(response.status)) {
+      return { state: "expired", deadlineDelayMs: null };
+    }
+    if (response.status !== 200 || !response.json) {
+      return { state: response.status === 200 ? "active" : "unknown", deadlineDelayMs: null };
+    }
+
+    const body: unknown = await response.json();
+    const session = typeof body === "object" && body !== null
+      ? (body as { session?: unknown }).session
+      : null;
+    const expiresAtMs = typeof session === "object" && session !== null
+      ? (session as { expiresAtMs?: unknown }).expiresAtMs
+      : null;
+    const serverNowMs = typeof body === "object" && body !== null
+      ? (body as { serverNowMs?: unknown }).serverNowMs
+      : null;
+    return {
+      state: "active",
+      deadlineDelayMs: typeof expiresAtMs === "number" && typeof serverNowMs === "number"
+        ? Math.max(0, expiresAtMs - serverNowMs)
+        : null,
+    };
   } catch {
-    return "unknown";
+    return { state: "unknown", deadlineDelayMs: null };
   }
 }
 
@@ -74,6 +106,7 @@ export function startPortalSessionWatchdog({
   clearTimeoutFn = clearTimeout,
   addEventListenerFn = (type, listener) => { if (typeof window !== "undefined") window.addEventListener(type, listener); },
   removeEventListenerFn = (type, listener) => { if (typeof window !== "undefined") window.removeEventListener(type, listener); },
+  isDocumentVisible = () => typeof document === "undefined" || document.visibilityState !== "hidden",
 }: PortalSessionWatchdogOptions): {
   readonly checkNow: () => Promise<void>;
   readonly stop: () => void;
@@ -83,6 +116,12 @@ export function startPortalSessionWatchdog({
   let intervalHandle: TimerHandle | null = null;
   let deadlineHandle: TimeoutHandle | null = null;
   let inFlight: Promise<void> | null = null;
+  const visibilityResumeCheck = () => {
+    if (!stopped && isDocumentVisible()) {
+      void checkNow();
+    }
+  };
+  const focusResumeCheck = () => { if (!stopped) void checkNow(); };
 
   function stop(): void {
     if (stopped) {
@@ -93,8 +132,8 @@ export function startPortalSessionWatchdog({
       clearIntervalFn(intervalHandle);
     }
     if (deadlineHandle !== null) clearTimeoutFn(deadlineHandle);
-    removeEventListenerFn("visibilitychange", resumeCheck);
-    removeEventListenerFn("focus", resumeCheck);
+    removeEventListenerFn("visibilitychange", visibilityResumeCheck);
+    removeEventListenerFn("focus", focusResumeCheck);
   }
 
   async function checkNow(): Promise<void> {
@@ -104,21 +143,18 @@ export function startPortalSessionWatchdog({
 
     if (inFlight) return inFlight;
     inFlight = (async () => {
-    let response: SessionResponse;
-    try { response = await fetchImpl("/api/auth/session", { cache: "no-store", headers: { accept: "application/json" } }); }
-    catch { return; }
-    if (stopped || observedExpiredSession) return;
-    if (response.status === 401) { observedExpiredSession = true; stop(); onExpired(); return; }
-    if (response.status !== 200) return;
-    let body: any;
-    try { body = response.json ? await response.json() : null; } catch { return; }
-    const expiresAt = body?.session?.expiresAtMs;
-    const serverNow = body?.serverNowMs;
-    if (typeof expiresAt === "number" && typeof serverNow === "number") {
-      const delay = Math.max(0, expiresAt - serverNow);
-      if (deadlineHandle !== null) clearTimeoutFn(deadlineHandle);
-      deadlineHandle = setTimeoutFn(() => { void checkNow(); }, delay);
-    }
+      const observation = await observePortalSession(fetchImpl);
+      if (stopped || observedExpiredSession) return;
+      if (observation.state === "expired") {
+        observedExpiredSession = true;
+        stop();
+        onExpired();
+        return;
+      }
+      if (observation.deadlineDelayMs !== null) {
+        if (deadlineHandle !== null) clearTimeoutFn(deadlineHandle);
+        deadlineHandle = setTimeoutFn(() => { void checkNow(); }, observation.deadlineDelayMs);
+      }
     })();
     await inFlight;
     inFlight = null;
@@ -128,9 +164,8 @@ export function startPortalSessionWatchdog({
   intervalHandle = setIntervalFn(() => {
     void checkNow();
   }, intervalMs);
-  const resumeCheck = () => { if (!stopped && typeof document !== "undefined" && document.visibilityState !== "hidden") void checkNow(); };
-  addEventListenerFn("visibilitychange", resumeCheck);
-  addEventListenerFn("focus", resumeCheck);
+  addEventListenerFn("visibilitychange", visibilityResumeCheck);
+  addEventListenerFn("focus", focusResumeCheck);
 
   return { checkNow, stop };
 }

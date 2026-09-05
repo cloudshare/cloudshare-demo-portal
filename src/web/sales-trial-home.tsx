@@ -58,7 +58,6 @@ export function SalesTrialHome({
       replace: (path) => {
         setSessionExpired(true);
         router.replace(path);
-        router.refresh();
       },
     });
   }

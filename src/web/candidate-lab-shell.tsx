@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LabLauncher } from "./lab-launcher";
 import { getCandidateLabPresentation } from "./candidate-lab-state";
@@ -41,7 +41,6 @@ export function CandidateLabShell({
     replace: (path) => {
       setSessionExpired(true);
       router.replace(path);
-      router.refresh();
     },
   }), [router]);
   useEffect(() => { const watchdog = startPortalSessionWatchdog({ fetchImpl: fetch, onExpired: handleSessionExpired }); void watchdog.checkNow(); return () => watchdog.stop(); }, [handleSessionExpired]);
