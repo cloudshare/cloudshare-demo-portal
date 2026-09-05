@@ -59,8 +59,9 @@ function hasValidRouteShape(scope: PortalReturnScope, searchParams: URLSearchPar
       && (view === null || view === "catalog" || view === "create");
   }
   if (tab === "sessions") {
-    return hasOnlyQueryKeys(searchParams, ["tab", "view", "status", "queue", "sort", "offset"])
-      && (view === null || view === "provision");
+    return view === "provision"
+      ? hasOnlyQueryKeys(searchParams, ["tab", "view"])
+      : view === null && hasOnlyQueryKeys(searchParams, ["tab", "status", "queue", "sort", "offset"]);
   }
   return (tab === "records" || tab === "trial-offerings" || tab === "support" || tab === "configuration")
     && hasOnlyQueryKeys(searchParams, ["tab"]);
@@ -82,11 +83,13 @@ function safePortalTarget(raw: string | null | undefined): { readonly target: st
   const scope = scopeForPath(url.pathname);
   if (!scope) return null;
   const allowed = ALLOWED_QUERY_VALUES[scope];
+  const seenKeys = new Set<string>();
   for (const [key, value] of url.searchParams) {
     const rule = allowed[key];
-    if (!rule || (rule === "integer" ? !/^(0|[1-9]\d*)$/.test(value) : !rule.includes(value))) {
+    if (seenKeys.has(key) || !rule || (rule === "integer" ? !/^(0|[1-9]\d*)$/.test(value) : !rule.includes(value))) {
       return null;
     }
+    seenKeys.add(key);
   }
   if (!hasValidRouteShape(scope, url.searchParams)) return null;
 

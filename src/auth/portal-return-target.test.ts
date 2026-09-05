@@ -32,6 +32,9 @@ describe("portal expired-session return targets", () => {
       "/admin?tab=candidates&view=catalog",
       "/sales?tab=items&view=provision",
       "/sales?tab=records&queue=history",
+      "/sales?tab=sessions&view=provision&queue=history",
+      "/sales?tab=sessions&view=provision&status=ended",
+      "/sales?tab=sessions&queue=history&queue=active",
     ]) {
       expect(getExpiredPortalLoginPath(target)).toBeNull();
     }
