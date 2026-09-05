@@ -11,6 +11,7 @@ import { alertPanelStyle, cardStyle } from "./card-styles";
 import { colors, pageHeadingStyle, spacing } from "./design-tokens";
 import { openSalesTrialWindow, readSalesTrialEnterBlockedMessage } from "./sales-trial-window";
 import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
+import { startPortalSessionWatchdog } from "./session-expiry";
 
 type TrialOffering = {
   readonly id: string;
@@ -62,6 +63,7 @@ export function SalesTrialHome({
     });
   }
   const handleSessionExpired = sessionExpiryRedirect.current;
+  React.useEffect(() => { if (sessionExpired) return; const watchdog = startPortalSessionWatchdog({ fetchImpl, onExpired: handleSessionExpired }); void watchdog.checkNow(); return () => watchdog.stop(); }, [fetchImpl, handleSessionExpired, sessionExpired]);
 
   React.useEffect(() => {
     if (hasInitialOfferings) {

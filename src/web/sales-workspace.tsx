@@ -19,6 +19,7 @@ import { SalesTrialOfferingsAdmin } from "./sales-trial-offerings-admin";
 import shellStyles from "./sales-workspace.module.css";
 import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
 import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
+import { startPortalSessionWatchdog } from "./session-expiry";
 
 type Account = { id: string; name: string; kind: "prospect" | "current_customer"; archivedAt: string | null; createdAt: string; updatedAt?: string };
 type Opportunity = { id: string; accountId: string; name: string; status: "open" | "won" | "lost"; archivedAt: string | null; createdAt: string; updatedAt?: string };
@@ -64,6 +65,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
   const handleSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { setSessionExpired(true); router.replace(path); } }), [router]);
   const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: handleSessionExpired }), [browserFetch, handleSessionExpired]);
+  useEffect(() => { if (sessionExpired) return; const watchdog = startPortalSessionWatchdog({ fetchImpl: browserFetch, onExpired: handleSessionExpired }); void watchdog.checkNow(); return () => watchdog.stop(); }, [browserFetch, handleSessionExpired, sessionExpired]);
   const logout = useCallback(async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }, [router]);
   const navigate = useCallback((intent: SalesNavigationIntent) => {
     setCreationNotice(intent.creationNotice);

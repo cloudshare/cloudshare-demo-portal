@@ -8,6 +8,7 @@ import { compactButtonStyle } from "./button-styles";
 import { pageShellStyle } from "./page-shell";
 import { PortalPageHeader } from "./portal-page-header";
 import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
+import { startPortalSessionWatchdog } from "./session-expiry";
 
 const salesDiagnosticsPageStyle = { ...pageShellStyle, maxWidth: "96rem", padding: "2rem clamp(1.25rem, 3vw, 3rem) 3rem" };
 
@@ -25,6 +26,7 @@ export function SalesDiagnostics({ email }: { readonly email: string }) {
     },
   }), [router]);
   const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: handleSessionExpired }), [browserFetch, handleSessionExpired]);
+  React.useEffect(() => { if (sessionExpired) return; const watchdog = startPortalSessionWatchdog({ fetchImpl: browserFetch, onExpired: handleSessionExpired }); void watchdog.checkNow(); return () => watchdog.stop(); }, [browserFetch, handleSessionExpired, sessionExpired]);
 
   if (sessionExpired) return null;
 
