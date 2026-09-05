@@ -2,6 +2,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import { randomUUID } from "node:crypto";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EnvironmentStateSource } from "@/domain/environment";
@@ -14,6 +15,7 @@ import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
 import type { Logger } from "@/observability/logger";
 import { captureCompletedExamScoreEvidence } from "./completed-exam-score-capture";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 import {
   recordExamAttemptCompletionDiagnostic,
   recordExamAttemptCompletionEnvironmentDiagnostic,
@@ -172,7 +174,7 @@ export async function recordExamAttemptHeartbeatRuntime(
       await recordExamAttemptCompletionEnvironmentDiagnostic(
         {
           diagnostics: deps.diagnostics,
-          source: await resolveCompletionEnvironmentSource(deps, completedAttempt.customerId),
+          source: await resolveCompletionEnvironmentSource(deps, completedAttempt.customerId, completedAttempt.id, completedAttempt.examId ?? undefined),
         },
         {
           attempt: completedAttempt,
@@ -249,6 +251,8 @@ export async function recordExamAttemptHeartbeatRuntime(
 async function resolveCompletionEnvironmentSource(
   deps: ManualHeartbeatRuntimeDeps,
   customerId: string | undefined,
+  examAttemptId: string,
+  examId?: string,
 ): Promise<EnvironmentStateSource | undefined> {
   if (!customerId || !deps.connections || !deps.cloudshare) {
     return deps.environmentSource;
@@ -259,5 +263,5 @@ async function resolveCompletionEnvironmentSource(
     return deps.environmentSource;
   }
 
-  return createCloudShareEnvironmentSource(deps.cloudshare.forConnection(connection));
+  return createCloudShareEnvironmentSource(deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "system", id: "heartbeat-completion" }, customerId, subject: { type: "exam_attempt", id: examAttemptId }, correlationId: randomUUID(), source: "runtime", examId, examAttemptId, externalIds: { lifecycleParent: `heartbeat-completion:${examAttemptId}` } })));
 }

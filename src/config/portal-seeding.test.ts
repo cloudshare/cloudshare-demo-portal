@@ -36,6 +36,7 @@ function createDeps(): TestDeps {
           lastName: null,
         };
       }),
+      upsertSalesTrialConfiguration: vi.fn(async () => undefined),
     },
     cloudshareConnections: {
       save: vi.fn(async (input) => {
@@ -96,6 +97,7 @@ describe("applyPortalSeed", () => {
     await applyPortalSeed(deps, seed);
 
     expect(deps.portalUsers.upsertSeedUser).toHaveBeenCalledTimes(4);
+    expect(deps.portalUsers.upsertSalesTrialConfiguration).toHaveBeenCalledTimes(2);
     expect(deps.cloudshareConnections.save).toHaveBeenCalledTimes(2);
     await expect(deps.cloudshareConnections.findByCustomerId("customer-1")).resolves.toMatchObject({
       apiId: "helios-api-id",

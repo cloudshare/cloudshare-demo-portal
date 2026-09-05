@@ -25,6 +25,7 @@ import {
   type CloudShareResourceReadFailure,
   type CloudShareResourceReadSuccess,
 } from "@/integrations/cloudshare/resources";
+import { customerDefaultCloudShareScope } from "./certification-cloudshare-observer";
 
 /**
  * Framework-agnostic admin API handlers. All three surfaces are read-only
@@ -165,7 +166,7 @@ export async function handleSyncResources(
     }
 
     const lister: CloudShareResourceLister = createCloudShareResourceLister(
-      deps.cloudshare.forConnection(connection),
+      deps.cloudshare.forConnection(connection, customerDefaultCloudShareScope("catalogue_resource_read")),
       {
         onReadSuccess: async (spec) => {
           await safeRecordDiagnostic(deps, buildResourceReadSuccessEntry(request.customerId, spec));
@@ -436,6 +437,7 @@ export async function handleGetDiagnosticLog(
   const source = request.query.source?.trim();
   const correlationId = request.query.correlationId?.trim();
   const subjectId = request.query.subjectId?.trim();
+  const subjectType = request.query.subjectType?.trim();
   const integrationSurface = request.query.integrationSurface?.trim();
   const externalId = request.query.externalId?.trim();
   const limitParam = request.query.limit;
@@ -458,6 +460,7 @@ export async function handleGetDiagnosticLog(
     ...(source ? { source } : {}),
     ...(correlationId ? { correlationId } : {}),
     ...(subjectId ? { subjectId } : {}),
+    ...(subjectType ? { subjectType } : {}),
     ...(integrationSurface ? { integrationSurface } : {}),
     ...(externalId ? { externalId } : {}),
     ...(from ? { from } : {}),

@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { handleCreateSalesDemoSession as createSalesDemoSession, type SalesDemoSessionDeps, type SalesDemoSessionRequest } from "./sales-demo-sessions";
 import { SalesDemoSessionRevisionConflictError, type SalesDemoSession } from "@/domain/sales-demo-session";
 import { createInMemorySalesRecordRepository } from "@/domain/sales-records";
-import { CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare/errors";
+import { CloudShareAuthError, CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare/errors";
 import { SalesItemProvisioningReadError } from "@/integrations/cloudshare/sales-item-provisioning";
 
 const admin = { type: "admin", id: "sales-admin", email: "sales-admin@certalis.demo" };
 const projectMembers = {
   listActiveProjectMembers: vi.fn().mockResolvedValue({
     members: [{ email: admin.email, displayName: "Sales Admin" }],
-    request: { method: "GET", path: "/users", query: { projectUsers: "true", status: "active", projectId: "project-1", getRows: "true" } },
+    request: { method: "GET", path: "/users", query: { projectUsers: "true", status: "active", loggedIn: "ever", projectId: "project-1", getRows: "true" } },
     response: { status: 200, body: { Rows: [] } }, integrationSurface: "cloudshare.v3.project_members_gui",
   }),
 };
@@ -151,6 +151,45 @@ describe("Sales Enablement Session API handler", () => {
     expect(result).toMatchObject({ status: 422, body: { correlationId: expect.any(String) } });
     expect(delivery.createSession).toHaveBeenCalledOnce();
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure", details: expect.objectContaining({ failureMode: "main_sales_pro_validation" }) }));
+  });
+
+  it("keeps OAuth token failure evidence metadata-only during Sales Enablement Session creation", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const oauthFailure = new CloudShareAuthError("OAuth token exchange returned 503", {
+      method: "POST",
+      path: "/oauth/token",
+      integrationSurface: "cloudshare.v4.oauth.token",
+      status: 503,
+      requestBody: { client_id: "private-client", client_secret: "private-secret" },
+      responseBody: { access_token: "private-token" },
+    });
+    const result = await handleCreateSalesDemoSession({
+      records,
+      items: { findById: vi.fn().mockResolvedValue(item) },
+      sessions: { save: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]) },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) },
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(oauthFailure) }) },
+      projectMembers,
+      diagnostics,
+      audit: { write: vi.fn() },
+    }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+    const failure = diagnostics.record.mock.calls
+      .map(([entry]) => entry)
+      .find((entry) => entry.operation === "sales.demo_session.created" && entry.outcome === "failure");
+
+    expect(result).toMatchObject({ status: 502, body: { needsAttention: false, correlationId: expect.any(String) } });
+    expect(failure).toMatchObject({
+      request: null,
+      response: null,
+      details: expect.objectContaining({ failureMode: "cloudshare_create" }),
+    });
+    const persisted = JSON.stringify(failure);
+    expect(persisted).not.toContain("private-client");
+    expect(persisted).not.toContain("private-secret");
+    expect(persisted).not.toContain("private-token");
   });
 
   it("preserves a CloudShare validation response when failure evidence stores are unavailable", async () => {

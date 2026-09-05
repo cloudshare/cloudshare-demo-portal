@@ -129,7 +129,7 @@ describe("CloudShare webhook route", () => {
       createdAt: "2026-06-08T10:00:00Z",
     });
 
-    expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledWith(customerConnection);
+    expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledWith(customerConnection, expect.objectContaining({ scope: "customer_default" }));
     expect(mockCreateCloudShareEnvironmentSource).toHaveBeenCalledWith(customerClient);
     expect(mockReconcileEnvironment).toHaveBeenCalledWith(
       expect.objectContaining({ source: customerSource }),

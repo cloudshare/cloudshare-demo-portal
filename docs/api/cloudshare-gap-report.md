@@ -1705,6 +1705,14 @@ CloudShare main-Sales-Pro rejection to a supportable 422 result. It revalidates 
 resources before the mutation and retains redacted evidence, but it cannot honestly claim a
 separate pre-create eligibility check. The portal must not rely on a guessed endpoint.
 
+Issue #409 extends that same documented `POST /sales` contract to Customer-scoped Sales Trial
+Offerings. The portal publishes exactly one shared Sales Experience with `type: trial`,
+`registrationType: registeredParticipantsOnly`, and `sendInvitations: dontSend`, while keeping
+provider identifiers and full request/response evidence out of ordinary UI/API surfaces. Non-
+ambiguous provider failures and pre-create Item revalidation failures now persist protected
+Customer-scoped diagnostics, while ambiguous `POST /sales` outcomes remain a no-replay
+`needs_attention` state.
+
 **Action required:**
 
 CloudShare must provide or document a legitimate Project-scoped eligibility endpoint, or the
@@ -1789,14 +1797,17 @@ documented contract; the safe Certalis probe returned 404 and the inferred adapt
 CloudShare's own GUI appears to list active Project members through the undocumented classic-v3
 surface:
 
-`GET https://use.cloudshare.com/api/v3/users?projectUsers=true&status=active&projectId=<project-id>&getRows=true`
+`GET https://use.cloudshare.com/api/v3/users?projectUsers=true&status=active&loggedIn=ever&projectId=<project-id>&getRows=true`
 
-Live verification on 2026-07-14 confirmed HTTP 200 for a Certalis Project using exactly
-`projectUsers=true`, `status=active`, `projectId`, and `getRows=true`. The GUI response exposed a
-row collection (observed as `Rows`) with member identity fields including email and name parts;
+Live verification on 2026-07-14 confirmed HTTP 200 for a Certalis Project using
+`projectUsers=true`, `status=active`, `projectId`, and `getRows=true`; that probe did not establish
+the `loggedIn` behavior. A later live roster check on 2026-08-30 confirmed that omitting
+`loggedIn=ever` falls back to CloudShare's default recent-login filter and can undercount active
+Project members, while the GUI's `loggedIn=ever` query returns the full active roster. The response exposed a row collection
+(observed as `Rows`) with member identity fields including email and name parts;
 Certalis normalizes only email plus a display name and never returns raw CloudShare member IDs to
-the browser. Both `projectUsers=true` and `getRows=true` remain required by the implemented typed
-adapter; additional GUI parameters remain undocumented.
+the browser. `projectUsers=true`, `getRows=true`, and `loggedIn=ever` remain required by the
+implemented typed adapter; additional GUI parameters remain undocumented.
 
 SUP-5002 tracks the misleading API documentation. BAC-24702 is the requested path to productize
 the Project User Management APIs so a future Sales Delivery adapter can replace this unsupported
@@ -1815,8 +1826,13 @@ instructors. It is therefore not a supported precedent for a Sales pre-create el
 
 The Sales Enablement Session form performs this live lookup only after the Sales Admin selects an
 Item (thereby inferring its Project), does not cache it, and re-fetches/revalidates the selected
-Sales Pro immediately before `POST /sales`. A failed lookup or removed/inactive selection blocks
-creation with correlated, redacted diagnostics. The narrow race after the revalidation and before
+Sales Pro immediately before `POST /sales`. This check proves only that the chosen email is still
+an active Project member on the undocumented GUI surface; it does **not** prove CloudShare will
+accept that user as `mainSalesPro` for the eventual v4 Sales Experience create. Provider-side
+authority remains with the documented `POST /sales` call, and Certalis must continue mapping any
+main-Sales-Pro rejection from that mutation to supportable diagnostics rather than overclaiming the
+preflight. A failed lookup or removed/inactive selection blocks creation with correlated, redacted
+diagnostics. The narrow race after the revalidation and before
 CloudShare processes the create request is accepted as an extreme edge case; CloudShare remains the
 final authority. The selected email and display name are persisted on the immutable Session
 correlation, not on the catalogue Item.
@@ -2065,6 +2081,79 @@ can you get a historical list of environments that might have been consumed?”
 
 ---
 
+## GAP-34 — Ending a Sales Experience blocks sponsored-link access to policy-live environments
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed and mitigated |
+| **Verified live** | Yes |
+
+**Observed behaviour**
+
+The local v4 OpenAPI export for `POST /sales` and `PUT /sales/{id}` models `end` as nullable on the
+Sales Experience shape. Certalis now treats an explicitly opted-in open-ended Trial Offering as a
+supported request and sends `end: null` on publish. Live QA confirmed that ending the Sales
+Experience blocks its Sponsored Link even when a participant remains In Progress and their
+environment still exists under its Policy storage lease. The documented v3
+`GET /envs/actions/getextended?envId=...` response supplies the authoritative `expirationTime` and
+numeric status. Status 4 (Archived) remains policy-live; only 5 (Deleted) and 9 (Creation Failed)
+are terminal for this shutdown calculation.
+
+**Impact on Certalis Sales Trial use**
+
+End Trial now unpublishes the portal Offering immediately, then keeps the CloudShare Experience
+open until five minutes after the latest non-terminal environment expiration. With no non-terminal
+environments it uses a two-minute grace. Reconciliation runs immediately, on participant reopen,
+on admin catalogue/monitoring reads, and every five minutes in the local Portal process. It may move
+the provider end later but not earlier while active environments remain. Partial reads retain the
+local `Ending` state, do not shorten the provider window, and expose protected support diagnostics.
+The first all-terminal observation persists a separate two-minute terminal-grace target before the
+provider mutation, so ambiguous PUT retries reuse exactly the same target. A renewable, fenced
+per-Offering database lease serializes timer, admin, and participant-triggered reconciliation.
+
+**Deployment note:** the five-minute timer is process-local for this demonstrator. A horizontally
+scaled production deployment requires one durable external scheduler or distributed lease so that
+only one worker owns each reconciliation pass.
+
+**Code reference:** `src/api/sales-trial-offerings.ts`,
+`src/api/sales-trial-enrollment.ts`,
+`src/domain/sales-trial-ending.ts`,
+`src/integrations/cloudshare/sales-environment.ts`,
+`src/integrations/cloudshare/sales-delivery.ts`,
+`docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
+
+---
+
+## GAP-35 — Live default extension outcome for a retained Trial Environment
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed |
+| **Verified live** | Yes — the real Sales Admin UI extended one disposable retained Trial Environment on 2026-09-03 and reconciled the provider expiry before reporting success. |
+
+**Observed behaviour**
+
+The Certalis Sales Admin browser flow resolved one exact Customer-scoped retained Environment,
+read its current state, and sent the documented bodyless
+`PUT /api/v3/envs/actions/extend?envId=...` request. CloudShare returned 200. A post-operation
+`getextended` read changed the provider expiration from `2026-09-04T13:19:10Z` to
+`2026-09-05T13:19:10Z`, an exact 24-hour retention increase. The CloudShare UI independently
+showed remaining runtime increase from 47 minutes to 1 hour 47 minutes, an exact 60-minute runtime
+increase. Protected diagnostic correlation `df3fab1e-7eb8-4dad-8c05-8dc2f009cbe3` retains the
+resolution, pre-read, PUT, and post-read exchanges without exposing provider identifiers in the
+ordinary portal UI.
+
+**Impact on Certalis Sales Trial use**
+
+The verified tenant default is two-dimensional: one extension adds 60 minutes of runtime and moves
+the deletion/retention expiry forward by 24 hours. Certalis does not assume those durations in code;
+it remains fail-closed and reports success only after the provider expiry readback changes.
+
+**Code reference:** `src/integrations/cloudshare/sales-environment.ts`,
+`src/api/sales-trial-enrollment.ts`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
@@ -2092,5 +2181,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-08-22 (recorded BAC-25363 production verification for GAP-30).
+*Last updated: 2026-09-01 (added GAP-35 with the bounded live extension-verification result).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

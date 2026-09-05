@@ -5,13 +5,50 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionParticipants, SalesWorkspace } from "./sales-workspace";
 
+vi.mock("./session-expiry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./session-expiry")>()),
+  startPortalSessionWatchdog: () => ({ checkNow: vi.fn().mockResolvedValue(undefined), stop: vi.fn() }),
+}));
+
 const router = { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => router, useSearchParams: () => new URLSearchParams() }));
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const deferred = <T,>() => { let resolve!: (value: T) => void; return { promise: new Promise<T>((done) => { resolve = done; }), resolve }; };
 
 describe("Sales Item authoring", () => {
-  afterEach(() => { vi.restoreAllMocks(); router.push.mockClear(); });
+  afterEach(() => { vi.restoreAllMocks(); router.push.mockClear(); router.replace.mockClear(); router.refresh.mockClear(); });
+
+  it("renders Trial Offerings inside the Sales workspace shell with the left-nav section active", async () => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/sales/items" && !init?.method) return json({ activeItems: [] });
+      if (url === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }] });
+      if (url === "/api/sales/trial-offerings" && !init?.method) return json({ offerings: [] });
+      return json({});
+    });
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "trial-offerings" }} />);
+
+    expect(screen.getByRole("complementary", { name: "Sales workspace navigation" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Trial Offerings" }).getAttribute("aria-current")).toBe("page");
+    expect(await screen.findByRole("heading", { name: "Trial Offerings" })).not.toBeNull();
+    expect(screen.getByText("Current Offerings")).not.toBeNull();
+  });
+
+  it("replaces the rendered Sales workspace after a post-render 401", async () => {
+    window.history.replaceState({}, "", "/sales?tab=trial-offerings");
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/sales/trial-offerings" && !init?.method) return json({ error: "unauthorized" }, 401);
+      return json({});
+    });
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "trial-offerings" }} />);
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login?returnTo=%2Fsales%3Ftab%3Dtrial-offerings"));
+    expect(router.refresh).not.toHaveBeenCalled();
+    expect(screen.queryByRole("complementary", { name: "Sales workspace navigation" })).toBeNull();
+  });
 
   it("numbers Blueprint steps by selection order, reindexes on removal, and posts only shared default-Snapshot Regions", async () => {
     const user = userEvent.setup();

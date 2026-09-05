@@ -242,6 +242,34 @@ describe("external lease inspection", () => {
     });
   });
 
+  it("keeps OAuth 429 lease failures metadata-only", async () => {
+    const client = makeClient({
+      requestV4Detailed: vi.fn(async () => {
+        throw new CloudShareRateLimitError("OAuth token request throttled", 429, "rate_limit", {
+          method: "POST",
+          path: "/oauth/token",
+          integrationSurface: "cloudshare.v4.oauth.token",
+          requestBody: { client_secret: "private-secret" },
+          responseBody: { access_token: "private-token" },
+        });
+      }),
+    });
+
+    const lease = await inspectCloudShareTrainingLease(client, "EXtraining-1", { now: new Date("2026-06-15T16:00:00.000Z") });
+
+    expect(lease).toMatchObject({
+      kind: "unknown",
+      integrationSurface: "cloudshare.v4.oauth.token",
+      method: "POST",
+      path: "/oauth/token",
+      responseStatus: 429,
+      failureMode: "rate_limit",
+      request: null,
+      response: null,
+    });
+    expect(JSON.stringify(lease)).not.toMatch(/private-secret|private-token/);
+  });
+
   it("classifies a rehydrated rate-limit error with its cached prior evidence", async () => {
     const client = makeClient({
       requestV3Detailed: vi.fn(async () => {

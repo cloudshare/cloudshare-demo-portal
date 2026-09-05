@@ -25,6 +25,8 @@ vi.mock("@/composition", () => ({
 
 vi.mock("@/auth/portal-session", () => ({
   getPortalSession: mockGetPortalSession,
+  getPortalHomePath: (session: { role: string }) =>
+    session.role === "sales_trial_participant" ? "/sales-trial" : "/candidate",
 }));
 
 vi.mock("@/web/admin-console", () => ({
@@ -40,11 +42,19 @@ describe("admin page routing", () => {
     mockGetServices.mockReturnValue({});
   });
 
-  it("redirects anonymous users to /login", async () => {
+  it("redirects an expired admin navigation to its safe login return target", async () => {
     mockGetPortalSession.mockResolvedValue(null);
 
-    await expect(AdminPage({})).rejects.toThrow("redirect:/login");
-    expect(mockRedirect).toHaveBeenCalledWith("/login");
+    await expect(AdminPage({})).rejects.toThrow("redirect:/login?returnTo=%2Fadmin");
+    expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fadmin");
+  });
+
+  it("preserves an allowlisted Admin query on an expired direct navigation", async () => {
+    mockGetPortalSession.mockResolvedValue(null);
+
+    await expect(AdminPage({ searchParams: Promise.resolve({ tab: "exams" }) })).rejects.toThrow(
+      "redirect:/login?returnTo=%2Fadmin%3Ftab%3Dexams",
+    );
   });
 
   it("redirects Candidates away from admin screens", async () => {
@@ -57,6 +67,19 @@ describe("admin page routing", () => {
 
     await expect(AdminPage({})).rejects.toThrow("redirect:/candidate");
     expect(mockRedirect).toHaveBeenCalledWith("/candidate");
+  });
+
+  it("returns Sales Trial participants to their own home", async () => {
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      customerId: "customer-certalis",
+      email: "visitor@example.test",
+      role: "sales_trial_participant",
+      workspace: "sales",
+    });
+
+    await expect(AdminPage({})).rejects.toThrow("redirect:/sales-trial");
+    expect(mockRedirect).toHaveBeenCalledWith("/sales-trial");
   });
 
   it("renders the admin console for admins", async () => {

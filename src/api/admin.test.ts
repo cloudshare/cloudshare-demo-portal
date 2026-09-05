@@ -271,6 +271,7 @@ describe("handleSyncResources", () => {
     expect(body.synced).toBe(4);
     expect(cloudshare.forConnection).toHaveBeenCalledWith(
       expect.objectContaining({ customerId: "customer-1" }),
+      expect.objectContaining({ scope: "customer_default", reason: "catalogue_resource_read" }),
     );
 
     const [entry] = await diagnostics.repository.query({

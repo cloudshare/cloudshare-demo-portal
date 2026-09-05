@@ -1,6 +1,6 @@
 "use client";
 
-import React, { type CSSProperties, useCallback, useEffect, useState } from "react";
+import React, { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   joinCandidateCohortSession, loadCandidateDashboard, scheduleCandidateExam, shouldShowNoPublishedExams, shouldShowPublishedExamList, type CandidateDashboardData,
@@ -33,6 +33,7 @@ import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
 import { eyebrowLabelStyle } from "./design-tokens";
 import { PortalPageHeader } from "./portal-page-header";
 import { CandidateExamCard } from "./candidate-exam-card";
+import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
 
 export {
   CandidateCohortSessionOptions,
@@ -102,13 +103,16 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const [selectedAttemptFilter, setSelectedAttemptFilter] = useState<CandidateAttemptStatusFilter>("live");
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
 
-  const handleCandidateSessionExpired = useCallback(() => {
-    setSessionExpired(true);
-    setError(null);
-    setScheduleFeedback({});
-    router.replace("/login");
-    router.refresh();
-  }, [router]);
+  const handleCandidateSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({
+    currentPath: () => `${window.location.pathname}${window.location.search}`,
+    fallbackLoginPath: "/login",
+    replace: (path) => {
+      setSessionExpired(true);
+      setError(null);
+      setScheduleFeedback({});
+      router.replace(path);
+    },
+  }), [router]);
 
   useEffect(() => {
     if (sessionExpired) {
@@ -311,6 +315,10 @@ export function CandidateHome({ email }: CandidateHomeProps) {
 
   const attemptQueue = buildCandidateAttemptQueueState(dashboard, nowMs, selectedAttemptFilter);
   const examsById = new Map(dashboard.exams.map((exam) => [exam.id, exam]));
+
+  if (sessionExpired) {
+    return <main aria-live="polite" style={pageShellStyle}>Continuing to sign in…</main>;
+  }
 
   return (
     <main style={pageShellStyle}>

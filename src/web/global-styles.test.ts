@@ -16,5 +16,6 @@ describe("global styles", () => {
     expect(css).toContain("background: #dbe3ec !important");
     expect(css).toContain("border-color: #64748b !important");
     expect(css).toContain("color: #475569 !important");
+    expect(css).toContain("opacity: 0.55");
   });
 });

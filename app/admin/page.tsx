@@ -2,10 +2,11 @@ import React from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPortalSessionServices } from "@/composition";
-import { getPortalSession } from "@/auth/portal-session";
+import { getPortalHomePath, getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { AdminConsole } from "@/web/admin-console";
 import { parseAdminConsoleRouteState } from "@/web/admin-shell-route";
+import { getExpiredPortalLoginPath, getSafePortalTargetFromSearchParams } from "@/auth/portal-return-target";
 
 interface AdminPageProps {
   readonly searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -15,13 +16,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const services = getPortalSessionServices();
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
   const session = await getPortalSession(services, sessionId);
-  const routeState = parseAdminConsoleRouteState((await searchParams) ?? {});
+  const requestedRoute = (await searchParams) ?? {};
+  const routeState = parseAdminConsoleRouteState(requestedRoute);
 
   if (!session) {
-    redirect("/login");
+    redirect(getExpiredPortalLoginPath(getSafePortalTargetFromSearchParams("/admin", requestedRoute)) ?? "/login");
   }
   if (session.role !== "admin") {
-    redirect("/candidate");
+    redirect(getPortalHomePath(session));
   }
   if (session.workspace === "sales") {
     redirect("/sales");

@@ -20,15 +20,18 @@ npm run prisma:migrate
 npm run dev
 ```
 
-Open **http://localhost:3000/login** for the shared portal login or
-**http://localhost:3000/register** for Candidate self-registration.
+Open **http://localhost:3000/login** for the shared portal login. Anonymous visitors can choose
+the **Certification demo** or **Sales Trial demo** registration path there.
 
 ### Key URLs
 
 | URL | What |
 |---|---|
-| `/login` | Shared portal login for Helios admins, Certalis Sales Admin, and Candidates |
-| `/register` | Candidate self-registration |
+| `/login` | Shared portal login plus separate Certification and Sales Trial registration choices |
+| `/register` | Helios Candidate self-registration for the Certification demo |
+| `/sales-trial/register` | Certalis Sales Trial Participant self-registration |
+| `/sales-trial/login` | Certalis Sales Trial Participant sign-in |
+| `/sales-trial` | Customer-scoped Sales Trial participant home; currently shows the no-offerings state |
 | `/admin` | **Connect CloudShare** + admin console |
 | `/sales` | Isolated Certalis Sales workspace; no Helios certification data. URL-backed Account → Opportunity → Contact grids support local archive-only commercial records. |
 | `/candidate` | Candidate home — published Exams for the signed-in Customer |
@@ -259,12 +262,17 @@ All CloudShare access goes through the typed adapter seam in
 wire formats directly. Build a client with `createCloudShareIntegration`:
 
 ```ts
-import { createCloudShareIntegration } from "@/integrations/cloudshare";
+import {
+  createCloudShareIntegration,
+  createCloudShareNoopObservationPort,
+} from "@/integrations/cloudshare";
 
 const cloudshare = createCloudShareIntegration({
   mode: config.runtime.mode, // "live" | "fixture"
   v4: { clientId, clientSecret },
   v3: { apiId, apiKey },
+  // This isolated example intentionally does not persist diagnostics.
+  observer: createCloudShareNoopObservationPort(),
 });
 
 const regions = await cloudshare.requestV3({

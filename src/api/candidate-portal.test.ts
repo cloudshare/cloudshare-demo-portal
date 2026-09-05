@@ -63,6 +63,9 @@ function createStubPortalUserRepository(): PortalUserRepository {
     async findCustomerBySlug(slug) {
       return customers.get(slug) ?? null;
     },
+    async findSalesTrialRegistrationCustomer() {
+      return null;
+    },
     async createUser(input) {
       const record = {
         id: `user-${users.size + 1}`,
@@ -89,9 +92,13 @@ function createStubPortalUserRepository(): PortalUserRepository {
         email: input.email.trim().toLowerCase(),
         passwordHash: input.passwordHash,
         role: input.role,
+        workspace: input.workspace,
       } as const;
       users.set(record.email, record);
       return record;
+    },
+    async upsertSalesTrialConfiguration() {
+      return undefined;
     },
   };
 }

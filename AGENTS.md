@@ -196,11 +196,17 @@ Never commit directly to `main`.
 
 #### Self-contained ticket lifecycle
 
-The parent orchestration task selects and claims tickets, creates one visible ticket task for each,
-monitors progress, and receives its final report. It does not implement, review, QA, or merge ticket
-changes. The ticket task owns that issue end to end in its isolated worktree, branch, and PR, including
-any internal implementation, independent-review, QA, repair, and merge steps allowed by the existing
-rules below. The parent must not open parallel lifecycle tasks for the same ticket.
+The parent orchestration task selects and claims tickets, creates exactly one visible lifecycle-
+orchestrator ticket task per issue, monitors that task and its GitHub PR, coordinates dependency,
+live-asset, and checkout gates, and receives its final report. The parent does not implement, review,
+QA, or merge ticket changes. It never creates a second task or PR for the same issue unless the first
+is explicitly retired with its work and evidence preserved.
+
+The visible ticket task is itself the lifecycle orchestrator. It owns the issue end to end in its
+isolated worktree, branch, and draft PR, including internal implementation, independent review, QA,
+repair loops, human-QA preparation, merge, issue closure, and cleanup. Internal agents are private
+sub-agents within this task, not user-visible issue tasks, and therefore do not violate the one-visible-
+task rule.
 
 The ticket task's first checkpoint, immediately after opening the draft PR and before substantive
 changes, reports the issue, worktree, baseline commit, branch, PR URL, and planned internal roles. It
@@ -221,22 +227,24 @@ dependency edges. Missing required evidence means the ticket remains active.
 Each implementation slice must run through an explicit branch-and-PR workflow. Do not let slice work
 accumulate as local-only commits.
 
-- The ticket task owns its PR/review/QA loop and merge readiness.
-- The ticket task must explicitly set the requested model/effort when spawning implementation
-  and review agents. Do not rely on inherited defaults. If the active tool cannot select the required
-  model, record that limitation on the PR and use the closest available model.
-- The implementation agent should usually use `gpt-5.4`, `gpt-5.4-mini`, `Sonnet 4.6`, or `Haiku 4.5`.
-  The ticket task chooses low or medium reasoning based on slice complexity. Its job is to
-  follow the issue, PRD, ADRs, and this file; it should not redesign the slice unless blocked.
-- The review agent should use `gpt-5.5` or `Opus 4.8`. The ticket task chooses medium or high
-  reasoning based on PR complexity and risk. Live-integration slices or prior P1/P0 review failures
-  require high reasoning. Its job is to review the pull request against the issue, PRD, architecture
-  rules, tests, supportability, and security requirements.
-- While any internal implementation or review agent is active, the ticket task must monitor it and the
+- The ticket task must explicitly spawn and coordinate all three mandatory internal roles before
+  completion: implementation/TDD with `gpt-5.6-luna` at low reasoning; independent Standards plus
+  Spec/security review with `gpt-5.6-sol` at high reasoning (especially for integration or security
+  work); and browser/live QA with `gpt-5.6-terra` at medium reasoning. Model and effort must be set at
+  spawn time, using the closest available explicit equivalent only when a requested model is unavailable
+  and recording that limitation on the PR. The implementation role follows the issue and project docs
+  and does not redesign scope unless genuinely blocked.
+- While any internal implementation, review, or QA agent is active, the ticket task must monitor it and the
   current PR head/comments. It must not merge or report completion while an expected result is pending.
   If a reviewer exits before implementation is pushed, spawn a fresh reviewer after the PR head changes.
 - The implementation agent fixes review findings on the same PR branch. Re-review until the review
-  agent reports no blocking findings.
+  agent reports no blocking findings; QA findings return to implementation and the affected review or
+  QA reruns on the new exact PR head. A collaboration-tool failure is retried or replaced with an
+  explicitly independent equivalent mechanism; independent review is never silently collapsed into
+  self-review.
+- A checkpoint, temporary tool failure, long-running test, or remaining safe in-scope work is not a
+  final handoff. Report only when all gates are clean or a genuine blocker requires parent, user,
+  credential, or QA authority.
 - Human QA is required before merge for user-visible or integration behaviour, especially CloudShare
   flows. For behavior-preserving refactor slices with no UI change and no active CloudShare runtime
   behaviour change, human QA is not required when targeted tests and smoke evidence prove the changed
@@ -246,14 +254,14 @@ For each slice, before implementation starts:
 
 ```bash
 git fetch origin main
-git switch -c feature/issue-<number>-<short-description> origin/main
+git switch -c codex/issue-<number>-<short-description> origin/main
 ```
 
 Then immediately open a draft PR linked to the issue with a closing keyword:
 
 ```bash
-git push -u origin feature/issue-<number>-<short-description>
-gh pr create --draft --base main --head feature/issue-<number>-<short-description>
+git push -u origin codex/issue-<number>-<short-description>
+gh pr create --draft --base main --head codex/issue-<number>-<short-description>
 ```
 
 The PR body must include:

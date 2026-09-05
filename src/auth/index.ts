@@ -11,6 +11,7 @@ export {
   type PortalSession,
   type PortalCustomerRecord,
   type PortalCustomerWorkspace,
+  type PortalUserLookupScope,
   type PortalSessionStore,
   type CreatePortalUserInput,
   type PortalUserRecord,

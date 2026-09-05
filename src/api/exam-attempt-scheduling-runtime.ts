@@ -32,12 +32,14 @@ import {
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import {
   createCloudShareTrainingDelivery,
   type CloudShareLabProvisionerObserver,
 } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 export interface ExamAttemptSchedulingRuntimeDeps {
   readonly exams: ExamRepository;
@@ -144,7 +146,17 @@ export async function scheduleExamAttemptRuntime(
     };
   }
 
-  const cloudshare = deps.cloudshare.forConnection(connection);
+  const observation = certificationCloudShareWorkflow({
+    actor: { type: "candidate", id: request.candidateId, email: request.candidateEmail },
+    customerId: request.customerId,
+    // The attempt has not been reserved yet; Exam is the narrowest authoritative parent.
+    subject: { type: "exam", id: exam.id },
+    correlationId,
+    source: "candidate-portal",
+    examId: exam.id,
+    candidateEmail: request.candidateEmail,
+    externalIds: { projectId: exam.projectId, blueprintId: exam.blueprintId },
+  });
   const snapshotGuardFailure = await guardRuntimeBlueprintSnapshot(deps, {
     source: "candidate-portal",
     operation: "exam_attempt.schedule",
@@ -162,6 +174,7 @@ export async function scheduleExamAttemptRuntime(
     projectId: exam.projectId,
     blueprintId: exam.blueprintId,
     savedSnapshotId: exam.snapshotId,
+    observation,
   });
   if (snapshotGuardFailure) {
     return {
@@ -175,6 +188,8 @@ export async function scheduleExamAttemptRuntime(
       },
     };
   }
+
+  const cloudshare = deps.cloudshare.forConnection(connection, observation);
 
   const trainingDelivery = createCloudShareTrainingDelivery(
     cloudshare,
@@ -428,6 +443,19 @@ function toProvisioningDiagnostic(
   };
 
   const cause = error.context.cause;
+  const causeContext = (cause as { context?: Record<string, unknown> } | undefined)?.context;
+  const projected = projectCloudShareFailureContext(causeContext);
+  if (projected?.request === null && projected.response === null) {
+    return {
+      ...base,
+      method: causeContext?.method ?? base.method,
+      path: causeContext?.path ?? base.path,
+      integrationSurface: causeContext?.integrationSurface ?? base.integrationSurface,
+      failureMode: isCloudShareRateLimitError(cause) ? "rate_limit" : cause instanceof CloudShareTransportError ? "transport" : cause instanceof CloudShareResponseError ? "unexpected_response" : "http_status",
+      responseStatus: typeof (cause as { status?: unknown } | undefined)?.status === "number" ? (cause as { status: number }).status : causeContext?.status,
+    };
+  }
+
   if (isCloudShareRateLimitError(cause) || cause instanceof CloudShareRequestError) {
     return {
       ...base,

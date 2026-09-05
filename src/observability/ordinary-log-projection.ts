@@ -32,7 +32,7 @@ const SAFE_METADATA_KEYS = new Set([
   "signatureMatched",
 ]);
 
-const SAFE_ID_KEY = /^(?:customer|candidate|exam|examAttempt|environment|environmentExternal|training|participant|project|blueprint|policy|region|webhook|cohortExamSession|session|experience|team|opportunity|contact|salesSession|idempotency)Ids?$/;
+const SAFE_ID_KEY = /^(?:customer|candidate|exam|examAttempt|cohortExamSession|session|opportunity|contact|salesSession|idempotency)Ids?$/;
 const REDACTED = "[REDACTED]";
 
 /** Fail-closed projection for ordinary process logs. */
@@ -112,7 +112,18 @@ function projectScalarMetadata(value: unknown): string | number | boolean | null
 
 function projectPath(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  return value.split(/[?#]/, 1)[0];
+  const path = value.split(/[?#]/, 1)[0];
+  const rootedVersion = path.match(/^\/(?:api\/)?(v[34])(?:\/|$)/)?.[1];
+  if (!rootedVersion) return "/[REDACTED_ROUTE]";
+  const prefix = path.startsWith("/api/") ? `/api/${rootedVersion}` : `/${rootedVersion}`;
+  const staticRoutes = new Set([
+    "/api/v4/oauth/token",
+    "/api/v3/envs/actions/getextended",
+    "/v4/oauth/token",
+    "/v3/envs/actions/getextended",
+  ]);
+  if (staticRoutes.has(path)) return path;
+  return `${prefix}/[REDACTED_ROUTE]`;
 }
 
 function projectHost(value: unknown): string | undefined {

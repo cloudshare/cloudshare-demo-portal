@@ -1,4 +1,4 @@
-export type PortalUserRole = "admin" | "candidate";
+export type PortalUserRole = "admin" | "candidate" | "sales_trial_participant";
 export type PortalCustomerWorkspace = "certification" | "sales" | "both";
 
 export interface PortalCustomerRecord {
@@ -31,8 +31,16 @@ export interface PortalSession {
   readonly issuedAtMs: number;
 }
 
+export interface PortalUserLookupScope {
+  readonly customerId?: string;
+  readonly role?: PortalUserRole;
+}
+
 export interface PortalUserStore {
-  findByEmail(email: string): Promise<PortalUserRecord | null>;
+  findByEmail(
+    email: string,
+    scope?: PortalUserLookupScope,
+  ): Promise<PortalUserRecord | null>;
 }
 
 export interface CreatePortalUserInput {
@@ -46,6 +54,7 @@ export interface CreatePortalUserInput {
 
 export interface PortalUserProvisioningStore extends PortalUserStore {
   findCustomerBySlug(slug: string): Promise<PortalCustomerRecord | null>;
+  findSalesTrialRegistrationCustomer(): Promise<PortalCustomerRecord | null>;
   createUser(input: CreatePortalUserInput): Promise<PortalUserRecord>;
 }
 
@@ -60,8 +69,15 @@ export function createInMemoryPortalUserStore(
 ): PortalUserStore {
   const byEmail = new Map(users.map((user) => [user.email.toLowerCase(), user]));
   return {
-    async findByEmail(email: string): Promise<PortalUserRecord | null> {
-      return byEmail.get(email.trim().toLowerCase()) ?? null;
+    async findByEmail(
+      email: string,
+      scope?: PortalUserLookupScope,
+    ): Promise<PortalUserRecord | null> {
+      const user = byEmail.get(email.trim().toLowerCase()) ?? null;
+      if (!user) return null;
+      if (scope?.customerId && user.customerId !== scope.customerId) return null;
+      if (scope?.role && user.role !== scope.role) return null;
+      return user;
     },
   };
 }

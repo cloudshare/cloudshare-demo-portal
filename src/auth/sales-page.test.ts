@@ -11,13 +11,24 @@ const { mockCookies, mockRedirect, mockGetServices, mockGetPortalSession } = vi.
 vi.mock("next/headers", () => ({ cookies: mockCookies }));
 vi.mock("next/navigation", () => ({ redirect: mockRedirect }));
 vi.mock("@/composition", () => ({ getPortalSessionServices: mockGetServices }));
-vi.mock("@/auth/portal-session", () => ({ getPortalSession: mockGetPortalSession }));
+vi.mock("@/auth/portal-session", () => ({
+  getPortalSession: mockGetPortalSession,
+  getPortalHomePath: (session: { role: string }) =>
+    session.role === "sales_trial_participant" ? "/sales-trial" : "/candidate",
+}));
 
 describe("Sales workspace page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCookies.mockResolvedValue({ get: () => ({ value: "session-certalis" }) });
     mockGetServices.mockReturnValue({});
+  });
+
+  it("redirects an expired Sales navigation to its safe login return target", async () => {
+    mockGetPortalSession.mockResolvedValue(null);
+
+    await expect(SalesPage({})).rejects.toThrow("redirect:/login?returnTo=%2Fsales");
+    expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fsales");
   });
 
   it("renders the empty Sales workspace for a sales-configured Customer admin", async () => {
@@ -50,9 +61,14 @@ describe("Sales workspace page", () => {
 
     const sessions = await SalesPage({ searchParams: Promise.resolve({ tab: "sessions", accountId: "account-1", opportunityId: "opportunity-1" }) });
     const support = await SalesPage({ searchParams: Promise.resolve({ tab: "support", correlationId: "corr-verified-1" }) });
+    const supportBySubject = await SalesPage({ searchParams: Promise.resolve({ tab: "support", source: "sales-trial-offerings", subjectId: "offering-1" }) });
 
-    expect(sessions.key).toBe("sessions:catalog:manage:::::");
-    expect(support.key).toBe("support:catalog::::::corr-verified-1");
+    expect(sessions.key).toBe("sessions:catalog:manage:::::::");
+    expect(support.key).toBe("support:catalog::::::corr-verified-1::");
+    expect(supportBySubject.key).toBe("support:catalog:::::::sales-trial-offerings:offering-1");
+    expect(supportBySubject).toMatchObject({
+      props: { initialRoute: { tab: "support", source: "sales-trial-offerings", subjectId: "offering-1" } },
+    });
   });
 
   it("does not let a Helios certification admin use the Sales workspace", async () => {
@@ -63,5 +79,15 @@ describe("Sales workspace page", () => {
 
     await expect(SalesPage({})).rejects.toThrow("redirect:/admin");
     expect(mockRedirect).toHaveBeenCalledWith("/admin");
+  });
+
+  it("returns Sales Trial participants to their own home", async () => {
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "session-trial", userId: "trial-user", customerId: "customer-certalis",
+      email: "visitor@example.test", role: "sales_trial_participant", workspace: "sales",
+    });
+
+    await expect(SalesPage({})).rejects.toThrow("redirect:/sales-trial");
+    expect(mockRedirect).toHaveBeenCalledWith("/sales-trial");
   });
 });

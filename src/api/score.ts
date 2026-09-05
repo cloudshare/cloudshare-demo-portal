@@ -53,13 +53,13 @@ export function buildCandidateScoreDeps(
     launches: services.labLaunches,
     audit: services.audit,
     connections: services.cloudshareConnections,
-    createScoreRetriever: (connection) =>
+    createScoreRetriever: (connection, observation) =>
       createCloudShareTrainingDelivery(
-        services.cloudshareClientFactory.forConnection(connection),
+        services.cloudshareClientFactory.forConnection(connection, observation),
       ),
-    createParticipantLister: (connection) =>
+    createParticipantLister: (connection, observation) =>
       createCloudShareTrainingDelivery(
-        services.cloudshareClientFactory.forConnection(connection),
+        services.cloudshareClientFactory.forConnection(connection, observation),
       ),
     logger: services.logger,
     limitations: SCORING_LIMITATIONS,

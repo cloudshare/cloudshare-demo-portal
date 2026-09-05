@@ -298,6 +298,23 @@ The configuration-selected, Certalis Customer-scoped administration entry point 
 delivery. It is intentionally empty in the initial slice and must not expose Helios CX Exams,
 Candidates, CloudShare Connections, audits, or diagnostics.
 
+**Sales Trial**:
+The Certalis participant-facing path for exploring a future published Trial Offering. Its current
+foundation is portal-only self-registration, password sign-in, a Customer-scoped session, and an
+empty participant home; registration does not create or read any CloudShare resource.
+_Avoid_: Certification, Exam, Sales Enablement Session.
+
+**Sales Trial Participant**:
+A Certalis end user who self-registers for the Sales Trial path. The participant is scoped to the
+single Customer selected by persisted Sales Trial configuration and cannot enter Sales Admin,
+Opportunity, Sales Session, Support, Helios Candidate, or another Customer's surfaces.
+_Avoid_: Candidate, Sales Admin, Opportunity Contact.
+
+**Trial Offering**:
+A future Sales Trial catalogue entry that a Sales Trial Participant may explore. Publication,
+enrollment, and CloudShare delivery are not built in the current foundation.
+_Avoid_: Exam, Item, Sales Enablement Session.
+
 **Sales Opportunity**:
 A future commercial engagement with one prospective organisation. It may group multiple related
 Sales Experiences, including a replacement when a prior time-bounded experience has ended.

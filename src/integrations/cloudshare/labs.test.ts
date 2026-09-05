@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { fileURLToPath } from "node:url";
 import { createCloudShareLabProvisioner } from "./labs";
-import { createCloudShareClient } from "./client";
+import { createCloudShareClient, createCloudShareNoopRequestObserver } from "./client";
 import { createFixtureHttpClient, loadFixturesFromDir } from "./fixtures";
 import type { CloudShareClient } from "./client";
 import type { V4TokenProvider } from "./v4-auth";
@@ -735,6 +735,7 @@ describe("cloudShareLabProvisioner — fixture mode (live/fixture parity)", () =
       },
       tokenProvider: stubToken,
       v3: { apiId: "id", apiKey: "key" },
+      observer: createCloudShareNoopRequestObserver(),
     });
   }
 

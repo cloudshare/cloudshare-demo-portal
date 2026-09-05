@@ -25,6 +25,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  createCloudShareWorkflowObserver,
 } from "@/integrations/cloudshare";
 import type { Logger } from "@/observability/logger";
 import { joinCohortExamSessionRuntime } from "./cohort-exam-session-join-runtime";
@@ -236,6 +237,7 @@ describe("joinCohortExamSessionRuntime", () => {
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const cloudshare = makeCloudShareFactory();
 
     const response = await joinCohortExamSessionRuntime(
       {
@@ -246,7 +248,7 @@ describe("joinCohortExamSessionRuntime", () => {
         audit: createInMemoryAuditRepository(),
         eventLog: createInMemoryEventLogRepository(),
         connections: makeConnectionRepository(),
-        cloudshare: makeCloudShareFactory(),
+        cloudshare,
         diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
         logger: makeLogger(),
         now: () => new Date("2026-07-05T10:00:00.000Z"),
@@ -277,6 +279,14 @@ describe("joinCohortExamSessionRuntime", () => {
         correlationId: "corr-cohort-join-1",
       },
     });
+    const [snapshotObservation, admissionObservation] = vi.mocked(cloudshare.forConnection).mock.calls.map(([, options]) => options);
+    expect(admissionObservation).toBe(snapshotObservation);
+    expect(admissionObservation).toMatchObject({ scope: "workflow", workflow: { correlationId: "corr-cohort-join-1", subject: { type: "exam_attempt", id: "attempt-1" } } });
+    if (!admissionObservation || admissionObservation.scope !== "workflow") throw new Error("expected workflow observation");
+    const observed = vi.fn();
+    await createCloudShareWorkflowObserver({ diagnostics: { record: observed } as never, customerId: "customer-helios", ...admissionObservation.workflow }).onAcquisition({ occurredAt: "2026-09-03T12:00:00.000Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token" });
+    await createCloudShareWorkflowObserver({ diagnostics: { record: observed } as never, customerId: "customer-helios", ...admissionObservation.workflow }).onRequest({ occurredAt: "2026-09-03T12:00:01.000Z", outcome: "success", durationMs: 1, result: { request: {}, response: {}, integrationSurface: "cloudshare.v4.training", host: "example.test" } } as never);
+    expect(observed.mock.calls.map(([entry]) => entry.details.sequence)).toEqual([1, 2]);
     await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
       cohortSessionId: "cohort-session-1",
       scheduledFor: new Date("2026-07-05T10:00:00.000Z"),
@@ -751,7 +761,7 @@ describe("joinCohortExamSessionRuntime", () => {
             ) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
             requestV3Text: vi.fn(),
             requestV4: vi.fn(),
-            requestV4Detailed: makeCloudShareFactory().forConnection({} as never).requestV4Detailed,
+            requestV4Detailed: makeCloudShareFactory().forConnection({} as never, undefined).requestV4Detailed,
           })),
         },
         diagnostics: createDiagnosticRecorder({ repository: createInMemoryDiagnosticLogRepository() }),
@@ -1363,6 +1373,53 @@ describe("joinCohortExamSessionRuntime", () => {
         }),
       ]),
     );
+  });
+
+  it("keeps an OAuth failure metadata-only when reading the shared Cohort Exam Session", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const attempts = createInMemoryExamAttemptRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const oauthFailure = new CloudShareRequestError("OAuth token exchange failed", 503, {
+      method: "POST",
+      path: "/oauth/token",
+      integrationSurface: "cloudshare.v4.oauth.token",
+      requestBody: { client_secret: "private-secret" },
+      responseBody: { access_token: "private-token" },
+    });
+    const response = await joinCohortExamSessionRuntime({
+      exams,
+      sessions,
+      attempts,
+      launches: createInMemoryLabLaunchRepository(),
+      audit: createInMemoryAuditRepository(),
+      eventLog: createInMemoryEventLogRepository(),
+      connections: makeConnectionRepository(),
+      cloudshare: makeCloudShareFactory({ requestV4Detailed: vi.fn().mockRejectedValue(oauthFailure) }),
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+      logger: makeLogger(),
+      now: () => new Date("2026-07-05T10:00:00.000Z"),
+      newId: vi.fn().mockReturnValueOnce("attempt-oauth"),
+      newCorrelationId: () => "corr-cohort-oauth",
+    }, {
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      candidateEmail: "candidate@helioscx.demo",
+      candidateFirstName: "Asha",
+      candidateLastName: "Patel",
+      examId: "exam-1",
+      cohortSessionId: "cohort-session-1",
+    });
+    const entries = await diagnosticsRepository.query({ correlationId: "corr-cohort-oauth", outcome: "failure" });
+    const entry = entries.find((value) => value.operation === "cloudshare.read_training");
+
+    expect(response.status).toBe(502);
+    expect(entry).toMatchObject({
+      request: null,
+      response: null,
+      details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "http_status", responseStatus: 503 }),
+    });
+    expect(JSON.stringify(entry)).not.toMatch(/private-secret|private-token/);
   });
 
   it("records supportable diagnostics when sponsored-link creation fails after participant add", async () => {

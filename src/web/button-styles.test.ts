@@ -40,5 +40,6 @@ describe("button styles", () => {
     expect(disabledButtonStyle.background).not.toBe(primaryButtonStyle.background);
     expect(disabledButtonStyle.background).toBe("#dbe3ec");
     expect(disabledButtonStyle.border).toBe("1px solid #64748b");
+    expect(disabledButtonStyle.opacity).toBe(0.55);
   });
 });

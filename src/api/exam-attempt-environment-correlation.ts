@@ -18,7 +18,10 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
+import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import { projectProtectedCloudShareExchange } from "./protected-cloudshare-exchange";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
+import type { CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 
 export interface EnsureExamAttemptEnvironmentCorrelationDeps {
   readonly attempts: ExamAttemptRepository;
@@ -45,6 +48,8 @@ export async function ensureExamAttemptEnvironmentCorrelation(
       | "exam_resume"
       | "exam_complete"
       | "heartbeat_auto_suspend";
+    readonly correlationId?: string;
+    readonly sequenceAllocator?: CloudShareWorkflowSequenceAllocator;
   },
 ): Promise<ExamAttemptEnvironmentCorrelationResult> {
   const attempt = await deps.attempts.findById(input.examAttemptId);
@@ -62,11 +67,18 @@ export async function ensureExamAttemptEnvironmentCorrelation(
     return { actionableEnvironmentId: null };
   }
 
+  const correlationId = input.correlationId ?? (deps.newCorrelationId ?? randomUUID)();
   try {
     const result = await correlateEnvironmentForExamAttempt(
       {
         launches: deps.launches,
-        participants: createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection)),
+        participants: createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+          actor: { type: "system", id: input.operation }, customerId: attempt.customerId,
+          subject: { type: "exam_attempt", id: input.examAttemptId }, correlationId,
+          source: "candidate-portal", examAttemptId: input.examAttemptId,
+          ...(input.sequenceAllocator ? { sequenceAllocator: input.sequenceAllocator } : {}),
+          candidateEmail: launch.participantEmail, externalIds: { trainingId: launch.trainingId },
+        }))),
       },
       { examAttemptId: input.examAttemptId },
     );
@@ -74,7 +86,6 @@ export async function ensureExamAttemptEnvironmentCorrelation(
       actionableEnvironmentId: result.correlated ? result.environmentId : null,
     };
   } catch (error) {
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const diagnostic: Record<string, unknown> = {
       correlationId,
       customerId: attempt.customerId,
@@ -126,8 +137,9 @@ export async function ensureExamAttemptEnvironmentCorrelation(
       response: protectedExchange.response,
       details: {
         attemptedOperation: "list_training_participants",
-        integrationSurface: "cloudshare.v4.training.participant_list",
+        integrationSurface: diagnostic["integrationSurface"],
         failureMode: diagnostic["failureMode"],
+        ...(typeof diagnostic["responseStatus"] === "number" ? { responseStatus: diagnostic["responseStatus"] } : {}),
         ...(protectedExchange.transport ? { transport: protectedExchange.transport } : {}),
       },
     });
@@ -148,8 +160,21 @@ function toCloudShareFailureDiagnostic(input: {
     path: input.path,
   };
 
+  const rawContext = (input.cause as { context?: Record<string, unknown> } | null)?.context;
+  const rawProjection = projectCloudShareFailureContext(rawContext);
   const cause = asCloudShareError(input.cause);
   const rateLimited = isCloudShareRateLimitError(cause);
+  const context = cause?.context ?? rawContext;
+  if (rawProjection?.request === null && rawProjection.response === null) {
+    return {
+      ...base,
+      method: context?.method ?? base.method,
+      path: context?.path ?? base.path,
+      integrationSurface: context?.integrationSurface ?? base.integrationSurface,
+      failureMode: rateLimited ? cause.classification ?? "rate_limit" : "http_status",
+      responseStatus: typeof (cause as { status?: unknown } | null)?.status === "number" ? (cause as unknown as { status: number }).status : context?.status,
+    };
+  }
   if (rateLimited || cause instanceof CloudShareRequestError || cause?.name === "CloudShareRequestError") {
     return {
       ...base,

@@ -577,7 +577,64 @@ describe("getExamAttemptDashboardRuntime", () => {
     expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
   });
 
-  it("retains protected response evidence for a cross-realm CloudShare rate-limit failure", async () => {
+  it("shares one sequence allocator across every attempt in a dashboard correlation", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    for (const suffix of ["one", "two"]) {
+      await attempts.save({
+        id: `attempt-${suffix}`,
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        examId: "exam-1",
+        status: "ready",
+        scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+        createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      });
+      await launches.save({
+        id: `launch-${suffix}`,
+        examAttemptId: `attempt-${suffix}`,
+        candidateId: "candidate-1",
+        participantEmail: `candidate-${suffix}@helioscx.demo`,
+        trainingId: `training-${suffix}`,
+        experienceId: `training-${suffix}`,
+        loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+        status: "launched",
+        createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      });
+    }
+    const client = {
+      requestV3: vi.fn(),
+      requestV3Text: vi.fn(),
+      requestV4: vi.fn().mockResolvedValue({ count: 0, items: [] }),
+      requestV4Detailed: vi.fn(),
+    } as unknown as ReturnType<CloudShareClientFactory["forConnection"]>;
+    const cloudshare = { forConnection: vi.fn().mockReturnValue(client) } satisfies CloudShareClientFactory;
+
+    await getExamAttemptDashboardRuntime(
+      {
+        repository: exams,
+        attempts,
+        launches,
+        connections: makeConnectionRepository(),
+        cloudshare,
+        logger: makeLogger(),
+        newCorrelationId: () => "dashboard-correlation",
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    const workflows = vi.mocked(cloudshare.forConnection).mock.calls
+      .map(([, options]) => options)
+      .filter((options) => options?.scope === "workflow" && options.workflow.actor.id === "candidate-dashboard");
+    expect(workflows).toHaveLength(2);
+    if (workflows[0]?.scope !== "workflow" || workflows[1]?.scope !== "workflow") throw new Error("expected workflow observations");
+    expect(workflows.map((options) => options.workflow.correlationId)).toEqual(["dashboard-correlation", "dashboard-correlation"]);
+    expect(workflows[0].workflow.sequenceAllocator).toBe(workflows[1].workflow.sequenceAllocator);
+    expect([workflows[0].workflow.sequenceAllocator?.next(), workflows[1].workflow.sequenceAllocator?.next()]).toEqual([1, 2]);
+  });
+
+  it("keeps a cross-realm OAuth rate-limit failure metadata-only", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
@@ -622,16 +679,16 @@ describe("getExamAttemptDashboardRuntime", () => {
                 classification: "rate_limit",
                 context: {
                   status: 429,
-                  method: "GET",
-                  path: "/v4/trainings/EXtraining-1/students",
-                  integrationSurface: "cloudshare.v4.training.participant_list",
+                  method: "POST",
+                  path: "/oauth/token",
+                  integrationSurface: "cloudshare.v4.oauth.token",
                   requestHeaders: {
                     Accept: "application/json",
                     Authorization: "Bearer synthetic-dashboard-request-marker",
                   },
-                  requestBody: { queryMarker: "synthetic-dashboard-query-marker" },
+                  requestBody: { client_secret: "synthetic-dashboard-request-marker" },
                   responseHeaders: { "x-provider-trace": "synthetic-dashboard-trace" },
-                  responseBody: { accessLink: "synthetic-dashboard-response-marker" },
+                  responseBody: { access_token: "synthetic-dashboard-response-marker" },
                 },
               };
             }
@@ -654,12 +711,11 @@ describe("getExamAttemptDashboardRuntime", () => {
         correlationId: "corr-list-1",
         customerId: "customer-helios",
         examAttemptId: "attempt-ready",
-        trainingId: "EXtraining-1",
         operation: "candidate_dashboard_environment_correlation",
         attemptedOperation: "list_training_participants",
-        integrationSurface: "cloudshare.v4.training.participant_list",
-        method: "GET",
-        path: "/v4/trainings/EXtraining-1/students",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        method: "POST",
+        path: "/[REDACTED_ROUTE]",
         failureMode: "rate_limit",
         responseStatus: 429,
       }),
@@ -678,7 +734,7 @@ describe("getExamAttemptDashboardRuntime", () => {
           operation: "candidate_dashboard_environment_correlation",
           outcome: "failure",
           attemptedOperation: "list_training_participants",
-          integrationSurface: "cloudshare.v4.training.participant_list",
+          integrationSurface: "cloudshare.v4.oauth.token",
           failureMode: "rate_limit",
           responseStatus: 429,
           externalIds: expect.objectContaining({
@@ -703,20 +759,8 @@ describe("getExamAttemptDashboardRuntime", () => {
         operation: "candidate_dashboard_environment_correlation",
         outcome: "failure",
         examAttemptId: "attempt-ready",
-        request: {
-          method: "GET",
-          path: "/v4/trainings/EXtraining-1/students",
-          headers: {
-            Accept: "application/json",
-            Authorization: "[REDACTED]",
-          },
-          body: { queryMarker: "synthetic-dashboard-query-marker" },
-        },
-        response: {
-          status: 429,
-          headers: { "x-provider-trace": "synthetic-dashboard-trace" },
-          body: { accessLink: "synthetic-dashboard-response-marker" },
-        },
+        request: null,
+        response: null,
       }),
     ]);
   });
@@ -1090,7 +1134,7 @@ describe("getExamAttemptDashboardRuntime", () => {
         correlationId: "corr-list-2",
         failureMode: "unexpected_response",
         host: "api.accelerate.cloudshare.com",
-        path: "/v4/trainings/EXtraining-1/students",
+        path: "/v4/[REDACTED_ROUTE]",
         integrationSurface: "cloudshare.v4.training.participant_list",
       }),
     );

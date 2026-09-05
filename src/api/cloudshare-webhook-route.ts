@@ -91,7 +91,7 @@ async function reconcileCloudShareWebhookEnvironment(
   const record = await reconcileEnvironment(
     {
       source: createCloudShareEnvironmentSource(
-        services.cloudshareClientFactory.forConnection(input.connection),
+        services.cloudshareClientFactory.forConnection(input.connection, { scope: "customer_default", reason: "unanchored_support_read" }),
       ),
       environments: services.environments,
       now: input.now,

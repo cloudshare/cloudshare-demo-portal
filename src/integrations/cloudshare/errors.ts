@@ -6,8 +6,22 @@
  * secrets (the logger redacts known secret values regardless).
  */
 
+export const CLOUDSHARE_ERROR_DISCRIMINANT = "cloudshare.error.v1";
+
+const CLOUDSHARE_ERROR_NAMES = new Set([
+  "CloudShareError",
+  "CloudShareAuthError",
+  "CloudShareRequestError",
+  "CloudShareRateLimitError",
+  "CloudShareTransportError",
+  "CloudShareResponseError",
+  "CloudShareFixtureError",
+]);
+
 /** Base class for every CloudShare adapter failure. */
 export class CloudShareError extends Error {
+  readonly cloudShareErrorBoundaryDiscriminant = CLOUDSHARE_ERROR_DISCRIMINANT;
+
   constructor(message: string, readonly context?: Record<string, unknown>) {
     super(message);
     this.name = "CloudShareError";
@@ -100,6 +114,26 @@ export function isCloudShareRateLimitError(error: unknown): error is CloudShareR
     (value.classification === "rate_limit" || value.classification === "abuse_protection") &&
     (value.context === undefined ||
       (typeof value.context === "object" && value.context !== null && !Array.isArray(value.context)));
+}
+
+/**
+ * Recognize typed adapter errors after a development reload has created a
+ * second copy of this module, where `instanceof` is no longer reliable.
+ */
+export function isCloudShareErrorAcrossBoundaries(error: unknown): error is CloudShareError {
+  if (!error || typeof error !== "object" || Array.isArray(error)) return false;
+  const value = error as Record<string, unknown>;
+  if (
+    value.cloudShareErrorBoundaryDiscriminant !== CLOUDSHARE_ERROR_DISCRIMINANT ||
+    typeof value.name !== "string" ||
+    !CLOUDSHARE_ERROR_NAMES.has(value.name) ||
+    (value.context !== undefined &&
+      (typeof value.context !== "object" || value.context === null || Array.isArray(value.context)))
+  ) {
+    return false;
+  }
+  return value.name !== "CloudShareRequestError" ||
+    (typeof value.status === "number" && Number.isFinite(value.status));
 }
 
 function isRateLimitHeaderMap(

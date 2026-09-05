@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { cardStyle } from "@/web/card-styles";
-import { primaryButtonStyle } from "@/web/button-styles";
+import { primaryButtonStyle, secondaryButtonStyle } from "@/web/button-styles";
 import { colors, pageHeadingStyle, spacing } from "@/web/design-tokens";
 
 interface LoginFormProps {
   readonly initialError: string | null;
   readonly initialEmail: string;
+  readonly returnTo?: string | null;
 }
 
-export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
+export function LoginForm({ initialError, initialEmail, returnTo = null }: LoginFormProps) {
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,7 +23,7 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
     setError(null);
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetch(`/api/auth/login${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ""}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -30,14 +31,26 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
 
       const data = (await response.json()) as {
         error?: string;
-        session?: { role?: "admin" | "candidate"; workspace?: "certification" | "sales" | "both" };
+        session?: {
+          role?: "admin" | "candidate" | "sales_trial_participant";
+          workspace?: "certification" | "sales" | "both";
+        };
+        redirectTo?: string;
       };
       if (!response.ok) {
         setError(data.error ?? "Login failed");
         return;
       }
 
-      window.location.assign(data.session?.role === "admin" ? data.session.workspace === "sales" ? "/sales" : "/admin" : "/candidate");
+      window.location.replace(data.redirectTo ?? (
+        data.session?.role === "admin"
+          ? data.session.workspace === "sales"
+            ? "/sales"
+            : "/admin"
+          : data.session?.role === "sales_trial_participant"
+            ? "/sales-trial"
+            : "/candidate"
+      ));
     } catch {
       setError("Login failed");
     } finally {
@@ -59,11 +72,11 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
       <div style={{ ...cardStyle, width: "100%", maxWidth: "420px" }}>
         <h1 style={{ ...pageHeadingStyle, fontSize: "1.6rem", marginTop: 0 }}>Certalis Portal Login</h1>
         <p style={{ color: colors.textSecondary, marginBottom: spacing.lg }}>
-          Sign in as a Helios admin, Certalis Sales Admin, or Candidate.
+          Sign in to your existing Certification, Sales, or Sales Trial account.
         </p>
         <form
           onSubmit={onSubmit}
-          action="/api/auth/login"
+          action={returnTo ? `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}` : "/api/auth/login"}
           method="post"
           style={{ display: "grid", gap: "1rem" }}
         >
@@ -95,9 +108,38 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
           </button>
           {error && <p style={{ color: colors.danger, margin: 0 }}>{error}</p>}
         </form>
-        <p style={{ color: colors.textSecondary, marginTop: "1rem" }}>
-          New Candidate? <a href="/register">Create your account</a>.
-        </p>
+        <section
+          aria-labelledby="registration-options-heading"
+          style={{
+            borderTop: `1px solid ${colors.border}`,
+            marginTop: spacing.lg,
+            paddingTop: spacing.lg,
+          }}
+        >
+          <h2
+            id="registration-options-heading"
+            style={{ ...pageHeadingStyle, fontSize: "1.1rem", margin: 0 }}
+          >
+            New here? Choose a demo
+          </h2>
+          <p style={{ color: colors.textSecondary, margin: `${spacing.sm} 0 ${spacing.md}` }}>
+            Create the account that matches what you want to explore.
+          </p>
+          <div style={{ display: "grid", gap: spacing.sm }}>
+            <a
+              href="/register"
+              style={{ ...secondaryButtonStyle, boxSizing: "border-box", textDecoration: "none", width: "100%" }}
+            >
+              Certification demo
+            </a>
+            <a
+              href="/sales-trial/register"
+              style={{ ...secondaryButtonStyle, boxSizing: "border-box", textDecoration: "none", width: "100%" }}
+            >
+              Sales Trial demo
+            </a>
+          </div>
+        </section>
       </div>
     </main>
   );

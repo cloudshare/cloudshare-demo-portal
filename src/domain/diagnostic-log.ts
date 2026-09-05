@@ -91,6 +91,8 @@ export interface DiagnosticLogQuery {
   /** Exact correlation match for support tracing. */
   readonly correlationId?: string;
   readonly subjectId?: string;
+  /** Exact typed subject match; IDs are not globally unique across subject kinds. */
+  readonly subjectType?: string;
   /**
    * Exact integration surface match, typically emitted in `details.integrationSurface`.
    * Not every row carries it.

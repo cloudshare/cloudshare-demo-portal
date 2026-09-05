@@ -1,5 +1,6 @@
 import type {
   CloudShareClientFactory,
+  CloudShareClientObservationOptions,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
@@ -21,6 +22,7 @@ import {
   type CloudShareExamAuthoringSource,
 } from "@/integrations/cloudshare/resources";
 import type { Logger } from "@/observability/logger";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
 
 const SNAPSHOT_DRIFT_MESSAGE =
   "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.";
@@ -49,6 +51,8 @@ export interface RuntimeBlueprintSnapshotGuardRequest {
   readonly projectId: string;
   readonly blueprintId: string;
   readonly savedSnapshotId: string;
+  /** Reuse the caller's operation context when the guard precedes more CloudShare work. */
+  readonly observation?: CloudShareClientObservationOptions;
 }
 
 export interface RuntimeBlueprintSnapshotGuardFailure {
@@ -88,7 +92,7 @@ export async function guardRuntimeBlueprintSnapshot(
     return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE, correlationId: request.correlationId ?? undefined };
   }
 
-  const source = resolveAuthoringSource(deps.cloudshare, connection);
+  const source = resolveAuthoringSource(deps.cloudshare, connection, request);
 
   try {
     const blueprint = await source.getBlueprintDetail(request.projectId, request.blueprintId);
@@ -155,8 +159,19 @@ export async function guardRuntimeBlueprintSnapshot(
 function resolveAuthoringSource(
   factory: CloudShareClientFactory,
   connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>,
+  request: RuntimeBlueprintSnapshotGuardRequest,
 ): CloudShareExamAuthoringSource {
-  const candidate = factory.forConnection(connection) as unknown;
+  const candidate = factory.forConnection(connection, request.observation ?? certificationCloudShareWorkflow({
+    actor: request.actor,
+    customerId: request.customerId,
+    subject: request.subject,
+    correlationId: request.correlationId ?? `snapshot-guard:${request.operation}:${request.examAttemptId ?? request.cohortSessionId ?? request.examId}`,
+    source: request.source,
+    examId: request.examId,
+    examAttemptId: request.examAttemptId ?? undefined,
+    candidateEmail: request.candidateEmail ?? undefined,
+    externalIds: { projectId: request.projectId, blueprintId: request.blueprintId },
+  })) as unknown;
   if (
     typeof candidate === "object" &&
     candidate !== null &&

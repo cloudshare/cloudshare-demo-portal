@@ -4,6 +4,7 @@ import type { SalesDemoSessionRepository } from "@/domain/sales-demo-session";
 import type { SalesSessionParticipantRepository } from "@/domain/sales-session-participant";
 import type { CloudShareConnectionRepository, CloudShareClientFactory } from "@/domain/cloudshare-connection";
 import { createCloudShareSalesDelivery, type SalesDelivery, type SalesProContact } from "@/integrations/cloudshare/sales-delivery";
+import { projectCloudShareFailureContext, projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 export interface SalesLaunchDenialContext {
   readonly salesPros: readonly SalesProContact[];
@@ -28,12 +29,15 @@ export function createSalesLaunchDenialContextResolver(deps: {
     try {
       const connection = await deps.connections.findByCustomerId(link.customerId);
       if (!connection) throw new Error("CloudShare Connection unavailable");
-      const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare.forConnection(connection));
+      const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" }));
       const result = await delivery.listSalesPros(session.cloudShareSalesExperienceId);
       salesPros = result.salesPros.length > 0 ? result.salesPros : fallback;
     } catch (error) {
       const provider = error && typeof error === "object" && "context" in error ? (error as { context?: Record<string, unknown> }).context : undefined;
-      await deps.diagnostics?.record({ source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.recovery_contacts", outcome: "failure", customerId: link.customerId, actor: { type: "anonymous" }, subject: { type: "sales_session_participant", id: participant.id }, message: "Sales launch recovery contacts fell back to the persisted main Sales Pro.", correlationId, ...(provider ? { request: { method: provider.method, path: provider.path, headers: provider.requestHeaders, body: provider.requestBody }, response: { status: provider.responseStatus ?? provider.status, headers: provider.responseHeaders, body: provider.responseBody } } : {}), details: { integrationSurface: "cloudshare.v4.sales.sales_pros", failureMode: provider?.failureMode ?? (provider?.responseStatus ? "http_failure" : error instanceof Error ? error.name : "provider_failure") } });
+      const evidence = projectCloudShareFailureEvidence(error) ?? projectCloudShareFailureContext(provider);
+      const oauthFailure = evidence?.request === null && evidence.response === null;
+      const status = typeof provider?.responseStatus === "number" ? provider.responseStatus : typeof provider?.status === "number" ? provider.status : undefined;
+      await deps.diagnostics?.record({ source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.recovery_contacts", outcome: "failure", customerId: link.customerId, actor: { type: "anonymous" }, subject: { type: "sales_session_participant", id: participant.id }, message: "Sales launch recovery contacts fell back to the persisted main Sales Pro.", correlationId, ...(evidence ? { request: evidence.request as Record<string, unknown> | null, response: evidence.response as Record<string, unknown> | null } : {}), details: { integrationSurface: typeof provider?.integrationSurface === "string" ? provider.integrationSurface : "cloudshare.v4.sales.sales_pros", failureMode: provider?.failureMode ?? (status !== undefined ? "http_failure" : error instanceof Error ? error.name : "provider_failure"), ...(oauthFailure && status !== undefined ? { status } : {}) } });
     }
     return { salesPros, invitation: { status: participant.invitationStatus, lastInvitedAt: participant.lastInvitedAt?.toISOString() ?? null, invitedBy: participant.invitedBy } };
   } };

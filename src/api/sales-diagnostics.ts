@@ -5,13 +5,18 @@ import {
   type DiagnosticLogHandlerDeps,
 } from "./admin";
 import { redactDiagnosticInput, type DiagnosticLogEntryInput } from "@/domain/diagnostic-log";
+import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 
-const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-items", "sales-demo-sessions", "sales-session-reconciliation", "sales-session-participants", "sales-project-members", "sales-participant-launch"] as const;
+const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-items", "sales-demo-sessions", "sales-session-reconciliation", "sales-session-participants", "sales-project-members", "sales-participant-launch", "sales-trial-offerings", "sales-trial-enrollment", "cloudshare-integration"] as const;
 const SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET = 5_000;
 
 type SalesDiagnosticSource = typeof SALES_DIAGNOSTIC_SOURCES[number];
+type SalesTrialEnrollmentReader = Pick<SalesTrialEnrollmentRepository, "findById"> & {
+  readonly findById: NonNullable<SalesTrialEnrollmentRepository["findById"]>;
+};
+type SalesTrialEnrollmentDependency = SalesTrialEnrollmentReader | SalesTrialEnrollmentRepository;
 type DiagnosticPageBody = {
   readonly entries: readonly Record<string, unknown>[];
   readonly page: { readonly hasMore: boolean; readonly nextOffset: number | null };
@@ -23,30 +28,31 @@ type DiagnosticPageBody = {
  * can investigate either stream without crossing Customer boundaries.
  */
 export async function handleGetSalesDiagnosticLog(
-  deps: DiagnosticLogHandlerDeps,
+  deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentDependency },
   request: AdminRequest & { readonly customerId: string },
 ): Promise<AdminResponse> {
   const requestedSource = request.query.source?.trim();
+  const requestedLimit = parseLimit(request.query.limit);
+  const requestedOffset = parseOffset(request.query.offset);
+  if (requestedOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) return { status: 400, body: { error: "sales_diagnostic_offset_exceeds_maximum", maxOffset: SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET } };
   if (requestedSource && !isSalesDiagnosticSource(requestedSource)) {
     return { status: 400, body: { error: "unsupported_sales_diagnostic_source" } };
   }
 
-  if (requestedSource) {
+  const causalTrialQuery = Boolean(request.query.subjectId && (request.query.subjectType === "sales_trial_enrollment" || request.query.subjectType === "sales_trial_offering"));
+  if (requestedSource && !causalTrialQuery) {
     const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
     return { ...response, body: projectDiagnosticPage(response.body) };
   }
 
-  const requestedLimit = parseLimit(request.query.limit);
-  const requestedOffset = parseOffset(request.query.offset);
-  if (requestedOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) {
-    return {
-      status: 400,
-      body: {
-        error: "sales_diagnostic_offset_exceeds_maximum",
-        maxOffset: SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET,
-      },
-    };
+  if (causalTrialQuery) {
+    const subjectEntries = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId!.trim(), requestedOffset, requestedLimit);
+    const pageEntries = subjectEntries.slice(requestedOffset, requestedOffset + requestedLimit);
+    const candidateNextOffset = requestedOffset + pageEntries.length;
+    const hasMore = subjectEntries.length > candidateNextOffset && candidateNextOffset <= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
+    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore, nextOffset: hasMore ? candidateNextOffset : null } } };
   }
+
   const requiredEntriesPerSource = requestedOffset + requestedLimit + 1;
   const sourceEntries = await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({
     deps,
@@ -55,11 +61,12 @@ export async function handleGetSalesDiagnosticLog(
     source,
     requiredEntries: requiredEntriesPerSource,
   })));
-  const entries = sourceEntries
-    .flat()
-    .sort((left, right) => String(right.occurredAt).localeCompare(String(left.occurredAt)));
+  const entries = sourceEntries.flat()
+    .slice()
+    .sort((left: Record<string, unknown>, right: Record<string, unknown>) => String(right.occurredAt).localeCompare(String(left.occurredAt)));
   const pageEntries = entries.slice(requestedOffset, requestedOffset + requestedLimit);
-  const hasMore = entries.length > requestedOffset + pageEntries.length;
+  const candidateNextOffset = requestedOffset + pageEntries.length;
+  const hasMore = entries.length > candidateNextOffset && candidateNextOffset <= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
 
   return {
     status: 200,
@@ -70,10 +77,50 @@ export async function handleGetSalesDiagnosticLog(
         offset: requestedOffset,
         returned: pageEntries.length,
         hasMore,
-        nextOffset: hasMore ? requestedOffset + pageEntries.length : null,
+        nextOffset: hasMore ? candidateNextOffset : null,
       },
     },
   };
+}
+
+async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentDependency }, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
+  const requestedType = query.subjectType;
+  const enrollmentReader = deps.salesTrialEnrollments as SalesTrialEnrollmentReader | undefined;
+  let enrollment = null;
+  if (requestedType === "sales_trial_enrollment") {
+    if (!enrollmentReader) throw new Error("Sales diagnostics enrollment reader is not configured");
+    enrollment = await enrollmentReader.findById(customerId, subjectId);
+  }
+  const base = { ...query, subjectId, subjectType: requestedType, limit: String(offset + limit + 1), offset: "0" };
+  const requestedSource = query.source;
+  const sources: SalesDiagnosticSource[] = requestedType === "sales_trial_offering"
+    ? (requestedSource === undefined
+        ? ["sales-trial-offerings", "sales-trial-enrollment"]
+        : requestedSource === "sales-trial-offerings"
+          ? ["sales-trial-offerings"]
+          : [])
+    : (requestedSource === undefined ? ["sales-trial-enrollment"] : requestedSource === "sales-trial-enrollment" ? ["sales-trial-enrollment"] : []);
+  const direct = (await Promise.all(sources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
+    const subject = entry.subject as Record<string, unknown> | null;
+    return subject?.id === subjectId && (subject.type === "sales_trial_offering" || subject.type === "sales_trial_enrollment");
+  });
+  if (requestedType === "sales_trial_offering") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  const enrollmentEntries = direct.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
+  const offeringId = enrollment?.salesTrialOfferingId;
+  if (!enrollmentEntries.length && typeof offeringId !== "string") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  if (typeof offeringId !== "string") return enrollmentEntries.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  const parentSources: SalesDiagnosticSource[] = requestedSource === undefined
+    ? ["sales-trial-offerings", "sales-trial-enrollment"]
+    : requestedSource === "sales-trial-offerings"
+      ? ["sales-trial-offerings"]
+      : [];
+  const parent = parentSources.length
+    ? (await Promise.all(parentSources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
+      const subject = entry.subject as Record<string, unknown> | null;
+      return subject?.type === "sales_trial_offering" && subject.id === offeringId;
+    })
+    : [];
+  return [...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()].sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
 }
 
 /** Entries have already crossed the direction-aware recorder seam. This

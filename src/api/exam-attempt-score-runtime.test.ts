@@ -18,6 +18,7 @@ import {
   CloudShareRateLimitError,
   CloudShareResponseError,
   CloudShareTransportError,
+  createCloudShareWorkflowObserver,
 } from "@/integrations/cloudshare";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
@@ -117,6 +118,7 @@ function makeDeps(input?: {
   readonly connection?: CloudShareConnectionRecord | null;
   readonly progress?: ParticipantProgress | null;
   readonly progressError?: unknown;
+  readonly participantError?: unknown;
 }) {
   let storedLaunch = input?.launch ?? makeLaunch();
   const exams: ExamRepository = {
@@ -169,7 +171,7 @@ function makeDeps(input?: {
   };
   const createScoreRetriever = vi.fn().mockReturnValue(scoreRetriever);
   const participantLister = {
-    listParticipants: vi.fn().mockResolvedValue([
+    listParticipants: input?.participantError !== undefined ? vi.fn().mockRejectedValue(input.participantError) : vi.fn().mockResolvedValue([
       {
         email: "candidate@example.com",
         environmentId: "env-1",
@@ -397,10 +399,20 @@ describe("getExamAttemptScoreRuntime", () => {
         },
       },
     });
+    expect(scoreEntry?.correlationId).toBe("corr-123");
+    expect(deps.createScoreRetriever).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ scope: "workflow", workflow: expect.objectContaining({ correlationId: "corr-123" }) }),
+    );
+    expect(deps.audit.write).toHaveBeenCalledWith(expect.objectContaining({ correlationId: "corr-123" }));
   });
 
   it("returns no score available when Guided Journey progress is absent", async () => {
-    const deps = makeDeps({ progress: null });
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const deps = {
+      ...makeDeps({ progress: null }),
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+    };
 
     const result = await getExamAttemptScoreRuntime(deps, makeRuntimeRequest());
 
@@ -420,6 +432,7 @@ describe("getExamAttemptScoreRuntime", () => {
     expect(deps.audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         examAttemptId: "attempt-1",
+        correlationId: "corr-123",
         action: "score_retrieved",
         outcome: "success",
         details: {
@@ -429,18 +442,31 @@ describe("getExamAttemptScoreRuntime", () => {
         },
       }),
     );
+    expect(deps.createScoreRetriever).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ scope: "workflow", workflow: expect.objectContaining({ correlationId: "corr-123" }) }),
+    );
+    await expect(diagnosticRepository.query({ operation: "exam_attempt.score.retrieve", outcome: "success" })).resolves.toEqual([
+      expect.objectContaining({ correlationId: "corr-123" }),
+    ]);
   });
 
   it("returns 502 with a correlation id when CloudShare retrieval fails", async () => {
-    const deps = makeDeps({
-      progressError: new CloudShareTransportError("timeout", {
-        method: "GET",
-        host: "api.accelerate.cloudshare.com",
-        path: "/guided-journey/progress/exp-1/student-1",
-        integrationSurface: "cloudshare.v4.guided_journey.progress",
-        cause: "ETIMEDOUT",
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    let nextCorrelation = 0;
+    const deps = {
+      ...makeDeps({
+        progressError: new CloudShareTransportError("timeout", {
+          method: "GET",
+          host: "api.accelerate.cloudshare.com",
+          path: "/guided-journey/progress/exp-1/student-1",
+          integrationSurface: "cloudshare.v4.guided_journey.progress",
+          cause: "ETIMEDOUT",
+        }),
       }),
-    });
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+      newCorrelationId: () => `score-operation-${++nextCorrelation}`,
+    };
 
     const result = await getExamAttemptScoreRuntime(deps, makeRuntimeRequest());
 
@@ -448,13 +474,13 @@ describe("getExamAttemptScoreRuntime", () => {
       status: 502,
       body: {
         error: "score retrieval failed",
-        correlationId: "corr-123",
+        correlationId: "score-operation-1",
       },
     });
     expect(deps.logger.warn).toHaveBeenCalledWith(
       "candidate score retrieval failed",
       expect.objectContaining({
-        correlationId: "corr-123",
+        correlationId: "score-operation-1",
         examAttemptId: "attempt-1",
         attemptedOperation: "get_guided_journey_progress",
         failureMode: "transport",
@@ -475,19 +501,31 @@ describe("getExamAttemptScoreRuntime", () => {
         }),
       }),
     );
+    expect(deps.createScoreRetriever).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        scope: "workflow",
+        workflow: expect.objectContaining({ correlationId: "score-operation-1" }),
+      }),
+    );
+    await expect(diagnosticRepository.query({ operation: "exam_attempt.score.retrieve", outcome: "failure" })).resolves.toEqual([
+      expect.objectContaining({ correlationId: "score-operation-1" }),
+    ]);
   });
 
-  it("returns 429 with rate-limit diagnostics when CloudShare score retrieval is throttled", async () => {
-    const deps = makeDeps({
+  it("returns 429 with metadata-only diagnostics when OAuth score retrieval is throttled", async () => {
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const deps = { ...makeDeps({
       progressError: new CloudShareRateLimitError("too many requests", 429, "rate_limit", {
-        method: "GET",
+        method: "POST",
         host: "api.accelerate.cloudshare.com",
-        path: "/guided-journey/progress/exp-1/student-1",
-        integrationSurface: "cloudshare.v4.guided_journey.progress",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        requestBody: { client_secret: "private-secret" },
         responseHeaders: { "retry-after": "45" },
-        responseBody: "too many requests",
+        responseBody: { access_token: "private-token" },
       }),
-    });
+    }), diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }) };
 
     const result = await getExamAttemptScoreRuntime(deps, makeRuntimeRequest());
 
@@ -517,6 +555,9 @@ describe("getExamAttemptScoreRuntime", () => {
         }),
       }),
     );
+    const [entry] = await diagnosticsRepository.query({ operation: "exam_attempt.score.retrieve", outcome: "failure" });
+    expect(entry).toMatchObject({ request: null, response: null, details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "rate_limit", responseStatus: 429 }) });
+    expect(JSON.stringify(entry)).not.toMatch(/private-secret|private-token/);
   });
 
   it("returns a supportable 502 when the diagnostics-aware Guided Journey path gets an unsupported payload", async () => {
@@ -553,7 +594,7 @@ describe("getExamAttemptScoreRuntime", () => {
       expect.objectContaining({
         attemptedOperation: "get_guided_journey_progress",
         integrationSurface: "cloudshare.v4.guided_journey.progress",
-        path: "/guided-journey/progress/exp-1/student-1",
+        path: "/[REDACTED_ROUTE]",
         failureMode: "unexpected_response",
       }),
     );
@@ -638,6 +679,22 @@ describe("getExamAttemptScoreRuntime", () => {
     expect(result.status).toBe(200);
     expect(deps.createParticipantLister).toHaveBeenCalledTimes(1);
     expect(deps.participantLister.listParticipants).toHaveBeenCalledWith("training-1");
+    expect(deps.createParticipantLister.mock.calls[0][1]).toBe(deps.createScoreRetriever.mock.calls[0][1]);
+    expect(deps.createParticipantLister.mock.calls[0][1]).toMatchObject({
+      scope: "workflow",
+      workflow: {
+        correlationId: "corr-123",
+        subject: { type: "exam_attempt", id: "attempt-1" },
+      },
+    });
+    const observation = deps.createParticipantLister.mock.calls[0][1];
+    if (observation.scope !== "workflow") throw new Error("expected workflow observation");
+    const observed = vi.fn();
+    await createCloudShareWorkflowObserver({ diagnostics: { record: observed } as never, customerId: "customer-1", ...observation.workflow })
+      .onAcquisition({ occurredAt: "2026-09-03T12:00:00.000Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token" });
+    await createCloudShareWorkflowObserver({ diagnostics: { record: observed } as never, customerId: "customer-1", ...observation.workflow })
+      .onRequest({ occurredAt: "2026-09-03T12:00:01.000Z", outcome: "success", durationMs: 1, result: { request: {}, response: {}, integrationSurface: "cloudshare.v4.training", host: "example.test" } } as never);
+    expect(observed.mock.calls.map(([entry]) => entry.details.sequence)).toEqual([1, 2]);
     expect(deps.launches.save).toHaveBeenCalledWith(
       expect.objectContaining({
         participantId: "student-1",
@@ -666,9 +723,30 @@ describe("getExamAttemptScoreRuntime", () => {
       expect.objectContaining({
         attemptedOperation: "resolve_training_participant",
         integrationSurface: "cloudshare.v4.training.participant_list",
-        path: "/v4/trainings/training-1/students",
+        path: "/v4/[REDACTED_ROUTE]",
         failureMode: "missing_participant_id",
       }),
     );
+  });
+
+  it("keeps OAuth participant-resolution failure details metadata-only", async () => {
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const deps = { ...makeDeps({
+      launch: makeLaunch({ participantId: undefined }),
+      participantError: new CloudShareRateLimitError("OAuth token request throttled", 429, "rate_limit", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        requestBody: { client_secret: "private-secret" },
+        responseBody: { access_token: "private-token" },
+      }),
+    }), diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }) };
+
+    const result = await getExamAttemptScoreRuntime(deps, makeRuntimeRequest());
+    const [entry] = await diagnosticsRepository.query({ operation: "exam_attempt.score.correlate_environment", outcome: "failure" });
+
+    expect(result.status).toBe(502);
+    expect(entry.details).toMatchObject({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "rate_limit", responseStatus: 429 });
+    expect(JSON.stringify(entry.details)).not.toMatch(/private-secret|private-token|requestBody|responseBody/);
   });
 });

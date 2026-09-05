@@ -20,4 +20,26 @@ describe("Sales launch denial context resolver", () => {
     const result = await createSalesLaunchDenialContextResolver(d).resolve(link, "corr-3");
     expect(result?.salesPros).toEqual([{ name: "Persisted Owner", email: "owner@example.test", type: "mainSalesPro" }]); expect(d.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: "corr-3", customerId: "customer-1", details: expect.objectContaining({ integrationSurface: "cloudshare.v4.sales.sales_pros" }) })); expect(JSON.stringify(result)).not.toContain("provider secret");
   });
+  it("keeps OAuth token failure evidence metadata-only while loading recovery contacts", async () => {
+    const oauthFailure = Object.assign(new Error("wrapped OAuth token exchange returned 503"), { context: { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token", status: 503, requestBody: { client_secret: "private-secret" }, responseBody: { access_token: "private-token" } } });
+    const d = deps({ deliveryFactory: { forConnection: () => ({ listSalesPros: vi.fn().mockRejectedValue(oauthFailure) }) } });
+
+    await createSalesLaunchDenialContextResolver(d).resolve(link, "corr-oauth");
+    const [failure] = d.diagnostics.record.mock.calls[0];
+
+    expect(failure).toMatchObject({ request: null, response: null, details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "http_failure", status: 503 }) });
+    expect(JSON.stringify(failure)).not.toMatch(/private-secret|private-token/);
+  });
+
+  it("preserves untyped non-OAuth protected evidence while loading recovery contacts", async () => {
+    const providerFailure = Object.assign(new Error("provider unavailable"), { context: { method: "GET", path: "/sales/sales-1/sales-pros", requestBody: { marker: "request-marker" }, responseStatus: 503, responseBody: { marker: "response-marker" } } });
+    const d = deps({ deliveryFactory: { forConnection: () => ({ listSalesPros: vi.fn().mockRejectedValue(providerFailure) }) } });
+
+    await createSalesLaunchDenialContextResolver(d).resolve(link, "corr-provider");
+
+    expect(d.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
+      request: expect.objectContaining({ body: { marker: "request-marker" } }),
+      response: expect.objectContaining({ body: { marker: "response-marker" } }),
+    }));
+  });
 });

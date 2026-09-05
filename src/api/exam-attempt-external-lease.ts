@@ -16,6 +16,9 @@ import {
   type ExpiredCloudShareExternalLease,
   type UnknownCloudShareExternalLease,
 } from "@/integrations/cloudshare/external-lease";
+import { randomUUID } from "node:crypto";
+import { certificationCloudShareWorkflow } from "./certification-cloudshare-observer";
+import type { CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 
 export interface ExamAttemptExternalLeaseDeps {
   readonly launches: LabLaunchRepository;
@@ -61,6 +64,8 @@ export async function inspectExamAttemptExternalLease(
     readonly examAttemptId: string;
     readonly customerId?: string | null;
     readonly environmentExternalId?: string | null;
+    readonly correlationId?: string;
+    readonly sequenceAllocator?: CloudShareWorkflowSequenceAllocator;
   },
 ): Promise<CloudShareLeaseInspection> {
   const launch = await deps.launches.findByExamAttemptId(input.examAttemptId);
@@ -90,7 +95,13 @@ export async function inspectExamAttemptExternalLease(
     });
   }
 
-  const client = deps.cloudshare.forConnection(connection);
+  const client = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({
+    actor: { type: "system", id: "external-lease-inspection" }, customerId: input.customerId,
+    subject: { type: "exam_attempt", id: input.examAttemptId }, correlationId: input.correlationId ?? randomUUID(),
+    source: "candidate-portal", examAttemptId: input.examAttemptId,
+    ...(input.sequenceAllocator ? { sequenceAllocator: input.sequenceAllocator } : {}),
+    externalIds: Object.fromEntries(Object.entries({ trainingId, experienceId, environmentId: environmentExternalId }).filter(([, value]) => value !== null)) as Record<string, string>,
+  }));
   const inspectedLease = environmentExternalId
     ? await inspectCloudShareEnvironmentLease(client, environmentExternalId)
     : trainingId
@@ -132,6 +143,7 @@ export async function reconcileExpiredExamAttemptExternalLease(
     readonly source: string;
     readonly actorType: "candidate" | "admin" | "system";
     readonly message: string;
+    readonly correlationId?: string | null;
   },
 ): Promise<void> {
   if (input.inspection.kind !== "expired" || !deps.attempts) {
@@ -158,6 +170,7 @@ export async function reconcileExpiredExamAttemptExternalLease(
     candidateEmail: input.candidateEmail ?? null,
     examId: input.examId ?? attempt.examId,
     examAttemptId: input.inspection.examAttemptId,
+    correlationId: input.correlationId ?? null,
     actor: makeActor(input.actorType, input.candidateId ?? attempt.candidateId, input.candidateEmail),
     subject: { type: "exam_attempt", id: input.inspection.examAttemptId },
     externalIds: toExternalIds(input.inspection),
@@ -193,6 +206,7 @@ export async function recordExamAttemptExternalLeaseInspectionFailure(
     readonly source: string;
     readonly actorType: "candidate" | "admin" | "system";
     readonly message: string;
+    readonly correlationId?: string | null;
   },
 ): Promise<void> {
   if (input.inspection.kind !== "unknown" || !input.inspection.failureMode) {
@@ -209,6 +223,7 @@ export async function recordExamAttemptExternalLeaseInspectionFailure(
     candidateEmail: input.candidateEmail ?? null,
     examId: input.examId ?? null,
     examAttemptId: input.inspection.examAttemptId,
+    correlationId: input.correlationId ?? null,
     actor: makeActor(input.actorType, input.candidateId ?? null, input.candidateEmail),
     subject: { type: "exam_attempt", id: input.inspection.examAttemptId },
     externalIds: toExternalIds(input.inspection),

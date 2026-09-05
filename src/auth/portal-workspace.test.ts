@@ -29,4 +29,18 @@ describe("portal workspace routing", () => {
       }),
     ).toBe("/admin");
   });
+
+  it("routes a Sales Trial participant to the Sales Trial shell", () => {
+    expect(
+      getPortalHomePath({
+        sessionId: "session-sales-trial",
+        userId: "trial-user-1",
+        customerId: "customer-certalis",
+        email: "visitor@example.test",
+        role: "sales_trial_participant",
+        workspace: "sales",
+        issuedAtMs: 1_700_000_000_000,
+      }),
+    ).toBe("/sales-trial");
+  });
 });

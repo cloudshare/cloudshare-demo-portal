@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCloudShareClient } from "./client";
+import { createCloudShareClient, createCloudShareNoopRequestObserver } from "./client";
 import type { HttpClient } from "./http";
-import { createCloudShareSalesDelivery } from "./sales-delivery";
+import {
+  createCloudShareSalesDelivery,
+  SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS,
+} from "./sales-delivery";
 
 function deliveryForRoster(body: unknown) {
   const http: HttpClient = { async send() { return { status: 200, body: JSON.stringify(body) }; } };
@@ -10,6 +13,7 @@ function deliveryForRoster(body: unknown) {
     endpoints: { v4BaseUrl: "https://api.accelerate.cloudshare.com/v4", v3BaseUrl: "https://use.cloudshare.com/api/v3" },
     tokenProvider: { getToken: async () => "test-bearer" },
     v3: { apiId: "api-id", apiKey: "api-key" },
+    observer: createCloudShareNoopRequestObserver(),
     newToken: () => "tokfixed01",
     now: () => 1_700_000_000_000,
   }));
@@ -82,6 +86,43 @@ describe("CloudShare Sales Delivery", () => {
     expect(requestV4Detailed).toHaveBeenNthCalledWith(1, expect.objectContaining({ method: "GET", path: "/sales/sales-1/users/properties" }));
     expect(requestV4Detailed).toHaveBeenNthCalledWith(2, expect.objectContaining({ method: "POST", path: "/sales/sales-1/users/properties", body: [{ name: "certalisSalesParticipantId" }, { name: "certalisOpportunityContactId" }] }));
     expect(requestV4Detailed).toHaveBeenNthCalledWith(3, expect.objectContaining({ method: "POST", path: "/sales/sales-1/participants", body: [expect.objectContaining({ customProperties: [{ name: "certalisSalesParticipantId", value: "portal-participant-1" }, { name: "certalisOpportunityContactId", value: "contact-1" }] })] }));
+  });
+  it("accepts the sales-trial correlation keys as an explicit typed provisioning set", async () => {
+    const requestV4Detailed = vi.fn()
+      .mockResolvedValueOnce({ data: [], request: { method: "GET", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: [] } })
+      .mockResolvedValueOnce({
+        data: [
+          { id: "property-1", name: "certalisSalesTrialEnrollmentId", order: 0 },
+          { id: "property-2", name: "certalisSalesTrialParticipantUserId", order: 1 },
+        ],
+        request: { method: "POST", path: "/sales/sales-1/users/properties" },
+        response: { status: 201, body: [] },
+      });
+    const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
+
+    await expect(
+      delivery.ensureParticipantCorrelationProperties!(
+        "sales-1",
+        SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS,
+      ),
+    ).resolves.toMatchObject({
+      requiredKeys: [
+        "certalisSalesTrialEnrollmentId",
+        "certalisSalesTrialParticipantUserId",
+      ],
+      availableKeys: [
+        "certalisSalesTrialEnrollmentId",
+        "certalisSalesTrialParticipantUserId",
+      ],
+    });
+    expect(requestV4Detailed).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      method: "POST",
+      path: "/sales/sales-1/users/properties",
+      body: [
+        { name: "certalisSalesTrialEnrollmentId" },
+        { name: "certalisSalesTrialParticipantUserId" },
+      ],
+    }));
   });
   it("accepts a partial documented PUT acknowledgement because the handler rereads the authoritative roster", async () => {
     const requestV4Detailed = vi.fn().mockImplementation(async (spec) => ({ data: spec.schema.parse({}), request: { method: "PUT", path: "/sales/sales-1/participants/participant-1", body: spec.body }, response: { status: 200, body: {} } }));
@@ -269,8 +310,39 @@ describe("CloudShare Sales Delivery", () => {
     expect(requestV4Detailed).toHaveBeenLastCalledWith(expect.objectContaining({ method: "PUT", path: "/sales/sales-1", body: expect.objectContaining({ name: "Renamed", projectId: "project-1", blueprintIds: ["bp-1"], mainSalesPro: { email: "sales@certalis.demo" }, externalId: "portal-correlation", registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants" }) }));
     expect(requestV4Detailed.mock.calls[1][0].body).not.toHaveProperty("accessLink");
   });
-  it("fails closed without PUT when GET cannot preserve every documented mutable Sales field", async () => {
+  it("accepts a documented GET shape that omits optional fields and still sends the safe full PUT", async () => {
     const incomplete = { id: "sales-1", name: "Original", type: "demo", projectId: "project-1", blueprintIds: ["bp-1"], cloudshareRegionIds: ["region-1"], policyId: "policy-1", opportunity: "Acme", mainSalesPro: { email: "sales@certalis.demo" }, registrationType: "registeredParticipantsOnly", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" };
+    const requestV4Detailed = vi.fn()
+      .mockResolvedValueOnce({ data: incomplete, request: { method: "GET", path: "/sales/sales-1" }, response: { status: 200, body: incomplete } })
+      .mockResolvedValueOnce({ data: { ...incomplete, end: "2026-07-15T10:02" }, request: { method: "PUT", path: "/sales/sales-1", body: { ...incomplete, end: "2026-07-15T10:02" } }, response: { status: 200, body: { ...incomplete, end: "2026-07-15T10:02" } } });
+    const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
+
+    await expect(delivery.updateSession!("sales-1", { end: "2026-07-15T10:02" })).resolves.toMatchObject({
+      id: "sales-1",
+      request: { method: "PUT", path: "/sales/sales-1" },
+    });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(2);
+    expect(requestV4Detailed).toHaveBeenLastCalledWith(expect.objectContaining({
+      method: "PUT",
+      path: "/sales/sales-1",
+      body: {
+        name: "Original",
+        type: "demo",
+        projectId: "project-1",
+        blueprintIds: ["bp-1"],
+        cloudshareRegionIds: ["region-1"],
+        policyId: "policy-1",
+        opportunity: "Acme",
+        mainSalesPro: { email: "sales@certalis.demo" },
+        registrationType: "registeredParticipantsOnly",
+        start: "2026-07-15T09:00",
+        end: "2026-07-15T10:02",
+        timeZone: "UTC",
+      },
+    }));
+  });
+  it("fails closed without PUT when GET omits a documented required mutable field", async () => {
+    const incomplete = { id: "sales-1", name: "Original", type: "demo", projectId: "project-1", blueprintIds: ["bp-1"], cloudshareRegionIds: ["region-1"], policyId: "policy-1", mainSalesPro: { email: "sales@certalis.demo" }, registrationType: "registeredParticipantsOnly", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" };
     const requestV4Detailed = vi.fn().mockResolvedValue({ data: incomplete, request: { method: "GET", path: "/sales/sales-1" }, response: { status: 200, body: incomplete } });
     const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
 

@@ -59,7 +59,6 @@ export async function registerCandidate(
   if (existing) {
     throw new PortalUserAlreadyExistsError(email);
   }
-
   const customerId = await resolveCustomerId(deps.users, input);
   const passwordHash = await hashPassword(password);
   return deps.users.createUser({

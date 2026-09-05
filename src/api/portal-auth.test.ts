@@ -110,6 +110,56 @@ describe("handlePortalLogin", () => {
     expect(response.status).toBe(401);
     expect(response.body).toEqual({ error: "Invalid email or password" });
   });
+
+  it("does not index Sales Trial participant login evidence as Candidate evidence", async () => {
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const portalAuth = {
+      signIn: vi.fn().mockResolvedValue({
+        sessionId: "trial-session-1",
+        userId: "trial-user-1",
+        customerId: "customer-certalis",
+        email: "visitor@example.test",
+        role: "sales_trial_participant",
+        workspace: "sales",
+        issuedAtMs: 1,
+      }),
+    };
+
+    await handlePortalLogin({ portalAuth, diagnostics } as never, {
+      body: { email: "visitor@example.test", password: "safe-password" },
+    });
+
+    expect(diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({ candidateEmail: null }),
+    );
+  });
+
+  it("does not index failed Sales Trial participant login evidence as Candidate evidence", async () => {
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const portalAuth = {
+      signIn: vi.fn().mockRejectedValue(Object.assign(new Error("Invalid email or password"), {
+        name: "InvalidPortalCredentialsError",
+      })),
+    };
+    const users = {
+      findByEmail: vi.fn().mockResolvedValue({
+        id: "trial-user-1",
+        customerId: "customer-certalis",
+        email: "visitor@example.test",
+        passwordHash: "hash",
+        role: "sales_trial_participant",
+        workspace: "sales",
+      }),
+    };
+
+    await handlePortalLogin({ portalAuth, diagnostics, users } as never, {
+      body: { email: "visitor@example.test", password: "wrong-password" },
+    });
+
+    expect(diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({ candidateEmail: null }),
+    );
+  });
 });
 
 describe("handleGetPortalSession", () => {
@@ -151,7 +201,9 @@ describe("handleGetPortalSession", () => {
         role: "admin",
         customerId: "customer-helios",
         workspace: "certification",
+        expiresAtMs: 1_700_000_060_000,
       },
+      serverNowMs: 1_700_000_000_000,
     });
   });
 
@@ -252,6 +304,31 @@ describe("handleGetPortalSession", () => {
     );
 
     expect(onCandidateLogout).not.toHaveBeenCalled();
+  });
+
+  it("does not index Sales Trial participant logout evidence as Candidate evidence", async () => {
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const portalAuth = {
+      resume: vi.fn().mockResolvedValue({
+        sessionId: "trial-session-1",
+        userId: "trial-user-1",
+        customerId: "customer-certalis",
+        email: "visitor@example.test",
+        role: "sales_trial_participant",
+        workspace: "sales",
+        issuedAtMs: 1,
+      }),
+      signOut: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await handlePortalLogout(
+      { portalAuth, diagnostics } as never,
+      { sessionId: "trial-session-1" },
+    );
+
+    expect(diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({ candidateEmail: null }),
+    );
   });
 
   it("builds candidate logout runtime wiring from composed portal services", async () => {

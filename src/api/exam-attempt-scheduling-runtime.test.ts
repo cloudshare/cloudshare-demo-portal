@@ -13,7 +13,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { Logger } from "@/observability/logger";
-import { CloudShareRateLimitError } from "@/integrations/cloudshare";
+import { CloudShareRateLimitError, createCloudShareWorkflowObserver } from "@/integrations/cloudshare";
 import { scheduleExamAttemptRuntime } from "./exam-attempt-scheduling-runtime";
 
 function makeLogger(): Logger {
@@ -215,6 +215,7 @@ describe("ExamAttempt scheduling runtime", () => {
     const audit = createInMemoryAuditRepository();
     const eventLog = createInMemoryEventLogRepository();
     const logger = makeLogger();
+    const cloudshare = makeCloudShareFactory();
 
     const response = await scheduleExamAttemptRuntime(
       {
@@ -224,7 +225,7 @@ describe("ExamAttempt scheduling runtime", () => {
         audit,
         eventLog,
         connections: makeConnectionRepository(),
-        cloudshare: makeCloudShareFactory(),
+        cloudshare,
         logger,
         now: () => new Date("2026-06-15T10:00:00.000Z"),
         newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
@@ -253,6 +254,14 @@ describe("ExamAttempt scheduling runtime", () => {
       correlationId: "corr-1",
     });
     expect(JSON.stringify(response.body)).not.toContain("loginUrl");
+    const [snapshotObservation, schedulingObservation] = vi.mocked(cloudshare.forConnection).mock.calls.map(([, options]) => options);
+    expect(schedulingObservation).toBe(snapshotObservation);
+    expect(schedulingObservation).toMatchObject({ scope: "workflow", workflow: { correlationId: "corr-1", subject: { type: "exam", id: "exam-1" } } });
+    if (!schedulingObservation || schedulingObservation.scope !== "workflow") throw new Error("expected workflow observation");
+    const observed = vi.fn();
+    await createCloudShareWorkflowObserver({ diagnostics: { record: observed } as never, customerId: "customer-helios", ...schedulingObservation.workflow }).onAcquisition({ occurredAt: "2026-09-03T12:00:00.000Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token" });
+    await createCloudShareWorkflowObserver({ diagnostics: { record: observed } as never, customerId: "customer-helios", ...schedulingObservation.workflow }).onRequest({ occurredAt: "2026-09-03T12:00:01.000Z", outcome: "success", durationMs: 1, result: { request: {}, response: {}, integrationSurface: "cloudshare.v4.training", host: "example.test" } } as never);
+    expect(observed.mock.calls.map(([entry]) => entry.details.sequence)).toEqual([1, 2]);
     await expect(audit.listByExamAttemptId("attempt-1")).resolves.toEqual([
       expect.objectContaining({
         examAttemptId: "attempt-1",
@@ -676,5 +685,53 @@ describe("ExamAttempt scheduling runtime", () => {
         },
       },
     });
+  });
+
+  it("keeps an OAuth 429 provisioning failure metadata-only", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const eventLog = createInMemoryEventLogRepository();
+    const oauthFailure = new CloudShareRateLimitError("OAuth token request throttled", 429, "rate_limit", {
+      method: "POST",
+      path: "/oauth/token",
+      integrationSurface: "cloudshare.v4.oauth.token",
+      requestBody: { client_secret: "private-secret" },
+      responseBody: { access_token: "private-token" },
+    });
+
+    const response = await scheduleExamAttemptRuntime({
+      exams: await makeExamRepository(),
+      attempts,
+      launches,
+      audit: createInMemoryAuditRepository(),
+      eventLog,
+      connections: makeConnectionRepository(),
+      cloudshare: makeCloudShareFactory({ requestV4Detailed: vi.fn().mockRejectedValue(oauthFailure) }),
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+      logger: makeLogger(),
+      now: () => new Date("2026-06-15T10:00:00.000Z"),
+      newId: vi.fn().mockReturnValueOnce("attempt-oauth"),
+      newCorrelationId: () => "corr-oauth-schedule",
+    }, {
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      candidateEmail: "candidate@helioscx.demo",
+      candidateFirstName: "Asha",
+      candidateLastName: "Patel",
+      examId: "exam-1",
+      scheduledFor: "2026-06-15T16:00:00.000Z",
+    });
+    const [entry] = await diagnosticsRepository.query({ operation: "cloudshare.create_training", outcome: "failure" });
+    const [event] = await eventLog.listByCustomerId("customer-helios");
+
+    expect(response.status).toBe(429);
+    expect(entry).toMatchObject({
+      request: null,
+      response: null,
+      details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "rate_limit", responseStatus: 429 }),
+    });
+    expect(event.payload).toMatchObject({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "rate_limit", responseStatus: 429 });
+    expect(JSON.stringify({ entry, event })).not.toMatch(/private-secret|private-token/);
   });
 });

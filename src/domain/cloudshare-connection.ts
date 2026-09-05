@@ -1,4 +1,9 @@
-import type { CloudShareClient } from "@/integrations/cloudshare";
+import type {
+  CloudShareClient,
+  CloudShareRequestObservation,
+  V4TokenAcquisitionEvent,
+} from "@/integrations/cloudshare";
+import type { CloudShareWorkflowObservationContext } from "@/ports/cloudshare-observation";
 import { CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE } from "./cloudshare-rate-limit-message";
 import {
   CloudShareError,
@@ -37,8 +42,25 @@ export function buildCloudShareWebhookPath(webhookPathToken: string): string {
   return `/api/webhooks/cloudshare/${encodeURIComponent(webhookPathToken)}`;
 }
 
+export type { CloudShareWorkflowObservationContext } from "@/ports/cloudshare-observation";
+
+type CloudShareClientObservationCallbacks = {
+  readonly onRequest?: (event: CloudShareRequestObservation) => Promise<void> | void;
+  readonly onAcquisition?: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
+};
+
+/** Each production client declares a real workflow or an intentional Customer-only escape. */
+export type CloudShareClientObservationOptions = CloudShareClientObservationCallbacks & (
+  | { readonly scope: "workflow"; readonly workflow: CloudShareWorkflowObservationContext }
+  | { readonly scope: "customer_default"; readonly reason: "catalogue_resource_read" | "connection_check" | "unanchored_support_read" }
+  | { readonly scope: "custom_observer"; readonly correlationId: string }
+);
+
 export interface CloudShareClientFactory {
-  forConnection(connection: CloudShareConnectionRecord): CloudShareClient;
+  forConnection(
+    connection: CloudShareConnectionRecord,
+    options: CloudShareClientObservationOptions | undefined,
+  ): CloudShareClient;
 }
 
 export class MissingCloudShareConnectionError extends Error {
@@ -85,7 +107,10 @@ export async function testCloudShareConnection(
   }
 
   try {
-    const client = deps.cloudshare.forConnection(connection);
+    const client = deps.cloudshare.forConnection(connection, {
+      scope: "customer_default",
+      reason: "connection_check",
+    });
     const pong = await pingCloudShareV3(client);
     const verifiedAt = (deps.now ?? (() => new Date()))();
     await deps.connections.markVerified(customerId, verifiedAt);
