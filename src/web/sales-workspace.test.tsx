@@ -41,6 +41,7 @@ describe("Sales Item authoring", () => {
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "trial-offerings" }} />);
 
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login?returnTo=%2Fsales%3Ftab%3Dtrial-offerings"));
+    expect(router.refresh).not.toHaveBeenCalled();
     expect(screen.queryByRole("complementary", { name: "Sales workspace navigation" })).toBeNull();
   });
 

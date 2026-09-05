@@ -62,7 +62,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     setRoute((current) => salesRoutesMatch(current, initialRoute) ? current : initialRoute);
   }, [initialRoute]);
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
-  const handleSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { setSessionExpired(true); router.replace(path); router.refresh(); } }), [router]);
+  const handleSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { setSessionExpired(true); router.replace(path); } }), [router]);
   const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: handleSessionExpired }), [browserFetch, handleSessionExpired]);
   const logout = useCallback(async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }, [router]);
   const navigate = useCallback((intent: SalesNavigationIntent) => {
