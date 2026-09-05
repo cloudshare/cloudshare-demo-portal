@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { CSSProperties } from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { ScoreResult } from "@/domain/score-result";
 import { formatCandidateScheduledDateTime } from "./candidate-date-format";
@@ -18,6 +18,8 @@ import {
 import { eyebrowLabelStyle } from "@/web/design-tokens";
 import { statusBadgeStyle } from "@/web/status-badge";
 import { PortalPageHeader } from "@/web/portal-page-header";
+import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
+import { startPortalSessionWatchdog } from "./session-expiry";
 
 interface ScoreDisplayProps {
   readonly examAttemptId: string;
@@ -64,13 +66,27 @@ export function ScoreDisplay({ examAttemptId, email }: ScoreDisplayProps) {
   const [fetchState, setFetchState] = useState<FetchState>("loading");
   const [score, setScore] = useState<ScorePayload | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [sessionExpired, setSessionExpired] = useState(false);
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
+  const handleSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({
+    currentPath: () => `${window.location.pathname}${window.location.search}`,
+    fallbackLoginPath: "/login",
+    replace: (path) => {
+      setSessionExpired(true);
+      router.replace(path);
+    },
+  }), [router]);
+  useEffect(() => { const watchdog = startPortalSessionWatchdog({ fetchImpl: fetch, onExpired: handleSessionExpired }); void watchdog.checkNow(); return () => watchdog.stop(); }, [handleSessionExpired]);
 
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/exam/score?examAttemptId=${encodeURIComponent(examAttemptId)}`)
       .then(async (res) => {
         if (cancelled) return;
+        if (res.status === 401) {
+          handleSessionExpired();
+          return undefined;
+        }
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as {
             error?: string;
@@ -98,7 +114,7 @@ export function ScoreDisplay({ examAttemptId, email }: ScoreDisplayProps) {
     return () => {
       cancelled = true;
     };
-  }, [examAttemptId]);
+  }, [examAttemptId, handleSessionExpired]);
 
   const header = (
     <ScorePageHeader
@@ -108,6 +124,10 @@ export function ScoreDisplay({ examAttemptId, email }: ScoreDisplayProps) {
       onLogout={() => void logout()}
     />
   );
+
+  if (sessionExpired) {
+    return <main aria-live="polite">Continuing to sign in…</main>;
+  }
 
   if (fetchState === "error") {
     return (

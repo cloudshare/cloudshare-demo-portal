@@ -5,6 +5,7 @@ import { getPortalSessionServices } from "@/composition";
 import { getPortalHomePath, getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { SalesTrialLoginForm } from "./login-form";
+import { getSafePortalReturnTarget } from "@/auth/portal-return-target";
 
 interface SalesTrialLoginPageProps {
   readonly searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -23,6 +24,9 @@ export default async function SalesTrialLoginPage({
   const params = (await searchParams) ?? {};
   const rawError = params.error;
   const initialError = typeof rawError === "string" ? rawError : null;
+  const returnTo = getSafePortalReturnTarget(
+    typeof params.returnTo === "string" ? params.returnTo : null,
+  );
 
-  return <SalesTrialLoginForm initialEmail="" initialError={initialError} />;
+  return <SalesTrialLoginForm initialEmail="" initialError={initialError} returnTo={returnTo} />;
 }

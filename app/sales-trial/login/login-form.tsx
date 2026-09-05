@@ -8,11 +8,13 @@ import { colors, pageHeadingStyle, spacing } from "@/web/design-tokens";
 interface SalesTrialLoginFormProps {
   readonly initialError: string | null;
   readonly initialEmail: string;
+  readonly returnTo?: string | null;
 }
 
 export function SalesTrialLoginForm({
   initialError,
   initialEmail,
+  returnTo = null,
 }: SalesTrialLoginFormProps) {
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
@@ -25,18 +27,18 @@ export function SalesTrialLoginForm({
     setError(null);
 
     try {
-      const response = await fetch("/api/sales-trial/login", {
+      const response = await fetch(`/api/sales-trial/login${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ""}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as { error?: string; redirectTo?: string };
       if (!response.ok) {
         setError(data.error ?? "Sign in failed");
         return;
       }
 
-      window.location.assign("/sales-trial");
+      window.location.replace(data.redirectTo ?? "/sales-trial");
     } catch {
       setError("Sign in failed");
     } finally {
@@ -64,7 +66,7 @@ export function SalesTrialLoginForm({
         </p>
         <form
           onSubmit={onSubmit}
-          action="/api/sales-trial/login"
+          action={returnTo ? `/api/sales-trial/login?returnTo=${encodeURIComponent(returnTo)}` : "/api/sales-trial/login"}
           method="post"
           style={{ display: "grid", gap: "1rem" }}
         >

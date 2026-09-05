@@ -24,6 +24,13 @@ describe("Candidate page routing", () => {
     mockGetServices.mockReturnValue({});
   });
 
+  it("redirects an expired Candidate navigation to its safe login return target", async () => {
+    mockGetPortalSession.mockResolvedValue(null);
+
+    await expect(CandidatePage()).rejects.toThrow("redirect:/login?returnTo=%2Fcandidate");
+    expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fcandidate");
+  });
+
   it("returns Sales Trial participants to their own home", async () => {
     mockGetPortalSession.mockResolvedValue({
       sessionId: "session-trial",

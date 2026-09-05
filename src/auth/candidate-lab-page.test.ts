@@ -67,8 +67,8 @@ describe("candidate lab page", () => {
         examAttemptId: "ea-1",
         attemptStatus: "ready",
       }),
-    })).rejects.toThrow("redirect:/login");
-    expect(mockRedirect).toHaveBeenCalledWith("/login");
+    })).rejects.toThrow("redirect:/login?returnTo=%2Fcandidate");
+    expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fcandidate");
   });
 
   it("redirects admins away from candidate lab screens", async () => {
@@ -101,6 +101,18 @@ describe("candidate lab page", () => {
         email: "candidate@helioscx.demo",
         examAttemptId: "ea-1",
         initialAttemptStatus: "in_progress",
+      },
+    });
+  });
+
+  it("renders the protected fallback when no exam attempt id is present", async () => {
+    const page = await CandidateLabPage({ searchParams: Promise.resolve({}) });
+
+    expect(page).toMatchObject({
+      type: expect.any(Function),
+      props: {
+        title: "Launch lab",
+        message: "Missing examAttemptId.",
       },
     });
   });

@@ -6,9 +6,22 @@ import {
   readHeartbeatAttemptStatus,
   resumeLabAttempt,
   suspendLabAttempt,
+  isLabPortalSessionExpiredError,
 } from "./lab-launcher-client";
 
 describe("lab launcher client helpers", () => {
+  it("classifies a protected lab read 401 as expiry instead of an inline action error", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "unauthorized" }),
+    });
+
+    await expect(loadCandidateLabStatus(fetchImpl, "attempt-1")).rejects.toSatisfy(
+      isLabPortalSessionExpiredError,
+    );
+  });
+
   it("blocks enter preflight for a future-scheduled ready attempt before any child-window open path can start", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
@@ -324,6 +337,56 @@ describe("lab launcher client helpers", () => {
       },
       message: "Examination complete.",
     });
+  });
+
+  it.each([
+    ["suspend", suspendLabAttempt, "/api/exam/suspend"],
+    ["resume", resumeLabAttempt, "/api/exam/resume"],
+    ["complete", endLabAttempt, "/api/exam/complete"],
+  ] as const)("preserves session expiry when %s reconciliation receives 401 after an ambiguous 202", async (_label, action, path) => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        json: async () => ({ status: "pending" }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: "unauthorized" }),
+      });
+
+    await expect(action(fetchImpl, "attempt-1")).rejects.toSatisfy(
+      isLabPortalSessionExpiredError,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, path, expect.objectContaining({ method: "POST" }));
+  });
+
+  it.each([
+    ["suspend", suspendLabAttempt, "/api/exam/suspend"],
+    ["resume", resumeLabAttempt, "/api/exam/resume"],
+    ["complete", endLabAttempt, "/api/exam/complete"],
+  ] as const)("preserves session expiry when %s reconciliation receives 401 after an ambiguous 409", async (_label, action, path) => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: "transition unresolved" }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: "unauthorized" }),
+      });
+
+    await expect(action(fetchImpl, "attempt-1")).rejects.toSatisfy(
+      isLabPortalSessionExpiredError,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, path, expect.objectContaining({ method: "POST" }));
   });
 
   it("posts End exam to the completion API and returns completed when cleanup succeeds", async () => {

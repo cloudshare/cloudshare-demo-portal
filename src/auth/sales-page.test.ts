@@ -24,6 +24,13 @@ describe("Sales workspace page", () => {
     mockGetServices.mockReturnValue({});
   });
 
+  it("redirects an expired Sales navigation to its safe login return target", async () => {
+    mockGetPortalSession.mockResolvedValue(null);
+
+    await expect(SalesPage({})).rejects.toThrow("redirect:/login?returnTo=%2Fsales");
+    expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fsales");
+  });
+
   it("renders the empty Sales workspace for a sales-configured Customer admin", async () => {
     mockGetPortalSession.mockResolvedValue({
       sessionId: "session-certalis", userId: "admin-certalis", customerId: "customer-certalis",

@@ -58,4 +58,18 @@ describe("Sales Trial authentication forms", () => {
     expect(await screen.findByText("Invalid email or password")).not.toBeNull();
     expect(screen.queryByText("Sales Sessions")).toBeNull();
   });
+
+  it("replaces history with the return destination after successful sign-in", async () => {
+    const user = userEvent.setup();
+    const replace = vi.fn();
+    vi.stubGlobal("location", { replace });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ redirectTo: "/sales-trial?returnTo=%2Ffoo" }), { status: 200 }),
+    ));
+    render(<SalesTrialLoginForm initialEmail="" initialError={null} returnTo="/foo" />);
+    await user.type(screen.getByRole("textbox", { name: "Email" }), "visitor@example.test");
+    await user.type(screen.getByLabelText("Password"), "safe-password");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(replace).toHaveBeenCalledWith("/sales-trial?returnTo=%2Ffoo");
+  });
 });

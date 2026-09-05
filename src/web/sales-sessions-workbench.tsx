@@ -6,6 +6,7 @@ import { primaryButtonStyle } from "./button-styles";
 import { cardStyle } from "./card-styles";
 import type { SalesNavigationIntent, SalesSessionQueueView, SalesWorkspaceRouteState } from "./sales-shell-route";
 import styles from "./sales-sessions-workbench.module.css";
+import { getExpiredPortalLoginPath } from "../auth/portal-return-target";
 
 type QueueRow = { id: string; accountId: string; accountName: string; opportunityId: string; opportunityName: string; sessionName: string; revision: number; start: string; end: string; timeZone: string; operation: { value: string; source: string }; experience: { value: string; source: string; freshness: string; observedAt?: string }; participantEnvironment?: { participantName: string; observation: { value: string | null; source: string; observedAt?: string } }; attention?: { entity: string; dimension: string; reason: string } };
 type QueueResponse = { view: SalesSessionQueueView; offset: number; limit: number; total: number; rows: QueueRow[]; target?: { id: string; state: string; message?: string } };
@@ -18,8 +19,8 @@ const queueViewPresentation: Record<SalesSessionQueueView, { readonly button: st
   history: { button: "History", heading: "Session history" },
 };
 
-export function SalesSessionsWorkbench({ route, creationNotice, onNavigate }: { readonly route: SalesWorkspaceRouteState; readonly creationNotice?: SalesNavigationIntent["creationNotice"]; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
-  const fetchRef = useRef(createAdminAuthenticatedRequest({ fetchImpl: (input, init) => window.fetch(input, init), onSessionExpired: () => { window.location.assign("/login"); } }));
+export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSessionExpired = () => { window.location.replace(getExpiredPortalLoginPath(`${window.location.pathname}${window.location.search}`) ?? "/login"); } }: { readonly route: SalesWorkspaceRouteState; readonly creationNotice?: SalesNavigationIntent["creationNotice"]; readonly onNavigate: (intent: SalesNavigationIntent) => void; readonly onSessionExpired?: () => void }) {
+  const fetchRef = useRef(createAdminAuthenticatedRequest({ fetchImpl: (input, init) => window.fetch(input, init), onSessionExpired }));
   const [result, setResult] = useState<SuccessfulQueueResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

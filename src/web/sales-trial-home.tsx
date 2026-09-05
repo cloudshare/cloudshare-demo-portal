@@ -10,6 +10,8 @@ import {
 import { alertPanelStyle, cardStyle } from "./card-styles";
 import { colors, pageHeadingStyle, spacing } from "./design-tokens";
 import { openSalesTrialWindow, readSalesTrialEnterBlockedMessage } from "./sales-trial-window";
+import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
+import { startPortalSessionWatchdog } from "./session-expiry";
 
 type TrialOffering = {
   readonly id: string;
@@ -47,6 +49,20 @@ export function SalesTrialHome({
   const [offeringError, setOfferingError] = useState<string | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [openOfferingId, setOpenOfferingId] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const sessionExpiryRedirect = React.useRef<(() => void) | null>(null);
+  if (!sessionExpiryRedirect.current) {
+    sessionExpiryRedirect.current = createPortalSessionExpiryRedirect({
+      currentPath: () => `${window.location.pathname}${window.location.search}`,
+      fallbackLoginPath: "/sales-trial/login",
+      replace: (path) => {
+        setSessionExpired(true);
+        router.replace(path);
+      },
+    });
+  }
+  const handleSessionExpired = sessionExpiryRedirect.current;
+  React.useEffect(() => { if (sessionExpired) return; const watchdog = startPortalSessionWatchdog({ fetchImpl, onExpired: handleSessionExpired }); void watchdog.checkNow(); return () => watchdog.stop(); }, [fetchImpl, handleSessionExpired, sessionExpired]);
 
   React.useEffect(() => {
     if (hasInitialOfferings) {
@@ -55,6 +71,10 @@ export function SalesTrialHome({
     void fetchImpl("/api/sales-trial/offerings", { cache: "no-store" })
       .then(async (response) => {
         const body = (await response.json()) as { offerings?: TrialOffering[]; error?: string };
+        if (response.status === 401) {
+          handleSessionExpired();
+          return { offerings: [] };
+        }
         if (!response.ok) {
           throw new Error(body.error ?? "Could not load Trial Offerings.");
         }
@@ -66,7 +86,7 @@ export function SalesTrialHome({
         );
         setOfferings([]);
       });
-  }, [fetchImpl, hasInitialOfferings]);
+  }, [fetchImpl, handleSessionExpired, hasInitialOfferings]);
 
   React.useEffect(() => {
     function handleMessage(event: MessageEvent) {
@@ -77,6 +97,10 @@ export function SalesTrialHome({
       if (!blocked) {
         return;
       }
+      if (blocked.status === 401) {
+        handleSessionExpired();
+        return;
+      }
       setLaunchError(blocked.message);
       setOpenOfferingId(null);
     }
@@ -85,7 +109,7 @@ export function SalesTrialHome({
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [openOfferingId]);
+  }, [handleSessionExpired, openOfferingId]);
 
   async function signOut(): Promise<void> {
     if (loggingOut) return;
@@ -93,6 +117,12 @@ export function SalesTrialHome({
     setLogoutError(null);
     try {
       const response = await fetchImpl("/api/auth/logout", { method: "POST" });
+      if (response.status === 401) {
+        setSessionExpired(false);
+        router.replace("/sales-trial/login");
+        router.refresh();
+        return;
+      }
       if (!response.ok) throw new Error(`Logout failed (${response.status})`);
       router.replace("/sales-trial/login");
       router.refresh();
@@ -113,6 +143,10 @@ export function SalesTrialHome({
     } catch {
       setLaunchError("Trial window could not be opened. Allow popups for this site and try again.");
     }
+  }
+
+  if (sessionExpired) {
+    return <main aria-live="polite" style={pageStyle}>Continuing to sign in…</main>;
   }
 
   return (

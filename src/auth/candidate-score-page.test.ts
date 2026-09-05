@@ -58,8 +58,8 @@ describe("candidate score page", () => {
       searchParams: Promise.resolve({
         examAttemptId: "ea-1",
       }),
-    })).rejects.toThrow("redirect:/login");
-    expect(mockRedirect).toHaveBeenCalledWith("/login");
+    })).rejects.toThrow("redirect:/login?returnTo=%2Fcandidate");
+    expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fcandidate");
   });
 
   it("redirects admins away from candidate score screens", async () => {
@@ -101,24 +101,12 @@ describe("candidate score page", () => {
     });
 
     expect(page).toMatchObject({
-      type: "main",
+      type: expect.any(Function),
       props: {
-        children: [
-          expect.objectContaining({
-            type: expect.any(Function),
-            props: expect.objectContaining({
-              title: "Session complete",
-              email: "candidate@helioscx.demo",
-            }),
-          }),
-          expect.objectContaining({
-            type: "p",
-            props: expect.objectContaining({
-              children: "Missing examAttemptId.",
-            }),
-          }),
-        ],
+        title: "Session complete",
+        message: "Missing examAttemptId.",
       },
     });
+    expect(page.props).not.toHaveProperty("email");
   });
 });
