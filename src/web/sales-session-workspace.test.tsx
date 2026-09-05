@@ -61,6 +61,7 @@ describe("Sales Session workspace", () => {
     const rendered = render(<SalesSessionWorkspace sessionId="session-1" area={area} queueHref="/sales?tab=sessions" />);
     const firstHeading = await screen.findByRole("heading", { name: area[0].toUpperCase() + area.slice(1) });
     await waitFor(() => expect(document.activeElement).toBe(firstHeading));
+    expect(firstHeading).toHaveAttribute("tabindex", "-1");
     rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
     const heading = await screen.findByRole("heading", { name: "Activity" });
     await waitFor(() => expect(document.activeElement).toBe(heading));
