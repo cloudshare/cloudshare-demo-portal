@@ -2,6 +2,8 @@
 .summary, .panel, .error, .loading { min-width: 0; border: 1px solid #dbe4ee; border-radius: 12px; background: #fff; box-shadow: 0 3px 12px rgba(15, 23, 42, .07); }
 .summary { position: sticky; top: .5rem; z-index: 1; padding: 1rem 1.25rem; background: linear-gradient(135deg, #fff 0%, #f6fbfb 100%); }
 .summaryTopline, .summaryTitle, .panelHeading, .timelineTitle, .timelineMeta { display: flex; align-items: center; gap: .75rem; }
+.contextTrail { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; min-width: 0; }
+.contextTrail span:last-child { overflow-wrap: anywhere; }
 .summaryTopline { justify-content: space-between; color: #52606d; font-size: .875rem; }
 .summaryTopline a { color: #0d5f59; font-weight: 650; text-decoration: none; }
 .summaryTitle { justify-content: space-between; margin-top: .75rem; }
@@ -14,8 +16,10 @@
 .summaryMetrics dt, .detailGroup dt { color: #52606d; font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .summaryMetrics dd { display: grid; gap: .25rem; margin: .35rem 0 0; font-size: .875rem; overflow-wrap: anywhere; }
 .summaryMetrics dd span { color: #52606d; font-size: .78rem; }
-.areaTabs { display: inline-flex; width: fit-content; max-width: 100%; gap: .2rem; padding: .25rem; border: 1px solid #cbd5e1; border-radius: 9px; background: #fff; overflow-x: auto; }
-.areaTab, .areaTabActive { min-width: 8.5rem; min-height: 2.4rem; border-radius: 6px; padding: .45rem 1rem; color: #475569; font-size: .9rem; font-weight: 700; line-height: 1.5rem; text-align: center; text-decoration: none; }
+.areaNav { display: grid; gap: .35rem; min-width: 0; }
+.areaNavLabel { color: #52606d; font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.areaTabs { display: inline-flex; width: fit-content; max-width: 100%; gap: .2rem; padding: .2rem; border: 1px solid #cbd5e1; border-radius: 7px; background: #f8fafc; overflow-x: auto; }
+.areaTab, .areaTabActive { min-width: 7.5rem; min-height: 2.2rem; border-radius: 5px; padding: .35rem .8rem; color: #475569; font-size: .86rem; font-weight: 700; line-height: 1.5rem; text-align: center; text-decoration: none; }
 .areaTab:hover { background: #eaf3f2; color: #0d5f59; }
 .areaTabActive { background: #0f6d66; color: #fff; box-shadow: 0 1px 3px rgba(15,109,102,.25); }
 .panel, .error { padding: 1.25rem; }

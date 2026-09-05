@@ -69,6 +69,7 @@
   font-size: 0.9rem;
   font-weight: 650;
   text-align: left;
+  text-decoration: none;
 }
 
 .navButton:hover:not(:disabled) { background: #213450; color: #ffffff; }
