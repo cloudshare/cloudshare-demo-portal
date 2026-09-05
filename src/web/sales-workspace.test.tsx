@@ -5,6 +5,11 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionParticipants, SalesWorkspace } from "./sales-workspace";
 
+vi.mock("./session-expiry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./session-expiry")>()),
+  startPortalSessionWatchdog: () => ({ checkNow: vi.fn().mockResolvedValue(undefined), stop: vi.fn() }),
+}));
+
 const router = { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => router, useSearchParams: () => new URLSearchParams() }));
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });

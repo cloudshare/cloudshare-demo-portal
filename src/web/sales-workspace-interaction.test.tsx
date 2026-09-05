@@ -6,6 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesWorkspace } from "./sales-workspace";
 import { salesSessionProvisionDraftKey } from "./sales-session-provision-draft";
 
+vi.mock("./session-expiry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./session-expiry")>()),
+  startPortalSessionWatchdog: () => ({ checkNow: vi.fn().mockResolvedValue(undefined), stop: vi.fn() }),
+}));
+
 const { mockRouter, mockSearchParams } = vi.hoisted(() => ({
   mockRouter: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
   mockSearchParams: new URLSearchParams(),

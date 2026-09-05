@@ -7,6 +7,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SalesTrialHome } from "./sales-trial-home";
 
+vi.mock("./session-expiry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./session-expiry")>()),
+  startPortalSessionWatchdog: () => ({ checkNow: vi.fn().mockResolvedValue(undefined), stop: vi.fn() }),
+}));
+
 const { routerReplace, routerRefresh } = vi.hoisted(() => ({
   routerReplace: vi.fn(),
   routerRefresh: vi.fn(),
