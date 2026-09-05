@@ -14,6 +14,7 @@ export class InvalidPortalCredentialsError extends Error {
 }
 
 export interface PortalAuthenticator {
+  readonly sessionTtlMs?: number;
   signIn(email: string, password: string): Promise<PortalSession>;
   resume(sessionId: string): Promise<PortalSession | null>;
   signOut(sessionId: string): Promise<void>;
@@ -37,6 +38,7 @@ export function createPortalAuthenticator(
   const sessionTtlMs = opts.sessionTtlMs ?? DEFAULT_PORTAL_SESSION_TTL_MS;
 
   return {
+    sessionTtlMs,
     async signIn(email: string, password: string): Promise<PortalSession> {
       const user = await opts.users.findByEmail(email);
       if (!user) {

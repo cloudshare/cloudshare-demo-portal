@@ -13,6 +13,7 @@ import {
   type CandidateLogoutAutoSuspendDeps,
   type CandidateLogoutAutoSuspendServices,
 } from "./portal-logout-runtime";
+import { DEFAULT_PORTAL_SESSION_TTL_MS } from "@/auth/portal-auth";
 
 export const PORTAL_SESSION_COOKIE = "portal_session";
 
@@ -255,7 +256,9 @@ export async function handleGetPortalSession(
           role: session.role,
           customerId: session.customerId,
           workspace: session.workspace,
+          expiresAtMs: session.issuedAtMs + (deps.portalAuth.sessionTtlMs ?? DEFAULT_PORTAL_SESSION_TTL_MS),
       },
+      serverNowMs: Date.now(),
     },
     session,
   };
