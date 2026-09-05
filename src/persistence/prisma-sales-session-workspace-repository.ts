@@ -33,7 +33,7 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         experienceStatusObservedAt: session.experienceStatusObservedAt,
       }, new Date());
       const activity = await prisma.diagnosticLogEntry.findMany({
-        where: { customerId, subjectId: session.id, subjectType: { in: ["sales_demo_session", "sales_participant"] } }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 100,
+        where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 100,
         select: { occurredAt: true, operation: true, outcome: true, actorType: true, subjectType: true, subjectId: true, correlationId: true },
       });
       return { state: "available", workspace: {

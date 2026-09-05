@@ -29,9 +29,6 @@ function scopeForPath(pathname: string): PortalReturnScope | null {
   return null;
 }
 
-function isSalesSessionPath(pathname: string): boolean {
-  return /^\/sales\/sessions\/[^/]+$/.test(pathname);
-}
 
 function hasOnlyQueryKeys(searchParams: URLSearchParams, keys: readonly string[]): boolean {
   const allowed = new Set(keys);
@@ -83,15 +80,6 @@ function safePortalTarget(raw: string | null | undefined): { readonly target: st
     return null;
   }
   if (url.origin !== PORTAL_ORIGIN || url.hash) return null;
-
-  if (isSalesSessionPath(url.pathname)) {
-    const area = url.searchParams.get("area");
-    const from = url.searchParams.get("from");
-    if ((area !== null && !["participants", "activity", "details"].includes(area))
-      || (from !== null && safePortalTarget(from)?.scope !== "sales_admin")
-      || [...url.searchParams.keys()].some((key) => key !== "area" && key !== "from")) return null;
-    return { target: `${url.pathname}${url.search}`, scope: "sales_admin" };
-  }
 
   const scope = scopeForPath(url.pathname);
   if (!scope) return null;

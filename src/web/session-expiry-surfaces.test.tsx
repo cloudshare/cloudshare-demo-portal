@@ -100,7 +100,7 @@ describe("idle expiry on protected portal surfaces", () => {
     await expireLatestWatchdog();
     expect(screen.queryByText("Protected Session content")).toBeNull();
     expect(screen.queryByRole("complementary", { name: "Sales workspace navigation" })).toBeNull();
-    expect(router.replace).toHaveBeenCalledWith("/login?returnTo=%2Fsales%2Fsessions%2Fsession-1%3Farea%3Dactivity");
+    expect(router.replace).toHaveBeenCalledWith("/login");
     expect(router.refresh).not.toHaveBeenCalled();
   });
 

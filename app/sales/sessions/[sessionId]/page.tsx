@@ -6,7 +6,6 @@ import { getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { SalesSessionWorkspace } from "@/web/sales-session-workspace";
 import { SalesWorkspaceChrome } from "@/web/sales-workspace-chrome";
-import { getExpiredPortalLoginPath } from "@/auth/portal-return-target";
 
 type Props = { readonly params: Promise<{ sessionId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 export default async function SalesSessionPage({ params, searchParams }: Props) {
@@ -18,8 +17,7 @@ export default async function SalesSessionPage({ params, searchParams }: Props) 
   const requestedQueueHref = singleSearchParam(query.from);
   const area = requestedArea === "activity" || requestedArea === "details" ? requestedArea : "participants";
   const queueHref = requestedQueueHref?.startsWith("/sales?") ? requestedQueueHref : "/sales?tab=sessions";
-  const returnTo = `/sales/sessions/${encodeURIComponent(sessionId)}?area=${encodeURIComponent(area)}&from=${encodeURIComponent(queueHref)}`;
-  if (!session) redirect(getExpiredPortalLoginPath(returnTo) ?? "/login");
+  if (!session) redirect("/login");
   if (session.role !== "admin" || session.workspace !== "sales") redirect("/admin");
   return <SalesWorkspaceChrome email={session.email} activeTab="sessions"><SalesSessionWorkspace sessionId={sessionId} area={area} queueHref={queueHref} /></SalesWorkspaceChrome>;
 }

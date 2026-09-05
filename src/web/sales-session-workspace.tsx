@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createAdminAuthenticatedRequest } from "./admin-authenticated-request";
 import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
+import { useContext } from "react";
+import { SalesWorkspaceExpiryContext } from "./sales-workspace-chrome";
 import { statusBadgeStyle } from "./status-badge";
 import styles from "./sales-session-workspace.module.css";
 import type { SafeSalesSessionActivity, SalesSessionWorkspaceResponse } from "@/domain/sales-session-workspace";
@@ -17,8 +19,9 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   const [workspace, setWorkspace] = useState<SalesSessionWorkspaceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const shellExpiry = useContext(SalesWorkspaceExpiryContext);
   const areaHeading = useRef<HTMLHeadingElement>(null);
-  const handleSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { setSessionExpired(true); router.replace(path); } }), [router]);
+  const handleSessionExpired = useMemo(() => shellExpiry ?? createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { setSessionExpired(true); router.replace(path); } }), [router, shellExpiry]);
   useEffect(() => {
     let live = true;
     const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });

@@ -53,7 +53,7 @@ describe("Sales Session workspace", () => {
 
     expect(await screen.findByText("Your session has expired. Sign in again to continue.")).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "Activity" })).toBeNull();
-    expect(router.replace).toHaveBeenCalledWith("/login?returnTo=%2Fsales%2Fsessions%2Fsession-1%3Farea%3Dactivity%26from%3D%252Fsales%253Ftab%253Dsessions");
+    expect(router.replace).toHaveBeenCalledWith("/login");
   });
 
   it.each(["participants", "activity", "details"] as const)("moves focus to the %s heading after a fresh route load", async (area) => {
