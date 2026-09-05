@@ -479,6 +479,34 @@ describe("AdminCohortExamSessionsFeature seam", () => {
     expect(screen.getByText("2")).toBeTruthy();
   });
 
+  it("shows only durable stale recovery when a listed Session detail returns 404", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return json({ sessions: [session] });
+      if (url.endsWith("cohort-session-1")) return new Response(JSON.stringify({ error: "gone" }), { status: 404 });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="catalog" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" supportMonitoringActive fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect(await screen.findByText("This route target is no longer available.")).toBeTruthy();
+    expect((await screen.findByRole("alert")).textContent).toContain("The requested Cohort Exam Session is no longer available.");
+    expect(screen.queryByText("Failed to load Cohort Exam Session detail")).toBeNull();
+  });
+
+  it("keeps a failed Session list actionable without claiming the Session was deleted", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="session" focusedExamId="exam-1" focusedCohortSessionId="missing-session" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("temporary failure");
+    expect(screen.queryByText("This route target is no longer available.")).toBeNull();
+  });
+
   it("keeps a failed focused Cohort refresh dismissible", async () => {
     const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
