@@ -29,6 +29,43 @@ function scopeForPath(pathname: string): PortalReturnScope | null {
   return null;
 }
 
+function hasOnlyQueryKeys(searchParams: URLSearchParams, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return [...searchParams.keys()].every((key) => allowed.has(key));
+}
+
+function hasValidRouteShape(scope: PortalReturnScope, searchParams: URLSearchParams): boolean {
+  const tab = searchParams.get("tab");
+  const view = searchParams.get("view");
+
+  if (scope === "candidate" || scope === "sales_trial") return searchParams.size === 0;
+  if (!tab) return searchParams.size === 0;
+
+  if (scope === "certification_admin") {
+    if (tab === "exams") {
+      return hasOnlyQueryKeys(searchParams, ["tab", "view"])
+        && (view === null || view === "catalog" || view === "create");
+    }
+    if (tab === "support") {
+      return hasOnlyQueryKeys(searchParams, ["tab", "view"])
+        && (view === null || view === "monitoring" || view === "diagnostics" || view === "audit");
+    }
+    return (tab === "candidates" || tab === "configuration")
+      && hasOnlyQueryKeys(searchParams, ["tab"]);
+  }
+
+  if (tab === "items") {
+    return hasOnlyQueryKeys(searchParams, ["tab", "view"])
+      && (view === null || view === "catalog" || view === "create");
+  }
+  if (tab === "sessions") {
+    return hasOnlyQueryKeys(searchParams, ["tab", "view", "status", "queue", "sort", "offset"])
+      && (view === null || view === "provision");
+  }
+  return (tab === "records" || tab === "trial-offerings" || tab === "support" || tab === "configuration")
+    && hasOnlyQueryKeys(searchParams, ["tab"]);
+}
+
 function safePortalTarget(raw: string | null | undefined): { readonly target: string; readonly scope: PortalReturnScope } | null {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//") || /[\u0000-\u001f\u007f]/.test(raw)) {
     return null;
@@ -51,6 +88,7 @@ function safePortalTarget(raw: string | null | undefined): { readonly target: st
       return null;
     }
   }
+  if (!hasValidRouteShape(scope, url.searchParams)) return null;
 
   return { target: `${url.pathname}${url.search}`, scope };
 }
