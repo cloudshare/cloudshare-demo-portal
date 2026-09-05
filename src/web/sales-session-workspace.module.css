@@ -9,6 +9,7 @@
 .summaryTitle { justify-content: space-between; margin-top: .75rem; }
 .summaryTitle h1, .panel h2, .detailGroup h3 { margin: 0; color: #172033; }
 .panel h2:focus { outline: none; }
+.panel h2:focus-visible { text-decoration: underline; text-decoration-thickness: .12rem; text-underline-offset: .2rem; }
 .summaryTitle h1 { font-size: clamp(1.4rem, 3vw, 2rem); }
 .eyebrow { margin: 0 0 .2rem; color: #52606d; font-size: .75rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .statusBadge { white-space: nowrap; }
