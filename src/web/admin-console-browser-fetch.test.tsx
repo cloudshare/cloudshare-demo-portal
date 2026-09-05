@@ -161,11 +161,14 @@ describe("AdminConsole browser request dispatch", () => {
     vi.stubGlobal("fetch", browserFetch);
     Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
     try {
-      const { rerender } = render(<AdminConsole email="admin@helioscx.demo" />);
+      const first = render(<AdminConsole email="admin@helioscx.demo" />);
       const content = await screen.findByRole("main");
       await waitFor(() => expect(content.querySelector("[data-route-focus]")).toBeTruthy());
-      rerender(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="diagnostics" />);
-      await waitFor(() => expect(document.activeElement).toBe(content.querySelector("[data-route-focus]")));
+      first.unmount();
+      const second = render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="diagnostics" />);
+      const nextContent = await screen.findByRole("main");
+      await waitFor(() => expect(document.activeElement).toBe(nextContent.querySelector("[data-route-focus]")));
+      second.unmount();
     } finally {
       vi.unstubAllGlobals();
       Object.defineProperty(window, "fetch", { configurable: true, value: originalWindowFetch, writable: true });
@@ -176,7 +179,7 @@ describe("AdminConsole browser request dispatch", () => {
     const originalWindowFetch = window.fetch;
     const browserFetch = vi.fn(function (this: unknown, input: RequestInfo | URL) {
       if (this !== window) throw new TypeError("Browser fetch must retain its Window receiver");
-      if (String(input) === "/api/admin/exams") return Promise.resolve(json({ activeExams: [], archivedExams: [] }));
+      if (String(input) === "/api/admin/exams") return Promise.resolve(json({ activeExams: [{ id: "exam-1", title: "Helios Foundations", description: "", timeLimitMinutes: 90, openPeriodMinutes: 120, scoreRetrievalEnabled: false, deliveryAvailability: "cohort", status: "published", publishedAt: null, projectId: "p", projectName: "Project", blueprintId: "b", blueprintName: "Blueprint", snapshotId: "s", snapshotName: "Snapshot", allowedRegions: [], policyId: "policy", policyName: "Policy", instructorName: "Instructor" }], archivedExams: [] }));
       if (String(input).includes("/cohort-sessions")) return Promise.resolve(json({ sessions: [] }));
       if (String(input).includes("/api/admin/monitoring")) return Promise.resolve(json({ monitoring: { attempts: [], historyPage: { entries: [], nextOffset: null } } }));
       return Promise.resolve(json({}));
@@ -184,11 +187,11 @@ describe("AdminConsole browser request dispatch", () => {
     vi.stubGlobal("fetch", browserFetch);
     Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
     try {
-      const first = render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="missing-exam" />);
-      expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("The requested Exam is no longer available in the current catalog."))).toBe(true);
+      const first = render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="exam-1" initialCohortSessionId="missing-session" />);
+      expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("The requested Cohort Exam Session is no longer available."))).toBe(true);
       first.unmount();
-      render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialDeliveryView="cohort" initialExamId="missing-exam" initialCohortSessionId="missing-session" />);
-      expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("The requested Exam is no longer available in the current catalog."))).toBe(true);
+      render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialDeliveryView="cohort" initialExamId="exam-1" initialCohortSessionId="missing-session" />);
+      expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("The requested Cohort Exam Session is no longer available."))).toBe(true);
       expect(screen.queryByText("No Cohort Exam Sessions match the current monitoring view.")).toBeNull();
     } finally {
       vi.unstubAllGlobals();
