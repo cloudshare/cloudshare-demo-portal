@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -152,6 +153,25 @@ describe("idle expiry on protected portal surfaces", () => {
     expect(router.refresh).not.toHaveBeenCalled();
   });
 
+  it("unmounts Candidate Lab after one action-time 401 without replay", async () => {
+    window.history.replaceState({}, "", "/candidate/lab?examAttemptId=attempt-1");
+    let statusCalls = 0;
+    const fetchSpy = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/exam/status")) { statusCalls += 1; return statusCalls > 1 ? json({ error: "Session expired" }, 401) : json({ examAttemptId: "attempt-1", examTitle: "Foundations", status: "ready", timeLimitMinutes: 60, scheduledFor: null, openPeriodEndsAt: null, openPeriodClosed: false }); }
+      if (url.includes("/api/exam/suspend")) return json({ error: "Session expired" }, 401);
+      if (url.includes("/api/heartbeat")) return json({});
+      return json({ session: { expiresAtMs: Date.now() + 60_000 }, serverNowMs: Date.now() });
+    });
+    render(<CandidateLabShell email="candidate@helioscx.demo" examAttemptId="attempt-1" initialAttemptStatus="in_progress" />);
+    await screen.findByRole("button", { name: "Enter exam" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Enter exam" }));
+    await act(async () => await Promise.resolve());
+    expect(statusCalls).toBe(2);
+    expect(router.replace).toHaveBeenCalledWith("/login");
+    expect(screen.queryByText("Candidate lab")).toBeNull();
+  });
+
   it("removes an idle Candidate Score nested surface", async () => {
     window.history.replaceState({}, "", "/candidate/score?examAttemptId=attempt-1");
     render(<ScoreDisplay email="candidate@helioscx.demo" examAttemptId="attempt-1" />);
@@ -175,3 +195,4 @@ describe("idle expiry on protected portal surfaces", () => {
     expect(router.refresh).not.toHaveBeenCalled();
   });
 });
+
