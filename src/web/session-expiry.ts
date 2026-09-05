@@ -104,8 +104,14 @@ export function startPortalSessionWatchdog({
   clearIntervalFn = clearInterval,
   setTimeoutFn = setTimeout,
   clearTimeoutFn = clearTimeout,
-  addEventListenerFn = (type, listener) => { if (typeof window !== "undefined") window.addEventListener(type, listener); },
-  removeEventListenerFn = (type, listener) => { if (typeof window !== "undefined") window.removeEventListener(type, listener); },
+  addEventListenerFn = (type, listener) => {
+    if (type === "visibilitychange" && typeof document !== "undefined") document.addEventListener(type, listener);
+    else if (typeof window !== "undefined") window.addEventListener(type, listener);
+  },
+  removeEventListenerFn = (type, listener) => {
+    if (type === "visibilitychange" && typeof document !== "undefined") document.removeEventListener(type, listener);
+    else if (typeof window !== "undefined") window.removeEventListener(type, listener);
+  },
   isDocumentVisible = () => typeof document === "undefined" || document.visibilityState !== "hidden",
 }: PortalSessionWatchdogOptions): {
   readonly checkNow: () => Promise<void>;
