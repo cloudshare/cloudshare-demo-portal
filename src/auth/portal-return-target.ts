@@ -18,7 +18,7 @@ const ALLOWED_QUERY_VALUES: Readonly<Record<PortalReturnScope, Readonly<Record<s
     sort: ["start_desc", "start_asc", "name_asc"],
     offset: "integer",
   },
-  candidate: {},
+  candidate: { task: ["current", "schedule", "history"], attemptId: [], examId: [] },
   sales_trial: {},
 };
 
@@ -41,7 +41,19 @@ function hasValidRouteShape(scope: PortalReturnScope, searchParams: URLSearchPar
   const view = searchParams.get("view");
   const delivery = searchParams.get("delivery");
 
-  if (scope === "candidate" || scope === "sales_trial") return searchParams.size === 0;
+  if (scope === "candidate") {
+    const task = searchParams.get("task");
+    if (!task || !["current", "schedule", "history"].includes(task)) return searchParams.size === 0;
+    if (!hasOnlyQueryKeys(searchParams, ["task", "attemptId", "examId"])) return false;
+    for (const key of ["attemptId", "examId"]) {
+      const value = searchParams.get(key);
+      if (value !== null && !/^[A-Za-z0-9_-]+$/.test(value)) return false;
+    }
+    if (task === "schedule" && searchParams.has("attemptId")) return false;
+    if (task !== "schedule" && searchParams.has("examId") && !searchParams.has("attemptId")) return false;
+    return true;
+  }
+  if (scope === "sales_trial") return searchParams.size === 0;
   if (!tab) return searchParams.size === 0;
 
   if (scope === "certification_admin") {
@@ -93,7 +105,8 @@ function safePortalTarget(raw: string | null | undefined): { readonly target: st
   const seenKeys = new Set<string>();
   for (const [key, value] of url.searchParams) {
     const rule = allowed[key];
-    if (seenKeys.has(key) || !rule || (rule === "integer" ? !/^(0|[1-9]\d*)$/.test(value) : !rule.includes(value))) {
+    const candidateIdentifier = scope === "candidate" && (key === "attemptId" || key === "examId");
+    if (seenKeys.has(key) || !rule || (candidateIdentifier ? !/^[A-Za-z0-9_-]+$/.test(value) : (rule === "integer" ? !/^(0|[1-9]\d*)$/.test(value) : !rule.includes(value)))) {
       return null;
     }
     seenKeys.add(key);

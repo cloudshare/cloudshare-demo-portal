@@ -253,6 +253,7 @@ export function CandidateLabShell({
           onLabStatusLoaded={(status) =>
             setLabStatus((current) => updateCandidateLabStatus(current, status))
           }
+          onSessionExpired={handleSessionExpired}
         />
       ) : null}
     </main>
