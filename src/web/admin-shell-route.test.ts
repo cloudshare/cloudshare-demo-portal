@@ -52,6 +52,21 @@ describe("admin shell navigation intents", () => {
     expect(parseAdminConsoleRouteState({ tab: "support", returnFocus: "session-1", delivery: "cohort" }))
       .toMatchObject({ supportView: "monitoring", returnFocusSessionId: "session-1", deliveryView: "cohort" });
   });
+
+  it.each([
+    { tab: "support", delivery: "cohort", examId: "exam-1" },
+    { tab: "support", delivery: "cohort", sessionId: "session-1" },
+  ])("recovers an incomplete Support Monitoring target to the Cohort queue", (input) => {
+    const route = parseAdminConsoleRouteState(input);
+    expect(route).toMatchObject({
+      tab: "support",
+      supportView: "monitoring",
+      deliveryView: "cohort",
+      routeNotice: "That monitoring destination is incomplete. The current Cohort Session queue is shown instead.",
+    });
+    expect(route).not.toHaveProperty("examId");
+    expect(route).not.toHaveProperty("cohortSessionId");
+  });
 });
 
 describe("admin shell tab and URL model", () => {

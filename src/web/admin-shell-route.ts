@@ -251,7 +251,11 @@ export function parseAdminConsoleRouteState(input: {
   const examView = tab === "exams" ? parseAdminExamView(input.view) : "catalog";
   const examId = tab === "exams" || tab === "support" ? readRouteValue(input.examId) : undefined;
   const cohortSessionId = tab === "exams" || tab === "support" ? readRouteValue(input.sessionId) : undefined;
-  const focusedMonitoring = tab === "support" && supportView === "monitoring" && Boolean(examId && cohortSessionId);
+  const incompleteMonitoringTarget = tab === "support" && supportView === "monitoring"
+    && Boolean(examId) !== Boolean(cohortSessionId);
+  const routeExamId = incompleteMonitoringTarget ? undefined : examId;
+  const routeCohortSessionId = incompleteMonitoringTarget ? undefined : cohortSessionId;
+  const focusedMonitoring = tab === "support" && supportView === "monitoring" && Boolean(routeExamId && routeCohortSessionId);
   const deliveryCandidate = readRouteValue(input.delivery);
   const parsedDeliveryView = parseAdminDeliveryView(input.delivery);
   const deliveryView = tab === "exams"
@@ -261,9 +265,11 @@ export function parseAdminConsoleRouteState(input: {
     : tab === "support" && supportView === "monitoring" ? focusedMonitoring ? "cohort" : parsedDeliveryView : null;
   const acceptsDeliveryRoute = (tab === "exams" && examView === "catalog")
     || (tab === "support" && supportView === "monitoring");
-  const routeNotice = deliveryCandidate && acceptsDeliveryRoute && !deliveryView
-    ? "That delivery destination is no longer available. A safe current view is shown instead."
-    : undefined;
+  const routeNotice = incompleteMonitoringTarget
+    ? "That monitoring destination is incomplete. The current Cohort Session queue is shown instead."
+    : deliveryCandidate && acceptsDeliveryRoute && !deliveryView
+      ? "That delivery destination is no longer available. A safe current view is shown instead."
+      : undefined;
   const returnFocusSessionId = (tab === "exams" && (examView === "session" || examView === "sessions"))
     || (tab === "support" && supportView === "monitoring")
     ? readRouteValue(input.returnFocus) : undefined;
@@ -271,8 +277,8 @@ export function parseAdminConsoleRouteState(input: {
     return {
       tab,
       examView,
-      ...(examId ? { examId } : {}),
-      ...(cohortSessionId ? { cohortSessionId } : {}),
+      ...(routeExamId ? { examId: routeExamId } : {}),
+      ...(routeCohortSessionId ? { cohortSessionId: routeCohortSessionId } : {}),
       ...(returnFocusSessionId ? { returnFocusSessionId } : {}),
       supportView,
       deliveryView,
