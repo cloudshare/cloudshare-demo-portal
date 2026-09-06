@@ -415,7 +415,7 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1);
   });
 
-  it("does not repeat a completed focused list read when the catalog response arrives later", async () => {
+  it("defers the focused list read until the catalog confirms its Exam and reads it once", async () => {
     let resolveCatalog: ((response: Response) => void) | undefined;
     const catalogResponse = new Promise<Response>((resolve) => { resolveCatalog = resolve; });
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -431,10 +431,11 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialExamId="exam-1" initialCohortSessionId="cohort-session-1" />);
 
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/admin/exams", undefined));
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(0);
     await act(async () => resolveCatalog?.(json({ activeExams: [exam], archivedExams: [] })));
     expect(await screen.findByText("Cohort Exam Session monitoring")).toBeTruthy();
-    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1);
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1));
   });
 });
 
@@ -533,6 +534,37 @@ describe("AdminCohortExamSessionsFeature seam", () => {
     expect(await screen.findByText("This route target is no longer available.")).toBeTruthy();
     expect((await screen.findByRole("alert")).textContent).toContain("The requested Cohort Exam Session is no longer available.");
     expect(screen.queryByText("Failed to load Cohort Exam Session detail")).toBeNull();
+  });
+
+  it("does not request Sessions for a deleted Exam deep link", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [], archivedExams: [] });
+      throw new Error(`Unexpected child fetch: ${url}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="session" focusedExamId="missing-exam" focusedCohortSessionId="missing-session" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect(await screen.findByText("This route target is no longer available.")).toBeTruthy();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(fetchAdmin).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores focus to the Session control that opened a detail route", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return json({ sessions: [session] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const onNavigate = vi.fn();
+    const view = render(<AdminCohortExamSessionsFeature active examView="sessions" focusedExamId="exam-1" focusedCohortSessionId={null} supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+    const origin = await screen.findByRole("button", { name: "View session details" });
+    await userEvent.click(origin);
+    view.rerender(<AdminCohortExamSessionsFeature active examView="session" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Back to Cohort Sessions" }));
+    view.rerender(<AdminCohortExamSessionsFeature active examView="sessions" focusedExamId="exam-1" focusedCohortSessionId={null} supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "View session details" })));
   });
 
   it("keeps a failed Session list actionable without claiming the Session was deleted", async () => {
