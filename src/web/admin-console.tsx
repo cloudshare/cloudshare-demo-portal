@@ -22,7 +22,6 @@ import { AdminExamWorkspaceFeature } from "./admin-exam-workspace-feature";
 import { startPortalSessionWatchdog } from "./session-expiry";
 import { pageShellStyle } from "./page-shell";
 import { mutedPanelStyle } from "./card-styles";
-import { accountLogoutButtonStyle, disabledButtonStyle } from "./button-styles";
 import { colors } from "./design-tokens";
 import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
 import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
@@ -105,20 +104,20 @@ export function AdminConsole({
 
   if (sessionExpired) return <main aria-live="polite" style={pageShellStyle}>Continuing to sign in…</main>;
 
-  return <main className={styles.adminShell}>
+  return <div className={styles.adminShell}>
     <aside className={styles.adminSidebar} aria-label="Helios Admin workspace navigation">
       <div className={styles.adminBrand}><span className={styles.adminBrandMark} aria-hidden="true">H</span><div><strong>Certalis</strong><small>Helios Certification</small></div></div>
       <nav aria-label="Helios Admin certification navigation" className={styles.adminNavigation}><ul className={styles.adminNavigationList}>{ADMIN_NAVIGATION_ITEMS.map((item) => {
       const active = item.intent.tab === tab && (item.intent.supportView ?? "monitoring") === supportView && (item.key === "monitoring" || (item.intent.deliveryView ?? null) === deliveryView) && (item.intent.tab !== "exams" || examView === "catalog");
       return <li key={item.key}><Link href={buildAdminNavigationHref(item.intent)} aria-current={active ? "page" : undefined} className={styles.adminNavigationLink}>{item.label}</Link></li>;
-    })}</ul></nav><div className={styles.adminNavSpacer} /><div className={styles.adminAccount}><span className={styles.adminAccountMark} aria-hidden="true">HA</span><div><strong>Helios Admin</strong><small>{email}</small></div><button {...extensionHydrationProps} onClick={logout} disabled={loggingOut} className={styles.adminLogout}>Log out</button></div>
-    </aside><div className={`${styles.adminMain} ${styles.adminWorkspace}`}><header className={styles.adminTopbar}><div><strong>Certalis Admin Console</strong><span>Helios Certification workspace</span></div></header><section ref={routeFocusRef} tabIndex={-1} data-route-focus aria-label="Current Helios Admin workspace" className={styles.adminContent}>
+    })}</ul></nav><div className={styles.adminNavSpacer} /><div className={styles.adminAccount}><span className={styles.adminAccountMark} aria-hidden="true">HA</span><div className={styles.adminAccountIdentity}><strong>Helios Admin</strong><small>{email}</small></div><button {...extensionHydrationProps} onClick={logout} disabled={loggingOut} className={styles.adminLogout}>Log out</button></div>
+    </aside><div className={`${styles.adminMain} ${styles.adminWorkspace}`}><header className={styles.adminTopbar}><div><strong>Certalis Admin Console</strong><span>Helios Certification workspace</span></div></header><main className={styles.adminContent}><section ref={routeFocusRef} tabIndex={-1} data-route-focus aria-label="Current Helios Admin workspace"><h1 className={styles.adminPageTitle}>Helios Certification Admin</h1>
     {initialRouteNotice ? <div role="alert" style={{ ...mutedPanelStyle, marginBottom: "1rem", borderColor: colors.warning }}>{initialRouteNotice}</div> : null}
     <AdminCandidateRosterFeature active={tab === "candidates"} fetchAdmin={fetchAdmin} />
     <CloudShareConnectionFeature active={tab === "configuration"} fetchAdmin={fetchAdmin} getNavigationHref={getNavigationHref} onNavigate={navigateAdmin} />
     <React.Fragment key="support-workflow-navigation">{tab === "support" ? <section style={{ display: "grid", gap: "1rem" }}><div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><strong>Support workflows</strong><div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>{(["monitoring", "diagnostics", "audit"] as const).map((view) => <button {...extensionHydrationProps} key={view} type="button" aria-current={supportView === view ? "page" : undefined} onClick={() => navigateAdmin({ tab: "support", supportView: view })} style={{ padding: "0.5rem 0.8rem", border: `1px solid ${supportView === view ? colors.textPrimary : colors.border}`, borderRadius: "8px", background: supportView === view ? colors.textPrimary : "#ffffff", color: supportView === view ? "#ffffff" : colors.textPrimary, fontWeight: 600 }}>{getAdminSupportViewLabel(view)}</button>)}</div></div></section> : null}</React.Fragment>
     <AdminExamWorkspaceFeature key="exam-workspace" active={tab === "exams" || (tab === "support" && supportView === "monitoring")} examFeatureActive={tab === "exams"} examView={examView} focusedExamId={focusedExamId} focusedCohortSessionId={focusedCohortSessionId} supportMonitoringActive={tab === "support" && supportView === "monitoring"} deliveryView={deliveryView} fetchAdmin={fetchAdmin} onNavigate={navigateAdmin} getNavigationHref={getNavigationHref} />
     <AdminSupportFeature active={tab === "support" && supportView !== "monitoring"} view={supportView} diagnosticFilters={diagnosticFilters} fetchAdmin={fetchAdmin} onNavigate={navigateAdmin} />
-    </section></div>
-  </main>;
+    </section></main></div>
+  </div>;
 }

@@ -1,6 +1,7 @@
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { AdminConsole } from "./admin-console";
 import {
   CohortSessionDraftOnlyNotice,
@@ -116,6 +117,17 @@ describe("AdminConsole", () => {
     expect(html).toContain('href="/admin?tab=exams&amp;delivery=cohort"');
     expect(html).toContain('href="/admin?tab=support&amp;view=diagnostics"');
     expect(html).toContain('href="/admin?tab=support&amp;view=audit"');
+  });
+
+  it("keeps the Helios shell responsive and keyboard-visible", () => {
+    const css = readFileSync(new URL("./admin-console.module.css", import.meta.url), "utf8");
+    expect(css.indexOf(".adminSidebar {")).toBeLessThan(css.indexOf("@media (max-width:760px)"));
+    expect(css).toContain("position:sticky");
+    expect(css).toContain("height:100vh");
+    expect(css).toContain(".adminLogout:hover,.adminLogout:focus-visible");
+    expect(css).toContain("outline:3px solid #c8fff0");
+    expect(css).toContain(".adminContent { min-width:0; padding:");
+    expect(css).toContain(".adminLogout { width:auto; min-width:7rem; }");
   });
 
   it("renders delivery destinations as scoped workflow landings instead of cosmetic catalog aliases", () => {
