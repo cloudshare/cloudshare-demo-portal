@@ -22,6 +22,7 @@ export interface AdminExamWorkspaceFeatureProps {
   readonly fetchAdmin: AdminAuthenticatedRequest;
   readonly onNavigate: (intent: AdminNavigationIntent) => void;
   readonly getNavigationHref: (intent: AdminNavigationIntent) => string;
+  readonly onReturnFocusResolved?: (restored: boolean) => void;
 }
 
 /** Composes sibling Exam Catalog and Cohort Exam Session features without expanding the shell. */
@@ -67,6 +68,7 @@ export function AdminExamWorkspaceFeature(props: AdminExamWorkspaceFeatureProps)
       onNavigate={props.onNavigate}
       getNavigationHref={props.getNavigationHref}
       onCohortActivityChange={updateCohortActivity}
+      onReturnFocusResolved={props.onReturnFocusResolved}
       catalog={catalog}
     />
     <AdminSessionMonitoringFeature active={props.supportMonitoringActive} visible={individualMonitoringVisible} fetchAdmin={props.fetchAdmin} onNavigate={props.onNavigate} />

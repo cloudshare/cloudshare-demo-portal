@@ -79,6 +79,9 @@ export function AdminConsole({
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
   const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: handleAdminSessionExpired }), [browserFetch, handleAdminSessionExpired]);
   const getNavigationHref = useCallback((intent: AdminNavigationIntent) => buildAdminNavigationHref(intent), []);
+  const handleReturnFocusResolved = useCallback((restored: boolean) => {
+    if (!restored) routeFocusRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (sessionExpired) return;
@@ -144,7 +147,7 @@ export function AdminConsole({
     <AdminCandidateRosterFeature active={tab === "candidates"} fetchAdmin={fetchAdmin} />
     <CloudShareConnectionFeature active={tab === "configuration"} fetchAdmin={fetchAdmin} getNavigationHref={getNavigationHref} onNavigate={navigateAdmin} />
     <React.Fragment key="support-workflow-navigation">{tab === "support" ? <section style={{ display: "grid", gap: "1rem" }}><div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><strong>Support workflows</strong><div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>{(["monitoring", "diagnostics", "audit"] as const).map((view) => <button {...extensionHydrationProps} key={view} type="button" aria-current={supportView === view ? "page" : undefined} onClick={() => navigateAdmin({ tab: "support", supportView: view })} style={{ padding: "0.5rem 0.8rem", border: `1px solid ${supportView === view ? colors.textPrimary : colors.border}`, borderRadius: "8px", background: supportView === view ? colors.textPrimary : "#ffffff", color: supportView === view ? "#ffffff" : colors.textPrimary, fontWeight: 600 }}>{getAdminSupportViewLabel(view)}</button>)}</div></div></section> : null}</React.Fragment>
-    <AdminExamWorkspaceFeature key="exam-workspace" active={tab === "exams" || (tab === "support" && supportView === "monitoring")} examFeatureActive={tab === "exams"} examView={examView} focusedExamId={focusedExamId} focusedCohortSessionId={focusedCohortSessionId} returnFocusSessionId={returnFocusSessionId} supportMonitoringActive={tab === "support" && supportView === "monitoring"} deliveryView={deliveryView} fetchAdmin={fetchAdmin} onNavigate={navigateAdmin} getNavigationHref={getNavigationHref} />
+    <AdminExamWorkspaceFeature key="exam-workspace" active={tab === "exams" || (tab === "support" && supportView === "monitoring")} examFeatureActive={tab === "exams"} examView={examView} focusedExamId={focusedExamId} focusedCohortSessionId={focusedCohortSessionId} returnFocusSessionId={returnFocusSessionId} supportMonitoringActive={tab === "support" && supportView === "monitoring"} deliveryView={deliveryView} fetchAdmin={fetchAdmin} onNavigate={navigateAdmin} getNavigationHref={getNavigationHref} onReturnFocusResolved={handleReturnFocusResolved} />
     <AdminSupportFeature active={tab === "support" && supportView !== "monitoring"} view={supportView} diagnosticFilters={diagnosticFilters} fetchAdmin={fetchAdmin} onNavigate={navigateAdmin} />
     </section></main></div>
   </div>;

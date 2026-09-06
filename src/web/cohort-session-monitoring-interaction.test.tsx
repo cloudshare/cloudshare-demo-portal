@@ -370,6 +370,14 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "View session details" })));
   });
 
+  it("falls back to workspace focus when a remounted queue no longer has its Session origin", async () => {
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="exam-1" initialReturnFocusSessionId="missing-session" initialDeliveryView="cohort" />);
+
+    const workspace = document.querySelector<HTMLElement>("[data-route-focus]");
+    await waitFor(() => expect(document.activeElement).toBe(workspace));
+  });
+
   it("navigates Catalog to Support detail and then scoped diagnostics through the real AdminConsole handlers", async () => {
     const user = userEvent.setup();
     const fetchMock = installAdminConsoleFetchMock();

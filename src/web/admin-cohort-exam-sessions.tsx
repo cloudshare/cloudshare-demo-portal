@@ -1218,6 +1218,7 @@ export interface AdminCohortExamSessionsFeatureProps {
   readonly onNavigate: (intent: AdminNavigationIntent) => void;
   readonly getNavigationHref: (intent: AdminNavigationIntent) => string;
   readonly onCohortActivityChange: (activity: Record<string, boolean>) => void;
+  readonly onReturnFocusResolved?: (restored: boolean) => void;
   readonly catalog: { readonly activeExams: readonly ExamRecord[]; readonly archivedExams: readonly ExamRecord[] } | null;
 }
 
@@ -1227,13 +1228,14 @@ export interface AdminCohortExamSessionsFeatureProps {
  * authenticated-request adapters; all Cohort data and lifecycle state is local.
  */
 export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFeatureProps) {
-  const { catalog, onCohortActivityChange } = props;
+  const { catalog, onCohortActivityChange, onReturnFocusResolved } = props;
   const [activeExams, setActiveExams] = useState<ExamRecord[]>([]);
   const [archivedExams, setArchivedExams] = useState<ExamRecord[]>([]);
   const [sessionsByExamId, setSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
   const [sessionsLoadedByExamId, setSessionsLoadedByExamId] = useState<Record<string, boolean>>({});
   const sessionsCacheRef = useRef<Record<string, CohortExamSessionRecord[]>>({});
   const sessionLoadsRef = useRef(new Map<string, Promise<void>>());
+  const [sessionLoadAttemptedByExamId, setSessionLoadAttemptedByExamId] = useState<Record<string, boolean>>({});
   const [formsByExamId, setFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
   const [selectedSession, setSelectedSession] = useState<CohortExamSessionRecord | null>(null);
   const [monitoringDetail, setMonitoringDetail] = useState<CohortExamSessionMonitoringView | null>(null);
@@ -1242,6 +1244,7 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
   const [monitoringLastCheckedAt, setMonitoringLastCheckedAt] = useState<string | null>(null);
   const focusedKeyRef = useRef<string | null>(null);
   const featureRef = useRef<HTMLElement>(null);
+  const resolvedReturnFocusRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
@@ -1265,13 +1268,15 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
   }, [onCohortActivityChange, sessionsByExamId]);
 
   useEffect(() => {
-    if (props.examView !== "sessions" || !props.returnFocusSessionId) return;
+    if (props.examView !== "sessions" || !props.returnFocusSessionId || resolvedReturnFocusRef.current === props.returnFocusSessionId) return;
+    if (!props.focusedExamId || !sessionLoadAttemptedByExamId[props.focusedExamId]) return;
     const sessionId = props.returnFocusSessionId;
     const origin = [...(featureRef.current?.querySelectorAll<HTMLElement>("[data-session-origin]") ?? [])]
       .find((element) => element.dataset.sessionOrigin === sessionId);
-    if (!origin) return;
-    origin.focus();
-  }, [props.examView, props.returnFocusSessionId, sessionsByExamId]);
+    resolvedReturnFocusRef.current = sessionId;
+    if (origin) origin.focus();
+    onReturnFocusResolved?.(Boolean(origin));
+  }, [onReturnFocusResolved, props.examView, props.focusedExamId, props.returnFocusSessionId, sessionLoadAttemptedByExamId, sessionsByExamId]);
 
   useEffect(() => {
     if (!catalog) return;
@@ -1296,7 +1301,10 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
         setSessionsLoadedByExamId((current) => ({ ...current, [examId]: true }));
       } catch (caught) {
         if (!isAdminSessionExpiredError(caught)) setError("Failed to load Cohort Exam Sessions");
-      } finally { sessionLoadsRef.current.delete(examId); }
+      } finally {
+        setSessionLoadAttemptedByExamId((current) => ({ ...current, [examId]: true }));
+        sessionLoadsRef.current.delete(examId);
+      }
     })();
     sessionLoadsRef.current.set(examId, request);
     return request;
