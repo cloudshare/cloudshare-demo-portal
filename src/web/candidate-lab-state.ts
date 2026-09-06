@@ -44,6 +44,13 @@ export function formatCandidateAttemptStatus(
   }
 }
 
+export function isCandidateLabHistoryPresentation(
+  status: CandidateDashboardData["attempts"][number]["status"],
+  openPeriodClosed = false,
+): boolean {
+  return status === "completed" || status === "expired" || (openPeriodClosed && (status === "in_progress" || status === "suspended"));
+}
+
 export function getCandidateLabPresentation(input: {
   readonly status: CandidateDashboardData["attempts"][number]["status"];
   readonly examAttemptId: string;
@@ -67,7 +74,7 @@ export function getCandidateLabPresentation(input: {
     showSuspend: !openPeriodClosed && input.status === "in_progress",
     showResume: !openPeriodClosed && input.status === "suspended",
     showCandidateHomeLink: true,
-    showScoreLink: input.status === "completed" || (openPeriodClosed && (input.status === "in_progress" || input.status === "suspended")),
+    showScoreLink: isCandidateLabHistoryPresentation(input.status, openPeriodClosed),
     supportDetail: `Exam attempt: ${input.examAttemptId}`,
     scheduledForLabel,
     timeLimitLabel,

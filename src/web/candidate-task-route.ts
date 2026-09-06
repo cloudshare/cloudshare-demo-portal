@@ -4,6 +4,7 @@ import {
 } from "./candidate-home-state";
 import type { CandidateDashboardData } from "./candidate-scheduling";
 import { isValidCandidateRouteShape } from "./candidate-route-shape";
+import { isCandidateLabHistoryPresentation } from "./candidate-lab-state";
 
 export type CandidateTaskView = "current" | "schedule" | "history";
 type CandidateAttemptStatus = CandidateDashboardData["attempts"][number]["status"];
@@ -241,7 +242,7 @@ export function getCandidateTaskForAttemptStatus(
   status: CandidateAttemptStatus,
   openPeriodClosed = false,
 ): CandidateTaskView {
-  return status === "completed" || status === "expired" || (openPeriodClosed && (status === "in_progress" || status === "suspended")) ? "history" : "current";
+  return isCandidateLabHistoryPresentation(status, openPeriodClosed) ? "history" : "current";
 }
 
 function buildFallbackTaskResult(
