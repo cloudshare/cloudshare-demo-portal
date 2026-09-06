@@ -665,6 +665,22 @@ describe("AdminCohortExamSessionsFeature seam", () => {
     expect(screen.queryByText("This route target is no longer available.")).toBeNull();
   });
 
+  it("does not read or poll focused monitoring detail until the Session list validates the target", async () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="catalog" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" supportMonitoringActive fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("temporary failure");
+    expect(fetchAdmin).toHaveBeenCalledTimes(2);
+    expect(setIntervalSpy.mock.calls.some(([, delay]) => delay === 30_000)).toBe(false);
+    setIntervalSpy.mockRestore();
+  });
+
   it("keeps a failed focused Cohort refresh dismissible", async () => {
     const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

@@ -1419,8 +1419,11 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
     if (props.supportMonitoringActive && props.focusedExamId && props.focusedCohortSessionId) {
       void loadCatalog(false).then((exams) => {
         if (!exams?.some((exam) => exam.id === props.focusedExamId)) return;
-        void ensureSessions(props.focusedExamId!);
-        void loadMonitoringDetail(props.focusedExamId!, props.focusedCohortSessionId!);
+        void ensureSessions(props.focusedExamId!).then(() => {
+          const targetValidated = sessionsCacheRef.current[props.focusedExamId!]
+            ?.some((session) => session.session.id === props.focusedCohortSessionId);
+          if (targetValidated) void loadMonitoringDetail(props.focusedExamId!, props.focusedCohortSessionId!);
+        });
       });
     }
     if (props.supportMonitoringActive && !props.focusedExamId && !props.focusedCohortSessionId) void loadCatalog(true);
@@ -1430,11 +1433,11 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
 
   useEffect(() => {
     if (!props.active || !props.supportMonitoringActive || !props.focusedExamId || !props.focusedCohortSessionId) return;
-    if (!catalogLoaded || !focusedExam || focusedKey === monitoringDetailMissingKey) return;
+    if (!catalogLoaded || !focusedExam || !sessionsLoadedByExamId[props.focusedExamId] || !focusedSession || focusedKey === monitoringDetailMissingKey) return;
     const interval = window.setInterval(() => void loadMonitoringDetail(props.focusedExamId!, props.focusedCohortSessionId!), 30_000);
     return () => window.clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalogLoaded, focusedExam, focusedKey, monitoringDetailMissingKey, props.active, props.supportMonitoringActive, props.focusedExamId, props.focusedCohortSessionId]);
+  }, [catalogLoaded, focusedExam, focusedKey, focusedSession, monitoringDetailMissingKey, props.active, props.supportMonitoringActive, props.focusedExamId, props.focusedCohortSessionId, sessionsLoadedByExamId]);
 
   if (!props.active) return null;
   const hasFocusedMonitoring = props.supportMonitoringActive && focusedSession && focusedExam;
