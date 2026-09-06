@@ -7,8 +7,6 @@ import {
 } from "./candidate-scheduling";
 import {
   COLD_START_WARNING_MESSAGE,
-  type CandidateAttemptStatusFilter,
-  type CandidateAttemptStatusFilterView,
   getNextEnterabilityWakeUpDelayMs,
   getAttemptPrimaryAction,
 } from "./candidate-home-state";
@@ -58,40 +56,6 @@ type ScheduleFeedback = {
   readonly kind: "error" | "warning";
   readonly message: string;
 };
-
-export function CandidateAttemptStatusFilterButtons({
-  filters,
-  activeFilter,
-  onFilterChange,
-}: {
-  readonly filters: CandidateAttemptStatusFilterView[];
-  readonly activeFilter: CandidateAttemptStatusFilter;
-  readonly onFilterChange: (filter: CandidateAttemptStatusFilter) => void;
-}) {
-  return (
-    <div aria-label="Exam attempt status filters" style={attemptFilterStripStyle}>
-      {filters.map((filter) => {
-        const selected = filter.filter === activeFilter;
-        return (
-          <button
-            key={filter.filter}
-            type="button"
-            aria-pressed={selected}
-            onClick={() => onFilterChange(filter.filter)}
-            style={{
-              ...attemptFilterButtonStyle,
-              ...(selected ? selectedAttemptFilterButtonStyle : null),
-            }}
-          >
-            <span style={attemptFilterLabelStyle}>{filter.label}</span>
-            <span style={attemptFilterCountStyle}>{filter.count}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 
 export function CandidateHome({ email, initialRoute = { task: "current", attemptId: null, examId: null } }: CandidateHomeProps) {
   const router = useRouter();
@@ -859,45 +823,6 @@ const taskTabCountStyle: CSSProperties = {
   lineHeight: 1.1,
 };
 
-const attemptFilterStripStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "0.75rem",
-  marginBottom: "1rem",
-};
-
-const attemptFilterButtonStyle: CSSProperties = {
-  ...cardStyle,
-  border: "1px solid #cbd5e1",
-  display: "grid",
-  gap: "0.2rem",
-  minWidth: "118px",
-  flex: "1 1 118px",
-  padding: "0.7rem 0.8rem",
-  textAlign: "left",
-  cursor: "pointer",
-  background: "#ffffff",
-};
-
-const selectedAttemptFilterButtonStyle: CSSProperties = {
-  border: "1px solid #2563eb",
-  background: "#eff6ff",
-  boxShadow: "inset 0 0 0 1px #bfdbfe",
-};
-
-const attemptFilterLabelStyle: CSSProperties = {
-  color: "#475569",
-  fontSize: "0.8rem",
-  fontWeight: 600,
-};
-
-const attemptFilterCountStyle: CSSProperties = {
-  color: "#0f172a",
-  fontSize: "1.35rem",
-  fontWeight: 700,
-  lineHeight: 1.1,
-};
-
 const attemptQueueSectionStyle: CSSProperties = {
   ...cardStyle,
   display: "grid",
@@ -1056,13 +981,6 @@ function getAttemptScheduleAvailabilityFallback(
   status: CandidateDashboardData["attempts"][number]["status"],
 ): string {
   return status === "completed" || status === "expired" ? "No scheduling hold" : "TBD";
-}
-
-function getCandidateAttemptQueueEmptyMessage(filter: CandidateAttemptStatusFilter): string {
-  if (filter === "live") {
-    return "No live attempts. Use Completed or Expired to inspect attempt history.";
-  }
-  return `No ${filter.replaceAll("_", " ")} attempts.`;
 }
 
 function getButtonStyle(baseStyle: CSSProperties, disabled: boolean): CSSProperties {
