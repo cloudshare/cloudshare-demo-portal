@@ -35,6 +35,7 @@ interface AdminConsoleProps {
   readonly initialExamView?: AdminExamView;
   readonly initialExamId?: string;
   readonly initialCohortSessionId?: string;
+  readonly initialReturnFocusSessionId?: string;
   readonly initialSupportView?: AdminSupportView;
   readonly initialDeliveryView?: AdminDeliveryView | null;
   readonly initialDiagnosticFilters?: DiagnosticLogFilters;
@@ -47,6 +48,7 @@ export function AdminConsole({
   initialExamView = "catalog",
   initialExamId,
   initialCohortSessionId,
+  initialReturnFocusSessionId,
   initialSupportView = "monitoring",
   initialDeliveryView = null,
   initialDiagnosticFilters = {},
@@ -57,6 +59,7 @@ export function AdminConsole({
   const [examView, setExamView] = useState<AdminExamView>(initialExamView);
   const [focusedExamId, setFocusedExamId] = useState<string | null>(initialExamId ?? null);
   const [focusedCohortSessionId, setFocusedCohortSessionId] = useState<string | null>(initialCohortSessionId ?? null);
+  const [returnFocusSessionId, setReturnFocusSessionId] = useState<string | null>(initialReturnFocusSessionId ?? null);
   const [supportView, setSupportView] = useState<AdminSupportView>(initialSupportView);
   const [supportNavigationOpen, setSupportNavigationOpen] = useState(initialTab === "support");
   const [deliveryView, setDeliveryView] = useState<AdminDeliveryView | null>(initialDeliveryView);
@@ -95,13 +98,14 @@ export function AdminConsole({
     const nextDeliveryView = next.deliveryView !== undefined
       ? next.deliveryView
       : currentRouteAcceptsDelivery && nextRouteAcceptsDelivery ? deliveryView : null;
-    router.push(buildAdminNavigationHref({ tab: next.tab, examView: nextExamView, examId: next.examId, cohortSessionId: next.cohortSessionId, supportView: nextSupportView, deliveryView: nextDeliveryView, diagnosticFilters: nextDiagnosticFilters }));
-    setTab(next.tab); setExamView(nextExamView); setFocusedExamId(next.examId ?? null); setFocusedCohortSessionId(next.cohortSessionId ?? null); setSupportView(nextSupportView); setDeliveryView(nextDeliveryView); setDiagnosticFilters(nextDiagnosticFilters);
+    router.push(buildAdminNavigationHref({ tab: next.tab, examView: nextExamView, examId: next.examId, cohortSessionId: next.cohortSessionId, returnFocusSessionId: next.returnFocusSessionId, supportView: nextSupportView, deliveryView: nextDeliveryView, diagnosticFilters: nextDiagnosticFilters }));
+    setTab(next.tab); setExamView(nextExamView); setFocusedExamId(next.examId ?? null); setFocusedCohortSessionId(next.cohortSessionId ?? null); setReturnFocusSessionId(next.returnFocusSessionId ?? null); setSupportView(nextSupportView); setDeliveryView(nextDeliveryView); setDiagnosticFilters(nextDiagnosticFilters);
   }
 
   useEffect(() => {
+    if (tab === "exams" && examView === "sessions" && returnFocusSessionId) return;
     routeFocusRef.current?.focus();
-  }, [tab, examView, focusedExamId, focusedCohortSessionId, supportView, deliveryView]);
+  }, [tab, examView, focusedExamId, focusedCohortSessionId, returnFocusSessionId, supportView, deliveryView]);
 
   useEffect(() => {
     if (tab === "support") setSupportNavigationOpen(true);
@@ -140,7 +144,7 @@ export function AdminConsole({
     <AdminCandidateRosterFeature active={tab === "candidates"} fetchAdmin={fetchAdmin} />
     <CloudShareConnectionFeature active={tab === "configuration"} fetchAdmin={fetchAdmin} getNavigationHref={getNavigationHref} onNavigate={navigateAdmin} />
     <React.Fragment key="support-workflow-navigation">{tab === "support" ? <section style={{ display: "grid", gap: "1rem" }}><div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><strong>Support workflows</strong><div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>{(["monitoring", "diagnostics", "audit"] as const).map((view) => <button {...extensionHydrationProps} key={view} type="button" aria-current={supportView === view ? "page" : undefined} onClick={() => navigateAdmin({ tab: "support", supportView: view })} style={{ padding: "0.5rem 0.8rem", border: `1px solid ${supportView === view ? colors.textPrimary : colors.border}`, borderRadius: "8px", background: supportView === view ? colors.textPrimary : "#ffffff", color: supportView === view ? "#ffffff" : colors.textPrimary, fontWeight: 600 }}>{getAdminSupportViewLabel(view)}</button>)}</div></div></section> : null}</React.Fragment>
-    <AdminExamWorkspaceFeature key="exam-workspace" active={tab === "exams" || (tab === "support" && supportView === "monitoring")} examFeatureActive={tab === "exams"} examView={examView} focusedExamId={focusedExamId} focusedCohortSessionId={focusedCohortSessionId} supportMonitoringActive={tab === "support" && supportView === "monitoring"} deliveryView={deliveryView} fetchAdmin={fetchAdmin} onNavigate={navigateAdmin} getNavigationHref={getNavigationHref} />
+    <AdminExamWorkspaceFeature key="exam-workspace" active={tab === "exams" || (tab === "support" && supportView === "monitoring")} examFeatureActive={tab === "exams"} examView={examView} focusedExamId={focusedExamId} focusedCohortSessionId={focusedCohortSessionId} returnFocusSessionId={returnFocusSessionId} supportMonitoringActive={tab === "support" && supportView === "monitoring"} deliveryView={deliveryView} fetchAdmin={fetchAdmin} onNavigate={navigateAdmin} getNavigationHref={getNavigationHref} />
     <AdminSupportFeature active={tab === "support" && supportView !== "monitoring"} view={supportView} diagnosticFilters={diagnosticFilters} fetchAdmin={fetchAdmin} onNavigate={navigateAdmin} />
     </section></main></div>
   </div>;

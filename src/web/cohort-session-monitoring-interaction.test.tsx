@@ -358,9 +358,16 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     await user.click(await screen.findByRole("button", { name: "Manage Cohort Sessions" }));
     expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=sessions&examId=exam-1&delivery=cohort");
     await user.click(await screen.findByRole("button", { name: "View session details" }));
-    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=session&examId=exam-1&sessionId=cohort-session-1&delivery=cohort");
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=session&examId=exam-1&sessionId=cohort-session-1&returnFocus=cohort-session-1&delivery=cohort");
     await user.click(screen.getByRole("button", { name: "Back to Cohort Sessions" }));
-    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=sessions&examId=exam-1&delivery=cohort");
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=sessions&examId=exam-1&returnFocus=cohort-session-1&delivery=cohort");
+  });
+
+  it("restores queue focus after the route remounts with its Session origin", async () => {
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="exam-1" initialReturnFocusSessionId="cohort-session-1" initialDeliveryView="cohort" />);
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "View session details" })));
   });
 
   it("navigates Catalog to Support detail and then scoped diagnostics through the real AdminConsole handlers", async () => {
@@ -560,9 +567,11 @@ describe("AdminCohortExamSessionsFeature seam", () => {
     const view = render(<AdminCohortExamSessionsFeature active examView="sessions" focusedExamId="exam-1" focusedCohortSessionId={null} supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
     const origin = await screen.findByRole("button", { name: "View session details" });
     await userEvent.click(origin);
-    view.rerender(<AdminCohortExamSessionsFeature active examView="session" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+    expect(onNavigate).toHaveBeenLastCalledWith(expect.objectContaining({ returnFocusSessionId: "cohort-session-1" }));
+    view.rerender(<AdminCohortExamSessionsFeature active examView="session" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" returnFocusSessionId="cohort-session-1" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
     await userEvent.click(await screen.findByRole("button", { name: "Back to Cohort Sessions" }));
-    view.rerender(<AdminCohortExamSessionsFeature active examView="sessions" focusedExamId="exam-1" focusedCohortSessionId={null} supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+    expect(onNavigate).toHaveBeenLastCalledWith(expect.objectContaining({ returnFocusSessionId: "cohort-session-1" }));
+    view.rerender(<AdminCohortExamSessionsFeature active examView="sessions" focusedExamId="exam-1" focusedCohortSessionId={null} returnFocusSessionId="cohort-session-1" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
 
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "View session details" })));
   });

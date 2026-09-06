@@ -101,6 +101,15 @@ describe("admin shell tab and URL model", () => {
     })).toBe("/admin?tab=exams&view=session&examId=exam-1&sessionId=cohort-session-1");
   });
 
+  it("round-trips a Session queue focus origin through detail and return routes", () => {
+    const href = buildAdminNavigationHref({
+      tab: "exams", examView: "session", examId: "exam-1", cohortSessionId: "session-1", returnFocusSessionId: "session-1",
+    });
+    expect(href).toBe("/admin?tab=exams&view=session&examId=exam-1&sessionId=session-1&returnFocus=session-1");
+    expect(parseAdminConsoleRouteState({ tab: "exams", view: "sessions", examId: "exam-1", returnFocus: "session-1" }))
+      .toMatchObject({ examView: "sessions", returnFocusSessionId: "session-1" });
+  });
+
   it("normalises stale delivery queries for Exam authoring and Cohort Session routes", () => {
     expect(parseAdminConsoleRouteState({ tab: "exams", view: "sessions", examId: "exam-1", delivery: "individual" }))
       .toMatchObject({ examView: "sessions", deliveryView: "cohort" });

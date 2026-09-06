@@ -1212,6 +1212,7 @@ export interface AdminCohortExamSessionsFeatureProps {
   readonly examView: "sessions" | "session" | "catalog" | "create" | "edit";
   readonly focusedExamId: string | null;
   readonly focusedCohortSessionId: string | null;
+  readonly returnFocusSessionId?: string | null;
   readonly supportMonitoringActive: boolean;
   readonly fetchAdmin: AdminAuthenticatedRequest;
   readonly onNavigate: (intent: AdminNavigationIntent) => void;
@@ -1241,7 +1242,6 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
   const [monitoringLastCheckedAt, setMonitoringLastCheckedAt] = useState<string | null>(null);
   const focusedKeyRef = useRef<string | null>(null);
   const featureRef = useRef<HTMLElement>(null);
-  const returnFocusSessionIdRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
@@ -1265,14 +1265,13 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
   }, [onCohortActivityChange, sessionsByExamId]);
 
   useEffect(() => {
-    if (props.examView !== "sessions" || !returnFocusSessionIdRef.current) return;
-    const sessionId = returnFocusSessionIdRef.current;
+    if (props.examView !== "sessions" || !props.returnFocusSessionId) return;
+    const sessionId = props.returnFocusSessionId;
     const origin = [...(featureRef.current?.querySelectorAll<HTMLElement>("[data-session-origin]") ?? [])]
       .find((element) => element.dataset.sessionOrigin === sessionId);
     if (!origin) return;
     origin.focus();
-    returnFocusSessionIdRef.current = null;
-  }, [props.examView, sessionsByExamId]);
+  }, [props.examView, props.returnFocusSessionId, sessionsByExamId]);
 
   useEffect(() => {
     if (!catalog) return;
@@ -1424,8 +1423,8 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
     {staleTarget ? <div role="alert" style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.5rem" }}><strong>This route target is no longer available.</strong><span>{staleTargetCopy}</span><button type="button" onClick={() => props.supportMonitoringActive ? props.onNavigate({ tab: "support", supportView: "monitoring", deliveryView: "cohort" }) : props.onNavigate({ tab: "exams", examView: staleSessionTarget ? "sessions" : "catalog", ...(staleSessionTarget && props.focusedExamId ? { examId: props.focusedExamId } : {}) })} style={secondaryButtonStyle}>{props.supportMonitoringActive ? "Return to Session Monitoring" : staleSessionTarget ? "Return to Cohort Exam Sessions" : "Return to Exam catalog"}</button></div> : null}
     {(props.examView === "sessions" || props.examView === "session") && focusedExam ? <>
       <div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><div><h2 style={{ margin: 0 }}>Exam Catalog</h2><p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>Overview of Exams and delivery options for Helios CX.</p></div><ExamWorkspaceBreadcrumbs examView={props.examView} focusedExamTitle={focusedExam.title} focusedSessionName={focusedSession?.session.name ?? null} onNavigateToCatalog={() => props.onNavigate({ tab: "exams", examView: "catalog" })} onNavigateToSessions={() => props.onNavigate({ tab: "exams", examView: "sessions", examId: focusedExam.id })} /></div>
-      {props.examView === "sessions" ? <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}><div><h3 style={{ margin: 0 }}>Cohort Exam Sessions</h3><p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>{focusedExam.title} · {formatExamDeliveryAvailability(focusedExam.deliveryAvailability)}</p><CohortSessionDraftOnlyNotice /></div><button type="button" onClick={() => props.onNavigate({ tab: "exams", examView: "catalog" })} style={secondaryButtonStyle}>Back to catalog</button></div>{isCohortSessionAuthoringAvailable(focusedExam.deliveryAvailability) ? <CohortSessionDraftControls examId={focusedExam.id} form={formFor(focusedExam.id)} sessions={focusedSessions} loading={loading} onChange={(patch) => updateForm(focusedExam.id, patch)} onCreate={() => void createDraft(focusedExam.id)} onSelect={(session) => { returnFocusSessionIdRef.current = session.session.id; setSelectedSession(session); props.onNavigate({ tab: "exams", examView: "session", examId: focusedExam.id, cohortSessionId: session.session.id }); }} /> : <span style={{ color: colors.textSecondary }}>Cohort Exam Sessions are unavailable for individual-only Exams.</span>}</div> : null}
-      {props.examView === "session" && focusedSession ? <CohortSessionWorkspacePanel examTitle={focusedExam.title} session={focusedSession} loading={loading} onBack={() => props.onNavigate({ tab: "exams", examView: "sessions", examId: focusedExam.id })} onPublish={() => void lifecycle(focusedExam.id, focusedSession.session.id, "publish")} onCloseAdmission={() => void lifecycle(focusedExam.id, focusedSession.session.id, "close-admission")} onRetire={() => void lifecycle(focusedExam.id, focusedSession.session.id, "retire")} getNavigationHref={props.getNavigationHref} onNavigate={props.onNavigate} onOpenMonitoring={() => props.onNavigate({ tab: "support", supportView: "monitoring", examId: focusedExam.id, cohortSessionId: focusedSession.session.id })} /> : null}
+      {props.examView === "sessions" ? <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}><div><h3 style={{ margin: 0 }}>Cohort Exam Sessions</h3><p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>{focusedExam.title} · {formatExamDeliveryAvailability(focusedExam.deliveryAvailability)}</p><CohortSessionDraftOnlyNotice /></div><button type="button" onClick={() => props.onNavigate({ tab: "exams", examView: "catalog" })} style={secondaryButtonStyle}>Back to catalog</button></div>{isCohortSessionAuthoringAvailable(focusedExam.deliveryAvailability) ? <CohortSessionDraftControls examId={focusedExam.id} form={formFor(focusedExam.id)} sessions={focusedSessions} loading={loading} onChange={(patch) => updateForm(focusedExam.id, patch)} onCreate={() => void createDraft(focusedExam.id)} onSelect={(session) => { setSelectedSession(session); props.onNavigate({ tab: "exams", examView: "session", examId: focusedExam.id, cohortSessionId: session.session.id, returnFocusSessionId: session.session.id }); }} /> : <span style={{ color: colors.textSecondary }}>Cohort Exam Sessions are unavailable for individual-only Exams.</span>}</div> : null}
+      {props.examView === "session" && focusedSession ? <CohortSessionWorkspacePanel examTitle={focusedExam.title} session={focusedSession} loading={loading} onBack={() => props.onNavigate({ tab: "exams", examView: "sessions", examId: focusedExam.id, returnFocusSessionId: props.returnFocusSessionId })} onPublish={() => void lifecycle(focusedExam.id, focusedSession.session.id, "publish")} onCloseAdmission={() => void lifecycle(focusedExam.id, focusedSession.session.id, "close-admission")} onRetire={() => void lifecycle(focusedExam.id, focusedSession.session.id, "retire")} getNavigationHref={props.getNavigationHref} onNavigate={props.onNavigate} onOpenMonitoring={() => props.onNavigate({ tab: "support", supportView: "monitoring", examId: focusedExam.id, cohortSessionId: focusedSession.session.id })} /> : null}
       {props.examView === "session" && props.focusedCohortSessionId && !focusedSession && !staleTarget ? <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.5rem" }}><p style={{ margin: 0 }}>Cohort Exam Session detail is still loading.</p><button type="button" onClick={() => void loadSessions(focusedExam.id)} style={secondaryButtonStyle}>Refresh Cohort Sessions</button></div> : null}
     </> : null}
     {props.supportMonitoringActive ? <>

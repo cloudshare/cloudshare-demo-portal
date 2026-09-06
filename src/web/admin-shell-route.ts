@@ -53,6 +53,7 @@ export interface AdminConsoleRouteState {
   readonly examView: AdminExamView;
   readonly examId?: string;
   readonly cohortSessionId?: string;
+  readonly returnFocusSessionId?: string;
   readonly supportView: AdminSupportView;
   readonly deliveryView: AdminDeliveryView | null;
   readonly diagnosticFilters: DiagnosticLogFilters;
@@ -68,6 +69,7 @@ export interface AdminNavigationIntent {
   readonly examView?: AdminExamView;
   readonly examId?: string | null;
   readonly cohortSessionId?: string | null;
+  readonly returnFocusSessionId?: string | null;
   readonly supportView?: AdminSupportView;
   readonly deliveryView?: AdminDeliveryView | null;
   readonly diagnosticFilters?: DiagnosticLogFilters;
@@ -171,6 +173,9 @@ export function buildAdminConsoleHref(
     if (route.cohortSessionId) {
       params.set("sessionId", route.cohortSessionId);
     }
+    if (route.tab === "exams" && route.returnFocusSessionId) {
+      params.set("returnFocus", route.returnFocusSessionId);
+    }
   }
 
   if (route.tab === "support") {
@@ -203,6 +208,7 @@ export function buildAdminNavigationHref(intent: AdminNavigationIntent): string 
     examView: intent.examView,
     examId: intent.examId ?? undefined,
     cohortSessionId: intent.cohortSessionId ?? undefined,
+    returnFocusSessionId: intent.returnFocusSessionId ?? undefined,
     supportView: intent.supportView,
     deliveryView: intent.deliveryView,
     diagnosticFilters: intent.diagnosticFilters,
@@ -226,6 +232,7 @@ export function parseAdminConsoleRouteState(input: {
   readonly view?: string | readonly string[];
   readonly examId?: string | readonly string[];
   readonly sessionId?: string | readonly string[];
+  readonly returnFocus?: string | readonly string[];
   readonly examAttemptId?: string | readonly string[];
   readonly candidateEmail?: string | readonly string[];
   readonly operation?: string | readonly string[];
@@ -256,12 +263,15 @@ export function parseAdminConsoleRouteState(input: {
     : undefined;
   const examId = tab === "exams" || tab === "support" ? readRouteValue(input.examId) : undefined;
   const cohortSessionId = tab === "exams" || tab === "support" ? readRouteValue(input.sessionId) : undefined;
+  const returnFocusSessionId = tab === "exams" && (examView === "session" || examView === "sessions")
+    ? readRouteValue(input.returnFocus) : undefined;
   if (tab !== "support" || supportView !== "diagnostics") {
     return {
       tab,
       examView,
       ...(examId ? { examId } : {}),
       ...(cohortSessionId ? { cohortSessionId } : {}),
+      ...(returnFocusSessionId ? { returnFocusSessionId } : {}),
       supportView,
       deliveryView,
       diagnosticFilters: {},

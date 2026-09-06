@@ -16,6 +16,7 @@ export interface AdminExamWorkspaceFeatureProps {
   readonly examView: AdminExamView;
   readonly focusedExamId: string | null;
   readonly focusedCohortSessionId: string | null;
+  readonly returnFocusSessionId?: string | null;
   readonly supportMonitoringActive: boolean;
   readonly deliveryView: AdminDeliveryView | null;
   readonly fetchAdmin: AdminAuthenticatedRequest;
@@ -60,6 +61,7 @@ export function AdminExamWorkspaceFeature(props: AdminExamWorkspaceFeatureProps)
       examView={props.examView}
       focusedExamId={props.focusedExamId}
       focusedCohortSessionId={props.focusedCohortSessionId}
+      returnFocusSessionId={props.returnFocusSessionId}
       supportMonitoringActive={cohortMonitoringActive}
       fetchAdmin={props.fetchAdmin}
       onNavigate={props.onNavigate}

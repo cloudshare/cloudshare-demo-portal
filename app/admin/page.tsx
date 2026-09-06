@@ -31,12 +31,13 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   return (
     <AdminConsole
-      key={`${routeState.tab}:${routeState.examView}:${routeState.examId ?? ""}:${routeState.cohortSessionId ?? ""}:${routeState.supportView}:${routeState.deliveryView ?? ""}:${JSON.stringify(routeState.diagnosticFilters)}`}
+      key={`${routeState.tab}:${routeState.examView}:${routeState.examId ?? ""}:${routeState.cohortSessionId ?? ""}:${routeState.returnFocusSessionId ?? ""}:${routeState.supportView}:${routeState.deliveryView ?? ""}:${JSON.stringify(routeState.diagnosticFilters)}`}
       email={session.email}
       initialTab={routeState.tab}
       initialExamView={routeState.examView}
       initialExamId={routeState.examId}
       initialCohortSessionId={routeState.cohortSessionId}
+      initialReturnFocusSessionId={routeState.returnFocusSessionId}
       initialSupportView={routeState.supportView}
       initialDeliveryView={routeState.deliveryView}
       initialDiagnosticFilters={routeState.diagnosticFilters}
