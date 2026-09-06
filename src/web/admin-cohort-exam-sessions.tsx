@@ -1248,6 +1248,7 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
   const [loading, setLoading] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [catalogLoadAttempted, setCatalogLoadAttempted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorCorrelationId, setErrorCorrelationId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -1269,14 +1270,25 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
 
   useEffect(() => {
     if (props.examView !== "sessions" || !props.returnFocusSessionId || resolvedReturnFocusRef.current === props.returnFocusSessionId) return;
-    if (!props.focusedExamId || !sessionLoadAttemptedByExamId[props.focusedExamId]) return;
+    if (!props.focusedExamId) {
+      resolvedReturnFocusRef.current = props.returnFocusSessionId;
+      onReturnFocusResolved?.(false);
+      return;
+    }
+    if (!catalogLoadAttempted) return;
+    if (!focusedExam) {
+      resolvedReturnFocusRef.current = props.returnFocusSessionId;
+      onReturnFocusResolved?.(false);
+      return;
+    }
+    if (!sessionLoadAttemptedByExamId[props.focusedExamId]) return;
     const sessionId = props.returnFocusSessionId;
     const origin = [...(featureRef.current?.querySelectorAll<HTMLElement>("[data-session-origin]") ?? [])]
       .find((element) => element.dataset.sessionOrigin === sessionId);
     resolvedReturnFocusRef.current = sessionId;
     if (origin) origin.focus();
     onReturnFocusResolved?.(Boolean(origin));
-  }, [onReturnFocusResolved, props.examView, props.focusedExamId, props.returnFocusSessionId, sessionLoadAttemptedByExamId, sessionsByExamId]);
+  }, [catalogLoadAttempted, focusedExam, onReturnFocusResolved, props.examView, props.focusedExamId, props.returnFocusSessionId, sessionLoadAttemptedByExamId, sessionsByExamId]);
 
   useEffect(() => {
     if (!catalog) return;
@@ -1328,7 +1340,7 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
       return [...nextActive, ...nextArchived];
     } catch (caught) {
       if (!isAdminSessionExpiredError(caught)) setError("Failed to load exam catalog");
-    } finally { setCatalogLoading(false); }
+    } finally { setCatalogLoadAttempted(true); setCatalogLoading(false); }
   }
 
   function formFor(examId: string) { return formsByExamId[examId] ?? emptyCohortSessionForm(); }

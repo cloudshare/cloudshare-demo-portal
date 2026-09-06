@@ -392,6 +392,34 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     await waitFor(() => expect(document.activeElement).toBe(workspace));
   });
 
+  it("falls back to workspace focus when the return route parent Exam was deleted", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/admin/exams") return json({ activeExams: [], archivedExams: [] });
+      if (String(input) === "/api/auth/session") return json({});
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+    vi.stubGlobal("fetch", fetchAdmin);
+    render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="missing-exam" initialReturnFocusSessionId="missing-session" initialDeliveryView="cohort" />);
+
+    const workspace = document.querySelector<HTMLElement>("[data-route-focus]");
+    await waitFor(() => expect(document.activeElement).toBe(workspace));
+    expect(fetchAdmin.mock.calls.some(([url]) => String(url).includes("/cohort-sessions"))).toBe(false);
+  });
+
+  it("falls back to workspace focus when the return route catalog request fails", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/admin/exams") return new Response(JSON.stringify({ error: "catalog unavailable" }), { status: 503 });
+      if (String(input) === "/api/auth/session") return json({});
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+    vi.stubGlobal("fetch", fetchAdmin);
+    render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="exam-1" initialReturnFocusSessionId="session-1" initialDeliveryView="cohort" />);
+
+    const workspace = document.querySelector<HTMLElement>("[data-route-focus]");
+    await waitFor(() => expect(document.activeElement).toBe(workspace));
+    expect(await screen.findByText("catalog unavailable")).toBeTruthy();
+  });
+
   it("navigates Catalog to Support detail and then scoped diagnostics through the real AdminConsole handlers", async () => {
     const user = userEvent.setup();
     const fetchMock = installAdminConsoleFetchMock();
