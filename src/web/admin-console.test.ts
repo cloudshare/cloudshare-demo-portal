@@ -146,6 +146,8 @@ describe("AdminConsole", () => {
     expect(css).toContain(".adminLogout:hover,.adminLogout:focus-visible");
     expect(css).toContain("outline:3px solid #c8fff0");
     expect(css).toContain(".adminContent { min-width:0; padding:");
+    expect(css).toContain("min-width:0; min-height:100vh");
+    expect(css).toContain(".adminContent { padding:1rem .85rem 2.5rem; overflow-x:hidden; }");
     expect(css).toContain(".adminRouteFocus:focus-visible");
     expect(css).toContain(".adminLogout { width:auto; min-width:7rem; }");
   });
