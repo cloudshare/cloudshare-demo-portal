@@ -145,12 +145,15 @@ describe("AdminConsole", () => {
     expect(css).toContain("height:100vh");
     expect(css).toContain(".adminLogout:hover,.adminLogout:focus-visible");
     expect(css).toContain("outline:3px solid #c8fff0");
-    expect(css).toContain(".adminContent { min-width:0; padding:");
+    expect(css).toContain(".adminContent { min-width:0; max-width:110rem;");
+    expect(css).toContain("max-width:110rem; padding:1.75rem clamp(1.25rem,3.5vw,3.25rem) 3.75rem");
+    expect(css).not.toContain(".adminContent > * { max-width:72rem");
     expect(css).toContain("min-width:0; min-height:100vh");
     expect(css).toContain(".adminContent { padding:1rem .85rem 2.5rem; overflow-x:hidden; }");
     expect(css).toContain(".adminNavigation { position:static; min-width:0; width:100%; max-width:100%; overflow-x:auto; }");
     expect(css).toContain(".adminShell { grid-template-columns:minmax(0,1fr); }");
-    expect(css).toContain(".adminRouteFocus:focus-visible");
+    expect(css).toContain(".adminRouteFocus:focus-visible { outline:none; }");
+    expect(css).toContain(".adminRouteFocus:focus-visible .adminPageTitle");
     expect(css).toContain(".adminLogout { width:auto; min-width:7rem; }");
   });
 
