@@ -39,7 +39,8 @@ describe("AdminExamCatalogAuthoringFeature", () => {
     const fetchAdmin = vi.fn<AdminAuthenticatedRequest>(async (input) => {
       const url = String(input);
       if (url === "/api/admin/exams") return json({ activeExams: [stalePolicyExam], archivedExams: [] });
-      if (url === "/api/admin/exam-authoring") return json({ projects: [{ id: "project-1", name: "Project One" }], regions: [{ id: "region-1", name: "US East" }] });
+      if (url === "/api/admin/exam-authoring") return json({ projects: [{ id: "project-other", name: "Other Project" }, { id: "project-1", name: "Project One" }], regions: [{ id: "region-1", name: "US East" }] });
+      if (url === "/api/admin/exam-authoring/projects/project-other?refresh=true") return json({ blueprints: [], policies: [] });
       if (url === "/api/admin/exam-authoring/projects/project-1" || url === "/api/admin/exam-authoring/projects/project-1?refresh=true") return json({ blueprints: [{ id: "blueprint-1", name: "Blueprint One" }], policies: [] });
       if (url === "/api/admin/exam-authoring/projects/project-1/blueprints/blueprint-1") return json({ blueprint: { id: "blueprint-1", name: "Blueprint One", description: "", defaultSnapshotId: "snapshot-1", snapshots: [{ id: "snapshot-1", name: "Snapshot One", isDefault: true, regionIds: ["region-1"] }] } });
       throw new Error(`Unexpected request: ${url}`);
@@ -54,6 +55,7 @@ describe("AdminExamCatalogAuthoringFeature", () => {
 
     expect((await screen.findByRole("spinbutton", { name: /Time limit \(minutes\)/ }) as HTMLInputElement).value).toBe("75");
     expect((screen.getByRole("spinbutton", { name: /Open period \(minutes\)/ }) as HTMLInputElement).value).toBe("90");
+    expect((screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement).value).toBe("project-1");
     expect((screen.getByRole("combobox", { name: "Policy" }) as HTMLSelectElement).value).toBe("");
     await user.click(screen.getByRole("button", { name: "Cancel Edit" }));
     await user.click(await screen.findByRole("button", { name: "Create Exam" }));

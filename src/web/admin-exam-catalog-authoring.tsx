@@ -254,6 +254,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
   const [loading, setLoading] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [authoringLoaded, setAuthoringLoaded] = useState(false);
   const projectRequestRef = useRef(0);
   const blueprintRequestRef = useRef(0);
   const catalogLoadingCountRef = useRef(0);
@@ -353,7 +354,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
   }
 
   async function loadAuthoring(refresh = false) {
-    setLoading(true); beginCatalogLoading(); setError(null); setCorrelationId(null); setDiagnostic(null);
+    setLoading(true); setAuthoringLoaded(false); beginCatalogLoading(); setError(null); setCorrelationId(null); setDiagnostic(null);
     try {
       const response = await props.fetchAdmin(`/api/admin/exam-authoring${refresh ? "?refresh=true" : ""}`);
       const data = await response.json() as { projects?: NamedResource[]; regions?: NamedResource[]; error?: string; correlationId?: string | null; diagnostic?: ConnectionDiagnostic };
@@ -362,6 +363,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
       const nextProjectId = nextProjects.some((project) => project.id === selectedProjectId) ? selectedProjectId : (nextProjects[0]?.id ?? "");
       setSelectedProjectId(nextProjectId);
       if (nextProjectId && !selectedProjectId) await loadProjectResources(nextProjectId, true);
+      setAuthoringLoaded(true);
     } catch (caught) { if (!isAdminSessionExpiredError(caught)) setError("Failed to load exam authoring resources"); }
     finally { setLoading(false); endCatalogLoading(); }
   }
@@ -453,11 +455,11 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.active, props.examView]);
   useEffect(() => {
-    if (!props.active || props.examView !== "edit" || !props.focusedExamId || editingExamId === props.focusedExamId) return;
+    if (!props.active || props.examView !== "edit" || !props.focusedExamId || !authoringLoaded || editingExamId === props.focusedExamId) return;
     const exam = allExams.find((item) => item.id === props.focusedExamId); if (exam) void editExam(exam);
     // Route/catalog changes drive deep-link edit hydration; the function closes over feature state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.active, props.examView, props.focusedExamId, allExams, editingExamId]);
+  }, [props.active, props.examView, props.focusedExamId, allExams, authoringLoaded, editingExamId]);
   useEffect(() => {
     if (!shouldReconcileAllowedRegionIds(defaultSnapshot)) return;
     const next = reconcileAllowedRegionIds(selectedAllowedRegionIds, compatibleRegions);
