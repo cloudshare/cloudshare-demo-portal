@@ -63,6 +63,12 @@ describe("candidate page", () => {
     expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fcandidate");
   });
 
+  it("fails closed for duplicate or array route parameters", async () => {
+    mockGetPortalSession.mockResolvedValue(null);
+    await expect(CandidatePage({ searchParams: Promise.resolve({ task: ["current", "history"] }) })).rejects.toThrow("redirect:/login");
+    expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fcandidate");
+  });
+
   it("redirects admins away from candidate delivery", async () => {
     mockGetPortalSession.mockResolvedValue({
       sessionId: "portal-session-1",

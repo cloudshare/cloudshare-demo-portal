@@ -156,7 +156,7 @@ describe("CandidateHome route-backed task flow", () => {
     expect(document.activeElement).not.toBe(currentHeading);
 
     await user.click(screen.getByRole("button", { name: /^Schedule exam/ }));
-    expect(routerPush).toHaveBeenCalledWith("/candidate?task=schedule");
+    expect(routerPush).toHaveBeenCalledWith("/candidate?task=schedule&examId=exam-1");
 
     currentSearchParams = new URLSearchParams("task=schedule");
     rendered.rerender(
@@ -185,7 +185,7 @@ describe("CandidateHome route-backed task flow", () => {
     const user = userEvent.setup();
     const scheduleButton = await screen.findByRole("button", { name: /^Schedule exam/ });
     await user.click(scheduleButton);
-    expect(routerPush).toHaveBeenCalledWith("/candidate?task=schedule");
+    expect(routerPush).toHaveBeenCalledWith("/candidate?task=schedule&examId=exam-1");
     currentSearchParams = new URLSearchParams("task=schedule");
     // The existing render represents the route transition after the browser navigation.
     await act(async () => routed.rerender(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: "attempt-scheduled", examId: null }} />));

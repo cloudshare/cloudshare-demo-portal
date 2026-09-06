@@ -6,22 +6,23 @@ import { getPortalHomePath, getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { CandidateHome } from "@/web/candidate-home";
 import { parseCandidateTaskRoute } from "@/web/candidate-task-route";
-import { getExpiredPortalLoginPath } from "@/auth/portal-return-target";
+import { getExpiredPortalLoginPath, getSafePortalTargetFromSearchParams } from "@/auth/portal-return-target";
 
 export default async function CandidatePage({
   searchParams,
 }: {
-  searchParams?: Promise<{ task?: string; attemptId?: string; examId?: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 } = {}) {
   const services = getPortalSessionServices();
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
+  const params = (await searchParams) ?? {};
   const session = await getPortalSession(services, sessionId);
   if (!session) {
-    redirect(getExpiredPortalLoginPath("/candidate") ?? "/login");
+    redirect(getExpiredPortalLoginPath(getSafePortalTargetFromSearchParams("/candidate", params)) ?? "/login");
   }
   if (session.role !== "candidate") {
     redirect(getPortalHomePath(session));
   }
 
-  return <CandidateHome email={session.email} initialRoute={parseCandidateTaskRoute(await (searchParams ?? Promise.resolve({})))} />;
+  return <CandidateHome email={session.email} initialRoute={parseCandidateTaskRoute(params)} />;
 }

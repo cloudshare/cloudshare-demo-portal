@@ -34,6 +34,7 @@ import { CandidateExamCard } from "./candidate-exam-card";
 import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
 import {
   buildCandidateTaskHref,
+  getCandidateTaskNavigationRoute,
   parseCandidateTaskRoute,
   resolveCandidateTaskRoute,
   type CandidateTaskRoute,
@@ -464,7 +465,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                   key={task.task}
                   type="button"
                   aria-current={selected ? "page" : undefined}
-                  onClick={() => navigateToCandidateTask(getTaskNavigationRoute(task.task, resolvedRoute))}
+                  onClick={() => navigateToCandidateTask(getCandidateTaskNavigationRoute(task.task, resolvedRoute))}
                   style={{
                     ...taskTabButtonStyle,
                     ...(selected ? selectedTaskTabButtonStyle : null),
@@ -484,7 +485,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
         </section>
         {loading && <p style={mutedPanelStyle}>Loading candidate dashboard...</p>}
         {error && (
-          <p style={{ ...alertPanelStyle.danger, margin: 0 }}>
+          <p role="alert" style={{ ...alertPanelStyle.danger, margin: 0 }}>
             {error}
           </p>
         )}
@@ -1061,36 +1062,6 @@ function getButtonStyle(baseStyle: CSSProperties, disabled: boolean): CSSPropert
         ...disabledButtonStyle,
       }
     : baseStyle;
-}
-
-function getTaskNavigationRoute(
-  task: CandidateTaskView,
-  resolvedRoute: ReturnType<typeof resolveCandidateTaskRoute>,
-): CandidateTaskRoute {
-  switch (task) {
-    case "current":
-      return {
-        task,
-        attemptId:
-          resolvedRoute.activeTask === "current" ? resolvedRoute.selectedAttempt?.attemptId ?? null : null,
-        examId: null,
-      };
-    case "history":
-      return {
-        task,
-        attemptId:
-          resolvedRoute.activeTask === "history" ? resolvedRoute.selectedAttempt?.attemptId ?? null : null,
-        examId: null,
-      };
-    case "schedule":
-      return {
-        task,
-        attemptId: null,
-        examId: resolvedRoute.selectedExam?.id ?? null,
-      };
-    default:
-      return { task: null, attemptId: null, examId: null };
-  }
 }
 
 function buildCandidateAttemptExamSnapshot(

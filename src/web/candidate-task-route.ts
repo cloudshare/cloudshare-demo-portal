@@ -124,7 +124,7 @@ export function resolveCandidateTaskRoute(
   if (orderedExams.length === 0) {
     return {
       activeTask: "schedule",
-      attempts: [],
+      attempts,
       selectedAttempt: null,
       exams: [],
       selectedExam: null,
@@ -135,7 +135,7 @@ export function resolveCandidateTaskRoute(
 
   return {
     activeTask: "schedule",
-    attempts: [],
+    attempts,
     selectedAttempt: null,
     exams: orderedExams,
     selectedExam,
@@ -162,6 +162,22 @@ export function buildCandidateTaskHref(route: CandidateTaskRoute): string {
   return query.length > 0 ? `/candidate?${query}` : "/candidate";
 }
 
+export function getCandidateTaskNavigationRoute(
+  task: CandidateTaskView,
+  resolved: ResolvedCandidateTaskRoute,
+): CandidateTaskRoute {
+  const attemptForDestination = resolved.selectedAttempt ?? resolved.attempts[0] ?? null;
+  if (task === "schedule") {
+    return { task, attemptId: null, examId: attemptForDestination?.examId ?? resolved.selectedExam?.id ?? null };
+  }
+  if (task === "current" || task === "history") {
+    const attempts = resolved.attempts;
+    const selected = resolved.activeTask === task ? resolved.selectedAttempt : attempts[0] ?? null;
+    return { task, attemptId: selected?.attemptId ?? null, examId: selected?.examId ?? null };
+  }
+  return { task: null, attemptId: null, examId: null };
+}
+
 export function getCandidateTaskForAttemptStatus(
   status: CandidateAttemptStatus,
 ): CandidateTaskView {
@@ -178,7 +194,7 @@ function buildFallbackTaskResult(
     const exams = orderExamsBySelection(dashboard.exams, null);
     return {
       activeTask: "schedule",
-      attempts: [],
+      attempts: buildScheduledAttemptViews(dashboard, nowMs),
       selectedAttempt: null,
       exams,
       selectedExam: exams[0] ?? null,
