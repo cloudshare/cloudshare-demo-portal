@@ -107,7 +107,12 @@ export function AdminConsole({
     <aside className={styles.adminSidebar} aria-label="Helios Admin workspace navigation">
       <div className={styles.adminBrand}><span className={styles.adminBrandMark} aria-hidden="true">H</span><div><strong>Certalis</strong><small>Helios Certification</small></div></div>
       <nav aria-label="Helios Admin certification navigation" className={styles.adminNavigation}><ul className={styles.adminNavigationList}>{ADMIN_NAVIGATION_ITEMS.map((item) => {
-      const active = item.intent.tab === tab && (item.intent.supportView ?? "monitoring") === supportView && (item.key === "monitoring" || (item.intent.deliveryView ?? null) === deliveryView) && (item.intent.tab !== "exams" || examView === "catalog");
+      const deepExamDelivery = tab === "exams" && (examView === "sessions" || examView === "session") ? "cohort" : deliveryView;
+      const examItemActive = item.key === "catalog"
+        ? examView !== "catalog" || deliveryView === null
+        : (item.intent.deliveryView ?? null) === deepExamDelivery;
+      const active = item.intent.tab === tab && (item.intent.supportView ?? "monitoring") === supportView
+        && (item.intent.tab !== "exams" ? item.key === "monitoring" || item.intent.tab !== "support" : examItemActive);
       return <li key={item.key}><Link href={buildAdminNavigationHref(item.intent)} aria-current={active ? "page" : undefined} className={styles.adminNavigationLink}>{item.label}</Link></li>;
     })}</ul></nav><div className={styles.adminNavSpacer} /><div className={styles.adminAccount}><span className={styles.adminAccountMark} aria-hidden="true">HA</span><div className={styles.adminAccountIdentity}><strong>Helios Admin</strong><small>{email}</small></div><button {...extensionHydrationProps} onClick={logout} disabled={loggingOut} className={styles.adminLogout}>Log out</button></div>
     </aside><div className={`${styles.adminMain} ${styles.adminWorkspace}`}><header className={styles.adminTopbar}><div><strong>Certalis Admin Console</strong><span>Helios Certification workspace</span></div></header><main className={styles.adminContent}><section ref={routeFocusRef} tabIndex={-1} data-route-focus aria-label="Current Helios Admin workspace" className={styles.adminRouteFocus}><h1 className={styles.adminPageTitle}>Helios Certification Admin</h1>
