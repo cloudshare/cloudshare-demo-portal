@@ -87,6 +87,8 @@ function safePortalTarget(raw: string | null | undefined): { readonly target: st
 
   const scope = scopeForPath(url.pathname);
   if (!scope) return null;
+  // Queue focus is ephemeral UI state, not part of the post-auth destination contract.
+  if (scope === "certification_admin") url.searchParams.delete("returnFocus");
   const allowed = ALLOWED_QUERY_VALUES[scope];
   const seenKeys = new Set<string>();
   for (const [key, value] of url.searchParams) {

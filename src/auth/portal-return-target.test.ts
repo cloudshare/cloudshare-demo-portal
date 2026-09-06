@@ -17,6 +17,7 @@ describe("portal expired-session return targets", () => {
     expect(getExpiredPortalLoginPath("/sales-trial")).toBe("/sales-trial/login?returnTo=%2Fsales-trial");
     expect(getExpiredPortalLoginPath("/admin?tab=exams&delivery=cohort")).toBe("/login?returnTo=%2Fadmin%3Ftab%3Dexams%26delivery%3Dcohort");
     expect(getExpiredPortalLoginPath("/admin?tab=support&delivery=cohort")).toBe("/login?returnTo=%2Fadmin%3Ftab%3Dsupport%26delivery%3Dcohort");
+    expect(getExpiredPortalLoginPath("/admin?tab=support&returnFocus=session-1&delivery=cohort")).toBe("/login?returnTo=%2Fadmin%3Ftab%3Dsupport%26delivery%3Dcohort");
   });
 
   it("rejects external, credential-bearing, API, auth, mutation, and cross-workspace targets", () => {

@@ -1430,11 +1430,11 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
 
   useEffect(() => {
     if (!props.active || !props.supportMonitoringActive || !props.focusedExamId || !props.focusedCohortSessionId) return;
-    if (catalogLoaded && !focusedExam) return;
+    if (!catalogLoaded || !focusedExam || focusedKey === monitoringDetailMissingKey) return;
     const interval = window.setInterval(() => void loadMonitoringDetail(props.focusedExamId!, props.focusedCohortSessionId!), 30_000);
     return () => window.clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalogLoaded, focusedExam, props.active, props.supportMonitoringActive, props.focusedExamId, props.focusedCohortSessionId]);
+  }, [catalogLoaded, focusedExam, focusedKey, monitoringDetailMissingKey, props.active, props.supportMonitoringActive, props.focusedExamId, props.focusedCohortSessionId]);
 
   if (!props.active) return null;
   const hasFocusedMonitoring = props.supportMonitoringActive && focusedSession && focusedExam;

@@ -589,6 +589,7 @@ describe("AdminCohortExamSessionsFeature seam", () => {
   });
 
   it("shows only durable stale recovery when a listed Session detail returns 404", async () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
     const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
@@ -601,6 +602,8 @@ describe("AdminCohortExamSessionsFeature seam", () => {
     expect(await screen.findByText("This route target is no longer available.")).toBeTruthy();
     expect((await screen.findByRole("alert")).textContent).toContain("The requested Cohort Exam Session is no longer available.");
     expect(screen.queryByText("Failed to load Cohort Exam Session detail")).toBeNull();
+    expect(setIntervalSpy.mock.calls.some(([, delay]) => delay === 30_000)).toBe(false);
+    setIntervalSpy.mockRestore();
   });
 
   it("does not request Sessions for a deleted Exam deep link", async () => {
@@ -616,9 +619,8 @@ describe("AdminCohortExamSessionsFeature seam", () => {
     expect(fetchAdmin).toHaveBeenCalledTimes(1);
   });
 
-  it("cancels focused monitoring polling after the catalog rules out its parent Exam", async () => {
+  it("does not start focused monitoring polling before the catalog validates its parent Exam", async () => {
     const setIntervalSpy = vi.spyOn(window, "setInterval");
-    const clearIntervalSpy = vi.spyOn(window, "clearInterval");
     const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
       if (String(input) === "/api/admin/exams") return json({ activeExams: [], archivedExams: [] });
       throw new Error(`Unexpected child fetch: ${String(input)}`);
@@ -626,10 +628,8 @@ describe("AdminCohortExamSessionsFeature seam", () => {
     render(<AdminCohortExamSessionsFeature active examView="catalog" focusedExamId="missing-exam" focusedCohortSessionId="missing-session" supportMonitoringActive fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
 
     expect(await screen.findByText("This route target is no longer available.")).toBeTruthy();
-    expect(setIntervalSpy).toHaveBeenCalled();
-    expect(clearIntervalSpy).toHaveBeenCalled();
+    expect(setIntervalSpy.mock.calls.some(([, delay]) => delay === 30_000)).toBe(false);
     setIntervalSpy.mockRestore();
-    clearIntervalSpy.mockRestore();
   });
 
   it("restores focus to the Session control that opened a detail route", async () => {
