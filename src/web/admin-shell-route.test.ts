@@ -45,6 +45,13 @@ describe("admin shell navigation intents", () => {
     expect(parseAdminConsoleRouteState({ tab: "support", examId: "exam-1", sessionId: "cohort-session-1", delivery: "individual" }))
       .toMatchObject({ tab: "support", supportView: "monitoring", deliveryView: "cohort" });
   });
+
+  it("round-trips a Support Monitoring queue focus origin", () => {
+    const href = buildAdminNavigationHref({ tab: "support", supportView: "monitoring", returnFocusSessionId: "session-1", deliveryView: "cohort" });
+    expect(href).toBe("/admin?tab=support&returnFocus=session-1&delivery=cohort");
+    expect(parseAdminConsoleRouteState({ tab: "support", returnFocus: "session-1", delivery: "cohort" }))
+      .toMatchObject({ supportView: "monitoring", returnFocusSessionId: "session-1", deliveryView: "cohort" });
+  });
 });
 
 describe("admin shell tab and URL model", () => {

@@ -1100,7 +1100,7 @@ export function CohortSessionMonitoringList(props: {
                 <strong>{session.session.name}</strong>
                 <span style={{ color: colors.textSecondary }}>{exam.title} · {formatCohortSessionStatus(session.session.status)}</span>
               </div>
-              <button type="button" onClick={() => props.onOpen(exam.id, session.session.id)} style={secondaryButtonStyle}>
+              <button type="button" data-session-origin={session.session.id} onClick={() => props.onOpen(exam.id, session.session.id)} style={secondaryButtonStyle}>
                 Open monitoring
               </button>
             </div>
@@ -1269,7 +1269,18 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
   }, [onCohortActivityChange, sessionsByExamId]);
 
   useEffect(() => {
-    if (props.examView !== "sessions" || !props.returnFocusSessionId || resolvedReturnFocusRef.current === props.returnFocusSessionId) return;
+    const examQueueReturn = props.examView === "sessions" && !props.supportMonitoringActive;
+    const monitoringQueueReturn = props.supportMonitoringActive && !props.focusedCohortSessionId;
+    if ((!examQueueReturn && !monitoringQueueReturn) || !props.returnFocusSessionId || resolvedReturnFocusRef.current === props.returnFocusSessionId) return;
+    if (monitoringQueueReturn) {
+      if (!catalogLoadAttempted) return;
+      const origin = [...(featureRef.current?.querySelectorAll<HTMLElement>("[data-session-origin]") ?? [])]
+        .find((element) => element.dataset.sessionOrigin === props.returnFocusSessionId);
+      resolvedReturnFocusRef.current = props.returnFocusSessionId;
+      if (origin) origin.focus();
+      onReturnFocusResolved?.(Boolean(origin));
+      return;
+    }
     if (!props.focusedExamId) {
       resolvedReturnFocusRef.current = props.returnFocusSessionId;
       onReturnFocusResolved?.(false);
@@ -1288,7 +1299,7 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
     resolvedReturnFocusRef.current = sessionId;
     if (origin) origin.focus();
     onReturnFocusResolved?.(Boolean(origin));
-  }, [catalogLoadAttempted, focusedExam, onReturnFocusResolved, props.examView, props.focusedExamId, props.returnFocusSessionId, sessionLoadAttemptedByExamId, sessionsByExamId]);
+  }, [catalogLoadAttempted, focusedExam, onReturnFocusResolved, props.examView, props.focusedCohortSessionId, props.focusedExamId, props.returnFocusSessionId, props.supportMonitoringActive, sessionLoadAttemptedByExamId, sessionsByExamId]);
 
   useEffect(() => {
     if (!catalog) return;
@@ -1419,10 +1430,11 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
 
   useEffect(() => {
     if (!props.active || !props.supportMonitoringActive || !props.focusedExamId || !props.focusedCohortSessionId) return;
+    if (catalogLoaded && !focusedExam) return;
     const interval = window.setInterval(() => void loadMonitoringDetail(props.focusedExamId!, props.focusedCohortSessionId!), 30_000);
     return () => window.clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.active, props.supportMonitoringActive, props.focusedExamId, props.focusedCohortSessionId]);
+  }, [catalogLoaded, focusedExam, props.active, props.supportMonitoringActive, props.focusedExamId, props.focusedCohortSessionId]);
 
   if (!props.active) return null;
   const hasFocusedMonitoring = props.supportMonitoringActive && focusedSession && focusedExam;
@@ -1448,8 +1460,8 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
       {props.examView === "session" && props.focusedCohortSessionId && !focusedSession && !staleTarget ? <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.5rem" }}><p style={{ margin: 0 }}>Cohort Exam Session detail is still loading.</p><button type="button" onClick={() => void loadSessions(focusedExam.id)} style={secondaryButtonStyle}>Refresh Cohort Sessions</button></div> : null}
     </> : null}
     {props.supportMonitoringActive ? <>
-      {hasFocusedMonitoring && !staleMonitoringDetail ? <CohortSessionWorkspacePanel mode="monitoring" examTitle={focusedExam.title} session={focusedSession} detail={currentMonitoringDetail} loading={loading} lastCheckedAt={monitoringDetailKey === focusedKey ? monitoringLastCheckedAt : null} onRefresh={() => void loadMonitoringDetail(focusedExam.id, focusedSession.session.id)} onBack={() => props.onNavigate({ tab: "support", supportView: "monitoring" })} onPublish={() => undefined} getNavigationHref={props.getNavigationHref} onNavigate={props.onNavigate} /> : null}
-      {!hasFocusedMonitoring && !staleTarget ? <CohortSessionMonitoringList sessions={monitoredSessions} onOpen={(examId, cohortSessionId) => props.onNavigate({ tab: "support", supportView: "monitoring", examId, cohortSessionId })} /> : null}
+      {hasFocusedMonitoring && !staleMonitoringDetail ? <CohortSessionWorkspacePanel mode="monitoring" examTitle={focusedExam.title} session={focusedSession} detail={currentMonitoringDetail} loading={loading} lastCheckedAt={monitoringDetailKey === focusedKey ? monitoringLastCheckedAt : null} onRefresh={() => void loadMonitoringDetail(focusedExam.id, focusedSession.session.id)} onBack={() => props.onNavigate({ tab: "support", supportView: "monitoring", returnFocusSessionId: props.returnFocusSessionId, deliveryView: "cohort" })} onPublish={() => undefined} getNavigationHref={props.getNavigationHref} onNavigate={props.onNavigate} /> : null}
+      {!hasFocusedMonitoring && !staleTarget ? <CohortSessionMonitoringList sessions={monitoredSessions} onOpen={(examId, cohortSessionId) => props.onNavigate({ tab: "support", supportView: "monitoring", examId, cohortSessionId, returnFocusSessionId: cohortSessionId, deliveryView: "cohort" })} /> : null}
     </> : null}
   </section>;
 }

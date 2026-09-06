@@ -373,6 +373,13 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "View session details" })));
   });
 
+  it("restores Support Monitoring queue focus after the route remounts", async () => {
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialReturnFocusSessionId="cohort-session-1" initialDeliveryView="cohort" />);
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open monitoring" })));
+  });
+
   it("carries the Session focus origin through the detail breadcrumb return", async () => {
     const onNavigate = vi.fn();
     const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
@@ -607,6 +614,22 @@ describe("AdminCohortExamSessionsFeature seam", () => {
     expect(await screen.findByText("This route target is no longer available.")).toBeTruthy();
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(fetchAdmin).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels focused monitoring polling after the catalog rules out its parent Exam", async () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    const clearIntervalSpy = vi.spyOn(window, "clearInterval");
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/admin/exams") return json({ activeExams: [], archivedExams: [] });
+      throw new Error(`Unexpected child fetch: ${String(input)}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="catalog" focusedExamId="missing-exam" focusedCohortSessionId="missing-session" supportMonitoringActive fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect(await screen.findByText("This route target is no longer available.")).toBeTruthy();
+    expect(setIntervalSpy).toHaveBeenCalled();
+    expect(clearIntervalSpy).toHaveBeenCalled();
+    setIntervalSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
   });
 
   it("restores focus to the Session control that opened a detail route", async () => {

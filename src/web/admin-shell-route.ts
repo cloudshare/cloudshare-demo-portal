@@ -173,7 +173,7 @@ export function buildAdminConsoleHref(
     if (route.cohortSessionId) {
       params.set("sessionId", route.cohortSessionId);
     }
-    if (route.tab === "exams" && route.returnFocusSessionId) {
+    if ((route.tab === "exams" || (route.supportView ?? "monitoring") === "monitoring") && route.returnFocusSessionId) {
       params.set("returnFocus", route.returnFocusSessionId);
     }
   }
@@ -264,7 +264,8 @@ export function parseAdminConsoleRouteState(input: {
   const routeNotice = deliveryCandidate && acceptsDeliveryRoute && !deliveryView
     ? "That delivery destination is no longer available. A safe current view is shown instead."
     : undefined;
-  const returnFocusSessionId = tab === "exams" && (examView === "session" || examView === "sessions")
+  const returnFocusSessionId = (tab === "exams" && (examView === "session" || examView === "sessions"))
+    || (tab === "support" && supportView === "monitoring")
     ? readRouteValue(input.returnFocus) : undefined;
   if (tab !== "support" || supportView !== "diagnostics") {
     return {

@@ -105,12 +105,16 @@ export function AdminConsole({
       const queueHref = buildAdminNavigationHref({ tab: "exams", examView: "sessions", examId: focusedExamId, returnFocusSessionId: next.returnFocusSessionId, deliveryView });
       window.history.replaceState(window.history.state, "", queueHref);
     }
+    if (tab === "support" && supportView === "monitoring" && !focusedCohortSessionId && next.tab === "support" && nextSupportView === "monitoring" && next.cohortSessionId && next.returnFocusSessionId) {
+      const queueHref = buildAdminNavigationHref({ tab: "support", supportView: "monitoring", returnFocusSessionId: next.returnFocusSessionId, deliveryView: "cohort" });
+      window.history.replaceState(window.history.state, "", queueHref);
+    }
     router.push(buildAdminNavigationHref({ tab: next.tab, examView: nextExamView, examId: next.examId, cohortSessionId: next.cohortSessionId, returnFocusSessionId: next.returnFocusSessionId, supportView: nextSupportView, deliveryView: nextDeliveryView, diagnosticFilters: nextDiagnosticFilters }));
     setTab(next.tab); setExamView(nextExamView); setFocusedExamId(next.examId ?? null); setFocusedCohortSessionId(next.cohortSessionId ?? null); setReturnFocusSessionId(next.returnFocusSessionId ?? null); setSupportView(nextSupportView); setDeliveryView(nextDeliveryView); setDiagnosticFilters(nextDiagnosticFilters);
   }
 
   useEffect(() => {
-    if (tab === "exams" && examView === "sessions" && returnFocusSessionId) return;
+    if (returnFocusSessionId && ((tab === "exams" && examView === "sessions") || (tab === "support" && supportView === "monitoring" && !focusedCohortSessionId))) return;
     routeFocusRef.current?.focus();
   }, [tab, examView, focusedExamId, focusedCohortSessionId, returnFocusSessionId, supportView, deliveryView]);
 
