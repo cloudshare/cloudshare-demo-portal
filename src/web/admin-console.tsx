@@ -88,8 +88,10 @@ export function AdminConsole({
     const nextDiagnosticFilters = next.diagnosticFilters ?? diagnosticFilters;
     const nextExamView = next.examView ?? "catalog";
     const nextSupportView = next.supportView ?? "monitoring";
-    const currentRouteAcceptsDelivery = tab === "exams" || (tab === "support" && supportView === "monitoring");
-    const nextRouteAcceptsDelivery = next.tab === "exams" || (next.tab === "support" && nextSupportView === "monitoring");
+    const currentRouteAcceptsDelivery = (tab === "exams" && examView !== "create" && examView !== "edit")
+      || (tab === "support" && supportView === "monitoring");
+    const nextRouteAcceptsDelivery = (next.tab === "exams" && nextExamView !== "create" && nextExamView !== "edit")
+      || (next.tab === "support" && nextSupportView === "monitoring");
     const nextDeliveryView = next.deliveryView !== undefined
       ? next.deliveryView
       : currentRouteAcceptsDelivery && nextRouteAcceptsDelivery ? deliveryView : null;

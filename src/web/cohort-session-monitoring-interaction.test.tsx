@@ -322,6 +322,15 @@ function installAdminConsoleFetchMock() {
 }
 
 describe("AdminConsole Cohort Exam Session monitoring path", () => {
+  it("clears the Cohort delivery branch when entering new Exam authoring", async () => {
+    const user = userEvent.setup();
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialDeliveryView="cohort" />);
+
+    await user.click(await screen.findByRole("button", { name: "Create Exam" }));
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=create");
+  });
+
   it("preserves the Cohort delivery branch through session detail and breadcrumb navigation", async () => {
     const user = userEvent.setup();
     installAdminConsoleFetchMock();
