@@ -21,8 +21,8 @@
 .adminNavigationLink[aria-current="page"] { border-color:#82d8c4; background:#82d8c4; color:#0d3f3a; }
 .adminRouteFocus:focus-visible { outline:3px solid rgba(15,109,102,.55); outline-offset:4px; }
 @media (max-width:760px) {
-  .adminShell { grid-template-columns:1fr; }
-  .adminSidebar { position:static; min-height:auto; height:auto; padding:.75rem; }
+  .adminShell { grid-template-columns:minmax(0,1fr); }
+  .adminSidebar { position:static; min-width:0; width:100%; max-width:100%; min-height:auto; height:auto; padding:.75rem; }
   .adminBrand,.adminAccountIdentity,.adminAccountMark { display:none; }
   .adminAccount { display:block; padding:.5rem 0 0; border-top:0; }
   .adminLogout { width:auto; min-width:7rem; }
