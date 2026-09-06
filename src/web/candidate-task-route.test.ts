@@ -174,6 +174,10 @@ describe("candidate task route", () => {
     expect(parseCandidateTaskSearchParams(new URLSearchParams("task=current&unknown=value"), fallback)).toEqual(empty);
     expect(parseCandidateTaskSearchParams(new URLSearchParams("task=current&attemptId=bad%20id"), fallback)).toEqual(empty);
     expect(parseCandidateTaskSearchParams(new URLSearchParams("attemptId=safe"), fallback)).toEqual(empty);
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("task=schedule&attemptId=safe"), fallback)).toEqual(empty);
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("task=current&examId=exam-1"), fallback)).toEqual(empty);
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("task=history&examId=exam-1"), fallback)).toEqual(empty);
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("task=schedule&examId=exam-1"), fallback)).toEqual({ task: "schedule", attemptId: null, examId: "exam-1" });
     expect(parseCandidateTaskSearchParams(new URLSearchParams(), fallback)).toEqual(fallback);
   });
 
@@ -185,6 +189,11 @@ describe("candidate task route", () => {
     ] }, Date.parse("2026-06-16T15:59:00.000Z"), { task: "current", attemptId: null, examId: null });
     expect(resolved.selectedAttempt?.attemptId).toBe("running");
     expect(resolved.attempts.map((attempt) => attempt.attemptId)).toEqual(["running", "paused", "future"]);
+  });
+
+  it.each(["in_progress", "suspended"] as const)("moves %s to history when its open period is closed", (status) => {
+    expect(getCandidateTaskForAttemptStatus(status, true)).toBe("history");
+    expect(getCandidateTaskForAttemptStatus(status, false)).toBe("current");
   });
 
   it("uses truthful current fallback copy when history remains but the catalogue is empty", () => {

@@ -145,7 +145,7 @@ export function CandidateLabShell({
               onClick={() =>
                 router.push(
                   buildCandidateTaskHref({
-                    task: getCandidateTaskForAttemptStatus(labStatus?.status ?? initialAttemptStatus),
+                    task: getCandidateTaskForAttemptStatus(labStatus?.status ?? initialAttemptStatus, labStatus?.openPeriodClosed === true),
                     attemptId: examAttemptId,
                     examId: null,
                   }),

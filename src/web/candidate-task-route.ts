@@ -3,6 +3,7 @@ import {
   type CandidateScheduledAttemptView,
 } from "./candidate-home-state";
 import type { CandidateDashboardData } from "./candidate-scheduling";
+import { isValidCandidateRouteShape } from "./candidate-route-shape";
 
 export type CandidateTaskView = "current" | "schedule" | "history";
 type CandidateAttemptStatus = CandidateDashboardData["attempts"][number]["status"];
@@ -190,7 +191,7 @@ export function parseCandidateTaskSearchParams(
     attemptId: values.get("attemptId"),
     examId: values.get("examId"),
   });
-  if (!route.task || (route.attemptId && !isCandidateRouteId(route.attemptId)) || (route.examId && !isCandidateRouteId(route.examId))) {
+  if (!route.task || (route.attemptId && !isCandidateRouteId(route.attemptId)) || (route.examId && !isCandidateRouteId(route.examId)) || !isValidCandidateRouteShape({ task: route.task, hasAttemptId: values.has("attemptId"), hasExamId: values.has("examId") })) {
     return emptyCandidateTaskRoute();
   }
   return route;
@@ -238,8 +239,9 @@ function compareCandidateExams(
 
 export function getCandidateTaskForAttemptStatus(
   status: CandidateAttemptStatus,
+  openPeriodClosed = false,
 ): CandidateTaskView {
-  return status === "completed" || status === "expired" ? "history" : "current";
+  return status === "completed" || status === "expired" || (openPeriodClosed && (status === "in_progress" || status === "suspended")) ? "history" : "current";
 }
 
 function buildFallbackTaskResult(

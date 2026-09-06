@@ -1,4 +1,5 @@
 import type { PortalCustomerWorkspace, PortalUserRole } from "./portal-stores";
+import { isValidCandidateRouteShape } from "../web/candidate-route-shape";
 
 type PortalReturnScope = "certification_admin" | "sales_admin" | "candidate" | "sales_trial";
 
@@ -49,9 +50,7 @@ function hasValidRouteShape(scope: PortalReturnScope, searchParams: URLSearchPar
       const value = searchParams.get(key);
       if (value !== null && !/^[A-Za-z0-9_-]+$/.test(value)) return false;
     }
-    if (task === "schedule" && searchParams.has("attemptId")) return false;
-    if (task !== "schedule" && searchParams.has("examId") && !searchParams.has("attemptId")) return false;
-    return true;
+    return isValidCandidateRouteShape({ task, hasAttemptId: searchParams.has("attemptId"), hasExamId: searchParams.has("examId") });
   }
   if (scope === "sales_trial") return searchParams.size === 0;
   if (!tab) return searchParams.size === 0;
