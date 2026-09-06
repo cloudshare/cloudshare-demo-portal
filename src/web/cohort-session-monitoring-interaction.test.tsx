@@ -352,15 +352,18 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
 
   it("preserves the Cohort delivery branch through session detail and breadcrumb navigation", async () => {
     const user = userEvent.setup();
+    const replaceState = vi.spyOn(window.history, "replaceState");
     installAdminConsoleFetchMock();
     render(<AdminConsole email="admin@helioscx.demo" initialDeliveryView="cohort" />);
 
     await user.click(await screen.findByRole("button", { name: "Manage Cohort Sessions" }));
     expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=sessions&examId=exam-1&delivery=cohort");
     await user.click(await screen.findByRole("button", { name: "View session details" }));
+    expect(replaceState).toHaveBeenCalledWith(window.history.state, "", "/admin?tab=exams&view=sessions&examId=exam-1&returnFocus=cohort-session-1&delivery=cohort");
     expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=session&examId=exam-1&sessionId=cohort-session-1&returnFocus=cohort-session-1&delivery=cohort");
     await user.click(screen.getByRole("button", { name: "Back to Cohort Sessions" }));
     expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=sessions&examId=exam-1&returnFocus=cohort-session-1&delivery=cohort");
+    replaceState.mockRestore();
   });
 
   it("restores queue focus after the route remounts with its Session origin", async () => {
