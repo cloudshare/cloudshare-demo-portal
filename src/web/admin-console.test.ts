@@ -119,6 +119,25 @@ describe("AdminConsole", () => {
     expect(html).toContain('href="/admin?tab=support&amp;view=audit"');
   });
 
+  it("marks the current destination across every Helios navigation branch", () => {
+    const cases = [
+      [{ initialTab: "exams" as const }, "/admin?tab=exams"],
+      [{ initialTab: "exams" as const, initialDeliveryView: "individual" as const }, "/admin?tab=exams&amp;delivery=individual"],
+      [{ initialTab: "exams" as const, initialDeliveryView: "cohort" as const }, "/admin?tab=exams&amp;delivery=cohort"],
+      [{ initialTab: "exams" as const, initialExamView: "sessions" as const, initialExamId: "exam-1", initialDeliveryView: "cohort" as const }, "/admin?tab=exams&amp;delivery=cohort"],
+      [{ initialTab: "candidates" as const }, "/admin?tab=candidates"],
+      [{ initialTab: "configuration" as const }, "/admin?tab=configuration"],
+      [{ initialTab: "support" as const, initialSupportView: "monitoring" as const }, "/admin?tab=support"],
+      [{ initialTab: "support" as const, initialSupportView: "diagnostics" as const }, "/admin?tab=support&amp;view=diagnostics"],
+      [{ initialTab: "support" as const, initialSupportView: "audit" as const }, "/admin?tab=support&amp;view=audit"],
+    ] as const;
+    for (const [props, href] of cases) {
+      const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo", ...props }));
+      expect(html.match(/aria-current="page"[^>]*href="/g)).toHaveLength(1);
+      expect(html).toContain(`href="${href}"`);
+    }
+  });
+
   it("keeps the Helios shell responsive and keyboard-visible", () => {
     const css = readFileSync(new URL("./admin-console.module.css", import.meta.url), "utf8");
     expect(css.indexOf(".adminSidebar {")).toBeLessThan(css.indexOf("@media (max-width:760px)"));
