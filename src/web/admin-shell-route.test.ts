@@ -55,7 +55,8 @@ describe("admin shell navigation intents", () => {
 
   it.each([
     { tab: "support", delivery: "cohort", examId: "exam-1" },
-    { tab: "support", delivery: "cohort", sessionId: "session-1" },
+    { tab: "support", sessionId: "session-1" },
+    { tab: "support", delivery: "individual", examId: "exam-1" },
   ])("recovers an incomplete Support Monitoring target to the Cohort queue", (input) => {
     const route = parseAdminConsoleRouteState(input);
     expect(route).toMatchObject({

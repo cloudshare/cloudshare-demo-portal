@@ -262,7 +262,9 @@ export function parseAdminConsoleRouteState(input: {
     ? examView === "sessions" || examView === "session"
       ? "cohort"
       : examView === "create" || examView === "edit" ? null : parsedDeliveryView
-    : tab === "support" && supportView === "monitoring" ? focusedMonitoring ? "cohort" : parsedDeliveryView : null;
+    : tab === "support" && supportView === "monitoring"
+      ? focusedMonitoring || incompleteMonitoringTarget ? "cohort" : parsedDeliveryView
+      : null;
   const acceptsDeliveryRoute = (tab === "exams" && examView === "catalog")
     || (tab === "support" && supportView === "monitoring");
   const routeNotice = incompleteMonitoringTarget
