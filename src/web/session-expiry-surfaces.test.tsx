@@ -22,7 +22,6 @@ vi.mock("./session-expiry", async (importOriginal) => {
     },
   };
 });
-
 import { AdminConsole } from "./admin-console";
 import { CandidateHome } from "./candidate-home";
 import { CandidateLabShell } from "./candidate-lab-shell";
