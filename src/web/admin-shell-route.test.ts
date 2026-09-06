@@ -41,7 +41,9 @@ describe("admin shell navigation intents", () => {
     });
     expect(href).toBe("/admin?tab=support&examId=exam-1&sessionId=cohort-session-1");
     expect(parseAdminConsoleRouteState({ tab: "support", examId: "exam-1", sessionId: "cohort-session-1" }))
-      .toMatchObject({ tab: "support", supportView: "monitoring", examId: "exam-1", cohortSessionId: "cohort-session-1" });
+      .toMatchObject({ tab: "support", supportView: "monitoring", examId: "exam-1", cohortSessionId: "cohort-session-1", deliveryView: "cohort" });
+    expect(parseAdminConsoleRouteState({ tab: "support", examId: "exam-1", sessionId: "cohort-session-1", delivery: "individual" }))
+      .toMatchObject({ tab: "support", supportView: "monitoring", deliveryView: "cohort" });
   });
 });
 
