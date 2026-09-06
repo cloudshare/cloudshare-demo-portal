@@ -153,7 +153,7 @@ describe("idle expiry on protected portal surfaces", () => {
     expect(router.refresh).not.toHaveBeenCalled();
   });
 
-  it("unmounts Candidate Lab after one action-time 401 without replay", async () => {
+  it("unmounts Candidate Lab after a status refresh 401 without retrying the refresh", async () => {
     window.history.replaceState({}, "", "/candidate/lab?examAttemptId=attempt-1");
     let statusCalls = 0;
     const fetchSpy = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
@@ -168,6 +168,8 @@ describe("idle expiry on protected portal surfaces", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Enter exam" }));
     await act(async () => await Promise.resolve());
     expect(statusCalls).toBe(2);
+    expect(fetchSpy.mock.calls.filter(([input]) => String(input).includes("/api/exam/status"))).toHaveLength(2);
+    expect(router.replace).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith("/login");
     expect(screen.queryByText("Candidate lab")).toBeNull();
   });
