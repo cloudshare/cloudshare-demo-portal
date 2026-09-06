@@ -322,6 +322,19 @@ function installAdminConsoleFetchMock() {
 }
 
 describe("AdminConsole Cohort Exam Session monitoring path", () => {
+  it("preserves the Cohort delivery branch through session detail and breadcrumb navigation", async () => {
+    const user = userEvent.setup();
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialDeliveryView="cohort" />);
+
+    await user.click(await screen.findByRole("button", { name: "Manage Cohort Sessions" }));
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=sessions&examId=exam-1&delivery=cohort");
+    await user.click(await screen.findByRole("button", { name: "View session details" }));
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=session&examId=exam-1&sessionId=cohort-session-1&delivery=cohort");
+    await user.click(screen.getByRole("button", { name: "Back to Cohort Sessions" }));
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=sessions&examId=exam-1&delivery=cohort");
+  });
+
   it("navigates Catalog to Support detail and then scoped diagnostics through the real AdminConsole handlers", async () => {
     const user = userEvent.setup();
     const fetchMock = installAdminConsoleFetchMock();
@@ -340,7 +353,7 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     expect(await screen.findByText("Cohort Exam Session monitoring")).toBeTruthy();
     expect(screen.getAllByText("Casey Rivera")).toHaveLength(2);
     expect(screen.getByText("Environment: running")).toBeTruthy();
-    expect(routerPush).toHaveBeenCalledWith("/admin?tab=support&examId=exam-1&sessionId=cohort-session-1");
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=support&examId=exam-1&sessionId=cohort-session-1&delivery=cohort");
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(0);
 
     await user.click(screen.getByRole("link", { name: "Session diagnostics" }));

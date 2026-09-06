@@ -88,7 +88,11 @@ export function AdminConsole({
     const nextDiagnosticFilters = next.diagnosticFilters ?? diagnosticFilters;
     const nextExamView = next.examView ?? "catalog";
     const nextSupportView = next.supportView ?? "monitoring";
-    const nextDeliveryView = next.deliveryView ?? null;
+    const currentRouteAcceptsDelivery = tab === "exams" || (tab === "support" && supportView === "monitoring");
+    const nextRouteAcceptsDelivery = next.tab === "exams" || (next.tab === "support" && nextSupportView === "monitoring");
+    const nextDeliveryView = next.deliveryView !== undefined
+      ? next.deliveryView
+      : currentRouteAcceptsDelivery && nextRouteAcceptsDelivery ? deliveryView : null;
     router.push(buildAdminNavigationHref({ tab: next.tab, examView: nextExamView, examId: next.examId, cohortSessionId: next.cohortSessionId, supportView: nextSupportView, deliveryView: nextDeliveryView, diagnosticFilters: nextDiagnosticFilters }));
     setTab(next.tab); setExamView(nextExamView); setFocusedExamId(next.examId ?? null); setFocusedCohortSessionId(next.cohortSessionId ?? null); setSupportView(nextSupportView); setDeliveryView(nextDeliveryView); setDiagnosticFilters(nextDiagnosticFilters);
   }

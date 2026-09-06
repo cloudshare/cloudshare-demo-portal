@@ -8,6 +8,7 @@ const ALLOWED_QUERY_VALUES: Readonly<Record<PortalReturnScope, Readonly<Record<s
   certification_admin: {
     tab: ["exams", "candidates", "support", "configuration"],
     view: ["catalog", "create", "edit", "sessions", "session", "monitoring", "diagnostics", "audit"],
+    delivery: ["individual", "cohort"],
   },
   sales_admin: {
     tab: ["items", "records", "sessions", "trial-offerings", "support", "configuration"],
@@ -38,18 +39,21 @@ function hasOnlyQueryKeys(searchParams: URLSearchParams, keys: readonly string[]
 function hasValidRouteShape(scope: PortalReturnScope, searchParams: URLSearchParams): boolean {
   const tab = searchParams.get("tab");
   const view = searchParams.get("view");
+  const delivery = searchParams.get("delivery");
 
   if (scope === "candidate" || scope === "sales_trial") return searchParams.size === 0;
   if (!tab) return searchParams.size === 0;
 
   if (scope === "certification_admin") {
     if (tab === "exams") {
-      return hasOnlyQueryKeys(searchParams, ["tab", "view"])
-        && (view === null || view === "catalog" || view === "create");
+      return hasOnlyQueryKeys(searchParams, ["tab", "view", "delivery"])
+        && (view === null || view === "catalog" || view === "create")
+        && (delivery === null || view === null || view === "catalog");
     }
     if (tab === "support") {
-      return hasOnlyQueryKeys(searchParams, ["tab", "view"])
-        && (view === null || view === "monitoring" || view === "diagnostics" || view === "audit");
+      return hasOnlyQueryKeys(searchParams, ["tab", "view", "delivery"])
+        && (view === null || view === "monitoring" || view === "diagnostics" || view === "audit")
+        && (delivery === null || view === null || view === "monitoring");
     }
     return (tab === "candidates" || tab === "configuration")
       && hasOnlyQueryKeys(searchParams, ["tab"]);
