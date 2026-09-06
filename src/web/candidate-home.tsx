@@ -34,6 +34,7 @@ import {
   buildCandidateTaskHref,
   getCandidateTaskNavigationRoute,
   parseCandidateTaskRoute,
+  parseCandidateTaskSearchParams,
   resolveCandidateTaskRoute,
   type CandidateTaskRoute,
   type CandidateTaskView,
@@ -304,11 +305,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
     router.push(`/candidate/score?${params.toString()}`);
   }
 
-  const candidateRoute = parseCandidateTaskRoute({
-    task: searchParams.get("task") ?? initialRoute.task,
-    attemptId: searchParams.get("attemptId") ?? initialRoute.attemptId,
-    examId: searchParams.get("examId") ?? initialRoute.examId,
-  });
+  const candidateRoute = parseCandidateTaskSearchParams(searchParams, initialRoute);
   const resolvedRoute = resolveCandidateTaskRoute(dashboard, nowMs, candidateRoute);
   const examsById = new Map(dashboard.exams.map((exam) => [exam.id, exam]));
 

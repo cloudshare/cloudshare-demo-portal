@@ -54,7 +54,7 @@ export function resolveCandidateTaskRoute(
   route: CandidateTaskRoute,
 ): ResolvedCandidateTaskRoute {
   const attempts = buildScheduledAttemptViews(dashboard, nowMs);
-  const liveAttempts = attempts.filter(isLiveCandidateAttempt);
+  const liveAttempts = attempts.filter(isLiveCandidateAttempt).sort(compareCurrentAttempts);
   const historyAttempts = attempts.filter(isHistoryCandidateAttempt);
   const tasks: CandidateTaskTab[] = [
     { task: "current", label: CANDIDATE_TASK_LABELS.current, count: liveAttempts.length },
@@ -167,6 +167,21 @@ export function buildCandidateTaskHref(route: CandidateTaskRoute): string {
   }
   const query = params.toString();
   return query.length > 0 ? `/candidate?${query}` : "/candidate";
+}
+
+export function parseCandidateTaskSearchParams(
+  searchParams: URLSearchParams,
+  fallback: CandidateTaskRoute,
+): CandidateTaskRoute {
+  const read = (name: string, fallbackValue: string | null) => {
+    const values = searchParams.getAll(name);
+    return values.length === 0 ? fallbackValue : values.length === 1 ? values[0] : null;
+  };
+  return parseCandidateTaskRoute({
+    task: read("task", fallback.task),
+    attemptId: read("attemptId", fallback.attemptId),
+    examId: read("examId", fallback.examId),
+  });
 }
 
 export function getCandidateTaskNavigationRoute(
@@ -286,6 +301,27 @@ function isLiveCandidateAttempt(attempt: CandidateScheduledAttemptView): boolean
 
 function isHistoryCandidateAttempt(attempt: CandidateScheduledAttemptView): boolean {
   return attempt.displayStatus === "completed" || attempt.displayStatus === "expired";
+}
+
+function compareCurrentAttempts(
+  left: CandidateScheduledAttemptView,
+  right: CandidateScheduledAttemptView,
+): number {
+  const priority = (attempt: CandidateScheduledAttemptView) => {
+    switch (attempt.displayStatus) {
+      case "in_progress":
+        return 0;
+      case "suspended":
+        return 1;
+      case "ready":
+        return 2;
+      default:
+        return 3;
+    }
+  };
+  return priority(left) - priority(right)
+    || (right.scheduledFor ?? "").localeCompare(left.scheduledFor ?? "")
+    || left.attemptId.localeCompare(right.attemptId);
 }
 
 function selectAttemptById(

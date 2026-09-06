@@ -4,6 +4,7 @@ import {
   getCandidateTaskForAttemptStatus,
   getCandidateTaskNavigationRoute,
   parseCandidateTaskRoute,
+  parseCandidateTaskSearchParams,
   resolveCandidateTaskRoute,
   type CandidateTaskRoute,
 } from "./candidate-task-route";
@@ -160,6 +161,25 @@ describe("candidate task route", () => {
     expect(buildCandidateTaskHref({ task: "history", attemptId: "attempt-completed", examId: null })).toBe(
       "/candidate?task=history&attemptId=attempt-completed",
     );
+  });
+
+  it("fails closed for duplicate or invalid URL query shapes", () => {
+    const fallback = { task: "current" as const, attemptId: "safe", examId: "exam-1" };
+    const duplicate = new URLSearchParams("task=current&task=history&attemptId=safe&examId=exam-1");
+    expect(parseCandidateTaskSearchParams(duplicate, fallback)).toEqual({ task: null, attemptId: "safe", examId: "exam-1" });
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("attemptId=safe&attemptId=evil"), fallback)).toEqual({ task: "current", attemptId: null, examId: "exam-1" });
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("examId=exam-1&examId=evil"), fallback)).toEqual({ task: "current", attemptId: "safe", examId: null });
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("task=unknown"), fallback)).toEqual({ task: null, attemptId: "safe", examId: "exam-1" });
+  });
+
+  it("prioritizes actionable current attempts over future scheduled attempts", () => {
+    const resolved = resolveCandidateTaskRoute({ ...dashboard, attempts: [
+      { id: "future", examId: "exam-2", scheduledFor: "2026-06-20T10:00:00.000Z", status: "ready" },
+      { id: "running", examId: "exam-1", scheduledFor: "2026-06-16T15:00:00.000Z", status: "in_progress" },
+      { id: "paused", examId: "exam-2", scheduledFor: "2026-06-16T15:30:00.000Z", status: "suspended" },
+    ] }, Date.parse("2026-06-16T15:59:00.000Z"), { task: "current", attemptId: null, examId: null });
+    expect(resolved.selectedAttempt?.attemptId).toBe("running");
+    expect(resolved.attempts.map((attempt) => attempt.attemptId)).toEqual(["running", "paused", "future"]);
   });
 
   it("uses truthful current fallback copy when history remains but the catalogue is empty", () => {
