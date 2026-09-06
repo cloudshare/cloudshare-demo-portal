@@ -103,6 +103,12 @@ describe("AdminConsole", () => {
     const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
 
     expect(html).toContain("adminWorkspace");
+    expect(html).toContain("adminShell");
+    expect(html).toContain("adminSidebar");
+    expect(html).toContain("adminTopbar");
+    expect(html).toContain("adminAccount");
+    expect(html).toContain("Helios Certification");
+    expect(html).toContain('aria-label="Current Helios Admin workspace"');
     expect(html).toContain("adminNavigation");
     expect(html).toContain("adminContent");
     expect(html).toContain('href="/admin?tab=configuration"');

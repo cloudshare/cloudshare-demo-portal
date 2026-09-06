@@ -1,8 +1,5 @@
 .adminWorkspace {
-  display: grid;
-  grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
-  gap: 1.25rem;
-  align-items: start;
+  min-width: 0;
 }
 
 .adminNavigation {
@@ -57,9 +54,9 @@
 }
 
 @media (max-width: 760px) {
-  .adminWorkspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  .adminShell { grid-template-columns: 1fr; }
+  .adminSidebar { min-height: auto; padding: .75rem; }
+  .adminBrand, .adminAccount { display: none; }
 
   .adminNavigation {
     position: static;
@@ -69,4 +66,18 @@
   .adminNavigationList {
     grid-template-columns: repeat(8, minmax(10.5rem, 1fr));
   }
+  .adminTopbar { min-height: 3.5rem; padding-inline: 1rem; }
+  .adminContent { padding: 1rem .85rem 2.5rem; }
 }
+.adminShell { display: grid; grid-template-columns: 15rem minmax(0, 1fr); min-height: 100vh; background: #f1f7f5; color: #123d39; }
+.adminSidebar { display: flex; flex-direction: column; min-height: 100vh; padding: 1.25rem 0.8rem; box-sizing: border-box; background: #0d3f3a; color: #f3fffc; }
+.adminBrand { display: flex; gap: .65rem; align-items: center; padding: .2rem .55rem 1.6rem; }
+.adminBrandMark,.adminAccountMark { display: grid; place-items: center; flex: 0 0 auto; width: 2.25rem; height: 2.25rem; border-radius: .5rem; background: #82d8c4; color: #0d3f3a; font-weight: 800; }
+.adminBrand small,.adminAccount small { display: block; margin-top: .15rem; color: #b8e1d6; font-size: .72rem; overflow-wrap: anywhere; }
+.adminNavSpacer { flex: 1; }
+.adminAccount { display: grid; grid-template-columns: auto minmax(0,1fr); gap: .55rem; align-items: center; padding: 1rem .45rem 0; border-top: 1px solid #32675f; }
+.adminLogout { grid-column: 1 / -1; width: 100%; padding: .5rem; border: 1px solid #5f9187; border-radius: .4rem; background: transparent; color: #effffb; font: inherit; font-size: .82rem; font-weight: 650; }
+.adminMain { min-width: 0; }
+.adminTopbar { display: flex; align-items: center; min-height: 4.1rem; padding: 0 2rem; border-bottom: 1px solid #d3e3df; background: #fff; }
+.adminTopbar div { display: grid; gap: .15rem; }
+.adminTopbar span { color: #5b7771; font-size: .78rem; }

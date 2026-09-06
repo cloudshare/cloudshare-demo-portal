@@ -24,7 +24,6 @@ import { pageShellStyle } from "./page-shell";
 import { mutedPanelStyle } from "./card-styles";
 import { accountLogoutButtonStyle, disabledButtonStyle } from "./button-styles";
 import { colors } from "./design-tokens";
-import { PortalPageHeader } from "./portal-page-header";
 import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
 import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
 import styles from "./admin-console.module.css";
@@ -106,14 +105,14 @@ export function AdminConsole({
 
   if (sessionExpired) return <main aria-live="polite" style={pageShellStyle}>Continuing to sign in…</main>;
 
-  return <main style={{ ...pageShellStyle, minHeight: "100vh", scrollbarGutter: "stable" }}>
-    <PortalPageHeader eyebrow="Helios Admin Portal" title="Certalis Admin Console" description="Manage the Helios CX CloudShare Connection, Exam catalog, Candidate accounts, and active exam attempt support workflows." email={email} actions={<button {...extensionHydrationProps} onClick={logout} disabled={loggingOut} style={loggingOut ? { ...accountLogoutButtonStyle, ...disabledButtonStyle } : accountLogoutButtonStyle}>Log out</button>} />
-    <div className={styles.adminWorkspace}>
-    <nav aria-label="Helios Admin certification navigation" className={styles.adminNavigation}><ul className={styles.adminNavigationList}>{ADMIN_NAVIGATION_ITEMS.map((item) => {
+  return <main className={styles.adminShell}>
+    <aside className={styles.adminSidebar} aria-label="Helios Admin workspace navigation">
+      <div className={styles.adminBrand}><span className={styles.adminBrandMark} aria-hidden="true">H</span><div><strong>Certalis</strong><small>Helios Certification</small></div></div>
+      <nav aria-label="Helios Admin certification navigation" className={styles.adminNavigation}><ul className={styles.adminNavigationList}>{ADMIN_NAVIGATION_ITEMS.map((item) => {
       const active = item.intent.tab === tab && (item.intent.supportView ?? "monitoring") === supportView && (item.key === "monitoring" || (item.intent.deliveryView ?? null) === deliveryView) && (item.intent.tab !== "exams" || examView === "catalog");
       return <li key={item.key}><Link href={buildAdminNavigationHref(item.intent)} aria-current={active ? "page" : undefined} className={styles.adminNavigationLink}>{item.label}</Link></li>;
-    })}</ul></nav>
-    <section ref={routeFocusRef} tabIndex={-1} data-route-focus aria-label="Current Helios Admin workspace" className={styles.adminContent}>
+    })}</ul></nav><div className={styles.adminNavSpacer} /><div className={styles.adminAccount}><span className={styles.adminAccountMark} aria-hidden="true">HA</span><div><strong>Helios Admin</strong><small>{email}</small></div><button {...extensionHydrationProps} onClick={logout} disabled={loggingOut} className={styles.adminLogout}>Log out</button></div>
+    </aside><div className={`${styles.adminMain} ${styles.adminWorkspace}`}><header className={styles.adminTopbar}><div><strong>Certalis Admin Console</strong><span>Helios Certification workspace</span></div></header><section ref={routeFocusRef} tabIndex={-1} data-route-focus aria-label="Current Helios Admin workspace" className={styles.adminContent}>
     {initialRouteNotice ? <div role="alert" style={{ ...mutedPanelStyle, marginBottom: "1rem", borderColor: colors.warning }}>{initialRouteNotice}</div> : null}
     <AdminCandidateRosterFeature active={tab === "candidates"} fetchAdmin={fetchAdmin} />
     <CloudShareConnectionFeature active={tab === "configuration"} fetchAdmin={fetchAdmin} getNavigationHref={getNavigationHref} onNavigate={navigateAdmin} />
