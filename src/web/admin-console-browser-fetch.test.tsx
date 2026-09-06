@@ -136,7 +136,7 @@ describe("AdminConsole browser request dispatch", () => {
     const browserFetch = vi.fn(function (this: unknown, input: RequestInfo | URL) {
       if (this !== window) throw new TypeError("Browser fetch must retain its Window receiver");
       if (String(input) === "/api/admin/exams") return Promise.resolve(json({ activeExams: [], archivedExams: [] }));
-      if (String(input).startsWith("/api/admin/exam-authoring/")) return Promise.resolve(json({ projects: [], regions: [] }));
+      if (String(input).startsWith("/api/admin/exam-authoring")) return Promise.resolve(json({ projects: [], regions: [] }));
       throw new Error(`Unexpected browser fetch: ${String(input)}`);
     });
     vi.stubGlobal("fetch", browserFetch);
@@ -147,6 +147,8 @@ describe("AdminConsole browser request dispatch", () => {
       expect(screen.queryByText("Project-first Exam authoring")).toBeNull();
       expect(screen.queryByRole("button", { name: "Create Exam" })).toBeNull();
       expect(screen.getByRole("button", { name: "Return to Exam catalog" })).toBeTruthy();
+      expect(browserFetch.mock.calls.some(([input]) => String(input) === "/api/admin/exams")).toBe(true);
+      expect(browserFetch.mock.calls.some(([input]) => String(input).startsWith("/api/admin/exam-authoring"))).toBe(false);
     } finally {
       vi.unstubAllGlobals();
       Object.defineProperty(window, "fetch", { configurable: true, value: originalWindowFetch, writable: true });

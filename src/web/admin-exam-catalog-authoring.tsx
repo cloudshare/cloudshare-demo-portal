@@ -371,9 +371,10 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
     try {
       const response = await props.fetchAdmin("/api/admin/exams");
       const data = await response.json() as { activeExams?: ExamRecord[]; archivedExams?: ExamRecord[]; error?: string };
-      if (!response.ok) { setError(data.error ?? "Failed to load exam catalog"); return; }
+      if (!response.ok) { setError(data.error ?? "Failed to load exam catalog"); return null; }
       const active = data.activeExams ?? []; const archived = data.archivedExams ?? [];
       setActiveExams(active); setArchivedExams(archived); setCatalogLoaded(true); props.onCatalogChange?.({ activeExams: active, archivedExams: archived });
+      return [...active, ...archived];
     } catch (caught) { if (!isAdminSessionExpiredError(caught)) setError("Failed to load exam catalog"); }
     finally { endCatalogLoading(); }
   }
@@ -439,8 +440,14 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
 
   useEffect(() => {
     if (props.active) {
-      void loadCatalog();
-      if (props.examView === "create" || props.examView === "edit") void loadAuthoring();
+      if (props.examView === "edit") {
+        void loadCatalog().then((exams) => {
+          if (props.focusedExamId && exams?.some((exam) => exam.id === props.focusedExamId)) void loadAuthoring();
+        });
+      } else {
+        void loadCatalog();
+        if (props.examView === "create") void loadAuthoring();
+      }
     }
     // Feature loading is driven by the stable shell adapter and route activation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
