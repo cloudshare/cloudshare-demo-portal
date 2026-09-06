@@ -42,6 +42,12 @@ export const ADMIN_NAVIGATION_ITEMS: readonly AdminNavigationItem[] = [
   { key: "support", label: "Support", intent: { tab: "support", supportView: "monitoring" } },
 ];
 
+export const ADMIN_SUPPORT_NAVIGATION_ITEMS: readonly AdminNavigationItem[] = [
+  { key: "monitoring", label: "Session Monitoring", intent: { tab: "support", supportView: "monitoring" } },
+  { key: "diagnostics", label: "Support Diagnostics", intent: { tab: "support", supportView: "diagnostics" } },
+  { key: "audit", label: "Audit", intent: { tab: "support", supportView: "audit" } },
+];
+
 export interface AdminConsoleRouteState {
   readonly tab: AdminTab;
   readonly examView: AdminExamView;

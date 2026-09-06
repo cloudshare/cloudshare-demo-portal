@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ADMIN_NAVIGATION_ITEMS,
+  ADMIN_SUPPORT_NAVIGATION_ITEMS,
   buildAdminNavigationHref,
   getAdminSupportViewLabel,
   type AdminDeliveryView,
@@ -57,6 +58,7 @@ export function AdminConsole({
   const [focusedExamId, setFocusedExamId] = useState<string | null>(initialExamId ?? null);
   const [focusedCohortSessionId, setFocusedCohortSessionId] = useState<string | null>(initialCohortSessionId ?? null);
   const [supportView, setSupportView] = useState<AdminSupportView>(initialSupportView);
+  const [supportNavigationOpen, setSupportNavigationOpen] = useState(initialTab === "support");
   const [deliveryView, setDeliveryView] = useState<AdminDeliveryView | null>(initialDeliveryView);
   const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>(initialDiagnosticFilters);
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -95,6 +97,10 @@ export function AdminConsole({
     routeFocusRef.current?.focus();
   }, [tab, examView, focusedExamId, focusedCohortSessionId, supportView, deliveryView]);
 
+  useEffect(() => {
+    if (tab === "support") setSupportNavigationOpen(true);
+  }, [tab]);
+
   async function logout() {
     setLoggingOut(true);
     try { await fetch("/api/auth/logout", { method: "POST" }); }
@@ -112,6 +118,15 @@ export function AdminConsole({
         ? (examView === "catalog" && deliveryView === null) || (examView !== "catalog" && deepExamDelivery === null)
         : (item.intent.deliveryView ?? null) === deepExamDelivery;
       const active = item.intent.tab === tab && (item.intent.tab !== "exams" || examItemActive);
+      if (item.key === "support") {
+        return <li key={item.key}><details open={supportNavigationOpen} onToggle={(event) => setSupportNavigationOpen(event.currentTarget.open)} className={styles.adminNavigationGroup}>
+          <summary className={styles.adminNavigationGroupSummary} data-active={tab === "support" ? "true" : undefined}>{item.label}</summary>
+          <ul className={styles.adminNavigationSubmenu}>{ADMIN_SUPPORT_NAVIGATION_ITEMS.map((supportItem) => {
+            const supportActive = tab === "support" && supportItem.intent.supportView === supportView;
+            return <li key={supportItem.key}><Link href={buildAdminNavigationHref(supportItem.intent)} aria-current={supportActive ? "page" : undefined} className={styles.adminNavigationSubmenuLink}>{supportItem.label}</Link></li>;
+          })}</ul>
+        </details></li>;
+      }
       return <li key={item.key}><Link href={buildAdminNavigationHref(item.intent)} aria-current={active ? "page" : undefined} className={styles.adminNavigationLink}>{item.label}</Link></li>;
     })}</ul></nav><div className={styles.adminNavSpacer} /><div className={styles.adminAccount}><span className={styles.adminAccountMark} aria-hidden="true">HA</span><div className={styles.adminAccountIdentity}><strong>Helios Admin</strong><small>{email}</small></div><button {...extensionHydrationProps} onClick={logout} disabled={loggingOut} className={styles.adminLogout}>Log out</button></div>
     </aside><div className={`${styles.adminMain} ${styles.adminWorkspace}`}><header className={styles.adminTopbar}><div><strong>Certalis Admin Console</strong><span>Helios Certification workspace</span></div></header><main className={styles.adminContent}><section ref={routeFocusRef} tabIndex={-1} data-route-focus aria-label="Current Helios Admin workspace" className={styles.adminRouteFocus}><h1 className={styles.adminPageTitle}>Helios Certification Admin</h1>

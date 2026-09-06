@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ADMIN_TABS,
   ADMIN_NAVIGATION_ITEMS,
+  ADMIN_SUPPORT_NAVIGATION_ITEMS,
   buildAdminConsoleHref,
   buildAdminNavigationHref,
   createCorrelationDiagnosticsNavigationIntent,
@@ -60,6 +61,11 @@ describe("admin shell tab and URL model", () => {
       label: "Support",
       intent: { tab: "support", supportView: "monitoring" },
     });
+    expect(ADMIN_SUPPORT_NAVIGATION_ITEMS).toEqual([
+      { key: "monitoring", label: "Session Monitoring", intent: { tab: "support", supportView: "monitoring" } },
+      { key: "diagnostics", label: "Support Diagnostics", intent: { tab: "support", supportView: "diagnostics" } },
+      { key: "audit", label: "Audit", intent: { tab: "support", supportView: "audit" } },
+    ]);
   });
 
   it("groups admin work areas around the unchanged four tabs", () => {

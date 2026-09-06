@@ -61,16 +61,17 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("Save CloudShare Connection");
   });
 
-  it("renders one persistent Support destination while keeping support workflows inside it", () => {
+  it("renders one expandable Support group with smaller workflow links", () => {
     const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
 
     expect(html).toContain('aria-label="Helios Admin certification navigation"');
-    for (const label of ["CloudShare Connection", "Exam catalog", "Candidates", "Individual delivery", "Cohort delivery", "Support"]) {
+    for (const label of ["CloudShare Connection", "Exam catalog", "Candidates", "Individual delivery", "Cohort delivery"]) {
       expect(html).toContain(`>${label}</a>`);
     }
-    expect(html).not.toContain(">Session Monitoring</a>");
-    expect(html).not.toContain(">Support Diagnostics</a>");
-    expect(html).not.toContain(">Audit</a>");
+    expect(html).toContain(">Support</summary>");
+    expect(html).toContain(">Session Monitoring</a>");
+    expect(html).toContain(">Support Diagnostics</a>");
+    expect(html).toContain(">Audit</a>");
     expect(html).not.toContain("Event Log");
     expect(html).not.toContain("Resources");
   });
@@ -119,6 +120,8 @@ describe("AdminConsole", () => {
     expect(html).toContain('href="/admin?tab=exams&amp;delivery=individual"');
     expect(html).toContain('href="/admin?tab=exams&amp;delivery=cohort"');
     expect(html).toContain('href="/admin?tab=support"');
+    expect(html).toContain('href="/admin?tab=support&amp;view=diagnostics"');
+    expect(html).toContain('href="/admin?tab=support&amp;view=audit"');
   });
 
   it("marks the current destination across every Helios navigation branch", () => {
@@ -130,8 +133,8 @@ describe("AdminConsole", () => {
       [{ initialTab: "candidates" as const }, "/admin?tab=candidates"],
       [{ initialTab: "configuration" as const }, "/admin?tab=configuration"],
       [{ initialTab: "support" as const, initialSupportView: "monitoring" as const }, "/admin?tab=support"],
-      [{ initialTab: "support" as const, initialSupportView: "diagnostics" as const }, "/admin?tab=support"],
-      [{ initialTab: "support" as const, initialSupportView: "audit" as const }, "/admin?tab=support"],
+      [{ initialTab: "support" as const, initialSupportView: "diagnostics" as const }, "/admin?tab=support&amp;view=diagnostics"],
+      [{ initialTab: "support" as const, initialSupportView: "audit" as const }, "/admin?tab=support&amp;view=audit"],
     ] as const;
     for (const [props, href] of cases) {
       const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo", ...props }));
@@ -154,6 +157,9 @@ describe("AdminConsole", () => {
     expect(css).toContain(".adminContent { padding:1rem .85rem 2.5rem; overflow-x:hidden; }");
     expect(css).toContain(".adminNavigation { position:static; min-width:0; width:100%; max-width:100%; overflow-x:auto; }");
     expect(css).toContain("grid-template-columns:repeat(6,minmax(10.5rem,1fr))");
+    expect(css).toContain(".adminNavigationGroupSummary");
+    expect(css).toContain(".adminNavigationSubmenu");
+    expect(css).toContain(".adminNavigationSubmenuLink");
     expect(css).toContain(".adminShell { grid-template-columns:minmax(0,1fr); }");
     expect(css).toContain(".adminRouteFocus:focus-visible { outline:none; }");
     expect(css).toContain(".adminRouteFocus:focus-visible .adminPageTitle");

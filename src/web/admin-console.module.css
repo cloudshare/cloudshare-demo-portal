@@ -18,6 +18,13 @@
 .adminNavigationLink { display:block; padding:.65rem .75rem; border:1px solid transparent; border-radius:6px; color:#dff8f1; font-weight:600; line-height:1.25; text-decoration:none; }
 .adminNavigationLink:hover,.adminNavigationLink:focus-visible { border-color:#82d8c4; background:#205f56; outline:3px solid #c8fff0; outline-offset:1px; }
 .adminNavigationLink[aria-current="page"] { border-color:#82d8c4; background:#82d8c4; color:#0d3f3a; }
+.adminNavigationGroupSummary { cursor:pointer; padding:.65rem .75rem; border:1px solid transparent; border-radius:6px; color:#dff8f1; font-weight:600; line-height:1.25; }
+.adminNavigationGroupSummary:hover,.adminNavigationGroupSummary:focus-visible,.adminNavigationGroupSummary[data-active="true"] { border-color:#82d8c4; background:#205f56; outline:none; }
+.adminNavigationGroupSummary:focus-visible { outline:3px solid #c8fff0; outline-offset:1px; }
+.adminNavigationSubmenu { display:grid; gap:.15rem; margin:.25rem 0 .15rem; padding:0 0 0 .65rem; list-style:none; }
+.adminNavigationSubmenuLink { display:block; padding:.45rem .65rem; border-left:2px solid #5f9187; color:#c9e9e1; font-size:.82rem; line-height:1.25; text-decoration:none; }
+.adminNavigationSubmenuLink:hover,.adminNavigationSubmenuLink:focus-visible { border-left-color:#82d8c4; color:#fff; outline:2px solid #c8fff0; outline-offset:1px; }
+.adminNavigationSubmenuLink[aria-current="page"] { border-left-color:#82d8c4; color:#fff; font-weight:700; }
 .adminRouteFocus:focus-visible { outline:none; }
 .adminRouteFocus:focus-visible .adminPageTitle { text-decoration:underline; text-decoration-thickness:.12rem; text-underline-offset:.2rem; }
 @media (max-width:760px) {
