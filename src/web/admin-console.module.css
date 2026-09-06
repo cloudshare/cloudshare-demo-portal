@@ -1,5 +1,5 @@
 .adminShell { display:grid; grid-template-columns:15rem minmax(0,1fr); min-width:0; min-height:100vh; background:#f1f7f5; color:#123d39; }
-.adminSidebar { position:sticky; top:0; display:flex; flex-direction:column; min-height:100vh; height:100vh; padding:1.25rem .8rem; box-sizing:border-box; background:#0d3f3a; color:#f3fffc; }
+.adminSidebar { position:sticky; top:0; display:flex; flex-direction:column; min-height:100vh; height:100vh; padding:1.25rem .8rem; box-sizing:border-box; overflow-y:auto; background:#0d3f3a; color:#f3fffc; }
 .adminBrand { display:flex; gap:.65rem; align-items:center; padding:.2rem .55rem 1.6rem; }
 .adminBrandMark,.adminAccountMark { display:grid; place-items:center; flex:0 0 auto; width:2.25rem; height:2.25rem; border-radius:.5rem; background:#82d8c4; color:#0d3f3a; font-weight:800; }
 .adminBrand small,.adminAccount small { display:block; margin-top:.15rem; color:#b8e1d6; font-size:.72rem; overflow-wrap:anywhere; }

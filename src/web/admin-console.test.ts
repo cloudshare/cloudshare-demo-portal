@@ -148,6 +148,7 @@ describe("AdminConsole", () => {
     expect(css.indexOf(".adminSidebar {")).toBeLessThan(css.indexOf("@media (max-width:760px)"));
     expect(css).toContain("position:sticky");
     expect(css).toContain("height:100vh");
+    expect(css).toContain("height:100vh; padding:1.25rem .8rem; box-sizing:border-box; overflow-y:auto");
     expect(css).toContain(".adminLogout:hover,.adminLogout:focus-visible");
     expect(css).toContain("outline:3px solid #c8fff0");
     expect(css).toContain(".adminContent { min-width:0; max-width:110rem;");
