@@ -23,7 +23,6 @@ import { startPortalSessionWatchdog } from "./session-expiry";
 import { pageShellStyle } from "./page-shell";
 import { mutedPanelStyle } from "./card-styles";
 import { colors } from "./design-tokens";
-import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
 import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
 import styles from "./admin-console.module.css";
 
@@ -111,7 +110,7 @@ export function AdminConsole({
       const active = item.intent.tab === tab && (item.intent.supportView ?? "monitoring") === supportView && (item.key === "monitoring" || (item.intent.deliveryView ?? null) === deliveryView) && (item.intent.tab !== "exams" || examView === "catalog");
       return <li key={item.key}><Link href={buildAdminNavigationHref(item.intent)} aria-current={active ? "page" : undefined} className={styles.adminNavigationLink}>{item.label}</Link></li>;
     })}</ul></nav><div className={styles.adminNavSpacer} /><div className={styles.adminAccount}><span className={styles.adminAccountMark} aria-hidden="true">HA</span><div className={styles.adminAccountIdentity}><strong>Helios Admin</strong><small>{email}</small></div><button {...extensionHydrationProps} onClick={logout} disabled={loggingOut} className={styles.adminLogout}>Log out</button></div>
-    </aside><div className={`${styles.adminMain} ${styles.adminWorkspace}`}><header className={styles.adminTopbar}><div><strong>Certalis Admin Console</strong><span>Helios Certification workspace</span></div></header><main className={styles.adminContent}><section ref={routeFocusRef} tabIndex={-1} data-route-focus aria-label="Current Helios Admin workspace"><h1 className={styles.adminPageTitle}>Helios Certification Admin</h1>
+    </aside><div className={`${styles.adminMain} ${styles.adminWorkspace}`}><header className={styles.adminTopbar}><div><strong>Certalis Admin Console</strong><span>Helios Certification workspace</span></div></header><main className={styles.adminContent}><section ref={routeFocusRef} tabIndex={-1} data-route-focus aria-label="Current Helios Admin workspace" className={styles.adminRouteFocus}><h1 className={styles.adminPageTitle}>Helios Certification Admin</h1>
     {initialRouteNotice ? <div role="alert" style={{ ...mutedPanelStyle, marginBottom: "1rem", borderColor: colors.warning }}>{initialRouteNotice}</div> : null}
     <AdminCandidateRosterFeature active={tab === "candidates"} fetchAdmin={fetchAdmin} />
     <CloudShareConnectionFeature active={tab === "configuration"} fetchAdmin={fetchAdmin} getNavigationHref={getNavigationHref} onNavigate={navigateAdmin} />
