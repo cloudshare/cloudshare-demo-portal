@@ -196,4 +196,3 @@ describe("idle expiry on protected portal surfaces", () => {
     expect(router.refresh).not.toHaveBeenCalled();
   });
 });
-
