@@ -194,4 +194,22 @@ describe("candidate task route", () => {
     expect(resolveCandidateTaskRoute(dashboard, Date.parse("2026-06-16T15:59:00.000Z"),
       getCandidateTaskNavigationRoute("schedule", resolved)).selectedExam?.id).toBe("exam-2");
   });
+
+  it("routes tabs to the newest valid attempt and has deterministic schedule fallbacks", () => {
+    const data = { ...dashboard, attempts: [
+      ...dashboard.attempts,
+      { id: "attempt-new-live", examId: "exam-2", scheduledFor: "2026-06-16T17:00:00.000Z", status: "ready" as const },
+      { id: "attempt-new-history", examId: "exam-2", scheduledFor: "2026-06-16T18:00:00.000Z", status: "completed" as const },
+    ] };
+    const resolved = resolveCandidateTaskRoute(data, Date.parse("2026-06-16T16:30:00.000Z"), { task: "schedule", attemptId: null, examId: null });
+    expect(getCandidateTaskNavigationRoute("current", resolved)).toEqual({ task: "current", attemptId: "attempt-new-live", examId: "exam-2" });
+    expect(getCandidateTaskNavigationRoute("history", resolved)).toEqual({ task: "history", attemptId: "attempt-new-history", examId: "exam-2" });
+    expect(getCandidateTaskNavigationRoute("schedule", resolved)).toEqual({ task: "schedule", attemptId: null, examId: "exam-2" });
+    expect(getCandidateTaskNavigationRoute("schedule", resolveCandidateTaskRoute({ exams: [], attempts: data.attempts }, Date.now(), { task: "history", attemptId: null, examId: null }))).toEqual({ task: "schedule", attemptId: null, examId: null });
+  });
+
+  it("falls back deterministically when every published exam was attempted", () => {
+    const resolved = resolveCandidateTaskRoute({ ...dashboard, attempts: [...dashboard.attempts, { id: "attempt-2", examId: "exam-2", scheduledFor: "2026-06-16T09:00:00.000Z", status: "completed" }] }, Date.now(), { task: "current", attemptId: "attempt-ready", examId: null });
+    expect(getCandidateTaskNavigationRoute("schedule", resolved)).toEqual({ task: "schedule", attemptId: null, examId: "exam-1" });
+  });
 });

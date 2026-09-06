@@ -195,4 +195,14 @@ describe("idle expiry on protected portal surfaces", () => {
     expect(router.replace).toHaveBeenCalledWith("/login");
     expect(router.refresh).not.toHaveBeenCalled();
   });
+
+  it("preserves the exact safe Candidate task route once when expiry unmounts the shell", async () => {
+    window.history.replaceState({}, "", "/candidate?task=current&attemptId=attempt-7&examId=exam-9");
+    render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: "attempt-7", examId: "exam-9" }} />);
+    expect(screen.getByText("Certalis Candidate Portal")).not.toBeNull();
+    await expireLatestWatchdog();
+    expect(screen.queryByText("Certalis Candidate Portal")).toBeNull();
+    expect(router.replace).toHaveBeenCalledTimes(1);
+    expect(router.replace).toHaveBeenCalledWith("/login?returnTo=%2Fcandidate%3Ftask%3Dcurrent%26attemptId%3Dattempt-7%26examId%3Dexam-9");
+  });
 });

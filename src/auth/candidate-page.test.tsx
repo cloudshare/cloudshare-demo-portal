@@ -101,4 +101,21 @@ describe("candidate page", () => {
       },
     });
   });
+
+  it.each([
+    ["current", "attempt-1", "exam-1"],
+    ["schedule", null, "exam-2"],
+    ["history", "attempt-2", "exam-2"],
+  ] as const)("composes CandidatePage with the %s route identifiers intact", async (task, attemptId, examId) => {
+    const page = await CandidatePage({ searchParams: Promise.resolve({ task, attemptId: attemptId ?? undefined, examId: examId ?? undefined }) });
+    expect(page).toMatchObject({ props: { initialRoute: { task, attemptId, examId } } });
+  });
+
+  it("fails closed for duplicate and array identifiers at the composed page boundary", async () => {
+    for (const searchParams of [{ task: ["current", "history"] }, { attemptId: ["a", "b"] }, { examId: ["e", "f"] }]) {
+      mockGetPortalSession.mockResolvedValue(null);
+      await expect(CandidatePage({ searchParams: Promise.resolve(searchParams) })).rejects.toThrow("redirect:/login");
+      expect(mockRedirect).toHaveBeenLastCalledWith("/login?returnTo=%2Fcandidate");
+    }
+  });
 });
