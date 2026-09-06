@@ -162,6 +162,19 @@ describe("candidate task route", () => {
     );
   });
 
+  it("uses truthful current fallback copy when history remains but the catalogue is empty", () => {
+    const resolved = resolveCandidateTaskRoute(
+      { exams: [], attempts: [{
+        id: "attempt-completed", examId: "retired-exam", scheduledFor: "2026-06-15T10:00:00.000Z", status: "completed",
+      }] },
+      Date.parse("2026-06-16T15:59:00.000Z"),
+      { task: "current", attemptId: null, examId: null },
+    );
+    expect(resolved.activeTask).toBe("history");
+    expect(resolved.notice).toBe("No live ExamAttempt is available right now, and no published Exams are available yet.");
+    expect(resolved.notice).not.toContain("Choose another published Exam");
+  });
+
   it("keeps an active Schedule selection when navigating to Schedule again", () => {
     const resolved = resolveCandidateTaskRoute(dashboard, Date.parse("2026-06-16T15:59:00.000Z"), {
       task: "schedule", attemptId: null, examId: "exam-2",

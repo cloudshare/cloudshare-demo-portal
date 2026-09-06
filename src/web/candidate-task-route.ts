@@ -69,7 +69,9 @@ export function resolveCandidateTaskRoute(
       return buildFallbackTaskResult(
         dashboard,
         nowMs,
-        "No live ExamAttempt is available right now. Choose another published Exam.",
+        dashboard.exams.length > 0
+          ? "No live ExamAttempt is available right now. Choose another published Exam."
+          : "No live ExamAttempt is available right now, and no published Exams are available yet.",
         tasks,
       );
     }
