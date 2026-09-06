@@ -45,18 +45,21 @@ describe("admin shell navigation intents", () => {
 });
 
 describe("admin shell tab and URL model", () => {
-  it("defines the eight existing Helios Admin destinations without merging their semantics", () => {
+  it("defines six Helios Admin destinations with one Support entry point", () => {
     expect(ADMIN_NAVIGATION_ITEMS.map((item) => item.label)).toEqual([
       "CloudShare Connection",
       "Exam catalog",
       "Candidates",
       "Individual delivery",
       "Cohort delivery",
-      "Session Monitoring",
-      "Support Diagnostics",
-      "Audit",
+      "Support",
     ]);
-    expect(new Set(ADMIN_NAVIGATION_ITEMS.map((item) => item.key)).size).toBe(8);
+    expect(new Set(ADMIN_NAVIGATION_ITEMS.map((item) => item.key)).size).toBe(6);
+    expect(ADMIN_NAVIGATION_ITEMS.at(-1)).toEqual({
+      key: "support",
+      label: "Support",
+      intent: { tab: "support", supportView: "monitoring" },
+    });
   });
 
   it("groups admin work areas around the unchanged four tabs", () => {

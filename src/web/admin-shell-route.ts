@@ -39,9 +39,7 @@ export const ADMIN_NAVIGATION_ITEMS: readonly AdminNavigationItem[] = [
   { key: "candidates", label: "Candidates", intent: { tab: "candidates" } },
   { key: "individual-delivery", label: "Individual delivery", intent: { tab: "exams", examView: "catalog", deliveryView: "individual" } },
   { key: "cohort-delivery", label: "Cohort delivery", intent: { tab: "exams", examView: "catalog", deliveryView: "cohort" } },
-  { key: "monitoring", label: "Session Monitoring", intent: { tab: "support", supportView: "monitoring" } },
-  { key: "diagnostics", label: "Support Diagnostics", intent: { tab: "support", supportView: "diagnostics" } },
-  { key: "audit", label: "Audit", intent: { tab: "support", supportView: "audit" } },
+  { key: "support", label: "Support", intent: { tab: "support", supportView: "monitoring" } },
 ];
 
 export interface AdminConsoleRouteState {

@@ -27,7 +27,7 @@
   .adminAccount { display:block; padding:.5rem 0 0; border-top:0; }
   .adminLogout { width:auto; min-width:7rem; }
   .adminNavigation { overflow-x:auto; }
-  .adminNavigationList { grid-template-columns:repeat(8,minmax(10.5rem,1fr)); }
+  .adminNavigationList { grid-template-columns:repeat(6,minmax(10.5rem,1fr)); }
   .adminTopbar { min-height:3.5rem; padding-inline:1rem; }
   .adminContent { padding:1rem .85rem 2.5rem; overflow-x:hidden; }
   .adminPageTitle { margin-bottom:1rem; }

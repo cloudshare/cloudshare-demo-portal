@@ -111,8 +111,7 @@ export function AdminConsole({
       const examItemActive = item.key === "catalog"
         ? (examView === "catalog" && deliveryView === null) || (examView !== "catalog" && deepExamDelivery === null)
         : (item.intent.deliveryView ?? null) === deepExamDelivery;
-      const active = item.intent.tab === tab && (item.intent.supportView ?? "monitoring") === supportView
-        && (item.intent.tab !== "exams" || examItemActive);
+      const active = item.intent.tab === tab && (item.intent.tab !== "exams" || examItemActive);
       return <li key={item.key}><Link href={buildAdminNavigationHref(item.intent)} aria-current={active ? "page" : undefined} className={styles.adminNavigationLink}>{item.label}</Link></li>;
     })}</ul></nav><div className={styles.adminNavSpacer} /><div className={styles.adminAccount}><span className={styles.adminAccountMark} aria-hidden="true">HA</span><div className={styles.adminAccountIdentity}><strong>Helios Admin</strong><small>{email}</small></div><button {...extensionHydrationProps} onClick={logout} disabled={loggingOut} className={styles.adminLogout}>Log out</button></div>
     </aside><div className={`${styles.adminMain} ${styles.adminWorkspace}`}><header className={styles.adminTopbar}><div><strong>Certalis Admin Console</strong><span>Helios Certification workspace</span></div></header><main className={styles.adminContent}><section ref={routeFocusRef} tabIndex={-1} data-route-focus aria-label="Current Helios Admin workspace" className={styles.adminRouteFocus}><h1 className={styles.adminPageTitle}>Helios Certification Admin</h1>
