@@ -380,6 +380,14 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open monitoring" })));
   });
 
+  it("uses workspace focus when a stale Support return origin is outside the Cohort queue", async () => {
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialReturnFocusSessionId="cohort-session-1" initialDeliveryView="individual" />);
+
+    const workspace = document.querySelector<HTMLElement>("[data-route-focus]");
+    await waitFor(() => expect(document.activeElement).toBe(workspace));
+  });
+
   it("carries the Session focus origin through the detail breadcrumb return", async () => {
     const onNavigate = vi.fn();
     const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {

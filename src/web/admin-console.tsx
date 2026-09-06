@@ -114,7 +114,7 @@ export function AdminConsole({
   }
 
   useEffect(() => {
-    if (returnFocusSessionId && ((tab === "exams" && examView === "sessions") || (tab === "support" && supportView === "monitoring" && !focusedCohortSessionId))) return;
+    if (returnFocusSessionId && ((tab === "exams" && examView === "sessions") || (tab === "support" && supportView === "monitoring" && deliveryView === "cohort" && !focusedCohortSessionId))) return;
     routeFocusRef.current?.focus();
   }, [tab, examView, focusedExamId, focusedCohortSessionId, returnFocusSessionId, supportView, deliveryView]);
 
