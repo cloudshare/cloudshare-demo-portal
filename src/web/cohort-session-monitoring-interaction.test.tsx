@@ -370,6 +370,20 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "View session details" })));
   });
 
+  it("carries the Session focus origin through the detail breadcrumb return", async () => {
+    const onNavigate = vi.fn();
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return json({ sessions: [session] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="session" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" returnFocusSessionId="cohort-session-1" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Cohort Sessions: Helios Foundations" }));
+    expect(onNavigate).toHaveBeenLastCalledWith({ tab: "exams", examView: "sessions", examId: "exam-1", returnFocusSessionId: "cohort-session-1" });
+  });
+
   it("falls back to workspace focus when a remounted queue no longer has its Session origin", async () => {
     installAdminConsoleFetchMock();
     render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="exam-1" initialReturnFocusSessionId="missing-session" initialDeliveryView="cohort" />);
