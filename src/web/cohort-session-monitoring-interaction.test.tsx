@@ -322,6 +322,25 @@ function installAdminConsoleFetchMock() {
 }
 
 describe("AdminConsole Cohort Exam Session monitoring path", () => {
+  it("keeps the current Support destination semantic when its submenu is collapsed", async () => {
+    const user = userEvent.setup();
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="diagnostics" />);
+
+    const supportSummary = screen.getByText("Support", { selector: "summary" });
+    const diagnosticsLink = screen.getByRole("link", { name: "Support Diagnostics" });
+    expect(diagnosticsLink.getAttribute("aria-current")).toBe("page");
+    expect(supportSummary.getAttribute("aria-current")).toBeNull();
+
+    await user.click(supportSummary);
+    expect(supportSummary.getAttribute("aria-current")).toBe("page");
+    expect(diagnosticsLink.getAttribute("aria-current")).toBeNull();
+
+    await user.click(supportSummary);
+    expect(supportSummary.getAttribute("aria-current")).toBeNull();
+    expect(diagnosticsLink.getAttribute("aria-current")).toBe("page");
+  });
+
   it("clears the Cohort delivery branch when entering new Exam authoring", async () => {
     const user = userEvent.setup();
     installAdminConsoleFetchMock();

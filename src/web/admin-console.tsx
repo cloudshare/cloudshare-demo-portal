@@ -126,10 +126,10 @@ export function AdminConsole({
       const active = item.intent.tab === tab && (item.intent.tab !== "exams" || examItemActive);
       if (item.key === "support") {
         return <li key={item.key}><details open={supportNavigationOpen} onToggle={(event) => setSupportNavigationOpen(event.currentTarget.open)} className={styles.adminNavigationGroup}>
-          <summary className={styles.adminNavigationGroupSummary} data-active={tab === "support" ? "true" : undefined}>{item.label}</summary>
+          <summary className={styles.adminNavigationGroupSummary} data-active={tab === "support" ? "true" : undefined} aria-current={tab === "support" && !supportNavigationOpen ? "page" : undefined}>{item.label}</summary>
           <ul className={styles.adminNavigationSubmenu}>{ADMIN_SUPPORT_NAVIGATION_ITEMS.map((supportItem) => {
             const supportActive = tab === "support" && supportItem.intent.supportView === supportView;
-            return <li key={supportItem.key}><Link href={buildAdminNavigationHref(supportItem.intent)} aria-current={supportActive ? "page" : undefined} className={styles.adminNavigationSubmenuLink}>{supportItem.label}</Link></li>;
+            return <li key={supportItem.key}><Link href={buildAdminNavigationHref(supportItem.intent)} aria-current={supportNavigationOpen && supportActive ? "page" : undefined} className={styles.adminNavigationSubmenuLink}>{supportItem.label}</Link></li>;
           })}</ul>
         </details></li>;
       }
