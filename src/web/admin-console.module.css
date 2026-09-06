@@ -14,8 +14,8 @@
 .adminContent { min-width:0; padding:2rem clamp(1.25rem,4vw,3.5rem) 3.5rem; }
 .adminPageTitle { max-width:72rem; margin:0 auto 1.25rem; color:#123d39; font-size:1.35rem; line-height:1.2; }
 .adminContent > * { max-width:72rem; margin-inline:auto; }
-.adminNavigation { position:static; }
-.adminNavigationList { display:grid; gap:.25rem; margin:0; padding:0; list-style:none; }
+.adminNavigation { position:static; min-width:0; width:100%; max-width:100%; overflow-x:auto; }
+.adminNavigationList { display:grid; gap:.25rem; min-width:0; margin:0; padding:0; list-style:none; }
 .adminNavigationLink { display:block; padding:.65rem .75rem; border:1px solid transparent; border-radius:6px; color:#dff8f1; font-weight:600; line-height:1.25; text-decoration:none; }
 .adminNavigationLink:hover,.adminNavigationLink:focus-visible { border-color:#82d8c4; background:#205f56; outline:3px solid #c8fff0; outline-offset:1px; }
 .adminNavigationLink[aria-current="page"] { border-color:#82d8c4; background:#82d8c4; color:#0d3f3a; }

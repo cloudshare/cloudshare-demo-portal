@@ -148,6 +148,7 @@ describe("AdminConsole", () => {
     expect(css).toContain(".adminContent { min-width:0; padding:");
     expect(css).toContain("min-width:0; min-height:100vh");
     expect(css).toContain(".adminContent { padding:1rem .85rem 2.5rem; overflow-x:hidden; }");
+    expect(css).toContain(".adminNavigation { position:static; min-width:0; width:100%; max-width:100%; overflow-x:auto; }");
     expect(css).toContain(".adminRouteFocus:focus-visible");
     expect(css).toContain(".adminLogout { width:auto; min-width:7rem; }");
   });
