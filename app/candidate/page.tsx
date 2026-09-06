@@ -8,11 +8,11 @@ import { CandidateHome } from "@/web/candidate-home";
 import { parseCandidateTaskRoute } from "@/web/candidate-task-route";
 import { getExpiredPortalLoginPath, getSafePortalTargetFromSearchParams } from "@/auth/portal-return-target";
 
-export default async function CandidatePage({
-  searchParams,
-}: {
+type CandidatePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
-} = {}) {
+};
+
+export default async function CandidatePage({ searchParams }: CandidatePageProps) {
   const services = getPortalSessionServices();
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
   const params = (await searchParams) ?? {};

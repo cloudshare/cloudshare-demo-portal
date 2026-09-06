@@ -676,7 +676,17 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
             <div style={sectionHeaderStyle}>
               <div>
                 <p style={eyebrowLabelStyle}>Published Exams</p>
-                <h2 style={sectionTitleStyle}>Schedule your next session</h2>
+                <h2
+                  ref={activeTaskHeadingRef}
+                  onBlur={() => setFocusedTaskHeading(null)}
+                  tabIndex={-1}
+                  style={{
+                    ...sectionTitleStyle,
+                    ...(focusedTaskHeading === "schedule" ? focusedTaskHeadingStyle : null),
+                  }}
+                >
+                  Schedule your next session
+                </h2>
               </div>
             </div>
             <p style={{ margin: 0, color: "#475569" }}>No published Exams are available yet.</p>

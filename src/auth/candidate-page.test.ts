@@ -27,7 +27,7 @@ describe("Candidate page routing", () => {
   it("redirects an expired Candidate navigation to its safe login return target", async () => {
     mockGetPortalSession.mockResolvedValue(null);
 
-    await expect(CandidatePage()).rejects.toThrow("redirect:/login?returnTo=%2Fcandidate");
+    await expect(CandidatePage({})).rejects.toThrow("redirect:/login?returnTo=%2Fcandidate");
     expect(mockRedirect).toHaveBeenCalledWith("/login?returnTo=%2Fcandidate");
   });
 
@@ -41,7 +41,7 @@ describe("Candidate page routing", () => {
       workspace: "sales",
     });
 
-    await expect(CandidatePage()).rejects.toThrow("redirect:/sales-trial");
+    await expect(CandidatePage({})).rejects.toThrow("redirect:/sales-trial");
     expect(mockRedirect).toHaveBeenCalledWith("/sales-trial");
   });
 });
