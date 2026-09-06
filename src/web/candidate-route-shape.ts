@@ -1,3 +1,7 @@
+export function isValidCandidateIdentifier(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value);
+}
+
 export function isValidCandidateRouteShape(input: {
   readonly task: string | null;
   readonly hasAttemptId: boolean;

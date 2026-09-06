@@ -3,7 +3,8 @@ import {
   type CandidateScheduledAttemptView,
 } from "./candidate-home-state";
 import type { CandidateDashboardData } from "./candidate-scheduling";
-import { isValidCandidateRouteShape } from "./candidate-route-shape";
+import { isValidCandidateIdentifier, isValidCandidateRouteShape } from "./candidate-route-shape";
+export { isValidCandidateIdentifier } from "./candidate-route-shape";
 import { isCandidateLabHistoryPresentation } from "./candidate-lab-state";
 
 export type CandidateTaskView = "current" | "schedule" | "history";
@@ -192,7 +193,7 @@ export function parseCandidateTaskSearchParams(
     attemptId: values.get("attemptId"),
     examId: values.get("examId"),
   });
-  if (!route.task || (route.attemptId && !isCandidateRouteId(route.attemptId)) || (route.examId && !isCandidateRouteId(route.examId)) || !isValidCandidateRouteShape({ task: route.task, hasAttemptId: values.has("attemptId"), hasExamId: values.has("examId") })) {
+  if (!route.task || (route.attemptId && !isValidCandidateIdentifier(route.attemptId)) || (route.examId && !isValidCandidateIdentifier(route.examId)) || !isValidCandidateRouteShape({ task: route.task, hasAttemptId: values.has("attemptId"), hasExamId: values.has("examId") })) {
     return emptyCandidateTaskRoute();
   }
   return route;
@@ -320,9 +321,6 @@ function isHistoryCandidateAttempt(attempt: CandidateScheduledAttemptView): bool
   return attempt.displayStatus === "completed" || attempt.displayStatus === "expired";
 }
 
-function isCandidateRouteId(value: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value);
-}
 
 function emptyCandidateTaskRoute(): CandidateTaskRoute {
   return { task: null, attemptId: null, examId: null };

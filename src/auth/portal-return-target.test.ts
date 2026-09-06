@@ -35,6 +35,8 @@ describe("portal expired-session return targets", () => {
       "/candidate?task=current&examId=exam-1",
       "/candidate?task=history&examId=exam-1",
       "/candidate?task=current&attemptId=bad%20id",
+      "/candidate?task=current&attemptId=-attempt",
+      "/candidate?task=current&attemptId=_attempt",
       "/admin?tab=support&correlationId=protected",
       "/sales-trial?accessLink=secret",
       "/sales?tab=records&accountId=customer-2",

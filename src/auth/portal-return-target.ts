@@ -1,5 +1,5 @@
 import type { PortalCustomerWorkspace, PortalUserRole } from "./portal-stores";
-import { isValidCandidateRouteShape } from "../web/candidate-route-shape";
+import { isValidCandidateIdentifier, isValidCandidateRouteShape } from "../web/candidate-route-shape";
 
 type PortalReturnScope = "certification_admin" | "sales_admin" | "candidate" | "sales_trial";
 
@@ -48,7 +48,7 @@ function hasValidRouteShape(scope: PortalReturnScope, searchParams: URLSearchPar
     if (!hasOnlyQueryKeys(searchParams, ["task", "attemptId", "examId"])) return false;
     for (const key of ["attemptId", "examId"]) {
       const value = searchParams.get(key);
-      if (value !== null && !/^[A-Za-z0-9_-]+$/.test(value)) return false;
+      if (value !== null && !isValidCandidateIdentifier(value)) return false;
     }
     return isValidCandidateRouteShape({ task, hasAttemptId: searchParams.has("attemptId"), hasExamId: searchParams.has("examId") });
   }
@@ -105,7 +105,7 @@ function safePortalTarget(raw: string | null | undefined): { readonly target: st
   for (const [key, value] of url.searchParams) {
     const rule = allowed[key];
     const candidateIdentifier = scope === "candidate" && (key === "attemptId" || key === "examId");
-    if (seenKeys.has(key) || !rule || (candidateIdentifier ? !/^[A-Za-z0-9_-]+$/.test(value) : (rule === "integer" ? !/^(0|[1-9]\d*)$/.test(value) : !rule.includes(value)))) {
+    if (seenKeys.has(key) || !rule || (candidateIdentifier ? !isValidCandidateIdentifier(value) : (rule === "integer" ? !/^(0|[1-9]\d*)$/.test(value) : !rule.includes(value)))) {
       return null;
     }
     seenKeys.add(key);

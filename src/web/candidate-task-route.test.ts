@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isValidCandidateIdentifier,
   buildCandidateTaskHref,
   getCandidateTaskForAttemptStatus,
   getCandidateTaskNavigationRoute,
@@ -50,6 +51,16 @@ const dashboard: CandidateDashboardData = {
     },
   ],
 };
+
+describe("candidate route identifiers", () => {
+  it.each(["attempt-1", "exam_1", "A1", "0-start"]) ("accepts %s", (value) => {
+    expect(isValidCandidateIdentifier(value)).toBe(true);
+  });
+
+  it.each(["-attempt", "_exam", " attempt", "attempt ", ""]) ("rejects %s", (value) => {
+    expect(isValidCandidateIdentifier(value)).toBe(false);
+  });
+});
 
 describe("candidate task route", () => {
   it("parses only supported task route parameters", () => {

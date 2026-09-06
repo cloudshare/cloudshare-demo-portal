@@ -353,15 +353,18 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
 
     const routeNavigated = previousUrlRouteKeyRef.current !== urlRouteKey;
     previousUrlRouteKeyRef.current = urlRouteKey;
-    if (!routeNavigated || previousResolvedRouteKeyRef.current === resolvedRouteKey) {
+    const resolvedRouteChanged = previousResolvedRouteKeyRef.current !== resolvedRouteKey;
+    if (!resolvedRouteChanged) {
       previousResolvedRouteKeyRef.current = resolvedRouteKey;
       return;
     }
 
     previousResolvedRouteKeyRef.current = resolvedRouteKey;
-    setFocusedTaskHeading(resolvedRoute.activeTask);
     setAnnouncedTaskMessage(buildCandidateTaskAnnouncement(resolvedRoute));
-    activeTaskHeadingRef.current?.focus({ preventScroll: true });
+    if (routeNavigated) {
+      setFocusedTaskHeading(resolvedRoute.activeTask);
+      activeTaskHeadingRef.current?.focus({ preventScroll: true });
+    }
   }, [loading, resolvedRoute, resolvedRouteKey, searchParams]);
 
   if (sessionExpired) {

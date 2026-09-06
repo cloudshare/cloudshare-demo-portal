@@ -218,6 +218,7 @@ describe("CandidateHome route-backed task flow", () => {
     await act(async () => releaseRefresh(json({ exams: [], attempts: [] })));
     await waitFor(() => expect(screen.queryByText("Refreshing candidate delivery status…")).toBeNull());
     expect(document.activeElement).toBe(control);
+    expect(screen.getByRole("status", { name: "Candidate route status" }).textContent).toContain("Now showing Attempt history.");
     rendered.unmount();
   });
 });
