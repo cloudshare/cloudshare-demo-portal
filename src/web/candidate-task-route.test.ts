@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCandidateTaskHref,
   getCandidateTaskForAttemptStatus,
+  getCandidateTaskNavigationRoute,
   parseCandidateTaskRoute,
   resolveCandidateTaskRoute,
   type CandidateTaskRoute,
@@ -159,5 +160,25 @@ describe("candidate task route", () => {
     expect(buildCandidateTaskHref({ task: "history", attemptId: "attempt-completed", examId: null })).toBe(
       "/candidate?task=history&attemptId=attempt-completed",
     );
+  });
+
+  it("keeps an active Schedule selection when navigating to Schedule again", () => {
+    const resolved = resolveCandidateTaskRoute(dashboard, Date.parse("2026-06-16T15:59:00.000Z"), {
+      task: "schedule", attemptId: null, examId: "exam-2",
+    });
+    expect(getCandidateTaskNavigationRoute("schedule", resolved)).toEqual({
+      task: "schedule", attemptId: null, examId: "exam-2",
+    });
+  });
+
+  it.each(["current", "history"] as const)("chooses a deterministic unattempted published exam from %s", (task) => {
+    const resolved = resolveCandidateTaskRoute(dashboard, Date.parse("2026-06-16T15:59:00.000Z"), {
+      task, attemptId: task === "current" ? "attempt-ready" : "attempt-completed", examId: null,
+    });
+    expect(getCandidateTaskNavigationRoute("schedule", resolved)).toEqual({
+      task: "schedule", attemptId: null, examId: "exam-2",
+    });
+    expect(resolveCandidateTaskRoute(dashboard, Date.parse("2026-06-16T15:59:00.000Z"),
+      getCandidateTaskNavigationRoute("schedule", resolved)).selectedExam?.id).toBe("exam-2");
   });
 });

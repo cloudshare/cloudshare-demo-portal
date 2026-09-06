@@ -178,7 +178,16 @@ export function getCandidateTaskNavigationRoute(
       : resolved.candidateAttempts;
   const attemptForDestination = destinationAttempts[0] ?? null;
   if (task === "schedule") {
-    return { task, attemptId: null, examId: attemptForDestination?.examId ?? resolved.selectedExam?.id ?? null };
+    const selectedScheduleExam = resolved.activeTask === "schedule"
+      ? resolved.selectedExam
+      : null;
+    const attemptedExamIds = new Set(resolved.candidateAttempts.map((attempt) => attempt.examId));
+    const availableExam = [...resolved.exams]
+      .filter((exam) => !attemptedExamIds.has(exam.id))
+      .sort(compareCandidateExams)[0]
+      ?? [...resolved.exams].sort(compareCandidateExams)[0]
+      ?? null;
+    return { task, attemptId: null, examId: selectedScheduleExam?.id ?? availableExam?.id ?? null };
   }
   if (task === "current" || task === "history") {
     const selected = resolved.activeTask === task && resolved.selectedAttempt && destinationAttempts.some(
@@ -187,6 +196,13 @@ export function getCandidateTaskNavigationRoute(
     return { task, attemptId: selected?.attemptId ?? null, examId: selected?.examId ?? null };
   }
   return { task: null, attemptId: null, examId: null };
+}
+
+function compareCandidateExams(
+  left: CandidateDashboardData["exams"][number],
+  right: CandidateDashboardData["exams"][number],
+): number {
+  return left.id.localeCompare(right.id) || left.title.localeCompare(right.title);
 }
 
 export function getCandidateTaskForAttemptStatus(
