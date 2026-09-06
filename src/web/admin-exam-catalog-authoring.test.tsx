@@ -55,7 +55,7 @@ describe("AdminExamCatalogAuthoringFeature", () => {
 
     expect((await screen.findByRole("spinbutton", { name: /Time limit \(minutes\)/ }) as HTMLInputElement).value).toBe("75");
     expect((screen.getByRole("spinbutton", { name: /Open period \(minutes\)/ }) as HTMLInputElement).value).toBe("90");
-    expect((screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement).value).toBe("project-1");
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement).value).toBe("project-1"));
     expect((screen.getByRole("combobox", { name: "Policy" }) as HTMLSelectElement).value).toBe("");
     await user.click(screen.getByRole("button", { name: "Cancel Edit" }));
     await user.click(await screen.findByRole("button", { name: "Create Exam" }));
