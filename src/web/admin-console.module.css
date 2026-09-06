@@ -19,7 +19,7 @@
 .adminNavigationLink { display:block; padding:.65rem .75rem; border:1px solid transparent; border-radius:6px; color:#dff8f1; font-weight:600; line-height:1.25; text-decoration:none; }
 .adminNavigationLink:hover,.adminNavigationLink:focus-visible { border-color:#82d8c4; background:#205f56; outline:3px solid #c8fff0; outline-offset:1px; }
 .adminNavigationLink[aria-current="page"] { border-color:#82d8c4; background:#82d8c4; color:#0d3f3a; }
-.adminRouteFocus:focus-visible,[data-route-focus]:focus-visible { outline:3px solid rgba(15,109,102,.55); outline-offset:4px; }
+.adminRouteFocus:focus-visible { outline:3px solid rgba(15,109,102,.55); outline-offset:4px; }
 @media (max-width:760px) {
   .adminShell { grid-template-columns:1fr; }
   .adminSidebar { position:static; min-height:auto; height:auto; padding:.75rem; }
