@@ -153,6 +153,7 @@ describe("idle expiry on protected portal surfaces", () => {
   });
 
   it("unmounts Candidate Lab after a status refresh 401 without retrying the refresh", async () => {
+    vi.useFakeTimers();
     window.history.replaceState({}, "", "/candidate/lab?examAttemptId=attempt-1");
     let statusCalls = 0;
     const fetchSpy = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
@@ -163,14 +164,24 @@ describe("idle expiry on protected portal surfaces", () => {
       return json({ session: { expiresAtMs: Date.now() + 60_000 }, serverNowMs: Date.now() });
     });
     render(<CandidateLabShell email="candidate@helioscx.demo" examAttemptId="attempt-1" initialAttemptStatus="in_progress" />);
-    await screen.findByRole("button", { name: "Enter exam" });
-    await userEvent.setup().click(screen.getByRole("button", { name: "Enter exam" }));
-    await act(async () => await Promise.resolve());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
     expect(statusCalls).toBe(2);
     expect(fetchSpy.mock.calls.filter(([input]) => String(input).includes("/api/exam/status"))).toHaveLength(2);
     expect(router.replace).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith("/login");
     expect(screen.queryByText("Candidate lab")).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(fetchSpy.mock.calls.filter(([input]) => String(input).includes("/api/exam/status"))).toHaveLength(2);
+    expect(router.replace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Candidate lab")).toBeNull();
+    vi.useRealTimers();
   });
 
   it("removes an idle Candidate Score nested surface", async () => {

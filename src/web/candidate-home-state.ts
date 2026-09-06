@@ -27,27 +27,6 @@ export interface CandidateAttemptPrimaryAction {
   readonly disabled: boolean;
 }
 
-export type CandidateAttemptStatusGroup =
-  | "scheduled"
-  | "in_progress"
-  | "suspended"
-  | "completed"
-  | "expired";
-
-export type CandidateAttemptStatusFilter = "live" | CandidateAttemptStatusGroup;
-
-export interface CandidateAttemptStatusFilterView {
-  readonly filter: CandidateAttemptStatusFilter;
-  readonly label: string;
-  readonly count: number;
-}
-
-export interface CandidateAttemptQueueState {
-  readonly activeFilter: CandidateAttemptStatusFilter;
-  readonly attempts: CandidateScheduledAttemptView[];
-  readonly filters: CandidateAttemptStatusFilterView[];
-}
-
 export function buildCandidateExamDurationLabels(
   exam: CandidateDashboardData["exams"][number],
 ): { readonly runtimeLimit: string; readonly openWindow: string; readonly openPeriodDetail: string } {
@@ -63,27 +42,6 @@ export const MAX_ENTERABILITY_WAKE_UP_DELAY_MS = 24 * 60 * 60 * 1000;
 export const COLD_START_WARNING_MESSAGE =
   "Scheduled within five hours: CloudShare may cold-start the environment on login.";
 const COLD_START_WARNING_WINDOW_MS = 5 * 60 * 60 * 1000;
-const LIVE_CANDIDATE_ATTEMPT_GROUPS = new Set<CandidateAttemptStatusGroup>([
-  "scheduled",
-  "in_progress",
-  "suspended",
-]);
-const CANDIDATE_ATTEMPT_FILTER_LABELS: Record<CandidateAttemptStatusFilter, string> = {
-  live: "Live",
-  scheduled: "Scheduled / ready",
-  in_progress: "In progress",
-  suspended: "Suspended",
-  completed: "Completed",
-  expired: "Expired",
-};
-const CANDIDATE_ATTEMPT_FILTER_ORDER: CandidateAttemptStatusFilter[] = [
-  "live",
-  "scheduled",
-  "in_progress",
-  "suspended",
-  "completed",
-  "expired",
-];
 
 export function getLatestAttemptForExam(
   attempts: CandidateDashboardData["attempts"],
@@ -277,44 +235,6 @@ export function buildScheduledAttemptViews(
         coldStartWarning: getAttemptColdStartWarning(attempt, nowMs, exam),
       };
     });
-}
-
-export function buildCandidateAttemptQueueState(
-  dashboard: CandidateDashboardData,
-  nowMs: number,
-  activeFilter: CandidateAttemptStatusFilter = "live",
-): CandidateAttemptQueueState {
-  const views = buildScheduledAttemptViews(dashboard, nowMs);
-  const groupedViews = views.map((attempt) => ({
-    attempt,
-    group: getCandidateAttemptStatusGroup(attempt),
-  }));
-  const filters = CANDIDATE_ATTEMPT_FILTER_ORDER.map((filter) => ({
-    filter,
-    label: CANDIDATE_ATTEMPT_FILTER_LABELS[filter],
-    count: groupedViews.filter(({ group }) =>
-      filter === "live" ? LIVE_CANDIDATE_ATTEMPT_GROUPS.has(group) : group === filter,
-    ).length,
-  }));
-
-  return {
-    activeFilter,
-    attempts: groupedViews
-      .filter(({ group }) =>
-        activeFilter === "live" ? LIVE_CANDIDATE_ATTEMPT_GROUPS.has(group) : group === activeFilter,
-      )
-      .map(({ attempt }) => attempt),
-    filters,
-  };
-}
-
-function getCandidateAttemptStatusGroup(
-  attempt: CandidateScheduledAttemptView,
-): CandidateAttemptStatusGroup {
-  if (attempt.displayStatus === "ready") {
-    return "scheduled";
-  }
-  return attempt.displayStatus;
 }
 
 export function getAttemptColdStartWarning(

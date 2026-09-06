@@ -53,6 +53,9 @@ export function CandidateLabShell({
   }, [handleSessionExpired]);
 
   useEffect(() => {
+    if (sessionExpired) {
+      return;
+    }
     let cancelled = false;
     let refreshInFlight = false;
 
@@ -107,7 +110,7 @@ export function CandidateLabShell({
       window.removeEventListener("focus", refreshIfVisible);
       document.removeEventListener("visibilitychange", refreshIfVisible);
     };
-  }, [examAttemptId, handleSessionExpired]);
+  }, [examAttemptId, handleSessionExpired, sessionExpired]);
 
   const presentation = labStatus ? getCandidateLabPresentation({
     status: labStatus.status ?? initialAttemptStatus,

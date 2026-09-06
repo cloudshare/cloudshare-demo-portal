@@ -833,13 +833,6 @@ const attemptQueueSectionStyle: CSSProperties = {
   boxShadow: "0 4px 14px rgba(15, 23, 42, 0.08)",
 };
 
-const attemptCardGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
-  gap: "1rem",
-  alignItems: "stretch",
-};
-
 const attemptCardStyle: CSSProperties = {
   ...cardStyle,
   padding: 0,
