@@ -166,10 +166,15 @@ describe("candidate task route", () => {
   it("fails closed for duplicate or invalid URL query shapes", () => {
     const fallback = { task: "current" as const, attemptId: "safe", examId: "exam-1" };
     const duplicate = new URLSearchParams("task=current&task=history&attemptId=safe&examId=exam-1");
-    expect(parseCandidateTaskSearchParams(duplicate, fallback)).toEqual({ task: null, attemptId: "safe", examId: "exam-1" });
-    expect(parseCandidateTaskSearchParams(new URLSearchParams("attemptId=safe&attemptId=evil"), fallback)).toEqual({ task: "current", attemptId: null, examId: "exam-1" });
-    expect(parseCandidateTaskSearchParams(new URLSearchParams("examId=exam-1&examId=evil"), fallback)).toEqual({ task: "current", attemptId: "safe", examId: null });
-    expect(parseCandidateTaskSearchParams(new URLSearchParams("task=unknown"), fallback)).toEqual({ task: null, attemptId: "safe", examId: "exam-1" });
+    const empty = { task: null, attemptId: null, examId: null };
+    expect(parseCandidateTaskSearchParams(duplicate, fallback)).toEqual(empty);
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("task=current&attemptId=safe&attemptId=evil"), fallback)).toEqual(empty);
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("task=current&examId=exam-1&examId=evil"), fallback)).toEqual(empty);
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("task=unknown"), fallback)).toEqual(empty);
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("task=current&unknown=value"), fallback)).toEqual(empty);
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("task=current&attemptId=bad%20id"), fallback)).toEqual(empty);
+    expect(parseCandidateTaskSearchParams(new URLSearchParams("attemptId=safe"), fallback)).toEqual(empty);
+    expect(parseCandidateTaskSearchParams(new URLSearchParams(), fallback)).toEqual(fallback);
   });
 
   it("prioritizes actionable current attempts over future scheduled attempts", () => {
@@ -222,10 +227,23 @@ describe("candidate task route", () => {
       { id: "attempt-new-history", examId: "exam-2", scheduledFor: "2026-06-16T18:00:00.000Z", status: "completed" as const },
     ] };
     const resolved = resolveCandidateTaskRoute(data, Date.parse("2026-06-16T16:30:00.000Z"), { task: "schedule", attemptId: null, examId: null });
-    expect(getCandidateTaskNavigationRoute("current", resolved)).toEqual({ task: "current", attemptId: "attempt-new-live", examId: "exam-2" });
+    expect(getCandidateTaskNavigationRoute("current", resolved)).toEqual({ task: "current", attemptId: "attempt-ready", examId: "exam-1" });
     expect(getCandidateTaskNavigationRoute("history", resolved)).toEqual({ task: "history", attemptId: "attempt-new-history", examId: "exam-2" });
     expect(getCandidateTaskNavigationRoute("schedule", resolved)).toEqual({ task: "schedule", attemptId: null, examId: "exam-1" });
     expect(getCandidateTaskNavigationRoute("schedule", resolveCandidateTaskRoute({ exams: [], attempts: data.attempts }, Date.now(), { task: "history", attemptId: null, examId: null }))).toEqual({ task: "schedule", attemptId: null, examId: null });
+  });
+
+  it("routes Current to the highest-priority active attempt after leaving Schedule or History", () => {
+    const data = { ...dashboard, attempts: [
+      { id: "future", examId: "exam-2", scheduledFor: "2026-06-20T10:00:00.000Z", status: "ready" as const },
+      { id: "running", examId: "exam-1", scheduledFor: "2026-06-16T15:00:00.000Z", status: "in_progress" as const },
+    ] };
+    for (const task of ["schedule", "history"] as const) {
+      const resolved = resolveCandidateTaskRoute(data, Date.parse("2026-06-16T15:59:00.000Z"), { task, attemptId: null, examId: null });
+      const route = getCandidateTaskNavigationRoute("current", resolved);
+      expect(route).toEqual({ task: "current", attemptId: "running", examId: "exam-1" });
+      expect(resolveCandidateTaskRoute(data, Date.parse("2026-06-16T15:59:00.000Z"), route).selectedAttempt?.attemptId).toBe("running");
+    }
   });
 
   it("falls back deterministically when every published exam was attempted", () => {

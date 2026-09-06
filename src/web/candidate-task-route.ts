@@ -173,15 +173,27 @@ export function parseCandidateTaskSearchParams(
   searchParams: URLSearchParams,
   fallback: CandidateTaskRoute,
 ): CandidateTaskRoute {
-  const read = (name: string, fallbackValue: string | null) => {
-    const values = searchParams.getAll(name);
-    return values.length === 0 ? fallbackValue : values.length === 1 ? values[0] : null;
-  };
-  return parseCandidateTaskRoute({
-    task: read("task", fallback.task),
-    attemptId: read("attemptId", fallback.attemptId),
-    examId: read("examId", fallback.examId),
+  // An empty query is the only case where the server-rendered route is useful.
+  // Once the browser supplies a query, parse the complete route atomically so
+  // Back/Forward cannot combine a new partial URL with stale initial props.
+  if ([...searchParams.keys()].length === 0) return fallback;
+  const supported = new Set(["task", "attemptId", "examId"]);
+  const entries = [...searchParams.entries()];
+  if (entries.some(([key]) => !supported.has(key))) return emptyCandidateTaskRoute();
+  const values = new Map<string, string>();
+  for (const [key, value] of entries) {
+    if (values.has(key) || value.trim() !== value || value.length === 0) return emptyCandidateTaskRoute();
+    values.set(key, value);
+  }
+  const route = parseCandidateTaskRoute({
+    task: values.get("task"),
+    attemptId: values.get("attemptId"),
+    examId: values.get("examId"),
   });
+  if (!route.task || (route.attemptId && !isCandidateRouteId(route.attemptId)) || (route.examId && !isCandidateRouteId(route.examId))) {
+    return emptyCandidateTaskRoute();
+  }
+  return route;
 }
 
 export function getCandidateTaskNavigationRoute(
@@ -193,7 +205,9 @@ export function getCandidateTaskNavigationRoute(
     : task === "history"
       ? resolved.candidateAttempts.filter(isHistoryCandidateAttempt)
       : resolved.candidateAttempts;
-  const attemptForDestination = destinationAttempts[0] ?? null;
+  const attemptForDestination = (task === "current"
+    ? [...destinationAttempts].sort(compareCurrentAttempts)
+    : destinationAttempts)[0] ?? null;
   if (task === "schedule") {
     const selectedScheduleExam = resolved.activeTask === "schedule"
       ? resolved.selectedExam
@@ -301,6 +315,14 @@ function isLiveCandidateAttempt(attempt: CandidateScheduledAttemptView): boolean
 
 function isHistoryCandidateAttempt(attempt: CandidateScheduledAttemptView): boolean {
   return attempt.displayStatus === "completed" || attempt.displayStatus === "expired";
+}
+
+function isCandidateRouteId(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value);
+}
+
+function emptyCandidateTaskRoute(): CandidateTaskRoute {
+  return { task: null, attemptId: null, examId: null };
 }
 
 function compareCurrentAttempts(
