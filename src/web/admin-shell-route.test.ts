@@ -101,6 +101,17 @@ describe("admin shell tab and URL model", () => {
     })).toBe("/admin?tab=exams&view=session&examId=exam-1&sessionId=cohort-session-1");
   });
 
+  it("normalises stale delivery queries for Exam authoring and Cohort Session routes", () => {
+    expect(parseAdminConsoleRouteState({ tab: "exams", view: "sessions", examId: "exam-1", delivery: "individual" }))
+      .toMatchObject({ examView: "sessions", deliveryView: "cohort" });
+    expect(parseAdminConsoleRouteState({ tab: "exams", view: "session", examId: "exam-1", sessionId: "session-1" }))
+      .toMatchObject({ examView: "session", deliveryView: "cohort" });
+    expect(parseAdminConsoleRouteState({ tab: "exams", view: "create", delivery: "cohort" }))
+      .toMatchObject({ examView: "create", deliveryView: null });
+    expect(parseAdminConsoleRouteState({ tab: "exams", view: "edit", examId: "exam-1", delivery: "individual" }))
+      .toMatchObject({ examView: "edit", deliveryView: null });
+  });
+
   it("round-trips the meaningful Individual and Cohort delivery branch", () => {
     expect(buildAdminConsoleHref({ tab: "exams", deliveryView: "individual" }))
       .toBe("/admin?tab=exams&delivery=individual");

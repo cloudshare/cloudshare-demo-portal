@@ -243,8 +243,14 @@ export function parseAdminConsoleRouteState(input: {
   const { tab, supportView } = parseAdminTabWithSupportView(input.tab, input.view);
   const examView = tab === "exams" ? parseAdminExamView(input.view) : "catalog";
   const deliveryCandidate = readRouteValue(input.delivery);
-  const deliveryView = (tab === "exams" || (tab === "support" && supportView === "monitoring")) ? parseAdminDeliveryView(input.delivery) : null;
-  const acceptsDeliveryRoute = tab === "exams" || (tab === "support" && supportView === "monitoring");
+  const parsedDeliveryView = parseAdminDeliveryView(input.delivery);
+  const deliveryView = tab === "exams"
+    ? examView === "sessions" || examView === "session"
+      ? "cohort"
+      : examView === "create" || examView === "edit" ? null : parsedDeliveryView
+    : tab === "support" && supportView === "monitoring" ? parsedDeliveryView : null;
+  const acceptsDeliveryRoute = (tab === "exams" && examView === "catalog")
+    || (tab === "support" && supportView === "monitoring");
   const routeNotice = deliveryCandidate && acceptsDeliveryRoute && !deliveryView
     ? "That delivery destination is no longer available. A safe current view is shown instead."
     : undefined;
