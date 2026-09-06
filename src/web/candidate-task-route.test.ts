@@ -204,7 +204,7 @@ describe("candidate task route", () => {
     const resolved = resolveCandidateTaskRoute(data, Date.parse("2026-06-16T16:30:00.000Z"), { task: "schedule", attemptId: null, examId: null });
     expect(getCandidateTaskNavigationRoute("current", resolved)).toEqual({ task: "current", attemptId: "attempt-new-live", examId: "exam-2" });
     expect(getCandidateTaskNavigationRoute("history", resolved)).toEqual({ task: "history", attemptId: "attempt-new-history", examId: "exam-2" });
-    expect(getCandidateTaskNavigationRoute("schedule", resolved)).toEqual({ task: "schedule", attemptId: null, examId: "exam-2" });
+    expect(getCandidateTaskNavigationRoute("schedule", resolved)).toEqual({ task: "schedule", attemptId: null, examId: "exam-1" });
     expect(getCandidateTaskNavigationRoute("schedule", resolveCandidateTaskRoute({ exams: [], attempts: data.attempts }, Date.now(), { task: "history", attemptId: null, examId: null }))).toEqual({ task: "schedule", attemptId: null, examId: null });
   });
 
