@@ -16,6 +16,7 @@ import {
 } from "./admin-exam-catalog-authoring-state";
 import {
   createCorrelationDiagnosticsNavigationIntent,
+  type AdminDeliveryView,
   type AdminExamView,
   type AdminNavigationIntent,
 } from "./admin-shell-route";
@@ -72,6 +73,17 @@ export interface ExamRecord {
   readonly policyId: string;
   readonly policyName: string;
   readonly instructorName: string;
+}
+
+export function filterExamsForDeliveryDestination<T extends Pick<ExamRecord, "deliveryAvailability">>(
+  exams: readonly T[],
+  deliveryView: AdminDeliveryView | null,
+): readonly T[] {
+  if (!deliveryView) return exams;
+  return exams.filter((exam) => {
+    const availability = exam.deliveryAvailability ?? "individual";
+    return availability === deliveryView || availability === "both";
+  });
 }
 
 interface ConnectionDiagnostic {
@@ -208,6 +220,7 @@ export interface AdminExamCatalogAuthoringFeatureProps {
   readonly active: boolean;
   readonly examView: AdminExamView;
   readonly focusedExamId: string | null;
+  readonly deliveryView?: AdminDeliveryView | null;
   readonly fetchAdmin: AdminAuthenticatedRequest;
   readonly onNavigate: (intent: AdminNavigationIntent) => void;
   readonly onCatalogChange?: (catalog: { readonly activeExams: readonly ExamRecord[]; readonly archivedExams: readonly ExamRecord[] }) => void;
@@ -240,6 +253,8 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
   const [diagnostic, setDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [loading, setLoading] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [authoringLoaded, setAuthoringLoaded] = useState(false);
   const projectRequestRef = useRef(0);
   const blueprintRequestRef = useRef(0);
   const catalogLoadingCountRef = useRef(0);
@@ -339,7 +354,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
   }
 
   async function loadAuthoring(refresh = false) {
-    setLoading(true); beginCatalogLoading(); setError(null); setCorrelationId(null); setDiagnostic(null);
+    setLoading(true); setAuthoringLoaded(false); beginCatalogLoading(); setError(null); setCorrelationId(null); setDiagnostic(null);
     try {
       const response = await props.fetchAdmin(`/api/admin/exam-authoring${refresh ? "?refresh=true" : ""}`);
       const data = await response.json() as { projects?: NamedResource[]; regions?: NamedResource[]; error?: string; correlationId?: string | null; diagnostic?: ConnectionDiagnostic };
@@ -348,6 +363,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
       const nextProjectId = nextProjects.some((project) => project.id === selectedProjectId) ? selectedProjectId : (nextProjects[0]?.id ?? "");
       setSelectedProjectId(nextProjectId);
       if (nextProjectId && !selectedProjectId) await loadProjectResources(nextProjectId, true);
+      setAuthoringLoaded(true);
     } catch (caught) { if (!isAdminSessionExpiredError(caught)) setError("Failed to load exam authoring resources"); }
     finally { setLoading(false); endCatalogLoading(); }
   }
@@ -357,9 +373,10 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
     try {
       const response = await props.fetchAdmin("/api/admin/exams");
       const data = await response.json() as { activeExams?: ExamRecord[]; archivedExams?: ExamRecord[]; error?: string };
-      if (!response.ok) { setError(data.error ?? "Failed to load exam catalog"); return; }
+      if (!response.ok) { setError(data.error ?? "Failed to load exam catalog"); return null; }
       const active = data.activeExams ?? []; const archived = data.archivedExams ?? [];
-      setActiveExams(active); setArchivedExams(archived); props.onCatalogChange?.({ activeExams: active, archivedExams: archived });
+      setActiveExams(active); setArchivedExams(archived); setCatalogLoaded(true); props.onCatalogChange?.({ activeExams: active, archivedExams: archived });
+      return [...active, ...archived];
     } catch (caught) { if (!isAdminSessionExpiredError(caught)) setError("Failed to load exam catalog"); }
     finally { endCatalogLoading(); }
   }
@@ -425,18 +442,24 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
 
   useEffect(() => {
     if (props.active) {
-      void loadCatalog();
-      if (props.examView === "create" || props.examView === "edit") void loadAuthoring();
+      if (props.examView === "edit") {
+        void loadCatalog().then((exams) => {
+          if (props.focusedExamId && exams?.some((exam) => exam.id === props.focusedExamId)) void loadAuthoring();
+        });
+      } else {
+        void loadCatalog();
+        if (props.examView === "create") void loadAuthoring();
+      }
     }
     // Feature loading is driven by the stable shell adapter and route activation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.active, props.examView]);
   useEffect(() => {
-    if (!props.active || props.examView !== "edit" || !props.focusedExamId || editingExamId === props.focusedExamId) return;
+    if (!props.active || props.examView !== "edit" || !props.focusedExamId || !authoringLoaded || editingExamId === props.focusedExamId) return;
     const exam = allExams.find((item) => item.id === props.focusedExamId); if (exam) void editExam(exam);
     // Route/catalog changes drive deep-link edit hydration; the function closes over feature state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.active, props.examView, props.focusedExamId, allExams, editingExamId]);
+  }, [props.active, props.examView, props.focusedExamId, allExams, authoringLoaded, editingExamId]);
   useEffect(() => {
     if (!shouldReconcileAllowedRegionIds(defaultSnapshot)) return;
     const next = reconcileAllowedRegionIds(selectedAllowedRegionIds, compatibleRegions);
@@ -444,7 +467,8 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
   }, [defaultSnapshot, compatibleRegions, selectedAllowedRegionIds]);
 
   if (!props.active) return null;
-  const authoring = props.examView === "create" || props.examView === "edit";
+  const missingEditExam = props.examView === "edit" && catalogLoaded && (!props.focusedExamId || !allExams.some((exam) => exam.id === props.focusedExamId));
+  const authoring = (props.examView === "create" || props.examView === "edit") && !missingEditExam;
   const effectiveTime = selectedPolicy?.runtimeLeaseMinutes ?? timeLimitMinutes;
   const duplicateWarning = getDuplicateExamResourceTupleWarning({ exams: allExams, currentExamId: editingExamId, projectId: selectedProjectId, blueprintId: selectedBlueprintId, snapshotId: defaultSnapshot?.id ?? null, policyId: selectedPolicyId, deliveryAvailability });
   const compactFieldStyle = {
@@ -455,9 +479,10 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
     {catalogLoading ? <ExamCatalogLoadingOverlay /> : null}
     {error ? <div role="alert" style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.5rem" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}><p style={{ margin: 0 }}>{error}</p><button type="button" onClick={() => { setError(null); setCorrelationId(null); }} style={{ padding: "0.25rem 0.55rem" }}>Dismiss</button></div>{correlationId ? <p style={{ margin: 0, fontSize: "0.85rem" }}>Open <strong>Support Diagnostics</strong> filtered by correlation ID <button type="button" onClick={() => props.onNavigate(createCorrelationDiagnosticsNavigationIntent(correlationId))} style={{ color: colors.info, fontFamily: "monospace", fontWeight: 700, overflowWrap: "anywhere", border: 0, padding: 0, background: "transparent", cursor: "pointer" }}>{correlationId}</button>.</p> : null}</div> : null}
     <div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}>
+      {missingEditExam ? <div role="alert" style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.5rem" }}><strong>That Exam is no longer available.</strong><span>The requested edit route was not opened. Return to the current catalog to choose an available Exam.</span><button type="button" onClick={navigateCatalog} style={secondaryButtonStyle}>Return to Exam catalog</button></div> : null}
       <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
         <div><h2 style={{ margin: 0 }}>Exam Catalog</h2><p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>Overview of Exams and delivery options for Helios CX.</p></div>
-          {props.examView !== "sessions" && props.examView !== "session" ? <button type="button" onClick={() => { resetForm(); props.onNavigate({ tab: "exams", examView: "create" }); }} disabled={loading} style={primaryButtonStyle}>Create Exam</button> : null}
+          {props.examView !== "sessions" && props.examView !== "session" && !missingEditExam ? <button type="button" onClick={() => { resetForm(); props.onNavigate({ tab: "exams", examView: "create" }); }} disabled={loading} style={primaryButtonStyle}>Create Exam</button> : null}
       </div>
       <nav aria-label="Exam workspace"><ol style={{ display: "flex", gap: "0.45rem", margin: 0, padding: 0, listStyle: "none" }}><li>{props.examView === "catalog" ? <span aria-current="page">Catalog overview</span> : <button type="button" onClick={navigateCatalog} style={secondaryButtonStyle}>Catalog overview</button>}</li>{authoring ? <li aria-current="page">{props.examView === "edit" ? "Edit Exam" : "Create Exam"}</li> : null}</ol></nav>
     </div>
@@ -480,11 +505,12 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
       <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}><button onClick={() => void saveDraft()} disabled={loading || allowedRegionValidationMessage !== null} style={primaryButtonStyle}>{loading ? "Saving..." : editingExamId ? "Update Draft Exam" : "Save Draft Exam"}</button>{editingExamId ? <button onClick={navigateCatalog} disabled={loading} style={secondaryButtonStyle}>Cancel Edit</button> : null}{message ? <span style={{ color: "#0a7a28" }}>{message}</span> : null}</div>
       {feedback ? <p id="exam-form-feedback" role="alert" style={{ margin: "-0.25rem 0 0", color: "#b42318", background: "#fff5f7", border: "1px solid #f1c7d0", borderRadius: "6px", padding: "0.75rem 0.9rem" }}>{feedback}</p> : null}
     </> : null}
-    {props.examView === "catalog" ? <CatalogTables activeExams={activeExams} archivedExams={archivedExams} loading={loading} editingExamId={editingExamId} hasActiveCohortSessions={props.getHasActiveCohortSessions ?? (() => false)} onEdit={(exam) => void editExam(exam)} onLifecycle={(id, action) => void lifecycle(id, action)} onSessions={(examId) => props.onNavigate({ tab: "exams", examView: "sessions", examId })} /> : null}
+    {props.examView === "catalog" ? <CatalogTables deliveryView={props.deliveryView ?? null} activeExams={filterExamsForDeliveryDestination(activeExams, props.deliveryView ?? null)} archivedExams={filterExamsForDeliveryDestination(archivedExams, props.deliveryView ?? null)} loading={loading} editingExamId={editingExamId} hasActiveCohortSessions={props.getHasActiveCohortSessions ?? (() => false)} onEdit={(exam) => void editExam(exam)} onLifecycle={(id, action) => void lifecycle(id, action)} onSessions={(examId) => props.onNavigate({ tab: "exams", examView: "sessions", examId, deliveryView: "cohort" })} /> : null}
   </section>;
 }
 
 function CatalogTables(props: {
+  readonly deliveryView: AdminDeliveryView | null;
   readonly activeExams: readonly ExamRecord[]; readonly archivedExams: readonly ExamRecord[]; readonly loading: boolean; readonly editingExamId: string | null;
   readonly hasActiveCohortSessions: (examId: string) => boolean; readonly onEdit: (exam: ExamRecord) => void;
   readonly onLifecycle: (id: string, action: "publish" | "unpublish" | "archive") => void; readonly onSessions: (examId: string) => void;
@@ -521,5 +547,6 @@ function CatalogTables(props: {
       </table>
     </div>
   );
-  return <div><h2 style={{ marginBottom: "0.6rem" }}>Current Exam Catalog</h2><p style={{ marginTop: 0, color: colors.textSecondary }}>Open an Exam to manage its draft Cohort Exam Sessions. The catalog overview stays list-only.</p>{table(props.activeExams, "No exams yet.")}<h2 style={{ margin: "1.5rem 0 0.6rem" }}>Archived Exams</h2><p style={{ marginTop: 0, color: colors.textSecondary }}>Archived Individual Exams stay available for history, diagnostics, and support review.</p>{table(props.archivedExams, "No archived exams.")}</div>;
+  const destinationLabel = props.deliveryView === "individual" ? "Individual delivery" : props.deliveryView === "cohort" ? "Cohort delivery" : null;
+  return <div><h2 style={{ marginBottom: "0.6rem" }}>{destinationLabel ? `${destinationLabel} Exams` : "Current Exam Catalog"}</h2><p style={{ marginTop: 0, color: colors.textSecondary }}>{props.deliveryView === "cohort" ? "Only Exams available for Cohort delivery are shown. Open an Exam to manage its inherited Cohort Exam Sessions." : props.deliveryView === "individual" ? "Only Exams available for Individual delivery are shown. Candidate scheduling and one-Candidate ExamAttempts remain unchanged." : "Open an Exam to manage its draft Cohort Exam Sessions. The catalog overview stays list-only."}</p>{table(props.activeExams, destinationLabel ? `No active Exams support ${destinationLabel.toLowerCase()}.` : "No exams yet.")}<h2 style={{ margin: "1.5rem 0 0.6rem" }}>Archived Exams</h2><p style={{ marginTop: 0, color: colors.textSecondary }}>Archived Exams stay available for history, diagnostics, and support review.</p>{table(props.archivedExams, destinationLabel ? `No archived Exams support ${destinationLabel.toLowerCase()}.` : "No archived exams.")}</div>;
 }

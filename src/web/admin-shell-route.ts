@@ -25,14 +25,39 @@ export const ADMIN_TABS: readonly AdminTab[] = [
 
 export type AdminExamView = "catalog" | "create" | "edit" | "sessions" | "session";
 export type AdminSupportView = "monitoring" | "diagnostics" | "audit";
+export type AdminDeliveryView = "individual" | "cohort";
+
+export interface AdminNavigationItem {
+  readonly key: string;
+  readonly label: string;
+  readonly intent: AdminNavigationIntent;
+}
+
+export const ADMIN_NAVIGATION_ITEMS: readonly AdminNavigationItem[] = [
+  { key: "connection", label: "CloudShare Connection", intent: { tab: "configuration" } },
+  { key: "catalog", label: "Exam catalog", intent: { tab: "exams", examView: "catalog" } },
+  { key: "candidates", label: "Candidates", intent: { tab: "candidates" } },
+  { key: "individual-delivery", label: "Individual delivery", intent: { tab: "exams", examView: "catalog", deliveryView: "individual" } },
+  { key: "cohort-delivery", label: "Cohort delivery", intent: { tab: "exams", examView: "catalog", deliveryView: "cohort" } },
+  { key: "support", label: "Support", intent: { tab: "support", supportView: "monitoring" } },
+];
+
+export const ADMIN_SUPPORT_NAVIGATION_ITEMS: readonly AdminNavigationItem[] = [
+  { key: "monitoring", label: "Session Monitoring", intent: { tab: "support", supportView: "monitoring" } },
+  { key: "diagnostics", label: "Support Diagnostics", intent: { tab: "support", supportView: "diagnostics" } },
+  { key: "audit", label: "Audit", intent: { tab: "support", supportView: "audit" } },
+];
 
 export interface AdminConsoleRouteState {
   readonly tab: AdminTab;
   readonly examView: AdminExamView;
   readonly examId?: string;
   readonly cohortSessionId?: string;
+  readonly returnFocusSessionId?: string;
   readonly supportView: AdminSupportView;
+  readonly deliveryView: AdminDeliveryView | null;
   readonly diagnosticFilters: DiagnosticLogFilters;
+  readonly routeNotice?: string;
 }
 
 /**
@@ -44,7 +69,9 @@ export interface AdminNavigationIntent {
   readonly examView?: AdminExamView;
   readonly examId?: string | null;
   readonly cohortSessionId?: string | null;
+  readonly returnFocusSessionId?: string | null;
   readonly supportView?: AdminSupportView;
+  readonly deliveryView?: AdminDeliveryView | null;
   readonly diagnosticFilters?: DiagnosticLogFilters;
 }
 
@@ -146,6 +173,9 @@ export function buildAdminConsoleHref(
     if (route.cohortSessionId) {
       params.set("sessionId", route.cohortSessionId);
     }
+    if ((route.tab === "exams" || (route.supportView ?? "monitoring") === "monitoring") && route.returnFocusSessionId) {
+      params.set("returnFocus", route.returnFocusSessionId);
+    }
   }
 
   if (route.tab === "support") {
@@ -153,6 +183,10 @@ export function buildAdminConsoleHref(
     if (supportView !== "monitoring") {
       params.set("view", supportView);
     }
+  }
+
+  if ((route.tab === "exams" || (route.tab === "support" && (route.supportView ?? "monitoring") === "monitoring")) && route.deliveryView) {
+    params.set("delivery", route.deliveryView);
   }
 
   if (route.tab === "support" && (route.supportView ?? "monitoring") === "diagnostics") {
@@ -174,7 +208,9 @@ export function buildAdminNavigationHref(intent: AdminNavigationIntent): string 
     examView: intent.examView,
     examId: intent.examId ?? undefined,
     cohortSessionId: intent.cohortSessionId ?? undefined,
+    returnFocusSessionId: intent.returnFocusSessionId ?? undefined,
     supportView: intent.supportView,
+    deliveryView: intent.deliveryView,
     diagnosticFilters: intent.diagnosticFilters,
   });
 }
@@ -196,6 +232,7 @@ export function parseAdminConsoleRouteState(input: {
   readonly view?: string | readonly string[];
   readonly examId?: string | readonly string[];
   readonly sessionId?: string | readonly string[];
+  readonly returnFocus?: string | readonly string[];
   readonly examAttemptId?: string | readonly string[];
   readonly candidateEmail?: string | readonly string[];
   readonly operation?: string | readonly string[];
@@ -208,19 +245,47 @@ export function parseAdminConsoleRouteState(input: {
   readonly externalId?: string | readonly string[];
   readonly from?: string | readonly string[];
   readonly to?: string | readonly string[];
+  readonly delivery?: string | readonly string[];
 }): AdminConsoleRouteState {
   const { tab, supportView } = parseAdminTabWithSupportView(input.tab, input.view);
   const examView = tab === "exams" ? parseAdminExamView(input.view) : "catalog";
   const examId = tab === "exams" || tab === "support" ? readRouteValue(input.examId) : undefined;
   const cohortSessionId = tab === "exams" || tab === "support" ? readRouteValue(input.sessionId) : undefined;
+  const incompleteMonitoringTarget = tab === "support" && supportView === "monitoring"
+    && Boolean(examId) !== Boolean(cohortSessionId);
+  const routeExamId = incompleteMonitoringTarget ? undefined : examId;
+  const routeCohortSessionId = incompleteMonitoringTarget ? undefined : cohortSessionId;
+  const focusedMonitoring = tab === "support" && supportView === "monitoring" && Boolean(routeExamId && routeCohortSessionId);
+  const deliveryCandidate = readRouteValue(input.delivery);
+  const parsedDeliveryView = parseAdminDeliveryView(input.delivery);
+  const deliveryView = tab === "exams"
+    ? examView === "sessions" || examView === "session"
+      ? "cohort"
+      : examView === "create" || examView === "edit" ? null : parsedDeliveryView
+    : tab === "support" && supportView === "monitoring"
+      ? focusedMonitoring || incompleteMonitoringTarget ? "cohort" : parsedDeliveryView
+      : null;
+  const acceptsDeliveryRoute = (tab === "exams" && examView === "catalog")
+    || (tab === "support" && supportView === "monitoring");
+  const routeNotice = incompleteMonitoringTarget
+    ? "That monitoring destination is incomplete. The current Cohort Session queue is shown instead."
+    : deliveryCandidate && acceptsDeliveryRoute && !deliveryView
+      ? "That delivery destination is no longer available. A safe current view is shown instead."
+      : undefined;
+  const returnFocusSessionId = (tab === "exams" && (examView === "session" || examView === "sessions"))
+    || (tab === "support" && supportView === "monitoring")
+    ? readRouteValue(input.returnFocus) : undefined;
   if (tab !== "support" || supportView !== "diagnostics") {
     return {
       tab,
       examView,
-      ...(examId ? { examId } : {}),
-      ...(cohortSessionId ? { cohortSessionId } : {}),
+      ...(routeExamId ? { examId: routeExamId } : {}),
+      ...(routeCohortSessionId ? { cohortSessionId: routeCohortSessionId } : {}),
+      ...(returnFocusSessionId ? { returnFocusSessionId } : {}),
       supportView,
+      deliveryView,
       diagnosticFilters: {},
+      ...(routeNotice ? { routeNotice } : {}),
     };
   }
 
@@ -230,6 +295,7 @@ export function parseAdminConsoleRouteState(input: {
     ...(examId ? { examId } : {}),
     ...(cohortSessionId ? { cohortSessionId } : {}),
     supportView,
+    deliveryView,
     diagnosticFilters: normaliseDiagnosticLogFilters({
       examAttemptId: readRouteValue(input.examAttemptId),
       examId: readRouteValue(input.examId),
@@ -245,7 +311,13 @@ export function parseAdminConsoleRouteState(input: {
       from: readRouteValue(input.from),
       to: readRouteValue(input.to),
     }),
+    ...(routeNotice ? { routeNotice } : {}),
   };
+}
+
+function parseAdminDeliveryView(value: string | readonly string[] | undefined): AdminDeliveryView | null {
+  const candidate = readRouteValue(value);
+  return candidate === "individual" || candidate === "cohort" ? candidate : null;
 }
 
 function readRouteValue(value: string | readonly string[] | undefined): string | undefined {

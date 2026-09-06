@@ -15,6 +15,9 @@ describe("portal expired-session return targets", () => {
     expect(getExpiredPortalLoginPath(salesHistory)).toBe("/login?returnTo=%2Fsales%3Ftab%3Dsessions%26queue%3Dhistory%26sort%3Dname_asc%26offset%3D20");
     expect(getExpiredPortalLoginPath("/candidate")).toBe("/login?returnTo=%2Fcandidate");
     expect(getExpiredPortalLoginPath("/sales-trial")).toBe("/sales-trial/login?returnTo=%2Fsales-trial");
+    expect(getExpiredPortalLoginPath("/admin?tab=exams&delivery=cohort")).toBe("/login?returnTo=%2Fadmin%3Ftab%3Dexams%26delivery%3Dcohort");
+    expect(getExpiredPortalLoginPath("/admin?tab=support&delivery=cohort")).toBe("/login?returnTo=%2Fadmin%3Ftab%3Dsupport%26delivery%3Dcohort");
+    expect(getExpiredPortalLoginPath("/admin?tab=support&returnFocus=session-1&delivery=cohort")).toBe("/login?returnTo=%2Fadmin%3Ftab%3Dsupport%26delivery%3Dcohort");
   });
 
   it("rejects external, credential-bearing, API, auth, mutation, and cross-workspace targets", () => {
@@ -30,6 +33,8 @@ describe("portal expired-session return targets", () => {
       "/sales?tab=records&accountId=customer-2",
       "/admin?tab=exams&view=edit",
       "/admin?tab=candidates&view=catalog",
+      "/admin?tab=exams&delivery=unknown",
+      "/admin?tab=support&view=diagnostics&delivery=cohort",
       "/sales?tab=items&view=provision",
       "/sales?tab=records&queue=history",
       "/sales?tab=sessions&view=provision&queue=history",
@@ -42,6 +47,7 @@ describe("portal expired-session return targets", () => {
 
   it("reauthorizes the target after login and falls back to the role home", () => {
     expect(getPortalReturnTargetForSession({ role: "admin", workspace: "certification" }, "/admin?tab=exams")).toBe("/admin?tab=exams");
+    expect(getPortalReturnTargetForSession({ role: "admin", workspace: "certification" }, "/admin?tab=exams&delivery=individual")).toBe("/admin?tab=exams&delivery=individual");
     expect(getPortalReturnTargetForSession({ role: "admin", workspace: "sales" }, "/sales?tab=sessions&queue=history")).toBe("/sales?tab=sessions&queue=history");
     expect(getPortalReturnTargetForSession({ role: "candidate" }, "/candidate")).toBe("/candidate");
     expect(getPortalReturnTargetForSession({ role: "sales_trial_participant" }, "/sales-trial")).toBe("/sales-trial");

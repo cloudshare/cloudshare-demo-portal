@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_TABS,
+  ADMIN_NAVIGATION_ITEMS,
+  ADMIN_SUPPORT_NAVIGATION_ITEMS,
   buildAdminConsoleHref,
   buildAdminNavigationHref,
   createCorrelationDiagnosticsNavigationIntent,
@@ -39,11 +41,58 @@ describe("admin shell navigation intents", () => {
     });
     expect(href).toBe("/admin?tab=support&examId=exam-1&sessionId=cohort-session-1");
     expect(parseAdminConsoleRouteState({ tab: "support", examId: "exam-1", sessionId: "cohort-session-1" }))
-      .toMatchObject({ tab: "support", supportView: "monitoring", examId: "exam-1", cohortSessionId: "cohort-session-1" });
+      .toMatchObject({ tab: "support", supportView: "monitoring", examId: "exam-1", cohortSessionId: "cohort-session-1", deliveryView: "cohort" });
+    expect(parseAdminConsoleRouteState({ tab: "support", examId: "exam-1", sessionId: "cohort-session-1", delivery: "individual" }))
+      .toMatchObject({ tab: "support", supportView: "monitoring", deliveryView: "cohort" });
+  });
+
+  it("round-trips a Support Monitoring queue focus origin", () => {
+    const href = buildAdminNavigationHref({ tab: "support", supportView: "monitoring", returnFocusSessionId: "session-1", deliveryView: "cohort" });
+    expect(href).toBe("/admin?tab=support&returnFocus=session-1&delivery=cohort");
+    expect(parseAdminConsoleRouteState({ tab: "support", returnFocus: "session-1", delivery: "cohort" }))
+      .toMatchObject({ supportView: "monitoring", returnFocusSessionId: "session-1", deliveryView: "cohort" });
+  });
+
+  it.each([
+    { tab: "support", delivery: "cohort", examId: "exam-1" },
+    { tab: "support", sessionId: "session-1" },
+    { tab: "support", delivery: "individual", examId: "exam-1" },
+  ])("recovers an incomplete Support Monitoring target to the Cohort queue", (input) => {
+    const route = parseAdminConsoleRouteState(input);
+    expect(route).toMatchObject({
+      tab: "support",
+      supportView: "monitoring",
+      deliveryView: "cohort",
+      routeNotice: "That monitoring destination is incomplete. The current Cohort Session queue is shown instead.",
+    });
+    expect(route).not.toHaveProperty("examId");
+    expect(route).not.toHaveProperty("cohortSessionId");
   });
 });
 
 describe("admin shell tab and URL model", () => {
+  it("defines six Helios Admin destinations with one Support entry point", () => {
+    expect(ADMIN_NAVIGATION_ITEMS.map((item) => item.label)).toEqual([
+      "CloudShare Connection",
+      "Exam catalog",
+      "Candidates",
+      "Individual delivery",
+      "Cohort delivery",
+      "Support",
+    ]);
+    expect(new Set(ADMIN_NAVIGATION_ITEMS.map((item) => item.key)).size).toBe(6);
+    expect(ADMIN_NAVIGATION_ITEMS.at(-1)).toEqual({
+      key: "support",
+      label: "Support",
+      intent: { tab: "support", supportView: "monitoring" },
+    });
+    expect(ADMIN_SUPPORT_NAVIGATION_ITEMS).toEqual([
+      { key: "monitoring", label: "Session Monitoring", intent: { tab: "support", supportView: "monitoring" } },
+      { key: "diagnostics", label: "Support Diagnostics", intent: { tab: "support", supportView: "diagnostics" } },
+      { key: "audit", label: "Audit", intent: { tab: "support", supportView: "audit" } },
+    ]);
+  });
+
   it("groups admin work areas around the unchanged four tabs", () => {
     expect(ADMIN_TABS).toEqual(["exams", "candidates", "support", "configuration"]);
     expect(getAdminTabLabel("exams")).toBe("Exams");
@@ -58,7 +107,7 @@ describe("admin shell tab and URL model", () => {
 
   it("defaults to Exams and maps legacy URLs to their current shell routes", () => {
     expect(parseAdminConsoleRouteState({})).toEqual({
-      tab: "exams", examView: "catalog", supportView: "monitoring", diagnosticFilters: {},
+      tab: "exams", examView: "catalog", supportView: "monitoring", deliveryView: null, diagnosticFilters: {},
     });
     expect(parseAdminConsoleRouteState({ tab: "connection" })).toMatchObject({ tab: "configuration" });
     expect(parseAdminConsoleRouteState({ tab: "events" })).toMatchObject({ tab: "exams" });
@@ -75,6 +124,39 @@ describe("admin shell tab and URL model", () => {
     expect(buildAdminConsoleHref({
       tab: "exams", examView: "session", examId: "exam-1", cohortSessionId: "cohort-session-1",
     })).toBe("/admin?tab=exams&view=session&examId=exam-1&sessionId=cohort-session-1");
+  });
+
+  it("round-trips a Session queue focus origin through detail and return routes", () => {
+    const href = buildAdminNavigationHref({
+      tab: "exams", examView: "session", examId: "exam-1", cohortSessionId: "session-1", returnFocusSessionId: "session-1",
+    });
+    expect(href).toBe("/admin?tab=exams&view=session&examId=exam-1&sessionId=session-1&returnFocus=session-1");
+    expect(parseAdminConsoleRouteState({ tab: "exams", view: "sessions", examId: "exam-1", returnFocus: "session-1" }))
+      .toMatchObject({ examView: "sessions", returnFocusSessionId: "session-1" });
+  });
+
+  it("normalises stale delivery queries for Exam authoring and Cohort Session routes", () => {
+    expect(parseAdminConsoleRouteState({ tab: "exams", view: "sessions", examId: "exam-1", delivery: "individual" }))
+      .toMatchObject({ examView: "sessions", deliveryView: "cohort" });
+    expect(parseAdminConsoleRouteState({ tab: "exams", view: "session", examId: "exam-1", sessionId: "session-1" }))
+      .toMatchObject({ examView: "session", deliveryView: "cohort" });
+    expect(parseAdminConsoleRouteState({ tab: "exams", view: "create", delivery: "cohort" }))
+      .toMatchObject({ examView: "create", deliveryView: null });
+    expect(parseAdminConsoleRouteState({ tab: "exams", view: "edit", examId: "exam-1", delivery: "individual" }))
+      .toMatchObject({ examView: "edit", deliveryView: null });
+  });
+
+  it("round-trips the meaningful Individual and Cohort delivery branch", () => {
+    expect(buildAdminConsoleHref({ tab: "exams", deliveryView: "individual" }))
+      .toBe("/admin?tab=exams&delivery=individual");
+    expect(buildAdminConsoleHref({ tab: "exams", deliveryView: "cohort" }))
+      .toBe("/admin?tab=exams&delivery=cohort");
+    expect(parseAdminConsoleRouteState({ tab: "exams", delivery: "individual" }))
+      .toMatchObject({ tab: "exams", deliveryView: "individual" });
+    expect(parseAdminConsoleRouteState({ tab: "exams", delivery: "stale" }))
+      .toMatchObject({ tab: "exams", deliveryView: null, routeNotice: "That delivery destination is no longer available. A safe current view is shown instead." });
+    expect(parseAdminConsoleRouteState({ tab: "support", view: "diagnostics", delivery: "stale" }))
+      .not.toHaveProperty("routeNotice");
   });
 
   it("clears dismissible banners only when changing tabs", () => {
@@ -115,10 +197,11 @@ describe("admin shell diagnostic routes", () => {
       correlationId: [" corr-99 "], outcome: "failure",
     })).toEqual({
       tab: "support", examView: "catalog", supportView: "diagnostics",
+      deliveryView: null,
       diagnosticFilters: { examAttemptId: "attempt-9", candidateEmail: "candidate@helioscx.demo", correlationId: "corr-99", outcome: "failure" },
     });
     expect(parseAdminConsoleRouteState({ tab: "monitoring", examAttemptId: "attempt-9" })).toEqual({
-      tab: "support", examView: "catalog", supportView: "monitoring", diagnosticFilters: {},
+      tab: "support", examView: "catalog", supportView: "monitoring", deliveryView: null, diagnosticFilters: {},
     });
   });
 

@@ -322,6 +322,122 @@ function installAdminConsoleFetchMock() {
 }
 
 describe("AdminConsole Cohort Exam Session monitoring path", () => {
+  it("keeps the current Support destination semantic when its submenu is collapsed", async () => {
+    const user = userEvent.setup();
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="diagnostics" />);
+
+    const supportSummary = screen.getByText("Support", { selector: "summary" });
+    const diagnosticsLink = screen.getByRole("link", { name: "Support Diagnostics" });
+    expect(diagnosticsLink.getAttribute("aria-current")).toBe("page");
+    expect(supportSummary.getAttribute("aria-current")).toBeNull();
+
+    await user.click(supportSummary);
+    expect(supportSummary.getAttribute("aria-current")).toBe("page");
+    expect(diagnosticsLink.getAttribute("aria-current")).toBeNull();
+
+    await user.click(supportSummary);
+    expect(supportSummary.getAttribute("aria-current")).toBeNull();
+    expect(diagnosticsLink.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("clears the Cohort delivery branch when entering new Exam authoring", async () => {
+    const user = userEvent.setup();
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialDeliveryView="cohort" />);
+
+    await user.click(await screen.findByRole("button", { name: "Create Exam" }));
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=create");
+  });
+
+  it("preserves the Cohort delivery branch through session detail and breadcrumb navigation", async () => {
+    const user = userEvent.setup();
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialDeliveryView="cohort" />);
+
+    await user.click(await screen.findByRole("button", { name: "Manage Cohort Sessions" }));
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=sessions&examId=exam-1&delivery=cohort");
+    await user.click(await screen.findByRole("button", { name: "View session details" }));
+    expect(replaceState).toHaveBeenCalledWith(window.history.state, "", "/admin?tab=exams&view=sessions&examId=exam-1&returnFocus=cohort-session-1&delivery=cohort");
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=session&examId=exam-1&sessionId=cohort-session-1&returnFocus=cohort-session-1&delivery=cohort");
+    await user.click(screen.getByRole("button", { name: "Back to Cohort Sessions" }));
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=exams&view=sessions&examId=exam-1&returnFocus=cohort-session-1&delivery=cohort");
+    replaceState.mockRestore();
+  });
+
+  it("restores queue focus after the route remounts with its Session origin", async () => {
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="exam-1" initialReturnFocusSessionId="cohort-session-1" initialDeliveryView="cohort" />);
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "View session details" })));
+  });
+
+  it("restores Support Monitoring queue focus after the route remounts", async () => {
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialReturnFocusSessionId="cohort-session-1" initialDeliveryView="cohort" />);
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open monitoring" })));
+  });
+
+  it("uses workspace focus when a stale Support return origin is outside the Cohort queue", async () => {
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialReturnFocusSessionId="cohort-session-1" initialDeliveryView="individual" />);
+
+    const workspace = document.querySelector<HTMLElement>("[data-route-focus]");
+    await waitFor(() => expect(document.activeElement).toBe(workspace));
+  });
+
+  it("carries the Session focus origin through the detail breadcrumb return", async () => {
+    const onNavigate = vi.fn();
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return json({ sessions: [session] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="session" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" returnFocusSessionId="cohort-session-1" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Cohort Sessions: Helios Foundations" }));
+    expect(onNavigate).toHaveBeenLastCalledWith({ tab: "exams", examView: "sessions", examId: "exam-1", returnFocusSessionId: "cohort-session-1" });
+  });
+
+  it("falls back to workspace focus when a remounted queue no longer has its Session origin", async () => {
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="exam-1" initialReturnFocusSessionId="missing-session" initialDeliveryView="cohort" />);
+
+    const workspace = document.querySelector<HTMLElement>("[data-route-focus]");
+    await waitFor(() => expect(document.activeElement).toBe(workspace));
+  });
+
+  it("falls back to workspace focus when the return route parent Exam was deleted", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/admin/exams") return json({ activeExams: [], archivedExams: [] });
+      if (String(input) === "/api/auth/session") return json({});
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+    vi.stubGlobal("fetch", fetchAdmin);
+    render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="missing-exam" initialReturnFocusSessionId="missing-session" initialDeliveryView="cohort" />);
+
+    const workspace = document.querySelector<HTMLElement>("[data-route-focus]");
+    await waitFor(() => expect(document.activeElement).toBe(workspace));
+    expect(fetchAdmin.mock.calls.some(([url]) => String(url).includes("/cohort-sessions"))).toBe(false);
+  });
+
+  it("falls back to workspace focus when the return route catalog request fails", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/admin/exams") return new Response(JSON.stringify({ error: "catalog unavailable" }), { status: 503 });
+      if (String(input) === "/api/auth/session") return json({});
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+    vi.stubGlobal("fetch", fetchAdmin);
+    render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="exam-1" initialReturnFocusSessionId="session-1" initialDeliveryView="cohort" />);
+
+    const workspace = document.querySelector<HTMLElement>("[data-route-focus]");
+    await waitFor(() => expect(document.activeElement).toBe(workspace));
+    expect(await screen.findByText("catalog unavailable")).toBeTruthy();
+  });
+
   it("navigates Catalog to Support detail and then scoped diagnostics through the real AdminConsole handlers", async () => {
     const user = userEvent.setup();
     const fetchMock = installAdminConsoleFetchMock();
@@ -340,7 +456,7 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     expect(await screen.findByText("Cohort Exam Session monitoring")).toBeTruthy();
     expect(screen.getAllByText("Casey Rivera")).toHaveLength(2);
     expect(screen.getByText("Environment: running")).toBeTruthy();
-    expect(routerPush).toHaveBeenCalledWith("/admin?tab=support&examId=exam-1&sessionId=cohort-session-1");
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=support&examId=exam-1&sessionId=cohort-session-1&delivery=cohort");
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(0);
 
     await user.click(screen.getByRole("link", { name: "Session diagnostics" }));
@@ -374,7 +490,7 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1);
   });
 
-  it("does not repeat a completed focused list read when the catalog response arrives later", async () => {
+  it("defers the focused list read until the catalog confirms its Exam and reads it once", async () => {
     let resolveCatalog: ((response: Response) => void) | undefined;
     const catalogResponse = new Promise<Response>((resolve) => { resolveCatalog = resolve; });
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -390,10 +506,11 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialExamId="exam-1" initialCohortSessionId="cohort-session-1" />);
 
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/admin/exams", undefined));
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(0);
     await act(async () => resolveCatalog?.(json({ activeExams: [exam], archivedExams: [] })));
     expect(await screen.findByText("Cohort Exam Session monitoring")).toBeTruthy();
-    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1);
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1));
   });
 });
 
@@ -477,6 +594,99 @@ describe("AdminCohortExamSessionsFeature seam", () => {
     expect(await screen.findByText("2")).toBeTruthy();
     await act(async () => resolveFirst?.(json({ monitoring: { ...cohortDetail.monitoring, summary: { ...cohortDetail.monitoring.summary, activeCount: 1 } } })));
     expect(screen.getByText("2")).toBeTruthy();
+  });
+
+  it("shows only durable stale recovery when a listed Session detail returns 404", async () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return json({ sessions: [session] });
+      if (url.endsWith("cohort-session-1")) return new Response(JSON.stringify({ error: "gone" }), { status: 404 });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="catalog" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" supportMonitoringActive fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect(await screen.findByText("This route target is no longer available.")).toBeTruthy();
+    expect((await screen.findByRole("alert")).textContent).toContain("The requested Cohort Exam Session is no longer available.");
+    expect(screen.queryByText("Failed to load Cohort Exam Session detail")).toBeNull();
+    expect(setIntervalSpy.mock.calls.some(([, delay]) => delay === 30_000)).toBe(false);
+    setIntervalSpy.mockRestore();
+  });
+
+  it("does not request Sessions for a deleted Exam deep link", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [], archivedExams: [] });
+      throw new Error(`Unexpected child fetch: ${url}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="session" focusedExamId="missing-exam" focusedCohortSessionId="missing-session" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect(await screen.findByText("This route target is no longer available.")).toBeTruthy();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(fetchAdmin).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start focused monitoring polling before the catalog validates its parent Exam", async () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/admin/exams") return json({ activeExams: [], archivedExams: [] });
+      throw new Error(`Unexpected child fetch: ${String(input)}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="catalog" focusedExamId="missing-exam" focusedCohortSessionId="missing-session" supportMonitoringActive fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect(await screen.findByText("This route target is no longer available.")).toBeTruthy();
+    expect(setIntervalSpy.mock.calls.some(([, delay]) => delay === 30_000)).toBe(false);
+    setIntervalSpy.mockRestore();
+  });
+
+  it("restores focus to the Session control that opened a detail route", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return json({ sessions: [session] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const onNavigate = vi.fn();
+    const view = render(<AdminCohortExamSessionsFeature active examView="sessions" focusedExamId="exam-1" focusedCohortSessionId={null} supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+    const origin = await screen.findByRole("button", { name: "View session details" });
+    await userEvent.click(origin);
+    expect(onNavigate).toHaveBeenLastCalledWith(expect.objectContaining({ returnFocusSessionId: "cohort-session-1" }));
+    view.rerender(<AdminCohortExamSessionsFeature active examView="session" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" returnFocusSessionId="cohort-session-1" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Back to Cohort Sessions" }));
+    expect(onNavigate).toHaveBeenLastCalledWith(expect.objectContaining({ returnFocusSessionId: "cohort-session-1" }));
+    view.rerender(<AdminCohortExamSessionsFeature active examView="sessions" focusedExamId="exam-1" focusedCohortSessionId={null} returnFocusSessionId="cohort-session-1" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={onNavigate} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "View session details" })));
+  });
+
+  it("keeps a failed Session list actionable without claiming the Session was deleted", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="session" focusedExamId="exam-1" focusedCohortSessionId="missing-session" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("temporary failure");
+    expect(screen.queryByText("This route target is no longer available.")).toBeNull();
+  });
+
+  it("does not read or poll focused monitoring detail until the Session list validates the target", async () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="catalog" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" supportMonitoringActive fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("temporary failure");
+    expect(fetchAdmin).toHaveBeenCalledTimes(2);
+    expect(setIntervalSpy.mock.calls.some(([, delay]) => delay === 30_000)).toBe(false);
+    setIntervalSpy.mockRestore();
   });
 
   it("keeps a failed focused Cohort refresh dismissible", async () => {

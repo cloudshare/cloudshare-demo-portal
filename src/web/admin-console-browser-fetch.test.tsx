@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { AdminConsole } from "./admin-console";
@@ -127,6 +128,83 @@ describe("AdminConsole browser request dispatch", () => {
         value: originalWindowFetch,
         writable: true,
       });
+    }
+  });
+
+  it("keeps a deleted Exam edit deep link out of create-capable authoring", async () => {
+    const originalWindowFetch = window.fetch;
+    const browserFetch = vi.fn(function (this: unknown, input: RequestInfo | URL) {
+      if (this !== window) throw new TypeError("Browser fetch must retain its Window receiver");
+      if (String(input) === "/api/admin/exams") return Promise.resolve(json({ activeExams: [], archivedExams: [] }));
+      if (String(input).startsWith("/api/admin/exam-authoring")) return Promise.resolve(json({ projects: [], regions: [] }));
+      throw new Error(`Unexpected browser fetch: ${String(input)}`);
+    });
+    vi.stubGlobal("fetch", browserFetch);
+    Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
+    try {
+      render(<AdminConsole email="admin@helioscx.demo" initialExamView="edit" initialExamId="missing-exam" />);
+      expect(await screen.findByText("That Exam is no longer available.")).toBeTruthy();
+      expect(screen.queryByText("Project-first Exam authoring")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Create Exam" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Return to Exam catalog" })).toBeTruthy();
+      expect(browserFetch.mock.calls.some(([input]) => String(input) === "/api/admin/exams")).toBe(true);
+      expect(browserFetch.mock.calls.some(([input]) => String(input).startsWith("/api/admin/exam-authoring"))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+      Object.defineProperty(window, "fetch", { configurable: true, value: originalWindowFetch, writable: true });
+    }
+  });
+
+  it("moves focus to the admin content landmark when the route-backed view changes", async () => {
+    const originalWindowFetch = window.fetch;
+    const browserFetch = vi.fn(function (this: unknown, input: RequestInfo | URL) {
+      if (this !== window) throw new TypeError("Browser fetch must retain its Window receiver");
+      return Promise.resolve(json(String(input).includes("/api/admin/exams") ? { activeExams: [], archivedExams: [] } : {}));
+    });
+    vi.stubGlobal("fetch", browserFetch);
+    Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
+    try {
+      const first = render(<AdminConsole email="admin@helioscx.demo" />);
+      const content = await screen.findByRole("main");
+      await waitFor(() => expect(content.querySelector("[data-route-focus]")).toBeTruthy());
+      first.unmount();
+      const second = render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="diagnostics" />);
+      const nextContent = await screen.findByRole("main");
+      await waitFor(() => expect(document.activeElement).toBe(nextContent.querySelector("[data-route-focus]")));
+      second.unmount();
+    } finally {
+      vi.unstubAllGlobals();
+      Object.defineProperty(window, "fetch", { configurable: true, value: originalWindowFetch, writable: true });
+    }
+  });
+
+  it("explains stale Exam Session and Support Monitoring targets instead of showing aggregate fallbacks", async () => {
+    const originalWindowFetch = window.fetch;
+    const browserFetch = vi.fn(function (this: unknown, input: RequestInfo | URL) {
+      if (this !== window) throw new TypeError("Browser fetch must retain its Window receiver");
+      if (String(input) === "/api/admin/exams") return Promise.resolve(json({ activeExams: [{ id: "exam-1", title: "Helios Foundations", description: "", timeLimitMinutes: 90, openPeriodMinutes: 120, scoreRetrievalEnabled: false, deliveryAvailability: "cohort", status: "published", publishedAt: null, projectId: "p", projectName: "Project", blueprintId: "b", blueprintName: "Blueprint", snapshotId: "s", snapshotName: "Snapshot", allowedRegions: [], policyId: "policy", policyName: "Policy", instructorName: "Instructor" }], archivedExams: [] }));
+      if (String(input).includes("/cohort-sessions")) return Promise.resolve(json({ sessions: [] }));
+      if (String(input).includes("/api/admin/monitoring")) return Promise.resolve(json({ monitoring: { attempts: [], historyPage: { entries: [], nextOffset: null } } }));
+      return Promise.resolve(json({}));
+    });
+    vi.stubGlobal("fetch", browserFetch);
+    Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
+    try {
+      const first = render(<AdminConsole email="admin@helioscx.demo" initialExamView="sessions" initialExamId="exam-1" initialCohortSessionId="missing-session" />);
+      expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("The requested Cohort Exam Session is no longer available."))).toBe(true);
+      first.unmount();
+      const second = render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialDeliveryView="cohort" initialExamId="exam-1" initialCohortSessionId="missing-session" />);
+      expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("The requested Cohort Exam Session is no longer available."))).toBe(true);
+      expect(screen.queryByText("No Cohort Exam Sessions match the current monitoring view.")).toBeNull();
+      second.unmount();
+      const missingExamView = render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" initialDeliveryView="cohort" initialExamId="missing-exam" initialCohortSessionId="missing-session" />);
+      expect((await screen.findAllByRole("alert")).some((alert) => alert.textContent?.includes("no longer available in the current monitoring scope"))).toBe(true);
+      await userEvent.click(screen.getByRole("button", { name: "Return to Session Monitoring" }));
+      expect(routerPush).toHaveBeenCalledWith("/admin?tab=support&delivery=cohort");
+      missingExamView.unmount();
+    } finally {
+      vi.unstubAllGlobals();
+      Object.defineProperty(window, "fetch", { configurable: true, value: originalWindowFetch, writable: true });
     }
   });
 });

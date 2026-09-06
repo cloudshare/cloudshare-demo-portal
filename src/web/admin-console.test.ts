@@ -1,6 +1,7 @@
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { AdminConsole } from "./admin-console";
 import {
   CohortSessionDraftOnlyNotice,
@@ -60,13 +61,17 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("Save CloudShare Connection");
   });
 
-  it("groups primary admin navigation around Exams, Candidates, Support, and Configuration", () => {
+  it("renders one expandable Support group with smaller workflow links", () => {
     const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
 
-    expect(html).toContain("Exams");
-    expect(html).toContain("Candidates");
-    expect(html).toContain("Support");
-    expect(html).toContain("Configuration");
+    expect(html).toContain('aria-label="Helios Admin certification navigation"');
+    for (const label of ["CloudShare Connection", "Exam catalog", "Candidates", "Individual delivery", "Cohort delivery"]) {
+      expect(html).toContain(`>${label}</a>`);
+    }
+    expect(html).toContain(">Support</summary>");
+    expect(html).toContain(">Session Monitoring</a>");
+    expect(html).toContain(">Support Diagnostics</a>");
+    expect(html).toContain(">Audit</a>");
     expect(html).not.toContain("Event Log");
     expect(html).not.toContain("Resources");
   });
@@ -99,12 +104,92 @@ describe("AdminConsole", () => {
     expect(html).toContain("Audit Trail");
   });
 
-  it("renders the admin navigation as a balanced responsive tab grid", () => {
+  it("renders a persistent left navigation and independently operable content region", () => {
     const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
 
-    expect(html).toContain("grid-template-columns:repeat(auto-fit, minmax(10.5rem, 1fr))");
-    expect(html).toContain("width:100%");
-    expect(html).toContain("text-align:center");
+    expect(html).toContain("adminWorkspace");
+    expect(html).toContain("adminShell");
+    expect(html).toContain("adminSidebar");
+    expect(html).toContain("adminTopbar");
+    expect(html).toContain("adminAccount");
+    expect(html).toContain("Helios Certification");
+    expect(html).toContain('aria-label="Current Helios Admin workspace"');
+    expect(html).toContain("adminNavigation");
+    expect(html).toContain("adminContent");
+    expect(html).toContain('href="/admin?tab=configuration"');
+    expect(html).toContain('href="/admin?tab=exams&amp;delivery=individual"');
+    expect(html).toContain('href="/admin?tab=exams&amp;delivery=cohort"');
+    expect(html).toContain('href="/admin?tab=support"');
+    expect(html).toContain('href="/admin?tab=support&amp;view=diagnostics"');
+    expect(html).toContain('href="/admin?tab=support&amp;view=audit"');
+  });
+
+  it("marks the current destination across every Helios navigation branch", () => {
+    const cases = [
+      [{ initialTab: "exams" as const }, "/admin?tab=exams"],
+      [{ initialTab: "exams" as const, initialDeliveryView: "individual" as const }, "/admin?tab=exams&amp;delivery=individual"],
+      [{ initialTab: "exams" as const, initialDeliveryView: "cohort" as const }, "/admin?tab=exams&amp;delivery=cohort"],
+      [{ initialTab: "exams" as const, initialExamView: "sessions" as const, initialExamId: "exam-1", initialDeliveryView: "cohort" as const }, "/admin?tab=exams&amp;delivery=cohort"],
+      [{ initialTab: "candidates" as const }, "/admin?tab=candidates"],
+      [{ initialTab: "configuration" as const }, "/admin?tab=configuration"],
+      [{ initialTab: "support" as const, initialSupportView: "monitoring" as const }, "/admin?tab=support"],
+      [{ initialTab: "support" as const, initialSupportView: "diagnostics" as const }, "/admin?tab=support&amp;view=diagnostics"],
+      [{ initialTab: "support" as const, initialSupportView: "audit" as const }, "/admin?tab=support&amp;view=audit"],
+    ] as const;
+    for (const [props, href] of cases) {
+      const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo", ...props }));
+      expect(html.match(/aria-current="page"[^>]*href="/g)).toHaveLength(1);
+      expect(html).toContain(`href="${href}"`);
+    }
+  });
+
+  it("keeps the Helios shell responsive and keyboard-visible", () => {
+    const css = readFileSync(new URL("./admin-console.module.css", import.meta.url), "utf8");
+    expect(css.indexOf(".adminSidebar {")).toBeLessThan(css.indexOf("@media (max-width:760px)"));
+    expect(css).toContain("position:sticky");
+    expect(css).toContain("height:100vh");
+    expect(css).toContain("height:100vh; padding:1.25rem .8rem; box-sizing:border-box; overflow-y:auto");
+    expect(css).toContain(".adminLogout:hover,.adminLogout:focus-visible");
+    expect(css).toContain("outline:3px solid #c8fff0");
+    expect(css).toContain(".adminContent { min-width:0; max-width:110rem;");
+    expect(css).toContain("max-width:110rem; padding:1.75rem clamp(1.25rem,3.5vw,3.25rem) 3.75rem");
+    expect(css).not.toContain(".adminContent > * { max-width:72rem");
+    expect(css).toContain("min-width:0; min-height:100vh");
+    expect(css).toContain(".adminContent { padding:1rem .85rem 2.5rem; overflow-x:hidden; }");
+    expect(css).toContain(".adminNavigation { position:static; min-width:0; width:100%; max-width:100%; overflow-x:auto; }");
+    expect(css).toContain("grid-template-columns:repeat(6,minmax(10.5rem,1fr))");
+    expect(css).toContain(".adminNavigationGroupSummary");
+    expect(css).toContain(".adminNavigationSubmenu");
+    expect(css).toContain(".adminNavigationSubmenuLink");
+    expect(css).toContain(".adminShell { grid-template-columns:minmax(0,1fr); }");
+    expect(css).toContain(".adminRouteFocus:focus-visible { outline:none; }");
+    expect(css).toContain(".adminRouteFocus:focus-visible .adminPageTitle");
+    expect(css).toContain(".adminLogout { width:auto; min-width:7rem; }");
+  });
+
+  it("renders delivery destinations as scoped workflow landings instead of cosmetic catalog aliases", () => {
+    const individualHtml = renderToStaticMarkup(createElement(AdminConsole, {
+      email: "admin@helioscx.demo",
+      initialDeliveryView: "individual",
+    }));
+    const cohortHtml = renderToStaticMarkup(createElement(AdminConsole, {
+      email: "admin@helioscx.demo",
+      initialDeliveryView: "cohort",
+    }));
+
+    expect(individualHtml).toContain("Individual delivery Exams");
+    expect(individualHtml).toContain("Only Exams available for Individual delivery are shown");
+    expect(cohortHtml).toContain("Cohort delivery Exams");
+    expect(cohortHtml).toContain("Only Exams available for Cohort delivery are shown");
+  });
+
+  it("shows durable guidance when stale delivery route state falls back safely", () => {
+    const html = renderToStaticMarkup(createElement(AdminConsole, {
+      email: "admin@helioscx.demo",
+      initialRouteNotice: "That delivery destination is no longer available. A safe current view is shown instead.",
+    }));
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("That delivery destination is no longer available. A safe current view is shown instead.");
   });
 
   it("renders an obvious active admin tab without the extra workflow context panel", () => {
