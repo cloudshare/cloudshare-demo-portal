@@ -566,41 +566,10 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                   : "Review durable result history without mixing it into the live delivery task."}
               </p>
             </div>
-            {resolvedRoute.activeTask === "history" && resolvedRoute.attempts.length > 1 ? (
-              <div style={attemptSelectorStripStyle}>
-                {resolvedRoute.attempts.map((attempt) => (
-                  <button
-                    key={attempt.attemptId}
-                    type="button"
-                    aria-current={selectedAttempt?.attemptId === attempt.attemptId ? "page" : undefined}
-                    onClick={() =>
-                      navigateToCandidateTask({
-                        task: resolvedRoute.activeTask,
-                        attemptId: attempt.attemptId,
-                        examId: null,
-                      })
-                    }
-                    style={{
-                      ...attemptSelectorButtonStyle,
-                      ...(selectedAttempt?.attemptId === attempt.attemptId
-                        ? selectedAttemptSelectorButtonStyle
-                        : null),
-                    }}
-                  >
-                    <span style={attemptSelectorTitleStyle}>{attempt.examTitle}</span>
-                    <span style={attemptSelectorMetaStyle}>
-                      {formatCandidateAttemptStatus(attempt.displayStatus)} · {formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {resolvedRoute.activeTask === "current" && resolvedRoute.attempts.length > 0 ? (
+            {resolvedRoute.attempts.length > 0 ? (
               <div style={attemptCardListStyle}>
                 {resolvedRoute.attempts.map(renderAttemptCard)}
               </div>
-            ) : selectedAttempt ? (
-              renderAttemptCard(selectedAttempt)
             ) : (
               <p style={{ ...mutedPanelStyle, margin: 0 }}>
                 {resolvedRoute.activeTask === "current"
@@ -834,41 +803,6 @@ const attemptActionStackStyle: CSSProperties = {
   marginTop: "auto",
 };
 
-const attemptSelectorStripStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 14rem), 1fr))",
-  gap: "0.75rem",
-};
-
-const attemptSelectorButtonStyle: CSSProperties = {
-  ...cardStyle,
-  display: "grid",
-  gap: "0.2rem",
-  textAlign: "left",
-  cursor: "pointer",
-  border: "1px solid #dbe4ef",
-  background: "#ffffff",
-  padding: "0.8rem 0.9rem",
-};
-
-const selectedAttemptSelectorButtonStyle: CSSProperties = {
-  border: "1px solid #2563eb",
-  background: "#eff6ff",
-  boxShadow: "inset 0 0 0 1px #bfdbfe",
-};
-
-const attemptSelectorTitleStyle: CSSProperties = {
-  color: "#0f172a",
-  fontSize: "0.95rem",
-  fontWeight: 600,
-};
-
-const attemptSelectorMetaStyle: CSSProperties = {
-  color: "#64748b",
-  fontSize: "0.82rem",
-  lineHeight: 1.4,
-};
-
 const attemptPrimaryButtonStyle: CSSProperties = {
   ...primaryButtonStyle,
   width: "100%",
@@ -985,9 +919,7 @@ function buildCandidateTaskAnnouncement(
     case "current":
       return "Now showing Current Exam Attempt.";
     case "history":
-      return resolvedRoute.selectedAttempt
-        ? `Now showing Attempt history. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
-        : "Now showing Attempt history.";
+      return "Now showing Attempt history.";
     case "schedule":
       return "Now showing Schedule exam. Choose a published Exam below.";
     default:

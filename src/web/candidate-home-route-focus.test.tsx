@@ -248,7 +248,7 @@ describe("CandidateHome route-backed task flow", () => {
     expect(idleRefreshSlot?.style.height).toBe("2.75rem");
     expect(screen.getByRole("region", { name: "Candidate delivery tasks" })).toBe(taskShell);
     expect(document.activeElement).toBe(control);
-    expect(screen.getByRole("status", { name: "Candidate route status" }).textContent).toContain("Now showing Attempt history.");
+    expect(screen.getByRole("status", { name: "Candidate route status" }).textContent).toBe("Now showing Attempt history.");
     rendered.unmount();
   });
 
@@ -289,6 +289,43 @@ describe("CandidateHome route-backed task flow", () => {
     expect(routerPush).toHaveBeenLastCalledWith("/candidate/lab?examAttemptId=attempt-alpha&attemptStatus=suspended");
     await user.click(within(cards[0]!).getByRole("button", { name: "Return to exam for Bravo Lab, attempt attempt-bravo" }));
     expect(routerPush).toHaveBeenLastCalledWith("/candidate/lab?examAttemptId=attempt-bravo&attemptStatus=in_progress");
+  });
+
+  it("renders every history Exam Attempt as a stable complete card without an inner selector", async () => {
+    const browserFetch = vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"
+      ? Promise.resolve(json({
+        exams: [
+          { id: "exam-alpha", title: "Alpha Lab", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, storageLeaseMinutes: 1440, scoreRetrievalEnabled: true, individualSchedulingEnabled: true, availableCohortSessions: [] },
+          { id: "exam-bravo", title: "Bravo Lab", description: "", timeLimitMinutes: 45, openPeriodMinutes: 60, storageLeaseMinutes: 720, scoreRetrievalEnabled: true, individualSchedulingEnabled: true, availableCohortSessions: [] },
+        ],
+        attempts: [
+          { id: "attempt-alpha", examId: "exam-alpha", examTitle: "Alpha Lab", scheduledFor: "2026-10-23T16:00:00.000Z", status: "expired" },
+          { id: "attempt-bravo", examId: "exam-bravo", examTitle: "Bravo Lab", scheduledFor: "2026-10-23T17:00:00.000Z", status: "completed" },
+        ],
+      }))
+      : Promise.resolve(new Response(null, { status: 200 })));
+    vi.stubGlobal("fetch", browserFetch);
+    Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
+    currentSearchParams = new URLSearchParams("task=history&attemptId=attempt-alpha");
+
+    render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "history", attemptId: "attempt-alpha", examId: null }} />);
+
+    const cards = await screen.findAllByRole("article");
+    expect(cards).toHaveLength(2);
+    expect(within(cards[0]!).getByRole("heading", { name: "Bravo Lab" })).toBeTruthy();
+    expect(within(cards[0]!).getByText("Completed")).toBeTruthy();
+    expect(within(cards[0]!).getByText("Attempt ID: attempt-bravo")).toBeTruthy();
+    expect(within(cards[0]!).getByText("45 minute runtime limit")).toBeTruthy();
+    expect(within(cards[0]!).getByText("60 minute open window")).toBeTruthy();
+    expect(within(cards[0]!).getByText("720 minute environment retention")).toBeTruthy();
+    expect(within(cards[0]!).getByRole("button", { name: "View score for Bravo Lab, attempt attempt-bravo" })).toBeTruthy();
+    expect(within(cards[1]!).getByRole("heading", { name: "Alpha Lab" })).toBeTruthy();
+    expect(within(cards[1]!).getByText("Expired")).toBeTruthy();
+    expect(within(cards[1]!).getByText("Attempt ID: attempt-alpha")).toBeTruthy();
+    expect(within(cards[1]!).getByText("This attempt remains here as durable history.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Alpha Lab Expired/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Bravo Lab Completed/ })).toBeNull();
+    expect(screen.getAllByRole("button").filter((button) => button.hasAttribute("aria-current"))).toHaveLength(1);
   });
 
   it("keeps current cards in place when background refresh changes their statuses", async () => {

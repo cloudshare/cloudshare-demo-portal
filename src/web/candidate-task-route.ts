@@ -58,8 +58,8 @@ export function resolveCandidateTaskRoute(
   route: CandidateTaskRoute,
 ): ResolvedCandidateTaskRoute {
   const attempts = buildScheduledAttemptViews(dashboard, nowMs);
-  const liveAttempts = attempts.filter(isLiveCandidateAttempt).sort(compareCurrentAttempts);
-  const historyAttempts = attempts.filter(isHistoryCandidateAttempt);
+  const liveAttempts = attempts.filter(isLiveCandidateAttempt).sort(compareAttemptsByScheduledTime);
+  const historyAttempts = attempts.filter(isHistoryCandidateAttempt).sort(compareAttemptsByScheduledTime);
   const tasks: CandidateTaskTab[] = [
     { task: "current", label: CANDIDATE_TASK_LABELS.current, count: liveAttempts.length },
     { task: "schedule", label: CANDIDATE_TASK_LABELS.schedule, count: dashboard.exams.length },
@@ -325,7 +325,7 @@ function emptyCandidateTaskRoute(): CandidateTaskRoute {
   return { task: null, attemptId: null, examId: null };
 }
 
-function compareCurrentAttempts(
+function compareAttemptsByScheduledTime(
   left: CandidateScheduledAttemptView,
   right: CandidateScheduledAttemptView,
 ): number {
@@ -349,7 +349,7 @@ function compareCurrentAttemptNavigationPriority(
         return 3;
     }
   };
-  return priority(left) - priority(right) || compareCurrentAttempts(left, right);
+  return priority(left) - priority(right) || compareAttemptsByScheduledTime(left, right);
 }
 
 function selectAttemptById(
