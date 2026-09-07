@@ -221,4 +221,27 @@ describe("CandidateHome route-backed task flow", () => {
     expect(screen.getByRole("status", { name: "Candidate route status" }).textContent).toContain("Now showing Attempt history.");
     rendered.unmount();
   });
+
+  it("uses the detailed exam cards as the only Schedule selection surface", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"
+      ? Promise.resolve(json({
+        exams: [
+          { id: "exam-individual", title: "Alpha individual", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, storageLeaseMinutes: 60, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
+          { id: "exam-live", title: "Beta live exam", description: "", timeLimitMinutes: 30, openPeriodMinutes: 30, storageLeaseMinutes: 60, scoreRetrievalEnabled: false, individualSchedulingEnabled: false, availableCohortSessions: [{ id: "session-1", name: "Live session", admissionStartsAt: "2026-06-16T15:00:00.000Z", admissionEndsAt: null }] },
+        ],
+        attempts: [],
+      }))
+      : Promise.resolve(new Response(null, { status: 200 }))));
+    currentSearchParams = new URLSearchParams("task=schedule");
+    render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "schedule", attemptId: null, examId: null }} />);
+
+    expect(await screen.findByRole("heading", { name: "Alpha individual" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Beta live exam" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Alpha individual" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Beta live exam" })).toBeNull();
+    expect(screen.getByText("Schedule date and time")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Schedule exam" })).toBeTruthy();
+    expect(screen.getByText("Ready to start")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Start exam|Join/i })).toBeTruthy();
+  });
 });
