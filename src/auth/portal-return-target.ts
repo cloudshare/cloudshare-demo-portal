@@ -1,5 +1,5 @@
 import type { PortalCustomerWorkspace, PortalUserRole } from "./portal-stores";
-import { isCandidateTaskView, isValidCandidateIdentifier, isValidCandidateRouteShape } from "./candidate-route-shape";
+import { CANDIDATE_TASK_VIEWS, isCandidateTaskView, isValidCandidateIdentifier, isValidCandidateRouteShape } from "./candidate-route-shape";
 
 type PortalReturnScope = "certification_admin" | "sales_admin" | "candidate" | "sales_trial";
 
@@ -19,7 +19,7 @@ const ALLOWED_QUERY_VALUES: Readonly<Record<PortalReturnScope, Readonly<Record<s
     sort: ["start_desc", "start_asc", "name_asc"],
     offset: "integer",
   },
-  candidate: { task: ["current", "schedule", "history"], attemptId: [], examId: [] },
+  candidate: { task: CANDIDATE_TASK_VIEWS, attemptId: [], examId: [] },
   sales_trial: {},
 };
 
