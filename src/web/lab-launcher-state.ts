@@ -137,7 +137,7 @@ export function getLauncherPresentation(input: {
       return {
         tone: "info",
         title: "Exam window open",
-        detail: "Your CloudShare lab opened in a separate window for this ExamAttempt.",
+        detail: "Your CloudShare lab opened in a separate window for this Exam Attempt.",
         primaryActionLabel: "Suspend lab",
         supportMessage:
           "Leaving or closing this page without suspending keeps your lab running and consuming time. Use Suspend lab to pause before stepping away.",
@@ -154,7 +154,7 @@ export function getLauncherPresentation(input: {
       return {
         tone: "info",
         title: "Ending exam",
-        detail: input.message || "The portal is archiving your CloudShare lab before completing this ExamAttempt.",
+        detail: input.message || "The portal is archiving your CloudShare lab before completing this Exam Attempt.",
         primaryActionLabel: null,
         supportMessage: null,
       };
@@ -172,7 +172,7 @@ export function getLauncherPresentation(input: {
         title: "Lab suspended",
         detail: input.message || "Lab suspended.",
         primaryActionLabel: "Resume exam",
-        supportMessage: "Resume exam to reopen your CloudShare lab and continue the same ExamAttempt.",
+        supportMessage: "Resume exam to reopen your CloudShare lab and continue the same Exam Attempt.",
       };
     case "completed":
       return {

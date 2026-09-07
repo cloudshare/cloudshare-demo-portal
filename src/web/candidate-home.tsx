@@ -37,7 +37,6 @@ import {
   parseCandidateTaskSearchParams,
   resolveCandidateTaskRoute,
   type CandidateTaskRoute,
-  type CandidateTaskView,
 } from "./candidate-task-route";
 
 export {
@@ -61,10 +60,8 @@ type ScheduleFeedback = {
 export function CandidateHome({ email, initialRoute = { task: "current", attemptId: null, examId: null } }: CandidateHomeProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const activeTaskHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const hasLoadedResolvedRouteRef = useRef(false);
   const previousResolvedRouteKeyRef = useRef<string | null>(null);
-  const previousUrlRouteKeyRef = useRef<string | null>(null);
   const [dashboard, setDashboard] = useState<CandidateDashboardData>({
     exams: [],
     attempts: [],
@@ -79,8 +76,21 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [sessionExpired, setSessionExpired] = useState(false);
   const [announcedTaskMessage, setAnnouncedTaskMessage] = useState<string | null>(null);
-  const [focusedTaskHeading, setFocusedTaskHeading] = useState<CandidateTaskView | null>(null);
+  const [expandedAttemptDetails, setExpandedAttemptDetails] = useState<Record<string, boolean>>({});
+  const pendingAttemptFocusRef = useRef<{ attemptId: string; face: "front" | "back" } | null>(null);
+  const attemptFrontButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const attemptBackButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
+
+  useEffect(() => {
+    const pending = pendingAttemptFocusRef.current;
+    if (!pending) return;
+    const target = pending.face === "front"
+      ? attemptFrontButtonRefs.current.get(pending.attemptId)
+      : attemptBackButtonRefs.current.get(pending.attemptId);
+    target?.focus();
+    pendingAttemptFocusRef.current = null;
+  }, [expandedAttemptDetails]);
 
   const handleCandidateSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({
     currentPath: () => `${window.location.pathname}${window.location.search}`,
@@ -287,7 +297,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
   }
 
   function navigateToCandidateTask(route: CandidateTaskRoute) {
-    router.push(buildCandidateTaskHref(route));
+    window.history.pushState(null, "", buildCandidateTaskHref(route));
   }
 
   function openLabConsole(attemptId: string, attemptStatus: string) {
@@ -311,22 +321,185 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
 
   const selectedAttempt = resolvedRoute.selectedAttempt;
   const selectedExam = resolvedRoute.selectedExam;
-  const selectedAttemptExam =
-    selectedAttempt
-      ? buildCandidateAttemptExamSnapshot(selectedAttempt, examsById.get(selectedAttempt.examId) ?? null)
-      : null;
-  const selectedAttemptPrimaryAction = selectedAttempt
-    ? getAttemptPrimaryAction(
-        {
-          id: selectedAttempt.attemptId,
-          examId: selectedAttempt.examId,
-          scheduledFor: selectedAttempt.scheduledFor,
-          status: selectedAttempt.status,
-        },
-        nowMs,
-        selectedAttemptExam,
-      )
-    : { label: null, disabled: false };
+
+  function renderAttemptCard(attempt: NonNullable<typeof selectedAttempt>) {
+    const attemptExam = buildCandidateAttemptExamSnapshot(attempt, examsById.get(attempt.examId) ?? null);
+    const attemptHeadingId = `candidate-attempt-${attempt.attemptId}-title`;
+    const primaryAction = getAttemptPrimaryAction(
+      {
+        id: attempt.attemptId,
+        examId: attempt.examId,
+        scheduledFor: attempt.scheduledFor,
+        status: attempt.status,
+      },
+      nowMs,
+      attemptExam,
+    );
+    const detailsOpen = expandedAttemptDetails[attempt.attemptId] === true;
+    const isOpenedAttempt = selectedAttempt?.attemptId === attempt.attemptId;
+    const actionSummary = getCandidateAttemptActionSummary(attempt.displayStatus, primaryAction.label, primaryAction.disabled);
+    const frontHeadingId = `${attemptHeadingId}-front`;
+    const backHeadingId = `${attemptHeadingId}-back`;
+    const setDetailsOpen = (open: boolean) => {
+      pendingAttemptFocusRef.current = { attemptId: attempt.attemptId, face: open ? "back" : "front" };
+      setExpandedAttemptDetails((current) => ({ ...current, [attempt.attemptId]: open }));
+    };
+
+    return (
+      <article
+        key={attempt.attemptId}
+        aria-labelledby={detailsOpen ? backHeadingId : frontHeadingId}
+        aria-current={isOpenedAttempt ? "true" : undefined}
+        style={{
+          ...attemptCardStyle,
+          ...(isOpenedAttempt ? openedAttemptCardStyle : null),
+        }}
+      >
+        <div style={attemptFlipPerspectiveStyle}>
+          <div className="candidate-attempt-flip-inner" data-attempt-flip-inner="true" style={getAttemptFlipInnerStyle(detailsOpen)}>
+            <section
+              aria-hidden={detailsOpen}
+              inert={detailsOpen ? true : undefined}
+              data-attempt-card-face="front"
+              style={{ ...attemptFlipFaceStyle, ...(detailsOpen ? attemptHiddenFaceStyle : null) }}
+            >
+              <div style={attemptFrontFaceContentStyle}>
+                <div style={attemptCardAccentStyle} />
+                <div data-attempt-slot="title" style={attemptTitleSlotStyle}>
+                  <h3 id={frontHeadingId} style={attemptCardTitleStyle}>{attempt.examTitle}</h3>
+                </div>
+                <div data-attempt-slot="metadata" style={attemptMetadataSlotStyle}>
+                  <div style={attemptStateBadgeStackStyle}>
+                    {isOpenedAttempt
+                      ? <span style={openedAttemptBadgeStyle}>Opened attempt</span>
+                      : <span aria-hidden="true" style={attemptInvisibleBadgeSlotStyle} />}
+                    <span style={statusBadgeStyle(getExamAttemptStatusTone(attempt.displayStatus))}>
+                      {formatCandidateAttemptStatus(attempt.displayStatus)}
+                    </span>
+                  </div>
+                  <div style={attemptDurationBadgeStackStyle}>
+                    <span data-attempt-duration-badge="true" style={{ ...statusBadgeStyle("info"), ...attemptDurationBadgeStyle }}>{attemptExam?.timeLimitMinutes ? `${attemptExam.timeLimitMinutes} minute runtime limit` : "Runtime limit unavailable"}</span>
+                    <span data-attempt-duration-badge="true" style={{ ...statusBadgeStyle("info"), ...attemptDurationBadgeStyle }}>{attemptExam?.openPeriodMinutes ? `${attemptExam.openPeriodMinutes} minute open window` : "Open window unavailable"}</span>
+                  </div>
+                </div>
+                <div data-attempt-slot="next-step" style={attemptNextStepSlotStyle}>
+                  <div style={attemptAvailabilityBandStyle}>
+                    <span style={attemptAvailabilityLabelStyle}>What happens next</span>
+                    <strong>{actionSummary}</strong>
+                  </div>
+                  {attempt.waitingMessage && attempt.status === "ready" ? <p style={attemptSupplementalMessageStyle}>{attempt.waitingMessage}</p> : null}
+                  {attempt.coldStartWarning ? <p role="status" style={{ ...alertPanelStyle.warning, margin: 0 }}>{attempt.coldStartWarning}</p> : null}
+                </div>
+                <div data-attempt-slot="scheduled-for" style={attemptScheduledSlotStyle}>
+                  {attempt.scheduledFor ? (
+                    <p style={attemptDateStyle}>
+                      <span style={metaLabelStyle}>Scheduled for</span>
+                      <span>{formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}</span>
+                    </p>
+                  ) : <div aria-hidden="true" />}
+                </div>
+                <div data-attempt-slot="footer" style={attemptActionStackStyle}>
+                  {primaryAction.label ? (
+                    <button
+                      aria-label={`${primaryAction.label} for ${attempt.examTitle}, attempt ${attempt.attemptId}`}
+                      onClick={() => {
+                        if (primaryAction.label === "View score") {
+                          openScorePage(attempt.attemptId);
+                          return;
+                        }
+                        openLabConsole(attempt.attemptId, attempt.status);
+                      }}
+                      disabled={primaryAction.disabled}
+                      tabIndex={detailsOpen ? -1 : undefined}
+                      style={getButtonStyle(attemptPrimaryButtonStyle, primaryAction.disabled)}
+                    >
+                      {primaryAction.label}
+                    </button>
+                  ) : <div aria-hidden="true" style={attemptPrimaryActionPlaceholderStyle} />}
+                  <button
+                    ref={(node) => {
+                      if (node) attemptFrontButtonRefs.current.set(attempt.attemptId, node);
+                      else attemptFrontButtonRefs.current.delete(attempt.attemptId);
+                    }}
+                    type="button"
+                    aria-expanded={detailsOpen}
+                    aria-label={`Attempt details for ${attempt.examTitle}, attempt ${attempt.attemptId}`}
+                    tabIndex={detailsOpen ? -1 : undefined}
+                    onClick={() => setDetailsOpen(true)}
+                    style={attemptSecondaryButtonStyle}
+                  >
+                    Attempt details
+                  </button>
+                </div>
+              </div>
+            </section>
+            <section
+              aria-hidden={!detailsOpen}
+              inert={!detailsOpen ? true : undefined}
+              data-attempt-card-face="back"
+              style={{
+                ...attemptFlipFaceStyle,
+                ...attemptFlipBackFaceStyle,
+                ...(!detailsOpen ? attemptHiddenFaceStyle : null),
+              }}
+            >
+              <div style={attemptBackFaceContentStyle}>
+                <div style={attemptCardAccentStyle} />
+                <div data-attempt-face-scroll="true" style={attemptDetailsScrollStyle}>
+                  <section aria-label={`Attempt details for ${attempt.examTitle}, attempt ${attempt.attemptId}`} style={attemptDetailsPanelStyle}>
+                    <h3 id={backHeadingId} style={attemptCardTitleStyle}>{attempt.examTitle}</h3>
+                  <p style={attemptDetailIdentifierStyle}>Attempt ID: {attempt.attemptId}</p>
+                  <div style={attemptMetaGridStyle}>
+                    <div style={metaItemStyle}>
+                      <span style={metaLabelStyle}>Access window</span>
+                      <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
+                        {attempt.scheduledFor && attempt.scheduledEnd ? (
+                          <>
+                            <span>Starts {formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}</span>
+                            <span>Closes {formatCandidateScheduledDateTime(attempt.scheduledEnd) ?? "TBD"}{attemptExam ? ` (${attemptExam.openPeriodMinutes} min)` : ""}</span>
+                          </>
+                        ) : "TBD"}
+                      </span>
+                    </div>
+                    <div style={metaItemStyle}>
+                      <span style={metaLabelStyle}>Environment retention</span>
+                      <span style={metaValueStyle}>{attemptExam?.storageLeaseMinutes ? `${attemptExam.storageLeaseMinutes} minute environment retention` : "Not recorded"}</span>
+                    </div>
+                    <div style={metaItemStyle}>
+                      <span style={metaLabelStyle}>{resolvedRoute.activeTask === "current" ? "Next schedule available" : "Retention boundary"}</span>
+                      <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
+                        {attempt.nextScheduleAvailableLabel ? (
+                          <><span>{attempt.nextScheduleAvailableLabel}</span>{attemptExam ? <span style={metaHintStyle}>{getScheduleAvailabilityNote(attemptExam)}</span> : null}</>
+                        ) : getAttemptScheduleAvailabilityFallback(attempt.status)}
+                      </span>
+                    </div>
+                  </div>
+                  </section>
+                </div>
+                <div data-attempt-slot="footer" style={attemptActionStackStyle}>
+                <div aria-hidden="true" style={attemptPrimaryActionPlaceholderStyle} />
+                  <button
+                    ref={(node) => {
+                      if (node) attemptBackButtonRefs.current.set(attempt.attemptId, node);
+                      else attemptBackButtonRefs.current.delete(attempt.attemptId);
+                    }}
+                    type="button"
+                    aria-expanded={detailsOpen}
+                    aria-label={`Back to attempt for ${attempt.examTitle}, attempt ${attempt.attemptId}`}
+                    tabIndex={!detailsOpen ? -1 : undefined}
+                    onClick={() => setDetailsOpen(false)}
+                    style={attemptSecondaryButtonStyle}
+                  >
+                    Back to attempt
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </article>
+    );
+  }
   const resolvedRouteKey = useMemo(
     () =>
       [
@@ -343,16 +516,12 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       return;
     }
 
-    const urlRouteKey = searchParams.toString();
     if (!hasLoadedResolvedRouteRef.current) {
       hasLoadedResolvedRouteRef.current = true;
-      previousUrlRouteKeyRef.current = urlRouteKey;
       previousResolvedRouteKeyRef.current = resolvedRouteKey;
       return;
     }
 
-    const routeNavigated = previousUrlRouteKeyRef.current !== urlRouteKey;
-    previousUrlRouteKeyRef.current = urlRouteKey;
     const resolvedRouteChanged = previousResolvedRouteKeyRef.current !== resolvedRouteKey;
     if (!resolvedRouteChanged) {
       previousResolvedRouteKeyRef.current = resolvedRouteKey;
@@ -361,10 +530,6 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
 
     previousResolvedRouteKeyRef.current = resolvedRouteKey;
     setAnnouncedTaskMessage(buildCandidateTaskAnnouncement(resolvedRoute));
-    if (routeNavigated) {
-      setFocusedTaskHeading(resolvedRoute.activeTask);
-      activeTaskHeadingRef.current?.focus({ preventScroll: true });
-    }
   }, [loading, resolvedRoute, resolvedRouteKey, searchParams]);
 
   if (sessionExpired) {
@@ -376,7 +541,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       <PortalPageHeader
         eyebrow="Certalis Candidate Portal"
         title="Candidate delivery"
-        description="Move between your current ExamAttempt, the next published Exam you can schedule, and completed history without losing your place."
+        description="Move between your current Exam Attempt, the next published Exam you can schedule, and completed history without losing your place."
         email={email}
         actions={
           <button
@@ -400,7 +565,24 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       ) : null}
 
       <section style={{ display: "grid", gap: "1rem" }}>
-        {refreshing ? <p role="status" aria-live="polite" style={{ ...mutedPanelStyle, margin: 0 }}>Refreshing candidate delivery status…</p> : null}
+        <p
+          aria-label="Candidate delivery refresh status"
+          aria-live="polite"
+          role="status"
+          style={visuallyHiddenStyle}
+        >
+          {refreshing ? "Refreshing candidate delivery status…" : ""}
+        </p>
+        <p
+          aria-hidden="true"
+          data-candidate-refresh-visual="true"
+          style={{
+            ...refreshStatusSlotStyle,
+            visibility: refreshing ? "visible" : "hidden",
+          }}
+        >
+          {refreshing ? "Refreshing candidate delivery status…" : ""}
+        </p>
         <section style={taskShellStyle} aria-label="Candidate delivery tasks">
           <div style={sectionHeaderStyle}>
             <div>
@@ -460,177 +642,27 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                 <p style={eyebrowLabelStyle}>
                   {resolvedRoute.activeTask === "current" ? "Current task" : "Attempt history"}
                 </p>
-                <h2
-                  ref={activeTaskHeadingRef}
-                  onBlur={() => setFocusedTaskHeading(null)}
-                  tabIndex={-1}
-                  style={{
-                    ...sectionTitleStyle,
-                    ...(focusedTaskHeading === resolvedRoute.activeTask
-                      ? focusedTaskHeadingStyle
-                      : null),
-                  }}
-                >
+                <h2 style={sectionTitleStyle}>
                   {resolvedRoute.activeTask === "current"
-                    ? "Your current ExamAttempt"
+                    ? "Your current Exam Attempt"
                     : "Completed and expired attempts"}
                 </h2>
               </div>
               <p style={sectionCopyStyle}>
                 {resolvedRoute.activeTask === "current"
-                  ? "The next valid action stays tied to the selected ExamAttempt."
+                  ? "Each Exam Attempt keeps its own status, timing, and next valid action."
                   : "Review durable result history without mixing it into the live delivery task."}
               </p>
             </div>
-            {resolvedRoute.attempts.length > 1 ? (
-              <div style={attemptSelectorStripStyle}>
-                {resolvedRoute.attempts.map((attempt) => (
-                  <button
-                    key={attempt.attemptId}
-                    type="button"
-                    aria-current={selectedAttempt?.attemptId === attempt.attemptId ? "page" : undefined}
-                    onClick={() =>
-                      navigateToCandidateTask({
-                        task: resolvedRoute.activeTask,
-                        attemptId: attempt.attemptId,
-                        examId: null,
-                      })
-                    }
-                    style={{
-                      ...attemptSelectorButtonStyle,
-                      ...(selectedAttempt?.attemptId === attempt.attemptId
-                        ? selectedAttemptSelectorButtonStyle
-                        : null),
-                    }}
-                  >
-                    <span style={attemptSelectorTitleStyle}>{attempt.examTitle}</span>
-                    <span style={attemptSelectorMetaStyle}>
-                      {formatCandidateAttemptStatus(attempt.displayStatus)} · {formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}
-                    </span>
-                  </button>
-                ))}
+            {resolvedRoute.attempts.length > 0 ? (
+              <div style={attemptCardListStyle}>
+                {resolvedRoute.attempts.map(renderAttemptCard)}
               </div>
-            ) : null}
-            {selectedAttempt ? (
-              <article style={attemptCardStyle}>
-                <div style={attemptCardContentStyle}>
-                  <div style={attemptCardAccentStyle} />
-                  <div style={attemptCardHeaderStyle}>
-                    <div>
-                      <strong style={{ display: "block", fontSize: "1rem", color: "#0f172a" }}>
-                        {selectedAttempt.examTitle}
-                      </strong>
-                      <p style={{ margin: "0.35rem 0 0", color: "#475569", overflowWrap: "anywhere" }}>
-                        Attempt ID: {selectedAttempt.attemptId}
-                      </p>
-                    </div>
-                    <span style={statusBadgeStyle(getExamAttemptStatusTone(selectedAttempt.displayStatus))}>
-                      {formatCandidateAttemptStatus(selectedAttempt.displayStatus)}
-                    </span>
-                  </div>
-                  <div style={attemptMetaGridStyle}>
-                    <div style={metaItemStyle}>
-                      <span style={metaLabelStyle}>Access window</span>
-                      <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
-                        {selectedAttempt.scheduledFor && selectedAttempt.scheduledEnd ? (
-                          <>
-                            <span>
-                              Starts {formatCandidateScheduledDateTime(selectedAttempt.scheduledFor) ?? "TBD"}
-                            </span>
-                            <span>
-                              Closes {formatCandidateScheduledDateTime(selectedAttempt.scheduledEnd) ?? "TBD"}
-                              {selectedAttemptExam ? ` (${selectedAttemptExam.openPeriodMinutes} min)` : ""}
-                            </span>
-                          </>
-                        ) : (
-                          "TBD"
-                        )}
-                      </span>
-                    </div>
-                    <div style={metaItemStyle}>
-                      <span style={metaLabelStyle}>Runtime limit</span>
-                      <span style={metaValueStyle}>
-                        {selectedAttemptExam?.timeLimitMinutes
-                          ? `${selectedAttemptExam.timeLimitMinutes} minute runtime limit`
-                          : "Unavailable"}
-                      </span>
-                    </div>
-                    <div style={metaItemStyle}>
-                      <span style={metaLabelStyle}>Open window</span>
-                      <span style={metaValueStyle}>
-                        {selectedAttemptExam?.openPeriodMinutes
-                          ? `${selectedAttemptExam.openPeriodMinutes} minute open window`
-                          : "Unavailable"}
-                      </span>
-                    </div>
-                    <div style={metaItemStyle}>
-                      <span style={metaLabelStyle}>Environment retention</span>
-                      <span style={metaValueStyle}>
-                        {selectedAttemptExam?.storageLeaseMinutes
-                          ? `${selectedAttemptExam.storageLeaseMinutes} minute environment retention`
-                          : "Not recorded"}
-                      </span>
-                    </div>
-                    <div style={metaItemStyle}>
-                      <span style={metaLabelStyle}>
-                        {resolvedRoute.activeTask === "current"
-                          ? "Next schedule available"
-                          : "Retention boundary"}
-                      </span>
-                      <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
-                        {selectedAttempt.nextScheduleAvailableLabel ? (
-                          <>
-                            <span>{selectedAttempt.nextScheduleAvailableLabel}</span>
-                            {selectedAttemptExam ? (
-                              <span style={metaHintStyle}>{getScheduleAvailabilityNote(selectedAttemptExam)}</span>
-                            ) : null}
-                          </>
-                        ) : (
-                          getAttemptScheduleAvailabilityFallback(selectedAttempt.status)
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                  {selectedAttemptPrimaryAction.label ? (
-                    <div style={attemptActionStackStyle}>
-                      <button
-                        onClick={() => {
-                          if (selectedAttemptPrimaryAction.label === "View score") {
-                            openScorePage(selectedAttempt.attemptId);
-                            return;
-                          }
-                          openLabConsole(selectedAttempt.attemptId, selectedAttempt.status);
-                        }}
-                        disabled={selectedAttemptPrimaryAction.disabled}
-                        style={getButtonStyle(attemptPrimaryButtonStyle, selectedAttemptPrimaryAction.disabled)}
-                      >
-                        {selectedAttemptPrimaryAction.label}
-                      </button>
-                      {selectedAttempt.waitingMessage && selectedAttempt.status === "ready" ? (
-                        <span style={{ color: "#555", lineHeight: 1.4 }}>{selectedAttempt.waitingMessage}</span>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p style={mutedTaskCopyStyle}>
-                      {resolvedRoute.activeTask === "current"
-                        ? selectedAttempt.status === "scheduled"
-                          ? "Your ExamAttempt is scheduled. We will enable entry when the server confirms the access window is open."
-                          : "No live action is available for this route state."
-                        : "This attempt remains here as durable history."}
-                    </p>
-                  )}
-                  {selectedAttempt.coldStartWarning ? (
-                    <p role="status" style={{ ...alertPanelStyle.warning, margin: 0 }}>
-                      {selectedAttempt.coldStartWarning}
-                    </p>
-                  ) : null}
-                </div>
-              </article>
             ) : (
               <p style={{ ...mutedPanelStyle, margin: 0 }}>
                 {resolvedRoute.activeTask === "current"
-                  ? "No live ExamAttempt is available right now."
-                  : "No completed ExamAttempt history is available yet."}
+                  ? "No live Exam Attempt is available right now."
+                  : "No completed Exam Attempt history is available yet."}
               </p>
             )}
           </section>
@@ -640,15 +672,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
             <div style={sectionHeaderStyle}>
               <div>
                 <p style={eyebrowLabelStyle}>Published Exams</p>
-                <h2
-                  ref={activeTaskHeadingRef}
-                  onBlur={() => setFocusedTaskHeading(null)}
-                  tabIndex={-1}
-                  style={{
-                    ...sectionTitleStyle,
-                    ...(focusedTaskHeading === "schedule" ? focusedTaskHeadingStyle : null),
-                  }}
-                >
+                <h2 style={sectionTitleStyle}>
                   Schedule your next session
                 </h2>
               </div>
@@ -662,15 +686,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
             <div style={sectionHeaderStyle}>
               <div>
                 <p style={eyebrowLabelStyle}>Scheduling task</p>
-                <h2
-                  ref={activeTaskHeadingRef}
-                  onBlur={() => setFocusedTaskHeading(null)}
-                  tabIndex={-1}
-                  style={{
-                    ...sectionTitleStyle,
-                    ...(focusedTaskHeading === "schedule" ? focusedTaskHeadingStyle : null),
-                  }}
-                >
+                <h2 style={sectionTitleStyle}>
                   Choose an exam
                 </h2>
               </div>
@@ -739,10 +755,32 @@ const sectionTitleStyle: CSSProperties = {
   color: "#0f172a",
 };
 
-const focusedTaskHeadingStyle: CSSProperties = {
-  outline: "3px solid #93c5fd",
-  outlineOffset: "4px",
-  borderRadius: "4px",
+const refreshStatusSlotStyle: CSSProperties = {
+  height: "2.75rem",
+  boxSizing: "border-box",
+  display: "flex",
+  alignItems: "center",
+  padding: "0.65rem 0.85rem",
+  margin: 0,
+  overflow: "hidden",
+  whiteSpace: "nowrap",
+  border: "1px solid #e2e8f0",
+  borderRadius: "8px",
+  background: "#f8fafc",
+  color: "#475569",
+  fontSize: "0.875rem",
+};
+
+const visuallyHiddenStyle: CSSProperties = {
+  position: "absolute",
+  width: "1px",
+  height: "1px",
+  padding: 0,
+  margin: "-1px",
+  overflow: "hidden",
+  clip: "rect(0, 0, 0, 0)",
+  whiteSpace: "nowrap",
+  border: 0,
 };
 
 const sectionCopyStyle: CSSProperties = {
@@ -808,18 +846,128 @@ const attemptQueueSectionStyle: CSSProperties = {
 
 const attemptCardStyle: CSSProperties = {
   ...cardStyle,
+  height: "34rem",
   padding: 0,
   overflow: "hidden",
   border: "1px solid #dbe4ef",
   boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)",
 };
 
-const attemptCardContentStyle: CSSProperties = {
+function getAttemptFlipInnerStyle(detailsOpen: boolean): CSSProperties {
+  return {
+    display: "grid",
+    position: "relative",
+    height: "100%",
+    transformStyle: "preserve-3d",
+    transform: detailsOpen ? "rotateY(180deg)" : "rotateY(0deg)",
+  };
+}
+
+const attemptFlipPerspectiveStyle: CSSProperties = {
+  perspective: "1200px",
+  height: "100%",
+};
+
+const attemptFlipFaceStyle: CSSProperties = {
+  gridArea: "1 / 1",
+  position: "absolute",
+  inset: 0,
+  backfaceVisibility: "hidden",
+  WebkitBackfaceVisibility: "hidden",
+  minWidth: 0,
+};
+
+const attemptFlipBackFaceStyle: CSSProperties = {
+  transform: "rotateY(180deg)",
+};
+
+const attemptHiddenFaceStyle: CSSProperties = {
+  pointerEvents: "none",
+};
+
+const attemptFrontFaceContentStyle: CSSProperties = {
   display: "grid",
-  gap: "1rem",
+  gridTemplateRows: "3px 3.8rem 5.5rem 7rem 2.75rem 6.7rem",
+  gap: "0.9rem",
   height: "100%",
   padding: "1.05rem",
   boxSizing: "border-box",
+};
+
+const attemptBackFaceContentStyle: CSSProperties = {
+  ...attemptFrontFaceContentStyle,
+  gridTemplateRows: "3px minmax(0, 1fr) 6.7rem",
+};
+
+const attemptTitleSlotStyle: CSSProperties = {
+  minHeight: 0,
+  overflowY: "auto",
+  overflowX: "hidden",
+  paddingRight: "0.15rem",
+};
+
+const attemptMetadataSlotStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+  gap: "0.75rem",
+  minHeight: 0,
+  overflowY: "auto",
+  overflowX: "hidden",
+};
+
+const attemptStateBadgeStackStyle: CSSProperties = {
+  display: "grid",
+  alignContent: "start",
+  justifyItems: "start",
+  gap: "0.4rem",
+};
+
+const attemptDurationBadgeStackStyle: CSSProperties = {
+  display: "grid",
+  alignContent: "start",
+  justifyItems: "end",
+  gap: "0.4rem",
+};
+
+const attemptDurationBadgeStyle: CSSProperties = {
+  boxSizing: "border-box",
+  justifyContent: "center",
+  maxWidth: "100%",
+  overflowWrap: "anywhere",
+  textAlign: "center",
+  whiteSpace: "normal",
+};
+
+const attemptInvisibleBadgeSlotStyle: CSSProperties = {
+  ...statusBadgeStyle("info"),
+  background: "#ecfdf5",
+  color: "#0f766e",
+  visibility: "hidden",
+};
+
+const attemptNextStepSlotStyle: CSSProperties = {
+  minHeight: 0,
+  overflowY: "auto",
+  overflowX: "hidden",
+  paddingRight: "0.15rem",
+};
+
+const attemptScheduledSlotStyle: CSSProperties = {
+  minHeight: 0,
+  overflowY: "auto",
+  overflowX: "hidden",
+};
+
+const attemptDetailsScrollStyle: CSSProperties = {
+  minHeight: 0,
+  overflowY: "auto",
+  overflowX: "hidden",
+  paddingRight: "0.2rem",
+};
+
+const openedAttemptCardStyle: CSSProperties = {
+  borderColor: "#0f766e",
+  boxShadow: "0 0 0 1px rgba(15, 118, 110, 0.18), 0 1px 2px rgba(15, 23, 42, 0.08)",
 };
 
 const attemptCardAccentStyle: CSSProperties = {
@@ -828,12 +976,67 @@ const attemptCardAccentStyle: CSSProperties = {
   background: "linear-gradient(90deg, #4f46e5 0%, #10b981 55%, #f97316 100%)",
 };
 
-const attemptCardHeaderStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
+const attemptCardTitleStyle: CSSProperties = {
+  display: "block",
+  margin: 0,
+  fontSize: "1.1rem",
+  color: "#0f172a",
+  overflowWrap: "anywhere",
+};
+
+const openedAttemptBadgeStyle: CSSProperties = {
+  ...statusBadgeStyle("info"),
+  background: "#ecfdf5",
+  color: "#0f766e",
+};
+
+const attemptCardListStyle: CSSProperties = {
+  display: "grid",
   gap: "1rem",
-  flexWrap: "wrap",
-  alignItems: "flex-start",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
+  alignItems: "start",
+};
+
+const attemptAvailabilityBandStyle: CSSProperties = {
+  display: "grid",
+  alignContent: "start",
+  gap: "0.2rem",
+  padding: "0.8rem",
+  border: "1px solid #dbeafe",
+  borderRadius: "8px",
+  background: "#eff6ff",
+};
+
+const attemptAvailabilityLabelStyle: CSSProperties = {
+  color: "#475569",
+  fontSize: "0.78rem",
+  fontWeight: 700,
+  textTransform: "uppercase",
+};
+
+const attemptDateStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.25rem",
+  margin: 0,
+  color: "#0f172a",
+};
+
+const attemptSupplementalMessageStyle: CSSProperties = {
+  margin: 0,
+  color: "#475569",
+  lineHeight: 1.4,
+};
+
+const attemptDetailsPanelStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.75rem",
+  paddingTop: "0.15rem",
+};
+
+const attemptDetailIdentifierStyle: CSSProperties = {
+  margin: 0,
+  color: "#475569",
+  overflowWrap: "anywhere",
 };
 
 const attemptMetaGridStyle: CSSProperties = {
@@ -848,45 +1051,25 @@ const attemptActionStackStyle: CSSProperties = {
   marginTop: "auto",
 };
 
-const attemptSelectorStripStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 14rem), 1fr))",
-  gap: "0.75rem",
-};
-
-const attemptSelectorButtonStyle: CSSProperties = {
-  ...cardStyle,
-  display: "grid",
-  gap: "0.2rem",
-  textAlign: "left",
-  cursor: "pointer",
-  border: "1px solid #dbe4ef",
-  background: "#ffffff",
-  padding: "0.8rem 0.9rem",
-};
-
-const selectedAttemptSelectorButtonStyle: CSSProperties = {
-  border: "1px solid #2563eb",
-  background: "#eff6ff",
-  boxShadow: "inset 0 0 0 1px #bfdbfe",
-};
-
-const attemptSelectorTitleStyle: CSSProperties = {
-  color: "#0f172a",
-  fontSize: "0.95rem",
-  fontWeight: 600,
-};
-
-const attemptSelectorMetaStyle: CSSProperties = {
-  color: "#64748b",
-  fontSize: "0.82rem",
-  lineHeight: 1.4,
-};
-
 const attemptPrimaryButtonStyle: CSSProperties = {
   ...primaryButtonStyle,
   width: "100%",
   minHeight: "3.1rem",
+};
+
+const attemptPrimaryActionPlaceholderStyle: CSSProperties = {
+  minHeight: "3.1rem",
+};
+
+const attemptSecondaryButtonStyle: CSSProperties = {
+  width: "100%",
+  minHeight: "3.1rem",
+  border: "1px solid #cbd5e1",
+  borderRadius: "6px",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontWeight: 600,
+  fontSize: "0.95rem",
 };
 
 const publishedExamSectionStyle: CSSProperties = {
@@ -931,11 +1114,24 @@ const metaHintStyle: CSSProperties = {
   lineHeight: 1.35,
 };
 
-const mutedTaskCopyStyle: CSSProperties = {
-  margin: 0,
-  color: "#475569",
-  lineHeight: 1.5,
-};
+function getCandidateAttemptActionSummary(
+  status: CandidateDashboardData["attempts"][number]["status"],
+  action: "Enter exam" | "Return to exam" | "Resume exam" | "View score" | null,
+  disabled: boolean,
+): string {
+  if (action === "Enter exam") return disabled
+    ? "Your Exam Attempt is scheduled. We will enable entry when the access window opens."
+    : "Ready to start";
+  if (action === "Return to exam") return "Exam in progress";
+  if (action === "Resume exam") return "Ready to resume";
+  if (action === "View score") return "Score available";
+  if (status === "scheduled" || status === "ready") {
+    return "Your Exam Attempt is scheduled. We will enable entry when the access window opens.";
+  }
+  if (status === "completed") return "This attempt is saved in your history.";
+  if (status === "expired") return "This attempt is saved in your history.";
+  return "No action is available right now.";
+}
 
 function getScheduleAvailabilityNote(exam: CandidateDashboardData["exams"][number]): string {
   return exam.storageLeaseMinutes && exam.storageLeaseMinutes > exam.openPeriodMinutes
@@ -997,17 +1193,12 @@ function buildCandidateTaskAnnouncement(
 ): string {
   switch (resolvedRoute.activeTask) {
     case "current":
-      return resolvedRoute.selectedAttempt
-        ? `Now showing Current ExamAttempt. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
-        : "Now showing Current ExamAttempt.";
+      return "Now showing Current Exam Attempt.";
     case "history":
-      return resolvedRoute.selectedAttempt
-        ? `Now showing Attempt history. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
-        : "Now showing Attempt history.";
+      return "Now showing Attempt history.";
     case "schedule":
       return "Now showing Schedule exam. Choose a published Exam below.";
     default:
       return "Candidate task updated.";
   }
 }
-

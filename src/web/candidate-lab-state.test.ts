@@ -66,7 +66,7 @@ describe("candidate lab state", () => {
         supportDetail: "Exam attempt: attempt-1",
         scheduledForLabel,
         summaryItems: expect.arrayContaining<CandidateLabSummaryItem>([
-          { label: "ExamAttempt ID", value: "attempt-1" },
+          { label: "Exam Attempt ID", value: "attempt-1" },
           { label: "Status", value: formatCandidateAttemptStatus(status) },
           { label: "Time limit", value: "60 minute limit" },
           { label: "Scheduled for", value: scheduledForValue },
@@ -111,7 +111,7 @@ describe("candidate lab state", () => {
         scheduledFor: null,
       }).summaryItems,
     ).toEqual([
-      { label: "ExamAttempt ID", value: "attempt-2" },
+      { label: "Exam Attempt ID", value: "attempt-2" },
       { label: "Status", value: "Ready" },
       { label: "Time limit", value: "45 minute limit" },
     ]);
@@ -127,7 +127,7 @@ describe("candidate lab state", () => {
         scheduledFor: "not-a-date",
       }).summaryItems,
     ).toEqual([
-      { label: "ExamAttempt ID", value: "attempt-3" },
+      { label: "Exam Attempt ID", value: "attempt-3" },
       { label: "Status", value: "Ready" },
       { label: "Time limit", value: "30 minute limit" },
     ]);
@@ -170,7 +170,7 @@ describe("candidate lab state", () => {
       }),
     ).toMatchObject({
       actionTitle: "Your lab is paused",
-      actionDetail: "Use Resume exam when you are ready to continue with the same ExamAttempt.",
+      actionDetail: "Use Resume exam when you are ready to continue with the same Exam Attempt.",
     });
 
     expect(
@@ -182,8 +182,23 @@ describe("candidate lab state", () => {
         scheduledFor,
       }),
     ).toMatchObject({
-      actionTitle: "This ExamAttempt is complete",
+      actionTitle: "This Exam Attempt is complete",
       actionDetail: "Your lab is no longer accepting launch or resume actions.",
     });
+  });
+
+  it("uses readable Exam Attempt copy when the authored open period has closed", () => {
+    const presentation = getCandidateLabPresentation({
+      status: "suspended",
+      examAttemptId: "attempt-closed",
+      examTitle: "Closed Exam",
+      timeLimitMinutes: 60,
+      scheduledFor,
+      openPeriodClosed: true,
+    });
+    expect(presentation.actionDetail).toBe(
+      "Launch and resume actions are no longer available for this Exam Attempt.",
+    );
+    expect(JSON.stringify(presentation)).not.toContain("ExamAttempt");
   });
 });

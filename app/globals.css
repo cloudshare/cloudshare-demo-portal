@@ -76,3 +76,13 @@ button:disabled {
     transform: rotate(360deg);
   }
 }
+
+.candidate-attempt-flip-inner {
+  transition: transform 260ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .candidate-attempt-flip-inner {
+    transition: none;
+  }
+}

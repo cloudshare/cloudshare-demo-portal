@@ -203,7 +203,7 @@ export function ScoreLoadedPanel({
             ) : null}
           </div>
           <p style={{ margin: 0, color: "#334155" }}>
-            Review the recorded CloudShare Guided Journey result for this completed ExamAttempt.
+            Review the recorded CloudShare Guided Journey result for this completed Exam Attempt.
           </p>
         </div>
       </section>
@@ -333,7 +333,7 @@ function ScorePageHeader({
     <PortalPageHeader
       eyebrow="Candidate score"
       title="Session complete"
-      description="Review your final Guided Journey result and any CloudShare scoring limitations for this ExamAttempt."
+      description="Review your final Guided Journey result and any CloudShare scoring limitations for this Exam Attempt."
       email={email}
       actions={
         <ScorePanelActions

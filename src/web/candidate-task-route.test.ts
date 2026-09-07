@@ -87,7 +87,7 @@ describe("candidate task route", () => {
     expect(resolved.selectedAttempt?.attemptId).toBe("attempt-ready");
     expect(resolved.notice).toBeNull();
     expect(resolved.tasks.map((task) => task.label)).toEqual([
-      "Current ExamAttempt",
+      "Current Exam Attempt",
       "Schedule exam",
       "Attempt history",
     ]);
@@ -103,7 +103,7 @@ describe("candidate task route", () => {
     expect(resolved.activeTask).toBe("current");
     expect(resolved.selectedAttempt?.attemptId).toBe("attempt-ready");
     expect(resolved.notice).toBe(
-      "The requested ExamAttempt is no longer available in this live task view.",
+      "The requested Exam Attempt is no longer available in this live task view.",
     );
   });
 
@@ -136,7 +136,7 @@ describe("candidate task route", () => {
 
     expect(resolved.activeTask).toBe("schedule");
     expect(resolved.selectedExam?.id).toBe("exam-1");
-    expect(resolved.notice).toBe("No live ExamAttempt is available right now. Choose another published Exam.");
+    expect(resolved.notice).toBe("No live Exam Attempt is available right now. Choose another published Exam.");
   });
 
   it("fails safely when a requested published Exam is unavailable", () => {
@@ -207,14 +207,21 @@ describe("candidate task route", () => {
     expect(parseCandidateTaskSearchParams(new URLSearchParams(), fallback)).toEqual(fallback);
   });
 
-  it("prioritizes actionable current attempts over future scheduled attempts", () => {
+  it("keeps current attempts in stable schedule order when their statuses change", () => {
     const resolved = resolveCandidateTaskRoute({ ...dashboard, attempts: [
       { id: "future", examId: "exam-2", scheduledFor: "2026-06-20T10:00:00.000Z", status: "ready" },
       { id: "running", examId: "exam-1", scheduledFor: "2026-06-16T15:00:00.000Z", status: "in_progress" },
       { id: "paused", examId: "exam-2", scheduledFor: "2026-06-16T15:30:00.000Z", status: "suspended" },
     ] }, Date.parse("2026-06-16T15:59:00.000Z"), { task: "current", attemptId: null, examId: null });
     expect(resolved.selectedAttempt?.attemptId).toBe("running");
-    expect(resolved.attempts.map((attempt) => attempt.attemptId)).toEqual(["running", "paused", "future"]);
+    expect(resolved.attempts.map((attempt) => attempt.attemptId)).toEqual(["future", "paused", "running"]);
+
+    const refreshed = resolveCandidateTaskRoute({ ...dashboard, attempts: [
+      { id: "future", examId: "exam-2", scheduledFor: "2026-06-20T10:00:00.000Z", status: "in_progress" },
+      { id: "running", examId: "exam-1", scheduledFor: "2026-06-16T15:00:00.000Z", status: "suspended" },
+      { id: "paused", examId: "exam-2", scheduledFor: "2026-06-16T15:30:00.000Z", status: "ready" },
+    ] }, Date.parse("2026-06-16T15:59:00.000Z"), { task: "current", attemptId: null, examId: null });
+    expect(refreshed.attempts.map((attempt) => attempt.attemptId)).toEqual(["future", "paused", "running"]);
   });
 
   it.each(["in_progress", "suspended"] as const)("moves %s to history when its open period is closed", (status) => {
@@ -231,7 +238,7 @@ describe("candidate task route", () => {
       { task: "current", attemptId: null, examId: null },
     );
     expect(resolved.activeTask).toBe("history");
-    expect(resolved.notice).toBe("No live ExamAttempt is available right now, and no published Exams are available yet.");
+    expect(resolved.notice).toBe("No live Exam Attempt is available right now, and no published Exams are available yet.");
     expect(resolved.notice).not.toContain("Choose another published Exam");
   });
 

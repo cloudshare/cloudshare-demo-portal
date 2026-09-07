@@ -35,7 +35,7 @@ export interface ResolvedCandidateTaskRoute {
 }
 
 const CANDIDATE_TASK_LABELS: Record<CandidateTaskView, string> = {
-  current: "Current ExamAttempt",
+  current: "Current Exam Attempt",
   schedule: "Schedule exam",
   history: "Attempt history",
 };
@@ -58,8 +58,8 @@ export function resolveCandidateTaskRoute(
   route: CandidateTaskRoute,
 ): ResolvedCandidateTaskRoute {
   const attempts = buildScheduledAttemptViews(dashboard, nowMs);
-  const liveAttempts = attempts.filter(isLiveCandidateAttempt).sort(compareCurrentAttempts);
-  const historyAttempts = attempts.filter(isHistoryCandidateAttempt);
+  const liveAttempts = attempts.filter(isLiveCandidateAttempt).sort(compareAttemptsByScheduledTime);
+  const historyAttempts = attempts.filter(isHistoryCandidateAttempt).sort(compareAttemptsByScheduledTime);
   const tasks: CandidateTaskTab[] = [
     { task: "current", label: CANDIDATE_TASK_LABELS.current, count: liveAttempts.length },
     { task: "schedule", label: CANDIDATE_TASK_LABELS.schedule, count: dashboard.exams.length },
@@ -74,14 +74,16 @@ export function resolveCandidateTaskRoute(
         dashboard,
         nowMs,
         dashboard.exams.length > 0
-          ? "No live ExamAttempt is available right now. Choose another published Exam."
-          : "No live ExamAttempt is available right now, and no published Exams are available yet.",
+          ? "No live Exam Attempt is available right now. Choose another published Exam."
+          : "No live Exam Attempt is available right now, and no published Exams are available yet.",
         tasks,
       );
     }
 
     const selectedAttempt =
-      selectAttemptById(liveAttempts, route.attemptId) ?? liveAttempts[0] ?? null;
+      selectAttemptById(liveAttempts, route.attemptId)
+      ?? [...liveAttempts].sort(compareCurrentAttemptNavigationPriority)[0]
+      ?? null;
 
     return {
       activeTask: "current",
@@ -92,7 +94,7 @@ export function resolveCandidateTaskRoute(
       selectedExam: selectExamById(dashboard.exams, route.examId),
       notice:
         route.attemptId && !selectAttemptById(liveAttempts, route.attemptId)
-          ? "The requested ExamAttempt is no longer available in this live task view."
+          ? "The requested Exam Attempt is no longer available in this live task view."
           : null,
       tasks,
     };
@@ -104,8 +106,8 @@ export function resolveCandidateTaskRoute(
         dashboard,
         nowMs,
         dashboard.exams.length > 0
-          ? "No completed ExamAttempt history is available yet. Choose another published Exam."
-          : "No completed ExamAttempt history is available yet.",
+          ? "No completed Exam Attempt history is available yet. Choose another published Exam."
+          : "No completed Exam Attempt history is available yet.",
         tasks,
       );
     }
@@ -122,7 +124,7 @@ export function resolveCandidateTaskRoute(
       selectedExam: selectExamById(dashboard.exams, route.examId),
       notice:
         route.attemptId && !selectAttemptById(historyAttempts, route.attemptId)
-          ? "The requested ExamAttempt is no longer available in this history view."
+          ? "The requested Exam Attempt is no longer available in this history view."
           : null,
       tasks,
     };
@@ -210,7 +212,7 @@ export function getCandidateTaskNavigationRoute(
       ? resolved.candidateAttempts.filter(isHistoryCandidateAttempt)
       : resolved.candidateAttempts;
   const attemptForDestination = (task === "current"
-    ? [...destinationAttempts].sort(compareCurrentAttempts)
+    ? [...destinationAttempts].sort(compareCurrentAttemptNavigationPriority)
     : destinationAttempts)[0] ?? null;
   if (task === "schedule") {
     const selectedScheduleExam = resolved.activeTask === "schedule"
@@ -323,7 +325,15 @@ function emptyCandidateTaskRoute(): CandidateTaskRoute {
   return { task: null, attemptId: null, examId: null };
 }
 
-function compareCurrentAttempts(
+function compareAttemptsByScheduledTime(
+  left: CandidateScheduledAttemptView,
+  right: CandidateScheduledAttemptView,
+): number {
+  return (right.scheduledFor ?? "").localeCompare(left.scheduledFor ?? "")
+    || left.attemptId.localeCompare(right.attemptId);
+}
+
+function compareCurrentAttemptNavigationPriority(
   left: CandidateScheduledAttemptView,
   right: CandidateScheduledAttemptView,
 ): number {
@@ -339,9 +349,7 @@ function compareCurrentAttempts(
         return 3;
     }
   };
-  return priority(left) - priority(right)
-    || (right.scheduledFor ?? "").localeCompare(left.scheduledFor ?? "")
-    || left.attemptId.localeCompare(right.attemptId);
+  return priority(left) - priority(right) || compareAttemptsByScheduledTime(left, right);
 }
 
 function selectAttemptById(
