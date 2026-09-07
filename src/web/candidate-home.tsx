@@ -77,7 +77,34 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
   const [sessionExpired, setSessionExpired] = useState(false);
   const [announcedTaskMessage, setAnnouncedTaskMessage] = useState<string | null>(null);
   const [expandedAttemptDetails, setExpandedAttemptDetails] = useState<Record<string, boolean>>({});
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(
+    () => typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      : false,
+  );
+  const pendingAttemptFocusRef = useRef<{ attemptId: string; face: "front" | "back" } | null>(null);
+  const attemptFrontButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const attemptBackButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setPrefersReducedMotion(media.matches);
+    update();
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
+
+  useEffect(() => {
+    const pending = pendingAttemptFocusRef.current;
+    if (!pending) return;
+    const target = pending.face === "front"
+      ? attemptFrontButtonRefs.current.get(pending.attemptId)
+      : attemptBackButtonRefs.current.get(pending.attemptId);
+    target?.focus();
+    pendingAttemptFocusRef.current = null;
+  }, [expandedAttemptDetails]);
 
   const handleCandidateSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({
     currentPath: () => `${window.location.pathname}${window.location.search}`,
@@ -327,18 +354,10 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
     const actionSummary = getCandidateAttemptActionSummary(attempt.status, primaryAction.label, primaryAction.disabled);
     const frontHeadingId = `${attemptHeadingId}-front`;
     const backHeadingId = `${attemptHeadingId}-back`;
-    const detailsButtonLabel = `${detailsOpen ? "Back to attempt" : "Attempt details"} for ${attempt.examTitle}, attempt ${attempt.attemptId}`;
-    const detailsToggle = (
-      <button
-        type="button"
-        aria-expanded={detailsOpen}
-        aria-label={detailsButtonLabel}
-        onClick={() => setExpandedAttemptDetails((current) => ({ ...current, [attempt.attemptId]: !detailsOpen }))}
-        style={attemptSecondaryButtonStyle}
-      >
-        {detailsOpen ? "Back to attempt" : "Attempt details"}
-      </button>
-    );
+    const setDetailsOpen = (open: boolean) => {
+      pendingAttemptFocusRef.current = { attemptId: attempt.attemptId, face: open ? "back" : "front" };
+      setExpandedAttemptDetails((current) => ({ ...current, [attempt.attemptId]: open }));
+    };
 
     return (
       <article
@@ -351,9 +370,10 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
         }}
       >
         <div style={attemptFlipPerspectiveStyle}>
-          <div style={getAttemptFlipInnerStyle(detailsOpen)}>
+          <div data-attempt-flip-inner="true" style={getAttemptFlipInnerStyle(detailsOpen, prefersReducedMotion)}>
             <section
               aria-hidden={detailsOpen}
+              inert={detailsOpen ? true : undefined}
               data-attempt-card-face="front"
               style={{ ...attemptFlipFaceStyle, ...(detailsOpen ? attemptHiddenFaceStyle : null) }}
             >
@@ -404,17 +424,32 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                         openLabConsole(attempt.attemptId, attempt.status);
                       }}
                       disabled={primaryAction.disabled}
+                      tabIndex={detailsOpen ? -1 : undefined}
                       style={getButtonStyle(attemptPrimaryButtonStyle, primaryAction.disabled)}
                     >
                       {primaryAction.label}
                     </button>
                   ) : <div aria-hidden="true" style={attemptPrimaryActionPlaceholderStyle} />}
-                  {detailsToggle}
+                  <button
+                    ref={(node) => {
+                      if (node) attemptFrontButtonRefs.current.set(attempt.attemptId, node);
+                      else attemptFrontButtonRefs.current.delete(attempt.attemptId);
+                    }}
+                    type="button"
+                    aria-expanded={detailsOpen}
+                    aria-label={`Attempt details for ${attempt.examTitle}, attempt ${attempt.attemptId}`}
+                    tabIndex={detailsOpen ? -1 : undefined}
+                    onClick={() => setDetailsOpen(true)}
+                    style={attemptSecondaryButtonStyle}
+                  >
+                    Attempt details
+                  </button>
                 </div>
               </div>
             </section>
             <section
               aria-hidden={!detailsOpen}
+              inert={!detailsOpen ? true : undefined}
               data-attempt-card-face="back"
               style={{
                 ...attemptFlipFaceStyle,
@@ -457,7 +492,20 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                 </div>
                 <div data-attempt-slot="footer" style={attemptActionStackStyle}>
                 <div aria-hidden="true" style={attemptPrimaryActionPlaceholderStyle} />
-                  {detailsToggle}
+                  <button
+                    ref={(node) => {
+                      if (node) attemptBackButtonRefs.current.set(attempt.attemptId, node);
+                      else attemptBackButtonRefs.current.delete(attempt.attemptId);
+                    }}
+                    type="button"
+                    aria-expanded={detailsOpen}
+                    aria-label={`Back to attempt for ${attempt.examTitle}, attempt ${attempt.attemptId}`}
+                    tabIndex={!detailsOpen ? -1 : undefined}
+                    onClick={() => setDetailsOpen(false)}
+                    style={attemptSecondaryButtonStyle}
+                  >
+                    Back to attempt
+                  </button>
                 </div>
               </div>
             </section>
@@ -819,14 +867,14 @@ const attemptCardStyle: CSSProperties = {
   boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)",
 };
 
-function getAttemptFlipInnerStyle(detailsOpen: boolean): CSSProperties {
+function getAttemptFlipInnerStyle(detailsOpen: boolean, prefersReducedMotion: boolean): CSSProperties {
   return {
     display: "grid",
     position: "relative",
     height: "100%",
     transformStyle: "preserve-3d",
     transform: detailsOpen ? "rotateY(180deg)" : "rotateY(0deg)",
-    transition: "transform 260ms ease",
+    transition: prefersReducedMotion ? "none" : "transform 260ms ease",
   };
 }
 

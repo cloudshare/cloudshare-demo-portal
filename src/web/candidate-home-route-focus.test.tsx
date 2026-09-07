@@ -299,6 +299,7 @@ describe("CandidateHome route-backed task flow", () => {
     expect(screen.queryByRole("button", { name: /Bravo Lab In progress/ })).toBeNull();
 
     const bravoDetails = within(cards[0]!).getByRole("button", { name: "Attempt details for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" });
+    const bravoLifecycle = within(cards[0]!).getByRole("button", { name: "Return to exam for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" });
     const alphaDetails = within(cards[1]!).getByRole("button", { name: "Attempt details for Alpha Lab, attempt attempt-alpha" });
     const cardGrid = cards[0]!.parentElement as HTMLElement;
     const bravoFront = bravoFrontFace;
@@ -309,7 +310,18 @@ describe("CandidateHome route-backed task flow", () => {
     expect(bravoHeading.style.webkitLineClamp).toBe("");
     expect(bravoFront.querySelector<HTMLElement>("[data-attempt-slot='title']")?.style.overflowY).toBe("auto");
     expect(bravoFront.querySelector<HTMLElement>("[data-attempt-slot='metadata']")?.style.gridTemplateColumns).toBe("minmax(0, 1fr) minmax(0, 1fr)");
+    bravoLifecycle.focus();
+    await user.tab();
+    expect(document.activeElement).toBe(bravoDetails);
     await user.click(bravoDetails);
+    const bravoBack = within(cards[0]!).getByRole("button", { name: "Back to attempt for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" });
+    await waitFor(() => expect(document.activeElement).toBe(bravoBack));
+    expect(bravoDetails.tabIndex).toBe(-1);
+    expect(bravoLifecycle.tabIndex).toBe(-1);
+    expect(bravoBack.tabIndex).toBe(0);
+    await user.tab();
+    expect(document.activeElement).not.toBe(bravoDetails);
+    expect(document.activeElement).not.toBe(bravoLifecycle);
     expect(within(cards[0]!).getByText("Attempt ID: attempt-bravo")).toBeTruthy();
     expect(within(cards[0]!).getByText("720 minute environment retention")).toBeTruthy();
     expect(within(alphaFrontFace).queryByText("Attempt ID: attempt-alpha")).toBeNull();
@@ -324,7 +336,8 @@ describe("CandidateHome route-backed task flow", () => {
 
     await user.click(within(cards[1]!).getByRole("button", { name: "Resume exam for Alpha Lab, attempt attempt-alpha" }));
     expect(routerPush).toHaveBeenLastCalledWith("/candidate/lab?examAttemptId=attempt-alpha&attemptStatus=suspended");
-    await user.click(within(cards[0]!).getByRole("button", { name: "Back to attempt for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" }));
+    await user.click(bravoBack);
+    await waitFor(() => expect(document.activeElement).toBe(bravoDetails));
     expect(within(cards[0]!).queryByRole("region", { name: "Attempt details for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" })).toBeNull();
     await user.click(within(cards[0]!).getByRole("button", { name: "Return to exam for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" }));
     expect(routerPush).toHaveBeenLastCalledWith("/candidate/lab?examAttemptId=attempt-bravo&attemptStatus=in_progress");
@@ -332,6 +345,11 @@ describe("CandidateHome route-backed task flow", () => {
 
   it("renders every history Exam Attempt as a stable complete card without an inner selector", async () => {
     const user = userEvent.setup();
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
     const browserFetch = vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"
       ? Promise.resolve(json({
         exams: [
@@ -354,6 +372,7 @@ describe("CandidateHome route-backed task flow", () => {
 
     const cards = await screen.findAllByRole("article");
     expect(cards).toHaveLength(3);
+    expect(cards.every((card) => card.querySelector<HTMLElement>("[data-attempt-flip-inner='true']")?.style.transition === "none")).toBe(true);
     const bravoFrontFace = cards[0]!.querySelector<HTMLElement>("[data-attempt-card-face='front']")!;
     const alphaFrontFace = cards[1]!.querySelector<HTMLElement>("[data-attempt-card-face='front']")!;
     expect(within(cards[0]!).getByRole("heading", { name: "Bravo Lab" })).toBeTruthy();
