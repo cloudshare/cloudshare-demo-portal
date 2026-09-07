@@ -87,7 +87,7 @@ export function resolveCandidateTaskRoute(
       attempts: liveAttempts,
       candidateAttempts: attempts,
       selectedAttempt,
-      exams: orderExamsBySelection(dashboard.exams, route.examId),
+      exams: orderPublishedExams(dashboard.exams),
       selectedExam: selectExamById(dashboard.exams, route.examId),
       notice:
         route.attemptId && !selectAttemptById(liveAttempts, route.attemptId)
@@ -117,7 +117,7 @@ export function resolveCandidateTaskRoute(
       attempts: historyAttempts,
       candidateAttempts: attempts,
       selectedAttempt,
-      exams: orderExamsBySelection(dashboard.exams, route.examId),
+      exams: orderPublishedExams(dashboard.exams),
       selectedExam: selectExamById(dashboard.exams, route.examId),
       notice:
         route.attemptId && !selectAttemptById(historyAttempts, route.attemptId)
@@ -127,7 +127,7 @@ export function resolveCandidateTaskRoute(
     };
   }
 
-  const orderedExams = orderExamsBySelection(dashboard.exams, route.examId);
+  const orderedExams = orderPublishedExams(dashboard.exams);
   const selectedExam = selectExamById(dashboard.exams, route.examId) ?? orderedExams[0] ?? null;
   if (orderedExams.length === 0) {
     return {
@@ -253,7 +253,7 @@ function buildFallbackTaskResult(
   tasks: readonly CandidateTaskTab[],
 ): ResolvedCandidateTaskRoute {
   if (dashboard.exams.length > 0) {
-    const exams = orderExamsBySelection(dashboard.exams, null);
+    const exams = orderPublishedExams(dashboard.exams);
     return {
       activeTask: "schedule",
       attempts: buildScheduledAttemptViews(dashboard, nowMs),
@@ -361,14 +361,10 @@ function selectExamById(
   return exams.find((exam) => exam.id === examId) ?? null;
 }
 
-function orderExamsBySelection(
+function orderPublishedExams(
   exams: readonly CandidateDashboardData["exams"][number][],
-  examId: string | null,
 ): CandidateDashboardData["exams"][number][] {
-  // Entity selection must not change the visual order: refreshes can return the
-  // same published catalogue in a different order, and moving the selected
-  // entity to the front makes the user's click appear to jump. Keep one
-  // deterministic order for both selectors and cards.
-  void examId;
+  // Keep the published catalogue in one deterministic order so refreshes do
+  // not make the user's selected card appear to jump.
   return [...exams].sort((left, right) => left.title.localeCompare(right.title) || left.id.localeCompare(right.id));
 }

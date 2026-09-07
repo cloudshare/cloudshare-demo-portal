@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -237,8 +237,12 @@ describe("CandidateHome route-backed task flow", () => {
 
     expect(await screen.findByRole("heading", { name: "Alpha individual" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Beta live exam" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Alpha individual" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Beta live exam" })).toBeNull();
+    const scheduleSection = screen.getByRole("heading", { name: "Choose an exam" }).closest("section");
+    expect(scheduleSection).not.toBeNull();
+    const scheduleButtons = within(scheduleSection as HTMLElement).getAllByRole("button");
+    // Each detailed card owns its action controls; the removed selector strip
+    // would add one extra exam button per published Exam here.
+    expect(scheduleButtons).toHaveLength(4);
     expect(screen.getByText("Schedule date and time")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Schedule exam" })).toBeTruthy();
     expect(screen.getByText("Ready to start")).toBeTruthy();
