@@ -128,7 +128,7 @@ export function resolveCandidateTaskRoute(
   }
 
   const orderedExams = orderExamsBySelection(dashboard.exams, route.examId);
-  const selectedExam = orderedExams[0] ?? null;
+  const selectedExam = selectExamById(dashboard.exams, route.examId) ?? orderedExams[0] ?? null;
   if (orderedExams.length === 0) {
     return {
       activeTask: "schedule",
@@ -365,9 +365,10 @@ function orderExamsBySelection(
   exams: readonly CandidateDashboardData["exams"][number][],
   examId: string | null,
 ): CandidateDashboardData["exams"][number][] {
-  const selectedExam = selectExamById(exams, examId);
-  if (!selectedExam) {
-    return [...exams];
-  }
-  return [selectedExam, ...exams.filter((exam) => exam.id !== selectedExam.id)];
+  // Entity selection must not change the visual order: refreshes can return the
+  // same published catalogue in a different order, and moving the selected
+  // entity to the front makes the user's click appear to jump. Keep one
+  // deterministic order for both selectors and cards.
+  void examId;
+  return [...exams].sort((left, right) => left.title.localeCompare(right.title) || left.id.localeCompare(right.id));
 }

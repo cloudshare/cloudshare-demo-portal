@@ -678,33 +678,6 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                 {dashboard.exams.length} published {dashboard.exams.length === 1 ? "Exam" : "Exams"}
               </p>
             </div>
-            {resolvedRoute.exams.length > 1 ? (
-              <div style={attemptSelectorStripStyle}>
-                {resolvedRoute.exams.map((exam) => (
-                  <button
-                    key={exam.id}
-                    type="button"
-                    aria-current={selectedExam?.id === exam.id ? "page" : undefined}
-                    onClick={() =>
-                      navigateToCandidateTask({
-                        task: "schedule",
-                        attemptId: null,
-                        examId: exam.id,
-                      })
-                    }
-                    style={{
-                      ...attemptSelectorButtonStyle,
-                      ...(selectedExam?.id === exam.id ? selectedAttemptSelectorButtonStyle : null),
-                    }}
-                  >
-                    <span style={attemptSelectorTitleStyle}>{exam.title}</span>
-                    <span style={attemptSelectorMetaStyle}>
-                      {exam.timeLimitMinutes} minute runtime limit · {exam.openPeriodMinutes} minute open window
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
             <div style={publishedExamCardGridStyle}>
               {resolvedRoute.exams.map((exam) => {
                 const attemptedSessionIds = new Set(
@@ -1032,9 +1005,7 @@ function buildCandidateTaskAnnouncement(
         ? `Now showing Attempt history. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
         : "Now showing Attempt history.";
     case "schedule":
-      return resolvedRoute.selectedExam
-        ? `Now showing Schedule exam. ${resolvedRoute.selectedExam.title} is selected.`
-        : "Now showing Schedule exam.";
+      return "Now showing Schedule exam. Choose a published Exam below.";
     default:
       return "Candidate task updated.";
   }

@@ -174,6 +174,21 @@ describe("candidate task route", () => {
     );
   });
 
+  it("keeps published Exam order stable when Schedule selection changes", () => {
+    const reversed = { ...dashboard, exams: [...dashboard.exams].reverse() };
+    const first = resolveCandidateTaskRoute(reversed, Date.parse("2026-06-16T15:59:00.000Z"), {
+      task: "schedule", attemptId: null, examId: "exam-1",
+    });
+    const second = resolveCandidateTaskRoute(reversed, Date.parse("2026-06-16T15:59:00.000Z"), {
+      task: "schedule", attemptId: null, examId: "exam-2",
+    });
+
+    expect(first.exams.map((exam) => exam.id)).toEqual(["exam-1", "exam-2"]);
+    expect(second.exams.map((exam) => exam.id)).toEqual(["exam-1", "exam-2"]);
+    expect(first.selectedExam?.id).toBe("exam-1");
+    expect(second.selectedExam?.id).toBe("exam-2");
+  });
+
   it("fails closed for duplicate or invalid URL query shapes", () => {
     const fallback = { task: "current" as const, attemptId: "safe", examId: "exam-1" };
     const duplicate = new URLSearchParams("task=current&task=history&attemptId=safe&examId=exam-1");
