@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CandidateHome } from "./candidate-home";
+import { COLD_START_WARNING_MESSAGE } from "./candidate-home-state";
 
 let currentSearchParams = new URLSearchParams("task=current&attemptId=attempt-ready");
 const routerPush = vi.fn();
@@ -278,7 +279,6 @@ describe("CandidateHome route-backed task flow", () => {
     expect(cards).toHaveLength(2);
     expect(cards[0]!.getAttribute("aria-labelledby")).toBeTruthy();
     const bravoHeading = within(cards[0]!).getByRole("heading", { name: "Bravo Lab with a deliberately wrapping title" });
-    expect(bravoHeading.style.webkitLineClamp).toBe("2");
     expect(within(cards[0]!).queryByText("Attempt ID: attempt-bravo")).toBeNull();
     expect(within(cards[0]!).getByText("In progress")).toBeTruthy();
     expect(within(cards[0]!).getByText("45 minute runtime limit")).toBeTruthy();
@@ -298,22 +298,28 @@ describe("CandidateHome route-backed task flow", () => {
     const bravoDetails = within(cards[0]!).getByRole("button", { name: "Attempt details for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" });
     const alphaDetails = within(cards[1]!).getByRole("button", { name: "Attempt details for Alpha Lab, attempt attempt-alpha" });
     const cardGrid = cards[0]!.parentElement as HTMLElement;
-    const bravoFront = cards[0]!.querySelector<HTMLElement>("[data-attempt-card-front='true']");
-    const alphaFront = cards[1]!.querySelector<HTMLElement>("[data-attempt-card-front='true']");
+    const bravoFront = cards[0]!.querySelector<HTMLElement>("[data-attempt-card-face='true']");
+    const alphaFront = cards[1]!.querySelector<HTMLElement>("[data-attempt-card-face='true']");
     expect(cardGrid.style.alignItems).toBe("start");
-    expect(bravoFront?.style.gridTemplateRows).toBe(alphaFront?.style.gridTemplateRows);
-    expect(bravoFront?.style.minHeight).toBe("27rem");
+    expect(cards[0]!.style.height).toBe("34rem");
+    expect(cards[1]!.style.height).toBe("34rem");
+    expect(bravoHeading.style.webkitLineClamp).toBe("");
+    expect(bravoFront?.style.minHeight).toBe("0px");
+    expect(bravoFront?.querySelector<HTMLElement>("[data-attempt-face-scroll='true']")?.style.overflowY).toBe("auto");
     await user.click(bravoDetails);
     expect(within(cards[0]!).getByText("Attempt ID: attempt-bravo")).toBeTruthy();
     expect(within(cards[0]!).getByText("720 minute environment retention")).toBeTruthy();
     expect(within(cards[1]!).queryByText("Attempt ID: attempt-alpha")).toBeNull();
     expect(within(cards[1]!).getByRole("button", { name: "Attempt details for Alpha Lab, attempt attempt-alpha" })).toBe(alphaDetails);
-    expect(cards[0]!.querySelector("[data-attempt-card-front='true']")).toBe(bravoFront);
-    expect(cards[1]!.querySelector("[data-attempt-card-front='true']")).toBe(alphaFront);
+    expect(cards[0]!.querySelector("[data-attempt-card-face='true']")).toBe(bravoFront);
+    expect(cards[1]!.querySelector("[data-attempt-card-face='true']")).toBe(alphaFront);
+    expect(within(cards[0]!).queryByRole("button", { name: "Return to exam for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" })).toBeNull();
     expect(screen.getAllByRole("article")).toEqual(cards);
 
     await user.click(within(cards[1]!).getByRole("button", { name: "Resume exam for Alpha Lab, attempt attempt-alpha" }));
     expect(routerPush).toHaveBeenLastCalledWith("/candidate/lab?examAttemptId=attempt-alpha&attemptStatus=suspended");
+    await user.click(within(cards[0]!).getByRole("button", { name: "Back to attempt for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" }));
+    expect(within(cards[0]!).queryByRole("region", { name: "Attempt details for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" })).toBeNull();
     await user.click(within(cards[0]!).getByRole("button", { name: "Return to exam for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" }));
     expect(routerPush).toHaveBeenLastCalledWith("/candidate/lab?examAttemptId=attempt-bravo&attemptStatus=in_progress");
   });
@@ -368,6 +374,38 @@ describe("CandidateHome route-backed task flow", () => {
     expect(within(cards[1]!).getByText("1440 minute environment retention")).toBeTruthy();
     expect(within(cards[0]!).queryByText("Attempt ID: attempt-bravo")).toBeNull();
     expect(screen.getAllByRole("article")).toEqual(cards);
+  });
+
+  it("keeps ready waiting and cold-start warning variants readable inside equal card faces", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-23T16:00:00.000Z"));
+    const browserFetch = vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"
+      ? Promise.resolve(json({
+        exams: [
+          { id: "exam-now", title: "Immediate Lab", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, storageLeaseMinutes: 1440, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
+          { id: "exam-later", title: "Later Lab", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, storageLeaseMinutes: 1440, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
+        ],
+        attempts: [
+          { id: "attempt-now", examId: "exam-now", examTitle: "Immediate Lab", scheduledFor: "2026-10-23T16:00:00.000Z", status: "ready" },
+          { id: "attempt-later", examId: "exam-later", examTitle: "Later Lab", scheduledFor: "2026-10-23T17:00:00.000Z", status: "ready" },
+        ],
+      }))
+      : Promise.resolve(new Response(null, { status: 200 })));
+    vi.stubGlobal("fetch", browserFetch);
+    Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
+    currentSearchParams = new URLSearchParams("task=current&attemptId=attempt-now");
+
+    render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: "attempt-now", examId: null }} />);
+
+    await act(async () => { await Promise.resolve(); });
+    const cards = screen.getAllByRole("article");
+    expect(cards).toHaveLength(2);
+    expect(cards.every((card) => card.style.height === "34rem")).toBe(true);
+    expect(cards.every((card) => card.querySelector<HTMLElement>("[data-attempt-face-scroll='true']")?.style.overflowY === "auto")).toBe(true);
+    expect(screen.getAllByText(COLD_START_WARNING_MESSAGE)).toHaveLength(2);
+    expect(screen.getByText("Enter exam becomes available at 2026-10-23 18:00.")).toBeTruthy();
+    expect(within(cards[0]!).getByRole("button", { name: /Attempt details for Later Lab/ })).toBeTruthy();
+    expect(within(cards[1]!).getByRole("button", { name: /Attempt details for Immediate Lab/ })).toBeTruthy();
   });
 
   it("keeps current cards in place when background refresh changes their statuses", async () => {
