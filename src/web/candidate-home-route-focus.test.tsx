@@ -52,6 +52,7 @@ describe("CandidateHome route-backed task flow", () => {
   });
 
   it("keeps unpublished attempt timing evidence and score review visible from attempt-scoped fallback data", async () => {
+    const user = userEvent.setup();
     const browserFetch = vi.fn((input: RequestInfo | URL) => {
       switch (String(input)) {
         case "/api/auth/session":
@@ -100,6 +101,7 @@ describe("CandidateHome route-backed task flow", () => {
     expect(screen.getByRole("button", { name: "View score for Unpublished Windows Boxes, attempt attempt-unpublished" })).toBeTruthy();
     expect(screen.getByText("10 minute runtime limit")).toBeTruthy();
     expect(screen.getByText("20 minute open window")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Attempt details for Unpublished Windows Boxes, attempt attempt-unpublished" }));
     expect(screen.getByText("1440 minute environment retention")).toBeTruthy();
   });
 
@@ -276,14 +278,25 @@ describe("CandidateHome route-backed task flow", () => {
     expect(cards).toHaveLength(2);
     expect(cards[0]!.getAttribute("aria-labelledby")).toBeTruthy();
     expect(within(cards[0]!).getByRole("heading", { name: "Bravo Lab" })).toBeTruthy();
-    expect(within(cards[0]!).getByText("Attempt ID: attempt-bravo")).toBeTruthy();
+    expect(within(cards[0]!).queryByText("Attempt ID: attempt-bravo")).toBeNull();
     expect(within(cards[0]!).getByText("In progress")).toBeTruthy();
+    expect(within(cards[0]!).getByText("45 minute runtime limit")).toBeTruthy();
+    expect(within(cards[0]!).getByText("60 minute open window")).toBeTruthy();
     expect(cards[1]!.getAttribute("aria-labelledby")).toBeTruthy();
     expect(within(cards[1]!).getByRole("heading", { name: "Alpha Lab" })).toBeTruthy();
-    expect(within(cards[1]!).getByText("Attempt ID: attempt-alpha")).toBeTruthy();
+    expect(within(cards[1]!).queryByText("Attempt ID: attempt-alpha")).toBeNull();
     expect(within(cards[1]!).getByText("Suspended")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Alpha Lab Suspended/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Bravo Lab In progress/ })).toBeNull();
+
+    const bravoDetails = within(cards[0]!).getByRole("button", { name: "Attempt details for Bravo Lab, attempt attempt-bravo" });
+    const alphaDetails = within(cards[1]!).getByRole("button", { name: "Attempt details for Alpha Lab, attempt attempt-alpha" });
+    await user.click(bravoDetails);
+    expect(within(cards[0]!).getByText("Attempt ID: attempt-bravo")).toBeTruthy();
+    expect(within(cards[0]!).getByText("720 minute environment retention")).toBeTruthy();
+    expect(within(cards[1]!).queryByText("Attempt ID: attempt-alpha")).toBeNull();
+    expect(within(cards[1]!).getByRole("button", { name: "Attempt details for Alpha Lab, attempt attempt-alpha" })).toBe(alphaDetails);
+    expect(screen.getAllByRole("article")).toEqual(cards);
 
     await user.click(within(cards[1]!).getByRole("button", { name: "Resume exam for Alpha Lab, attempt attempt-alpha" }));
     expect(routerPush).toHaveBeenLastCalledWith("/candidate/lab?examAttemptId=attempt-alpha&attemptStatus=suspended");
@@ -292,6 +305,7 @@ describe("CandidateHome route-backed task flow", () => {
   });
 
   it("renders every history Exam Attempt as a stable complete card without an inner selector", async () => {
+    const user = userEvent.setup();
     const browserFetch = vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"
       ? Promise.resolve(json({
         exams: [
@@ -314,18 +328,24 @@ describe("CandidateHome route-backed task flow", () => {
     expect(cards).toHaveLength(2);
     expect(within(cards[0]!).getByRole("heading", { name: "Bravo Lab" })).toBeTruthy();
     expect(within(cards[0]!).getByText("Completed")).toBeTruthy();
-    expect(within(cards[0]!).getByText("Attempt ID: attempt-bravo")).toBeTruthy();
+    expect(within(cards[0]!).queryByText("Attempt ID: attempt-bravo")).toBeNull();
     expect(within(cards[0]!).getByText("45 minute runtime limit")).toBeTruthy();
     expect(within(cards[0]!).getByText("60 minute open window")).toBeTruthy();
-    expect(within(cards[0]!).getByText("720 minute environment retention")).toBeTruthy();
+    expect(within(cards[0]!).queryByText("720 minute environment retention")).toBeNull();
     expect(within(cards[0]!).getByRole("button", { name: "View score for Bravo Lab, attempt attempt-bravo" })).toBeTruthy();
     expect(within(cards[1]!).getByRole("heading", { name: "Alpha Lab" })).toBeTruthy();
     expect(within(cards[1]!).getByText("Expired")).toBeTruthy();
-    expect(within(cards[1]!).getByText("Attempt ID: attempt-alpha")).toBeTruthy();
-    expect(within(cards[1]!).getByText("This attempt remains here as durable history.")).toBeTruthy();
+    expect(within(cards[1]!).queryByText("Attempt ID: attempt-alpha")).toBeNull();
+    expect(within(cards[1]!).getByText("This attempt is saved in your history.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Alpha Lab Expired/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Bravo Lab Completed/ })).toBeNull();
     expect(screen.getAllByRole("button").filter((button) => button.hasAttribute("aria-current"))).toHaveLength(1);
+
+    await user.click(within(cards[1]!).getByRole("button", { name: "Attempt details for Alpha Lab, attempt attempt-alpha" }));
+    expect(within(cards[1]!).getByText("Attempt ID: attempt-alpha")).toBeTruthy();
+    expect(within(cards[1]!).getByText("1440 minute environment retention")).toBeTruthy();
+    expect(within(cards[0]!).queryByText("Attempt ID: attempt-bravo")).toBeNull();
+    expect(screen.getAllByRole("article")).toEqual(cards);
   });
 
   it("keeps current cards in place when background refresh changes their statuses", async () => {
