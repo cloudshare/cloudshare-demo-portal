@@ -284,6 +284,11 @@ describe("CandidateHome route-backed task flow", () => {
     expect(within(cards[0]!).getByText("60 minute open window")).toBeTruthy();
     expect(cards[1]!.getAttribute("aria-labelledby")).toBeTruthy();
     expect(within(cards[1]!).getByRole("heading", { name: "Alpha Lab" })).toBeTruthy();
+    expect(cards[0]!.getAttribute("aria-current")).toBeNull();
+    expect(cards[1]!.getAttribute("aria-current")).toBe("true");
+    expect(within(cards[1]!).getByText("Opened attempt")).toBeTruthy();
+    expect(screen.getAllByText("Opened attempt")).toHaveLength(1);
+    expect(document.activeElement).not.toBe(within(cards[1]!).getByRole("heading", { name: "Alpha Lab" }));
     expect(within(cards[1]!).queryByText("Attempt ID: attempt-alpha")).toBeNull();
     expect(within(cards[1]!).getByText("Suspended")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Alpha Lab Suspended/ })).toBeNull();
@@ -334,6 +339,11 @@ describe("CandidateHome route-backed task flow", () => {
     expect(within(cards[0]!).queryByText("720 minute environment retention")).toBeNull();
     expect(within(cards[0]!).getByRole("button", { name: "View score for Bravo Lab, attempt attempt-bravo" })).toBeTruthy();
     expect(within(cards[1]!).getByRole("heading", { name: "Alpha Lab" })).toBeTruthy();
+    expect(cards[0]!.getAttribute("aria-current")).toBeNull();
+    expect(cards[1]!.getAttribute("aria-current")).toBe("true");
+    expect(within(cards[1]!).getByText("Opened attempt")).toBeTruthy();
+    expect(screen.getAllByText("Opened attempt")).toHaveLength(1);
+    expect(document.activeElement).not.toBe(within(cards[1]!).getByRole("heading", { name: "Alpha Lab" }));
     expect(within(cards[1]!).getByText("Expired")).toBeTruthy();
     expect(within(cards[1]!).queryByText("Attempt ID: attempt-alpha")).toBeNull();
     expect(within(cards[1]!).getByText("This attempt is saved in your history.")).toBeTruthy();

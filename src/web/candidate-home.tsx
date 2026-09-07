@@ -323,20 +323,32 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       attemptExam,
     );
     const detailsOpen = expandedAttemptDetails[attempt.attemptId] === true;
+    const isOpenedAttempt = selectedAttempt?.attemptId === attempt.attemptId;
     const actionSummary = getCandidateAttemptActionSummary(attempt.status, primaryAction.label, primaryAction.disabled);
     const detailsButtonLabel = `${detailsOpen ? "Back to attempt" : "Attempt details"} for ${attempt.examTitle}, attempt ${attempt.attemptId}`;
 
     return (
-      <article key={attempt.attemptId} aria-labelledby={attemptHeadingId} style={attemptCardStyle}>
+      <article
+        key={attempt.attemptId}
+        aria-labelledby={attemptHeadingId}
+        aria-current={isOpenedAttempt ? "true" : undefined}
+        style={{
+          ...attemptCardStyle,
+          ...(isOpenedAttempt ? openedAttemptCardStyle : null),
+        }}
+      >
         <div style={attemptCardContentStyle}>
           <div style={attemptCardAccentStyle} />
           <div style={attemptCardHeaderStyle}>
             <h3 id={attemptHeadingId} style={{ display: "block", margin: 0, fontSize: "1.1rem", color: "#0f172a" }}>
               {attempt.examTitle}
             </h3>
-            <span style={statusBadgeStyle(getExamAttemptStatusTone(attempt.displayStatus))}>
-              {formatCandidateAttemptStatus(attempt.displayStatus)}
-            </span>
+            <div style={attemptHeaderBadgesStyle}>
+              {isOpenedAttempt ? <span style={openedAttemptBadgeStyle}>Opened attempt</span> : null}
+              <span style={statusBadgeStyle(getExamAttemptStatusTone(attempt.displayStatus))}>
+                {formatCandidateAttemptStatus(attempt.displayStatus)}
+              </span>
+            </div>
           </div>
           <div style={attemptDurationPillsStyle}>
             <span style={statusBadgeStyle("info")}>{attemptExam?.timeLimitMinutes ? `${attemptExam.timeLimitMinutes} minute runtime limit` : "Runtime limit unavailable"}</span>
@@ -778,6 +790,11 @@ const attemptCardContentStyle: CSSProperties = {
   alignContent: "start",
 };
 
+const openedAttemptCardStyle: CSSProperties = {
+  borderColor: "#0f766e",
+  boxShadow: "0 0 0 1px rgba(15, 118, 110, 0.18), 0 1px 2px rgba(15, 23, 42, 0.08)",
+};
+
 const attemptCardAccentStyle: CSSProperties = {
   height: "3px",
   borderRadius: "999px",
@@ -790,6 +807,20 @@ const attemptCardHeaderStyle: CSSProperties = {
   gap: "1rem",
   flexWrap: "wrap",
   alignItems: "flex-start",
+};
+
+const attemptHeaderBadgesStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  alignItems: "center",
+  gap: "0.4rem",
+  flexWrap: "wrap",
+};
+
+const openedAttemptBadgeStyle: CSSProperties = {
+  ...statusBadgeStyle("info"),
+  background: "#ecfdf5",
+  color: "#0f766e",
 };
 
 const attemptCardListStyle: CSSProperties = {
