@@ -2,7 +2,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
-import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CandidateHome } from "./candidate-home";
 import { COLD_START_WARNING_MESSAGE } from "./candidate-home-state";
@@ -346,13 +345,6 @@ describe("CandidateHome route-backed task flow", () => {
 
   it("renders every history Exam Attempt as a stable complete card without an inner selector", async () => {
     const user = userEvent.setup();
-    vi.stubGlobal("matchMedia", vi.fn(() => ({
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })));
-    renderToString(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "history", attemptId: "attempt-alpha", examId: null }} />);
-    expect(window.matchMedia).not.toHaveBeenCalled();
     const browserFetch = vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"
       ? Promise.resolve(json({
         exams: [
@@ -375,7 +367,8 @@ describe("CandidateHome route-backed task flow", () => {
 
     const cards = await screen.findAllByRole("article");
     expect(cards).toHaveLength(3);
-    expect(cards.every((card) => card.querySelector<HTMLElement>("[data-attempt-flip-inner='true']")?.style.transition === "none")).toBe(true);
+    expect(cards.every((card) => card.querySelector<HTMLElement>("[data-attempt-flip-inner='true']")?.classList.contains("candidate-attempt-flip-inner"))).toBe(true);
+    expect(cards.every((card) => card.querySelector<HTMLElement>("[data-attempt-flip-inner='true']")?.style.transition === "")).toBe(true);
     const bravoFrontFace = cards[0]!.querySelector<HTMLElement>("[data-attempt-card-face='front']")!;
     const alphaFrontFace = cards[1]!.querySelector<HTMLElement>("[data-attempt-card-face='front']")!;
     expect(within(cards[0]!).getByRole("heading", { name: "Bravo Lab" })).toBeTruthy();

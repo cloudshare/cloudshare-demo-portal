@@ -77,20 +77,10 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
   const [sessionExpired, setSessionExpired] = useState(false);
   const [announcedTaskMessage, setAnnouncedTaskMessage] = useState<string | null>(null);
   const [expandedAttemptDetails, setExpandedAttemptDetails] = useState<Record<string, boolean>>({});
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const pendingAttemptFocusRef = useRef<{ attemptId: string; face: "front" | "back" } | null>(null);
   const attemptFrontButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const attemptBackButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setPrefersReducedMotion(media.matches);
-    update();
-    media.addEventListener?.("change", update);
-    return () => media.removeEventListener?.("change", update);
-  }, []);
 
   useEffect(() => {
     const pending = pendingAttemptFocusRef.current;
@@ -366,7 +356,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
         }}
       >
         <div style={attemptFlipPerspectiveStyle}>
-          <div data-attempt-flip-inner="true" style={getAttemptFlipInnerStyle(detailsOpen, prefersReducedMotion)}>
+          <div className="candidate-attempt-flip-inner" data-attempt-flip-inner="true" style={getAttemptFlipInnerStyle(detailsOpen)}>
             <section
               aria-hidden={detailsOpen}
               inert={detailsOpen ? true : undefined}
@@ -863,14 +853,13 @@ const attemptCardStyle: CSSProperties = {
   boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)",
 };
 
-function getAttemptFlipInnerStyle(detailsOpen: boolean, prefersReducedMotion: boolean): CSSProperties {
+function getAttemptFlipInnerStyle(detailsOpen: boolean): CSSProperties {
   return {
     display: "grid",
     position: "relative",
     height: "100%",
     transformStyle: "preserve-3d",
     transform: detailsOpen ? "rotateY(180deg)" : "rotateY(0deg)",
-    transition: prefersReducedMotion ? "none" : "transform 260ms ease",
   };
 }
 
