@@ -1074,5 +1074,3 @@ function buildCandidateTaskAnnouncement(
       return "Candidate task updated.";
   }
 }
-
-
