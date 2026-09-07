@@ -260,11 +260,11 @@ describe("CandidateHome route-backed task flow", () => {
       ? Promise.resolve(json({
         exams: [
           { id: "exam-alpha", title: "Alpha Lab", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, storageLeaseMinutes: 1440, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
-          { id: "exam-bravo", title: "Bravo Lab", description: "", timeLimitMinutes: 45, openPeriodMinutes: 60, storageLeaseMinutes: 720, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
+          { id: "exam-bravo", title: "Bravo Lab with a deliberately wrapping title", description: "", timeLimitMinutes: 45, openPeriodMinutes: 60, storageLeaseMinutes: 720, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
         ],
         attempts: [
           { id: "attempt-alpha", examId: "exam-alpha", examTitle: "Alpha Lab", scheduledFor: "2026-10-23T16:00:00.000Z", status: "suspended" },
-          { id: "attempt-bravo", examId: "exam-bravo", examTitle: "Bravo Lab", scheduledFor: "2026-10-23T17:00:00.000Z", status: "in_progress" },
+          { id: "attempt-bravo", examId: "exam-bravo", examTitle: "Bravo Lab with a deliberately wrapping title", scheduledFor: "2026-10-23T17:00:00.000Z", status: "in_progress" },
         ],
       }))
       : Promise.resolve(new Response(null, { status: 200 })));
@@ -277,7 +277,8 @@ describe("CandidateHome route-backed task flow", () => {
     const cards = await screen.findAllByRole("article");
     expect(cards).toHaveLength(2);
     expect(cards[0]!.getAttribute("aria-labelledby")).toBeTruthy();
-    expect(within(cards[0]!).getByRole("heading", { name: "Bravo Lab" })).toBeTruthy();
+    const bravoHeading = within(cards[0]!).getByRole("heading", { name: "Bravo Lab with a deliberately wrapping title" });
+    expect(bravoHeading.style.webkitLineClamp).toBe("2");
     expect(within(cards[0]!).queryByText("Attempt ID: attempt-bravo")).toBeNull();
     expect(within(cards[0]!).getByText("In progress")).toBeTruthy();
     expect(within(cards[0]!).getByText("45 minute runtime limit")).toBeTruthy();
@@ -294,18 +295,26 @@ describe("CandidateHome route-backed task flow", () => {
     expect(screen.queryByRole("button", { name: /Alpha Lab Suspended/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Bravo Lab In progress/ })).toBeNull();
 
-    const bravoDetails = within(cards[0]!).getByRole("button", { name: "Attempt details for Bravo Lab, attempt attempt-bravo" });
+    const bravoDetails = within(cards[0]!).getByRole("button", { name: "Attempt details for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" });
     const alphaDetails = within(cards[1]!).getByRole("button", { name: "Attempt details for Alpha Lab, attempt attempt-alpha" });
+    const cardGrid = cards[0]!.parentElement as HTMLElement;
+    const bravoFront = cards[0]!.querySelector<HTMLElement>("[data-attempt-card-front='true']");
+    const alphaFront = cards[1]!.querySelector<HTMLElement>("[data-attempt-card-front='true']");
+    expect(cardGrid.style.alignItems).toBe("start");
+    expect(bravoFront?.style.gridTemplateRows).toBe(alphaFront?.style.gridTemplateRows);
+    expect(bravoFront?.style.minHeight).toBe("27rem");
     await user.click(bravoDetails);
     expect(within(cards[0]!).getByText("Attempt ID: attempt-bravo")).toBeTruthy();
     expect(within(cards[0]!).getByText("720 minute environment retention")).toBeTruthy();
     expect(within(cards[1]!).queryByText("Attempt ID: attempt-alpha")).toBeNull();
     expect(within(cards[1]!).getByRole("button", { name: "Attempt details for Alpha Lab, attempt attempt-alpha" })).toBe(alphaDetails);
+    expect(cards[0]!.querySelector("[data-attempt-card-front='true']")).toBe(bravoFront);
+    expect(cards[1]!.querySelector("[data-attempt-card-front='true']")).toBe(alphaFront);
     expect(screen.getAllByRole("article")).toEqual(cards);
 
     await user.click(within(cards[1]!).getByRole("button", { name: "Resume exam for Alpha Lab, attempt attempt-alpha" }));
     expect(routerPush).toHaveBeenLastCalledWith("/candidate/lab?examAttemptId=attempt-alpha&attemptStatus=suspended");
-    await user.click(within(cards[0]!).getByRole("button", { name: "Return to exam for Bravo Lab, attempt attempt-bravo" }));
+    await user.click(within(cards[0]!).getByRole("button", { name: "Return to exam for Bravo Lab with a deliberately wrapping title, attempt attempt-bravo" }));
     expect(routerPush).toHaveBeenLastCalledWith("/candidate/lab?examAttemptId=attempt-bravo&attemptStatus=in_progress");
   });
 
@@ -347,6 +356,9 @@ describe("CandidateHome route-backed task flow", () => {
     expect(within(cards[1]!).getByText("Expired")).toBeTruthy();
     expect(within(cards[1]!).queryByText("Attempt ID: attempt-alpha")).toBeNull();
     expect(within(cards[1]!).getByText("This attempt is saved in your history.")).toBeTruthy();
+    expect(within(cards[1]!).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Attempt details for Alpha Lab, attempt attempt-alpha",
+    ]);
     expect(screen.queryByRole("button", { name: /Alpha Lab Expired/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Bravo Lab Completed/ })).toBeNull();
     expect(screen.getAllByRole("button").filter((button) => button.hasAttribute("aria-current"))).toHaveLength(1);

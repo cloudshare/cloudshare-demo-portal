@@ -339,32 +339,67 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       >
         <div style={attemptCardContentStyle}>
           <div style={attemptCardAccentStyle} />
-          <div style={attemptCardHeaderStyle}>
-            <h3 id={attemptHeadingId} style={{ display: "block", margin: 0, fontSize: "1.1rem", color: "#0f172a" }}>
-              {attempt.examTitle}
-            </h3>
-            <div style={attemptHeaderBadgesStyle}>
-              {isOpenedAttempt ? <span style={openedAttemptBadgeStyle}>Opened attempt</span> : null}
-              <span style={statusBadgeStyle(getExamAttemptStatusTone(attempt.displayStatus))}>
-                {formatCandidateAttemptStatus(attempt.displayStatus)}
-              </span>
+          <div data-attempt-card-front="true" style={attemptCardFrontStyle}>
+            <div style={attemptCardHeaderStyle}>
+              <h3 id={attemptHeadingId} style={attemptCardTitleStyle}>
+                {attempt.examTitle}
+              </h3>
+              <div style={attemptHeaderBadgesStyle}>
+                {isOpenedAttempt
+                  ? <span style={openedAttemptBadgeStyle}>Opened attempt</span>
+                  : <span aria-hidden="true" style={openedAttemptPlaceholderStyle} />}
+                <span style={statusBadgeStyle(getExamAttemptStatusTone(attempt.displayStatus))}>
+                  {formatCandidateAttemptStatus(attempt.displayStatus)}
+                </span>
+              </div>
             </div>
-          </div>
-          <div style={attemptDurationPillsStyle}>
-            <span style={statusBadgeStyle("info")}>{attemptExam?.timeLimitMinutes ? `${attemptExam.timeLimitMinutes} minute runtime limit` : "Runtime limit unavailable"}</span>
-            <span style={statusBadgeStyle("info")}>{attemptExam?.openPeriodMinutes ? `${attemptExam.openPeriodMinutes} minute open window` : "Open window unavailable"}</span>
-          </div>
-          <div style={attemptAvailabilityBandStyle}>
-            <span style={attemptAvailabilityLabelStyle}>What happens next</span>
-            <strong>{actionSummary}</strong>
-          </div>
-          <div style={attemptDateSlotStyle}>
-          {attempt.scheduledFor ? (
-            <p style={attemptDateStyle}>
-              <span style={metaLabelStyle}>Scheduled for</span>
-              <span>{formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}</span>
-            </p>
-          ) : null}
+            <div style={attemptDurationPillsStyle}>
+              <span style={statusBadgeStyle("info")}>{attemptExam?.timeLimitMinutes ? `${attemptExam.timeLimitMinutes} minute runtime limit` : "Runtime limit unavailable"}</span>
+              <span style={statusBadgeStyle("info")}>{attemptExam?.openPeriodMinutes ? `${attemptExam.openPeriodMinutes} minute open window` : "Open window unavailable"}</span>
+            </div>
+            <div style={attemptAvailabilityBandStyle}>
+              <span style={attemptAvailabilityLabelStyle}>What happens next</span>
+              <strong>{actionSummary}</strong>
+            </div>
+            <div style={attemptDateSlotStyle}>
+              {attempt.scheduledFor ? (
+                <p style={attemptDateStyle}>
+                  <span style={metaLabelStyle}>Scheduled for</span>
+                  <span>{formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}</span>
+                </p>
+              ) : null}
+            </div>
+            <div style={attemptActionStackStyle}>
+              {primaryAction.label ? (
+                <>
+                  <button
+                    aria-label={`${primaryAction.label} for ${attempt.examTitle}, attempt ${attempt.attemptId}`}
+                    onClick={() => {
+                      if (primaryAction.label === "View score") {
+                        openScorePage(attempt.attemptId);
+                        return;
+                      }
+                      openLabConsole(attempt.attemptId, attempt.status);
+                    }}
+                    disabled={primaryAction.disabled}
+                    style={getButtonStyle(attemptPrimaryButtonStyle, primaryAction.disabled)}
+                  >
+                    {primaryAction.label}
+                  </button>
+                  {attempt.waitingMessage && attempt.status === "ready" ? <span style={{ color: "#555", lineHeight: 1.4 }}>{attempt.waitingMessage}</span> : null}
+                </>
+              ) : <div aria-hidden="true" style={attemptPrimaryActionPlaceholderStyle} />}
+              <button
+                type="button"
+                aria-expanded={detailsOpen}
+                aria-label={detailsButtonLabel}
+                onClick={() => setExpandedAttemptDetails((current) => ({ ...current, [attempt.attemptId]: !detailsOpen }))}
+                style={attemptSecondaryButtonStyle}
+              >
+                {detailsOpen ? "Back to attempt" : "Attempt details"}
+              </button>
+            </div>
+            {attempt.coldStartWarning ? <p role="status" style={{ ...alertPanelStyle.warning, margin: 0 }}>{attempt.coldStartWarning}</p> : null}
           </div>
           {detailsOpen ? (
             <section aria-label={`Attempt details for ${attempt.examTitle}, attempt ${attempt.attemptId}`} style={attemptDetailsPanelStyle}>
@@ -396,37 +431,6 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
               </div>
             </section>
           ) : null}
-          <div style={attemptActionStackStyle}>
-            {primaryAction.label ? (
-              <>
-                <button
-                  aria-label={`${primaryAction.label} for ${attempt.examTitle}, attempt ${attempt.attemptId}`}
-                  onClick={() => {
-                    if (primaryAction.label === "View score") {
-                      openScorePage(attempt.attemptId);
-                      return;
-                    }
-                    openLabConsole(attempt.attemptId, attempt.status);
-                  }}
-                  disabled={primaryAction.disabled}
-                  style={getButtonStyle(attemptPrimaryButtonStyle, primaryAction.disabled)}
-                >
-                  {primaryAction.label}
-                </button>
-                {attempt.waitingMessage && attempt.status === "ready" ? <span style={{ color: "#555", lineHeight: 1.4 }}>{attempt.waitingMessage}</span> : null}
-              </>
-            ) : <div aria-hidden="true" style={attemptPrimaryActionPlaceholderStyle} />}
-            <button
-              type="button"
-              aria-expanded={detailsOpen}
-              aria-label={detailsButtonLabel}
-              onClick={() => setExpandedAttemptDetails((current) => ({ ...current, [attempt.attemptId]: !detailsOpen }))}
-              style={attemptSecondaryButtonStyle}
-            >
-              {detailsOpen ? "Back to attempt" : "Attempt details"}
-            </button>
-          </div>
-          {attempt.coldStartWarning ? <p role="status" style={{ ...alertPanelStyle.warning, margin: 0 }}>{attempt.coldStartWarning}</p> : null}
         </div>
       </article>
     );
@@ -785,11 +789,17 @@ const attemptCardStyle: CSSProperties = {
 
 const attemptCardContentStyle: CSSProperties = {
   display: "grid",
-  gridTemplateRows: "auto auto minmax(4.8rem, auto) minmax(2.9rem, auto) auto auto",
   gap: "0.9rem",
-  height: "100%",
   padding: "1.05rem",
   boxSizing: "border-box",
+  alignContent: "start",
+};
+
+const attemptCardFrontStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateRows: "4.75rem 3.5rem 5.75rem 3rem minmax(6.7rem, auto)",
+  gap: "0.9rem",
+  minHeight: "27rem",
   alignContent: "start",
 };
 
@@ -805,43 +815,64 @@ const attemptCardAccentStyle: CSSProperties = {
 };
 
 const attemptCardHeaderStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) auto",
   gap: "1rem",
-  flexWrap: "wrap",
   alignItems: "flex-start",
+  minWidth: 0,
+  overflow: "hidden",
+};
+
+const attemptCardTitleStyle: CSSProperties = {
+  display: "-webkit-box",
+  margin: 0,
+  fontSize: "1.1rem",
+  color: "#0f172a",
+  overflow: "hidden",
+  overflowWrap: "anywhere",
+  WebkitBoxOrient: "vertical",
+  WebkitLineClamp: 2,
 };
 
 const attemptHeaderBadgesStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "flex-end",
-  alignItems: "center",
+  display: "grid",
+  justifyItems: "end",
+  alignContent: "start",
   gap: "0.4rem",
-  flexWrap: "wrap",
 };
 
 const openedAttemptBadgeStyle: CSSProperties = {
   ...statusBadgeStyle("info"),
   background: "#ecfdf5",
   color: "#0f766e",
+  minWidth: "6.25rem",
+  justifyContent: "center",
+};
+
+const openedAttemptPlaceholderStyle: CSSProperties = {
+  ...openedAttemptBadgeStyle,
+  visibility: "hidden",
 };
 
 const attemptCardListStyle: CSSProperties = {
   display: "grid",
   gap: "1rem",
   gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
-  alignItems: "stretch",
+  alignItems: "start",
 };
 
 const attemptDurationPillsStyle: CSSProperties = {
   display: "flex",
   justifyContent: "flex-end",
+  alignContent: "start",
   gap: "0.45rem",
   flexWrap: "wrap",
+  overflow: "hidden",
 };
 
 const attemptAvailabilityBandStyle: CSSProperties = {
   display: "grid",
+  alignContent: "start",
   gap: "0.2rem",
   padding: "0.8rem",
   border: "1px solid #dbeafe",
@@ -864,7 +895,8 @@ const attemptDateStyle: CSSProperties = {
 };
 
 const attemptDateSlotStyle: CSSProperties = {
-  minHeight: "2.8rem",
+  minHeight: 0,
+  overflow: "hidden",
 };
 
 const attemptDetailsPanelStyle: CSSProperties = {
