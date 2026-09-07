@@ -392,6 +392,13 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
           aria-label="Candidate delivery refresh status"
           aria-live="polite"
           role="status"
+          style={visuallyHiddenStyle}
+        >
+          {refreshing ? "Refreshing candidate delivery status…" : ""}
+        </p>
+        <p
+          aria-hidden="true"
+          data-candidate-refresh-visual="true"
           style={{
             ...refreshStatusSlotStyle,
             visibility: refreshing ? "visible" : "hidden",
@@ -725,6 +732,18 @@ const refreshStatusSlotStyle: CSSProperties = {
   background: "#f8fafc",
   color: "#475569",
   fontSize: "0.875rem",
+};
+
+const visuallyHiddenStyle: CSSProperties = {
+  position: "absolute",
+  width: "1px",
+  height: "1px",
+  padding: 0,
+  margin: "-1px",
+  overflow: "hidden",
+  clip: "rect(0, 0, 0, 0)",
+  whiteSpace: "nowrap",
+  border: 0,
 };
 
 const sectionCopyStyle: CSSProperties = {
