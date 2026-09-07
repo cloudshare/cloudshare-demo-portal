@@ -358,12 +358,14 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
             <span style={attemptAvailabilityLabelStyle}>What happens next</span>
             <strong>{actionSummary}</strong>
           </div>
+          <div style={attemptDateSlotStyle}>
           {attempt.scheduledFor ? (
             <p style={attemptDateStyle}>
               <span style={metaLabelStyle}>Scheduled for</span>
               <span>{formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}</span>
             </p>
           ) : null}
+          </div>
           {detailsOpen ? (
             <section aria-label={`Attempt details for ${attempt.examTitle}, attempt ${attempt.attemptId}`} style={attemptDetailsPanelStyle}>
               <p style={attemptDetailIdentifierStyle}>Attempt ID: {attempt.attemptId}</p>
@@ -413,7 +415,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                 </button>
                 {attempt.waitingMessage && attempt.status === "ready" ? <span style={{ color: "#555", lineHeight: 1.4 }}>{attempt.waitingMessage}</span> : null}
               </>
-            ) : null}
+            ) : <div aria-hidden="true" style={attemptPrimaryActionPlaceholderStyle} />}
             <button
               type="button"
               aria-expanded={detailsOpen}
@@ -783,6 +785,7 @@ const attemptCardStyle: CSSProperties = {
 
 const attemptCardContentStyle: CSSProperties = {
   display: "grid",
+  gridTemplateRows: "auto auto minmax(4.8rem, auto) minmax(2.9rem, auto) auto auto",
   gap: "0.9rem",
   height: "100%",
   padding: "1.05rem",
@@ -827,7 +830,7 @@ const attemptCardListStyle: CSSProperties = {
   display: "grid",
   gap: "1rem",
   gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
-  alignItems: "start",
+  alignItems: "stretch",
 };
 
 const attemptDurationPillsStyle: CSSProperties = {
@@ -860,6 +863,10 @@ const attemptDateStyle: CSSProperties = {
   color: "#0f172a",
 };
 
+const attemptDateSlotStyle: CSSProperties = {
+  minHeight: "2.8rem",
+};
+
 const attemptDetailsPanelStyle: CSSProperties = {
   display: "grid",
   gap: "0.75rem",
@@ -887,6 +894,10 @@ const attemptActionStackStyle: CSSProperties = {
 const attemptPrimaryButtonStyle: CSSProperties = {
   ...primaryButtonStyle,
   width: "100%",
+  minHeight: "3.1rem",
+};
+
+const attemptPrimaryActionPlaceholderStyle: CSSProperties = {
   minHeight: "3.1rem",
 };
 
@@ -1031,4 +1042,5 @@ function buildCandidateTaskAnnouncement(
       return "Candidate task updated.";
   }
 }
+
 
