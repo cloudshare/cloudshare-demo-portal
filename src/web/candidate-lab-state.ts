@@ -97,7 +97,7 @@ function buildCandidateLabSummaryItems(input: {
   readonly openPeriodEndsAtLabel: string | null;
 }): CandidateLabSummaryItem[] {
   const items: CandidateLabSummaryItem[] = [
-    { label: "ExamAttempt ID", value: input.examAttemptId },
+    { label: "Exam Attempt ID", value: input.examAttemptId },
     { label: "Status", value: input.statusLabel },
     { label: "Time limit", value: input.timeLimitLabel },
   ];
@@ -126,7 +126,7 @@ function getCandidateLabActionCopy(
   if (openPeriodClosed) {
     return {
       actionTitle: "This Exam open period has closed",
-      actionDetail: "Launch and resume actions are no longer available for this ExamAttempt.",
+      actionDetail: "Launch and resume actions are no longer available for this Exam Attempt.",
     };
   }
 
@@ -145,11 +145,11 @@ function getCandidateLabActionCopy(
     case "suspended":
       return {
         actionTitle: "Your lab is paused",
-        actionDetail: "Use Resume exam when you are ready to continue with the same ExamAttempt.",
+        actionDetail: "Use Resume exam when you are ready to continue with the same Exam Attempt.",
       };
     case "completed":
       return {
-        actionTitle: "This ExamAttempt is complete",
+        actionTitle: "This Exam Attempt is complete",
         actionDetail: "Your lab is no longer accepting launch or resume actions.",
       };
     default:

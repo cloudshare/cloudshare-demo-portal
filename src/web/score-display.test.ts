@@ -45,6 +45,8 @@ describe("ScoreLoadedPanel", () => {
     );
 
     expect(html).toContain("Completion summary");
+    expect(html).toContain("completed Exam Attempt");
+    expect(html).not.toContain("ExamAttempt");
     expect(html).toContain("Helios Guided Journey");
     expect(html).toContain("Exam attempt: attempt-1");
     expect(html).toContain("55% pass rate");

@@ -101,7 +101,7 @@ describe("lab launcher state helpers", () => {
     ).toEqual({
       tone: "info",
       title: "Exam window open",
-      detail: "Your CloudShare lab opened in a separate window for this ExamAttempt.",
+      detail: "Your CloudShare lab opened in a separate window for this Exam Attempt.",
       primaryActionLabel: "Suspend lab",
       supportMessage:
         "Leaving or closing this page without suspending keeps your lab running and consuming time. Use Suspend lab to pause before stepping away.",
@@ -120,7 +120,7 @@ describe("lab launcher state helpers", () => {
       title: "Lab suspended",
       detail: "Lab suspended. You can resume your session when ready.",
       primaryActionLabel: "Resume exam",
-      supportMessage: "Resume exam to reopen your CloudShare lab and continue the same ExamAttempt.",
+      supportMessage: "Resume exam to reopen your CloudShare lab and continue the same Exam Attempt.",
     });
   });
 
@@ -138,6 +138,14 @@ describe("lab launcher state helpers", () => {
       primaryActionLabel: null,
       supportMessage: null,
     });
+  });
+
+  it("uses readable Exam Attempt copy while completion is being archived", () => {
+    expect(getLauncherPresentation({
+      state: "ending",
+      attemptStatus: "in_progress",
+      message: "",
+    }).detail).toBe("The portal is archiving your CloudShare lab before completing this Exam Attempt.");
   });
 
   it("suppresses launch and resume recovery once the authored open period has closed", () => {

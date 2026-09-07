@@ -188,6 +188,7 @@ describe("idle expiry on protected portal surfaces", () => {
     window.history.replaceState({}, "", "/candidate/score?examAttemptId=attempt-1");
     render(<ScoreDisplay email="candidate@helioscx.demo" examAttemptId="attempt-1" />);
     expect(screen.getByText("Candidate score")).not.toBeNull();
+    expect(screen.getByText(/scoring limitations for this Exam Attempt/)).not.toBeNull();
     await expireLatestWatchdog();
     expect(screen.queryByText("Candidate score")).toBeNull();
     expect(router.replace).toHaveBeenCalledWith("/login");
