@@ -252,6 +252,43 @@ describe("CandidateHome route-backed task flow", () => {
     rendered.unmount();
   });
 
+  it("renders every current Exam Attempt as a complete card with its own action target", async () => {
+    const user = userEvent.setup();
+    const browserFetch = vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"
+      ? Promise.resolve(json({
+        exams: [
+          { id: "exam-alpha", title: "Alpha Lab", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, storageLeaseMinutes: 1440, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
+          { id: "exam-bravo", title: "Bravo Lab", description: "", timeLimitMinutes: 45, openPeriodMinutes: 60, storageLeaseMinutes: 720, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
+        ],
+        attempts: [
+          { id: "attempt-alpha", examId: "exam-alpha", examTitle: "Alpha Lab", scheduledFor: "2026-10-23T16:00:00.000Z", status: "suspended" },
+          { id: "attempt-bravo", examId: "exam-bravo", examTitle: "Bravo Lab", scheduledFor: "2026-10-23T17:00:00.000Z", status: "in_progress" },
+        ],
+      }))
+      : Promise.resolve(new Response(null, { status: 200 })));
+    vi.stubGlobal("fetch", browserFetch);
+    Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
+    currentSearchParams = new URLSearchParams("task=current&attemptId=attempt-alpha");
+
+    render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: "attempt-alpha", examId: null }} />);
+
+    const cards = await screen.findAllByRole("article");
+    expect(cards).toHaveLength(2);
+    expect(within(cards[0]!).getByText("Bravo Lab")).toBeTruthy();
+    expect(within(cards[0]!).getByText("Attempt ID: attempt-bravo")).toBeTruthy();
+    expect(within(cards[0]!).getByText("In progress")).toBeTruthy();
+    expect(within(cards[1]!).getByText("Alpha Lab")).toBeTruthy();
+    expect(within(cards[1]!).getByText("Attempt ID: attempt-alpha")).toBeTruthy();
+    expect(within(cards[1]!).getByText("Suspended")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Alpha Lab Suspended/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Bravo Lab In progress/ })).toBeNull();
+
+    await user.click(within(cards[1]!).getByRole("button", { name: "Resume exam" }));
+    expect(routerPush).toHaveBeenLastCalledWith("/candidate/lab?examAttemptId=attempt-alpha&attemptStatus=suspended");
+    await user.click(within(cards[0]!).getByRole("button", { name: "Return to exam" }));
+    expect(routerPush).toHaveBeenLastCalledWith("/candidate/lab?examAttemptId=attempt-bravo&attemptStatus=in_progress");
+  });
+
   it("changes an empty task route without a dashboard reload and clears its fallback warning on Schedule", async () => {
     const user = userEvent.setup();
     const browserFetch = vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"

@@ -307,22 +307,109 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
 
   const selectedAttempt = resolvedRoute.selectedAttempt;
   const selectedExam = resolvedRoute.selectedExam;
-  const selectedAttemptExam =
-    selectedAttempt
-      ? buildCandidateAttemptExamSnapshot(selectedAttempt, examsById.get(selectedAttempt.examId) ?? null)
-      : null;
-  const selectedAttemptPrimaryAction = selectedAttempt
-    ? getAttemptPrimaryAction(
-        {
-          id: selectedAttempt.attemptId,
-          examId: selectedAttempt.examId,
-          scheduledFor: selectedAttempt.scheduledFor,
-          status: selectedAttempt.status,
-        },
-        nowMs,
-        selectedAttemptExam,
-      )
-    : { label: null, disabled: false };
+
+  function renderAttemptCard(attempt: NonNullable<typeof selectedAttempt>) {
+    const attemptExam = buildCandidateAttemptExamSnapshot(attempt, examsById.get(attempt.examId) ?? null);
+    const primaryAction = getAttemptPrimaryAction(
+      {
+        id: attempt.attemptId,
+        examId: attempt.examId,
+        scheduledFor: attempt.scheduledFor,
+        status: attempt.status,
+      },
+      nowMs,
+      attemptExam,
+    );
+
+    return (
+      <article key={attempt.attemptId} style={attemptCardStyle}>
+        <div style={attemptCardContentStyle}>
+          <div style={attemptCardAccentStyle} />
+          <div style={attemptCardHeaderStyle}>
+            <div>
+              <strong style={{ display: "block", fontSize: "1rem", color: "#0f172a" }}>
+                {attempt.examTitle}
+              </strong>
+              <p style={{ margin: "0.35rem 0 0", color: "#475569", overflowWrap: "anywhere" }}>
+                Attempt ID: {attempt.attemptId}
+              </p>
+            </div>
+            <span style={statusBadgeStyle(getExamAttemptStatusTone(attempt.displayStatus))}>
+              {formatCandidateAttemptStatus(attempt.displayStatus)}
+            </span>
+          </div>
+          <div style={attemptMetaGridStyle}>
+            <div style={metaItemStyle}>
+              <span style={metaLabelStyle}>Access window</span>
+              <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
+                {attempt.scheduledFor && attempt.scheduledEnd ? (
+                  <>
+                    <span>Starts {formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}</span>
+                    <span>
+                      Closes {formatCandidateScheduledDateTime(attempt.scheduledEnd) ?? "TBD"}
+                      {attemptExam ? ` (${attemptExam.openPeriodMinutes} min)` : ""}
+                    </span>
+                  </>
+                ) : "TBD"}
+              </span>
+            </div>
+            <div style={metaItemStyle}>
+              <span style={metaLabelStyle}>Runtime limit</span>
+              <span style={metaValueStyle}>{attemptExam?.timeLimitMinutes ? `${attemptExam.timeLimitMinutes} minute runtime limit` : "Unavailable"}</span>
+            </div>
+            <div style={metaItemStyle}>
+              <span style={metaLabelStyle}>Open window</span>
+              <span style={metaValueStyle}>{attemptExam?.openPeriodMinutes ? `${attemptExam.openPeriodMinutes} minute open window` : "Unavailable"}</span>
+            </div>
+            <div style={metaItemStyle}>
+              <span style={metaLabelStyle}>Environment retention</span>
+              <span style={metaValueStyle}>{attemptExam?.storageLeaseMinutes ? `${attemptExam.storageLeaseMinutes} minute environment retention` : "Not recorded"}</span>
+            </div>
+            <div style={metaItemStyle}>
+              <span style={metaLabelStyle}>{resolvedRoute.activeTask === "current" ? "Next schedule available" : "Retention boundary"}</span>
+              <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
+                {attempt.nextScheduleAvailableLabel ? (
+                  <>
+                    <span>{attempt.nextScheduleAvailableLabel}</span>
+                    {attemptExam ? <span style={metaHintStyle}>{getScheduleAvailabilityNote(attemptExam)}</span> : null}
+                  </>
+                ) : getAttemptScheduleAvailabilityFallback(attempt.status)}
+              </span>
+            </div>
+          </div>
+          {primaryAction.label ? (
+            <div style={attemptActionStackStyle}>
+              <button
+                onClick={() => {
+                  if (primaryAction.label === "View score") {
+                    openScorePage(attempt.attemptId);
+                    return;
+                  }
+                  openLabConsole(attempt.attemptId, attempt.status);
+                }}
+                disabled={primaryAction.disabled}
+                style={getButtonStyle(attemptPrimaryButtonStyle, primaryAction.disabled)}
+              >
+                {primaryAction.label}
+              </button>
+              {attempt.waitingMessage && attempt.status === "ready" ? (
+                <span style={{ color: "#555", lineHeight: 1.4 }}>{attempt.waitingMessage}</span>
+              ) : null}
+            </div>
+          ) : (
+            <p style={mutedTaskCopyStyle}>
+              {resolvedRoute.activeTask === "current"
+                ? attempt.status === "scheduled"
+                  ? "Your Exam Attempt is scheduled. We will enable entry when the server confirms the access window is open."
+                  : "No live action is available for this route state."
+                : "This attempt remains here as durable history."}
+            </p>
+          )}
+          {attempt.coldStartWarning ? <p role="status" style={{ ...alertPanelStyle.warning, margin: 0 }}>{attempt.coldStartWarning}</p> : null}
+        </div>
+      </article>
+    );
+  }
   const resolvedRouteKey = useMemo(
     () =>
       [
@@ -473,11 +560,11 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
               </div>
               <p style={sectionCopyStyle}>
                 {resolvedRoute.activeTask === "current"
-                  ? "The next valid action stays tied to the selected Exam Attempt."
+                  ? "Each Exam Attempt keeps its own status, timing, and next valid action."
                   : "Review durable result history without mixing it into the live delivery task."}
               </p>
             </div>
-            {resolvedRoute.attempts.length > 1 ? (
+            {resolvedRoute.activeTask === "history" && resolvedRoute.attempts.length > 1 ? (
               <div style={attemptSelectorStripStyle}>
                 {resolvedRoute.attempts.map((attempt) => (
                   <button
@@ -506,121 +593,12 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                 ))}
               </div>
             ) : null}
-            {selectedAttempt ? (
-              <article style={attemptCardStyle}>
-                <div style={attemptCardContentStyle}>
-                  <div style={attemptCardAccentStyle} />
-                  <div style={attemptCardHeaderStyle}>
-                    <div>
-                      <strong style={{ display: "block", fontSize: "1rem", color: "#0f172a" }}>
-                        {selectedAttempt.examTitle}
-                      </strong>
-                      <p style={{ margin: "0.35rem 0 0", color: "#475569", overflowWrap: "anywhere" }}>
-                        Attempt ID: {selectedAttempt.attemptId}
-                      </p>
-                    </div>
-                    <span style={statusBadgeStyle(getExamAttemptStatusTone(selectedAttempt.displayStatus))}>
-                      {formatCandidateAttemptStatus(selectedAttempt.displayStatus)}
-                    </span>
-                  </div>
-                  <div style={attemptMetaGridStyle}>
-                    <div style={metaItemStyle}>
-                      <span style={metaLabelStyle}>Access window</span>
-                      <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
-                        {selectedAttempt.scheduledFor && selectedAttempt.scheduledEnd ? (
-                          <>
-                            <span>
-                              Starts {formatCandidateScheduledDateTime(selectedAttempt.scheduledFor) ?? "TBD"}
-                            </span>
-                            <span>
-                              Closes {formatCandidateScheduledDateTime(selectedAttempt.scheduledEnd) ?? "TBD"}
-                              {selectedAttemptExam ? ` (${selectedAttemptExam.openPeriodMinutes} min)` : ""}
-                            </span>
-                          </>
-                        ) : (
-                          "TBD"
-                        )}
-                      </span>
-                    </div>
-                    <div style={metaItemStyle}>
-                      <span style={metaLabelStyle}>Runtime limit</span>
-                      <span style={metaValueStyle}>
-                        {selectedAttemptExam?.timeLimitMinutes
-                          ? `${selectedAttemptExam.timeLimitMinutes} minute runtime limit`
-                          : "Unavailable"}
-                      </span>
-                    </div>
-                    <div style={metaItemStyle}>
-                      <span style={metaLabelStyle}>Open window</span>
-                      <span style={metaValueStyle}>
-                        {selectedAttemptExam?.openPeriodMinutes
-                          ? `${selectedAttemptExam.openPeriodMinutes} minute open window`
-                          : "Unavailable"}
-                      </span>
-                    </div>
-                    <div style={metaItemStyle}>
-                      <span style={metaLabelStyle}>Environment retention</span>
-                      <span style={metaValueStyle}>
-                        {selectedAttemptExam?.storageLeaseMinutes
-                          ? `${selectedAttemptExam.storageLeaseMinutes} minute environment retention`
-                          : "Not recorded"}
-                      </span>
-                    </div>
-                    <div style={metaItemStyle}>
-                      <span style={metaLabelStyle}>
-                        {resolvedRoute.activeTask === "current"
-                          ? "Next schedule available"
-                          : "Retention boundary"}
-                      </span>
-                      <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
-                        {selectedAttempt.nextScheduleAvailableLabel ? (
-                          <>
-                            <span>{selectedAttempt.nextScheduleAvailableLabel}</span>
-                            {selectedAttemptExam ? (
-                              <span style={metaHintStyle}>{getScheduleAvailabilityNote(selectedAttemptExam)}</span>
-                            ) : null}
-                          </>
-                        ) : (
-                          getAttemptScheduleAvailabilityFallback(selectedAttempt.status)
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                  {selectedAttemptPrimaryAction.label ? (
-                    <div style={attemptActionStackStyle}>
-                      <button
-                        onClick={() => {
-                          if (selectedAttemptPrimaryAction.label === "View score") {
-                            openScorePage(selectedAttempt.attemptId);
-                            return;
-                          }
-                          openLabConsole(selectedAttempt.attemptId, selectedAttempt.status);
-                        }}
-                        disabled={selectedAttemptPrimaryAction.disabled}
-                        style={getButtonStyle(attemptPrimaryButtonStyle, selectedAttemptPrimaryAction.disabled)}
-                      >
-                        {selectedAttemptPrimaryAction.label}
-                      </button>
-                      {selectedAttempt.waitingMessage && selectedAttempt.status === "ready" ? (
-                        <span style={{ color: "#555", lineHeight: 1.4 }}>{selectedAttempt.waitingMessage}</span>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p style={mutedTaskCopyStyle}>
-                      {resolvedRoute.activeTask === "current"
-                        ? selectedAttempt.status === "scheduled"
-                          ? "Your Exam Attempt is scheduled. We will enable entry when the server confirms the access window is open."
-                          : "No live action is available for this route state."
-                        : "This attempt remains here as durable history."}
-                    </p>
-                  )}
-                  {selectedAttempt.coldStartWarning ? (
-                    <p role="status" style={{ ...alertPanelStyle.warning, margin: 0 }}>
-                      {selectedAttempt.coldStartWarning}
-                    </p>
-                  ) : null}
-                </div>
-              </article>
+            {resolvedRoute.activeTask === "current" && resolvedRoute.attempts.length > 0 ? (
+              <div style={attemptCardListStyle}>
+                {resolvedRoute.attempts.map(renderAttemptCard)}
+              </div>
+            ) : selectedAttempt ? (
+              renderAttemptCard(selectedAttempt)
             ) : (
               <p style={{ ...mutedPanelStyle, margin: 0 }}>
                 {resolvedRoute.activeTask === "current"
@@ -837,6 +815,11 @@ const attemptCardHeaderStyle: CSSProperties = {
   alignItems: "flex-start",
 };
 
+const attemptCardListStyle: CSSProperties = {
+  display: "grid",
+  gap: "1rem",
+};
+
 const attemptMetaGridStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
@@ -998,9 +981,7 @@ function buildCandidateTaskAnnouncement(
 ): string {
   switch (resolvedRoute.activeTask) {
     case "current":
-      return resolvedRoute.selectedAttempt
-        ? `Now showing Current Exam Attempt. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
-        : "Now showing Current Exam Attempt.";
+      return "Now showing Current Exam Attempt.";
     case "history":
       return resolvedRoute.selectedAttempt
         ? `Now showing Attempt history. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
