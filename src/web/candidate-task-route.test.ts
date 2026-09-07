@@ -207,14 +207,21 @@ describe("candidate task route", () => {
     expect(parseCandidateTaskSearchParams(new URLSearchParams(), fallback)).toEqual(fallback);
   });
 
-  it("prioritizes actionable current attempts over future scheduled attempts", () => {
+  it("keeps current attempts in stable schedule order when their statuses change", () => {
     const resolved = resolveCandidateTaskRoute({ ...dashboard, attempts: [
       { id: "future", examId: "exam-2", scheduledFor: "2026-06-20T10:00:00.000Z", status: "ready" },
       { id: "running", examId: "exam-1", scheduledFor: "2026-06-16T15:00:00.000Z", status: "in_progress" },
       { id: "paused", examId: "exam-2", scheduledFor: "2026-06-16T15:30:00.000Z", status: "suspended" },
     ] }, Date.parse("2026-06-16T15:59:00.000Z"), { task: "current", attemptId: null, examId: null });
     expect(resolved.selectedAttempt?.attemptId).toBe("running");
-    expect(resolved.attempts.map((attempt) => attempt.attemptId)).toEqual(["running", "paused", "future"]);
+    expect(resolved.attempts.map((attempt) => attempt.attemptId)).toEqual(["future", "paused", "running"]);
+
+    const refreshed = resolveCandidateTaskRoute({ ...dashboard, attempts: [
+      { id: "future", examId: "exam-2", scheduledFor: "2026-06-20T10:00:00.000Z", status: "in_progress" },
+      { id: "running", examId: "exam-1", scheduledFor: "2026-06-16T15:00:00.000Z", status: "suspended" },
+      { id: "paused", examId: "exam-2", scheduledFor: "2026-06-16T15:30:00.000Z", status: "ready" },
+    ] }, Date.parse("2026-06-16T15:59:00.000Z"), { task: "current", attemptId: null, examId: null });
+    expect(refreshed.attempts.map((attempt) => attempt.attemptId)).toEqual(["future", "paused", "running"]);
   });
 
   it.each(["in_progress", "suspended"] as const)("moves %s to history when its open period is closed", (status) => {

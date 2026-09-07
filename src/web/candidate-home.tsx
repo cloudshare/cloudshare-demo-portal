@@ -310,6 +310,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
 
   function renderAttemptCard(attempt: NonNullable<typeof selectedAttempt>) {
     const attemptExam = buildCandidateAttemptExamSnapshot(attempt, examsById.get(attempt.examId) ?? null);
+    const attemptHeadingId = `candidate-attempt-${attempt.attemptId}-title`;
     const primaryAction = getAttemptPrimaryAction(
       {
         id: attempt.attemptId,
@@ -322,14 +323,14 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
     );
 
     return (
-      <article key={attempt.attemptId} style={attemptCardStyle}>
+      <article key={attempt.attemptId} aria-labelledby={attemptHeadingId} style={attemptCardStyle}>
         <div style={attemptCardContentStyle}>
           <div style={attemptCardAccentStyle} />
           <div style={attemptCardHeaderStyle}>
             <div>
-              <strong style={{ display: "block", fontSize: "1rem", color: "#0f172a" }}>
+              <h3 id={attemptHeadingId} style={{ display: "block", margin: 0, fontSize: "1rem", color: "#0f172a" }}>
                 {attempt.examTitle}
-              </strong>
+              </h3>
               <p style={{ margin: "0.35rem 0 0", color: "#475569", overflowWrap: "anywhere" }}>
                 Attempt ID: {attempt.attemptId}
               </p>
@@ -380,6 +381,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
           {primaryAction.label ? (
             <div style={attemptActionStackStyle}>
               <button
+                aria-label={`${primaryAction.label} for ${attempt.examTitle}, attempt ${attempt.attemptId}`}
                 onClick={() => {
                   if (primaryAction.label === "View score") {
                     openScorePage(attempt.attemptId);

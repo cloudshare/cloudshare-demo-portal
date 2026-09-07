@@ -81,7 +81,9 @@ export function resolveCandidateTaskRoute(
     }
 
     const selectedAttempt =
-      selectAttemptById(liveAttempts, route.attemptId) ?? liveAttempts[0] ?? null;
+      selectAttemptById(liveAttempts, route.attemptId)
+      ?? [...liveAttempts].sort(compareCurrentAttemptNavigationPriority)[0]
+      ?? null;
 
     return {
       activeTask: "current",
@@ -210,7 +212,7 @@ export function getCandidateTaskNavigationRoute(
       ? resolved.candidateAttempts.filter(isHistoryCandidateAttempt)
       : resolved.candidateAttempts;
   const attemptForDestination = (task === "current"
-    ? [...destinationAttempts].sort(compareCurrentAttempts)
+    ? [...destinationAttempts].sort(compareCurrentAttemptNavigationPriority)
     : destinationAttempts)[0] ?? null;
   if (task === "schedule") {
     const selectedScheduleExam = resolved.activeTask === "schedule"
@@ -327,6 +329,14 @@ function compareCurrentAttempts(
   left: CandidateScheduledAttemptView,
   right: CandidateScheduledAttemptView,
 ): number {
+  return (right.scheduledFor ?? "").localeCompare(left.scheduledFor ?? "")
+    || left.attemptId.localeCompare(right.attemptId);
+}
+
+function compareCurrentAttemptNavigationPriority(
+  left: CandidateScheduledAttemptView,
+  right: CandidateScheduledAttemptView,
+): number {
   const priority = (attempt: CandidateScheduledAttemptView) => {
     switch (attempt.displayStatus) {
       case "in_progress":
@@ -339,9 +349,7 @@ function compareCurrentAttempts(
         return 3;
     }
   };
-  return priority(left) - priority(right)
-    || (right.scheduledFor ?? "").localeCompare(left.scheduledFor ?? "")
-    || left.attemptId.localeCompare(right.attemptId);
+  return priority(left) - priority(right) || compareCurrentAttempts(left, right);
 }
 
 function selectAttemptById(
