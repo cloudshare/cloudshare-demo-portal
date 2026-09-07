@@ -77,11 +77,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
   const [sessionExpired, setSessionExpired] = useState(false);
   const [announcedTaskMessage, setAnnouncedTaskMessage] = useState<string | null>(null);
   const [expandedAttemptDetails, setExpandedAttemptDetails] = useState<Record<string, boolean>>({});
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(
-    () => typeof window !== "undefined" && typeof window.matchMedia === "function"
-      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      : false,
-  );
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const pendingAttemptFocusRef = useRef<{ attemptId: string; face: "front" | "back" } | null>(null);
   const attemptFrontButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const attemptBackButtonRefs = useRef(new Map<string, HTMLButtonElement>());

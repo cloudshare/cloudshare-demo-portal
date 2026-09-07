@@ -2,6 +2,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CandidateHome } from "./candidate-home";
 import { COLD_START_WARNING_MESSAGE } from "./candidate-home-state";
@@ -350,6 +351,8 @@ describe("CandidateHome route-backed task flow", () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     })));
+    renderToString(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "history", attemptId: "attempt-alpha", examId: null }} />);
+    expect(window.matchMedia).not.toHaveBeenCalled();
     const browserFetch = vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"
       ? Promise.resolve(json({
         exams: [
