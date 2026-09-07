@@ -3,8 +3,8 @@ import {
   type CandidateScheduledAttemptView,
 } from "./candidate-home-state";
 import type { CandidateDashboardData } from "./candidate-scheduling";
-import { isValidCandidateIdentifier, isValidCandidateRouteShape } from "./candidate-route-shape";
-export { isValidCandidateIdentifier } from "./candidate-route-shape";
+import { isValidCandidateIdentifier, isValidCandidateRouteShape } from "../auth/candidate-route-shape";
+export { isValidCandidateIdentifier } from "../auth/candidate-route-shape";
 import { isCandidateLabHistoryPresentation } from "./candidate-lab-state";
 
 export type CandidateTaskView = "current" | "schedule" | "history";
@@ -218,8 +218,8 @@ export function getCandidateTaskNavigationRoute(
     const attemptedExamIds = new Set(resolved.candidateAttempts.map((attempt) => attempt.examId));
     const availableExam = [...resolved.exams]
       .filter((exam) => !attemptedExamIds.has(exam.id))
-      .sort(compareCandidateExams)[0]
-      ?? [...resolved.exams].sort(compareCandidateExams)[0]
+      .sort(compareCandidateExamsByIdForFallback)[0]
+      ?? [...resolved.exams].sort(compareCandidateExamsByIdForFallback)[0]
       ?? null;
     return { task, attemptId: null, examId: selectedScheduleExam?.id ?? availableExam?.id ?? null };
   }
@@ -232,7 +232,7 @@ export function getCandidateTaskNavigationRoute(
   return { task: null, attemptId: null, examId: null };
 }
 
-function compareCandidateExams(
+function compareCandidateExamsByIdForFallback(
   left: CandidateDashboardData["exams"][number],
   right: CandidateDashboardData["exams"][number],
 ): number {

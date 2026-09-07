@@ -1,5 +1,5 @@
 import type { PortalCustomerWorkspace, PortalUserRole } from "./portal-stores";
-import { isValidCandidateIdentifier, isValidCandidateRouteShape } from "../web/candidate-route-shape";
+import { isValidCandidateIdentifier, isValidCandidateRouteShape } from "./candidate-route-shape";
 
 type PortalReturnScope = "certification_admin" | "sales_admin" | "candidate" | "sales_trial";
 
