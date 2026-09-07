@@ -337,7 +337,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
     );
     const detailsOpen = expandedAttemptDetails[attempt.attemptId] === true;
     const isOpenedAttempt = selectedAttempt?.attemptId === attempt.attemptId;
-    const actionSummary = getCandidateAttemptActionSummary(attempt.status, primaryAction.label, primaryAction.disabled);
+    const actionSummary = getCandidateAttemptActionSummary(attempt.displayStatus, primaryAction.label, primaryAction.disabled);
     const frontHeadingId = `${attemptHeadingId}-front`;
     const backHeadingId = `${attemptHeadingId}-back`;
     const setDetailsOpen = (open: boolean) => {
@@ -378,8 +378,8 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                     </span>
                   </div>
                   <div style={attemptDurationBadgeStackStyle}>
-                    <span style={statusBadgeStyle("info")}>{attemptExam?.timeLimitMinutes ? `${attemptExam.timeLimitMinutes} minute runtime limit` : "Runtime limit unavailable"}</span>
-                    <span style={statusBadgeStyle("info")}>{attemptExam?.openPeriodMinutes ? `${attemptExam.openPeriodMinutes} minute open window` : "Open window unavailable"}</span>
+                    <span data-attempt-duration-badge="true" style={{ ...statusBadgeStyle("info"), ...attemptDurationBadgeStyle }}>{attemptExam?.timeLimitMinutes ? `${attemptExam.timeLimitMinutes} minute runtime limit` : "Runtime limit unavailable"}</span>
+                    <span data-attempt-duration-badge="true" style={{ ...statusBadgeStyle("info"), ...attemptDurationBadgeStyle }}>{attemptExam?.openPeriodMinutes ? `${attemptExam.openPeriodMinutes} minute open window` : "Open window unavailable"}</span>
                   </div>
                 </div>
                 <div data-attempt-slot="next-step" style={attemptNextStepSlotStyle}>
@@ -927,6 +927,15 @@ const attemptDurationBadgeStackStyle: CSSProperties = {
   alignContent: "start",
   justifyItems: "end",
   gap: "0.4rem",
+};
+
+const attemptDurationBadgeStyle: CSSProperties = {
+  boxSizing: "border-box",
+  justifyContent: "center",
+  maxWidth: "100%",
+  overflowWrap: "anywhere",
+  textAlign: "center",
+  whiteSpace: "normal",
 };
 
 const attemptInvisibleBadgeSlotStyle: CSSProperties = {

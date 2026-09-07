@@ -310,6 +310,13 @@ describe("CandidateHome route-backed task flow", () => {
     expect(bravoHeading.style.webkitLineClamp).toBe("");
     expect(bravoFront.querySelector<HTMLElement>("[data-attempt-slot='title']")?.style.overflowY).toBe("auto");
     expect(bravoFront.querySelector<HTMLElement>("[data-attempt-slot='metadata']")?.style.gridTemplateColumns).toBe("minmax(0, 1fr) minmax(0, 1fr)");
+    const durationBadges = [...bravoFront.querySelectorAll<HTMLElement>("[data-attempt-duration-badge='true']")];
+    expect(durationBadges).toHaveLength(2);
+    expect(durationBadges.every((badge) =>
+      badge.style.whiteSpace === "normal"
+      && badge.style.maxWidth === "100%"
+      && badge.style.textAlign === "center"
+    )).toBe(true);
     bravoLifecycle.focus();
     await user.tab();
     expect(document.activeElement).toBe(bravoDetails);
@@ -351,11 +358,15 @@ describe("CandidateHome route-backed task flow", () => {
           { id: "exam-alpha", title: "Alpha Lab", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, storageLeaseMinutes: 1440, scoreRetrievalEnabled: true, individualSchedulingEnabled: true, availableCohortSessions: [] },
           { id: "exam-bravo", title: "Bravo Lab", description: "", timeLimitMinutes: 45, openPeriodMinutes: 60, storageLeaseMinutes: 720, scoreRetrievalEnabled: true, individualSchedulingEnabled: true, availableCohortSessions: [] },
           { id: "exam-charlie", title: "Charlie Lab", description: "", timeLimitMinutes: 30, openPeriodMinutes: 45, storageLeaseMinutes: 360, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
+          { id: "exam-delta", title: "Delta Lab", description: "", timeLimitMinutes: 30, openPeriodMinutes: 45, storageLeaseMinutes: 360, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
+          { id: "exam-echo", title: "Echo Lab", description: "", timeLimitMinutes: 30, openPeriodMinutes: 45, storageLeaseMinutes: 360, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
         ],
         attempts: [
           { id: "attempt-alpha", examId: "exam-alpha", examTitle: "Alpha Lab", scheduledFor: "2026-10-23T16:00:00.000Z", status: "expired" },
           { id: "attempt-bravo", examId: "exam-bravo", examTitle: "Bravo Lab", scheduledFor: "2026-10-23T17:00:00.000Z", status: "completed" },
           { id: "attempt-charlie", examId: "exam-charlie", examTitle: "Charlie Lab", scheduledFor: "2026-10-23T15:00:00.000Z", status: "completed" },
+          { id: "attempt-delta", examId: "exam-delta", examTitle: "Delta Lab", scheduledFor: "2026-06-23T15:00:00.000Z", status: "ready" },
+          { id: "attempt-echo", examId: "exam-echo", examTitle: "Echo Lab", scheduledFor: "2026-05-23T15:00:00.000Z", status: "suspended" },
         ],
       }))
       : Promise.resolve(new Response(null, { status: 200 })));
@@ -366,7 +377,7 @@ describe("CandidateHome route-backed task flow", () => {
     render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "history", attemptId: "attempt-alpha", examId: null }} />);
 
     const cards = await screen.findAllByRole("article");
-    expect(cards).toHaveLength(3);
+    expect(cards).toHaveLength(5);
     expect(cards.every((card) => card.querySelector<HTMLElement>("[data-attempt-flip-inner='true']")?.classList.contains("candidate-attempt-flip-inner"))).toBe(true);
     expect(cards.every((card) => card.querySelector<HTMLElement>("[data-attempt-flip-inner='true']")?.style.transition === "")).toBe(true);
     const bravoFrontFace = cards[0]!.querySelector<HTMLElement>("[data-attempt-card-face='front']")!;
@@ -394,6 +405,12 @@ describe("CandidateHome route-backed task flow", () => {
     expect(within(cards[2]!).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
       "Attempt details for Charlie Lab, attempt attempt-charlie",
     ]);
+    expect(within(cards[3]!).getByText("Expired")).toBeTruthy();
+    expect(within(cards[3]!).getByText("This attempt is saved in your history.")).toBeTruthy();
+    expect(within(cards[3]!).queryByText(/enable entry when the access window opens/i)).toBeNull();
+    expect(within(cards[4]!).getByText("Completed")).toBeTruthy();
+    expect(within(cards[4]!).getByText("This attempt is saved in your history.")).toBeTruthy();
+    expect(within(cards[4]!).queryByText("Ready to resume")).toBeNull();
     expect(screen.queryByRole("button", { name: /Alpha Lab Expired/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Bravo Lab Completed/ })).toBeNull();
     expect(screen.getAllByRole("button").filter((button) => button.hasAttribute("aria-current"))).toHaveLength(1);
