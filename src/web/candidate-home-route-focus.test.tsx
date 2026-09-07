@@ -41,6 +41,7 @@ describe("CandidateHome route-backed task flow", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     process.env.TZ = originalTimezone;
     vi.unstubAllGlobals();
     Object.defineProperty(window, "fetch", {
@@ -102,7 +103,7 @@ describe("CandidateHome route-backed task flow", () => {
     expect(screen.getByText("1440 minute environment retention")).toBeTruthy();
   });
 
-  it("moves focus to the active task heading and announces route-backed task changes", async () => {
+  it("keeps focus on the task control and announces route-backed task changes", async () => {
     const user = userEvent.setup();
     const browserFetch = vi.fn((input: RequestInfo | URL) => {
       switch (String(input)) {
@@ -156,7 +157,9 @@ describe("CandidateHome route-backed task flow", () => {
     const currentHeading = await screen.findByRole("heading", { name: "Your current Exam Attempt" });
     expect(document.activeElement).not.toBe(currentHeading);
 
-    await user.click(screen.getByRole("button", { name: /^Schedule exam/ }));
+    const scheduleTaskButton = within(screen.getByRole("region", { name: "Candidate delivery tasks" }))
+      .getByRole("button", { name: /^Schedule exam/ });
+    await user.click(scheduleTaskButton);
     expect(window.location.href).toContain("/candidate?task=schedule&examId=exam-1");
     expect(routerPush).not.toHaveBeenCalled();
 
@@ -169,13 +172,15 @@ describe("CandidateHome route-backed task flow", () => {
     );
 
     const scheduleHeading = await screen.findByRole("heading", { name: "Choose an exam" });
-    await waitFor(() => expect(document.activeElement).toBe(scheduleHeading));
+    expect(document.activeElement).toBe(scheduleTaskButton);
+    expect(scheduleHeading.getAttribute("tabindex")).toBeNull();
+    expect(scheduleHeading.style.outline).toBe("");
     expect(screen.getByRole("status", { name: "Candidate route status" }).textContent).toContain(
       "Now showing Schedule exam.",
     );
   });
 
-  it("explains a scheduled current attempt and clears routed focus styling on blur", async () => {
+  it("explains a scheduled current attempt without making the destination heading focusable", async () => {
     const browserFetch = vi.fn((input: RequestInfo | URL) => input === "/api/candidate/exams"
       ? Promise.resolve(json({ exams: [{ id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, storageLeaseMinutes: 2880, openPeriodMinutes: 120, scoreRetrievalEnabled: true, individualSchedulingEnabled: true, availableCohortSessions: [] }], attempts: [{ id: "attempt-scheduled", examId: "exam-1", examTitle: "Helios Fundamentals", scheduledFor: "2026-10-23T16:00:00.000Z", status: "scheduled" }] }))
       : Promise.resolve(new Response(null, { status: 200 })));
@@ -193,15 +198,14 @@ describe("CandidateHome route-backed task flow", () => {
     // The existing render represents the route transition after the browser navigation.
     await act(async () => routed.rerender(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: "attempt-scheduled", examId: null }} />));
     const heading = await screen.findByRole("heading", { name: "Choose an exam" });
-    await waitFor(() => expect(document.activeElement).toBe(heading));
-    expect(heading.style.outline).not.toBe("");
-    expect(heading.style.outlineOffset).not.toBe("");
-    await act(async () => heading.blur());
+    expect(document.activeElement).toBe(scheduleButton);
+    expect(heading.getAttribute("tabindex")).toBeNull();
     expect(heading.style.outline).toBe("");
     expect(heading.style.outlineOffset).toBe("");
   });
 
   it("shows background refresh progress without stealing a focused task control", async () => {
+    vi.useFakeTimers();
     let releaseRefresh!: (response: Response) => void;
     let calls = 0;
     const browserFetch = vi.fn((input: RequestInfo | URL) => {
@@ -213,13 +217,19 @@ describe("CandidateHome route-backed task flow", () => {
     vi.stubGlobal("fetch", browserFetch);
     Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
     const rendered = render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: null, examId: null }} />);
-    const control = await screen.findByRole("button", { name: /Current Exam Attempt/ });
+    await act(async () => { await Promise.resolve(); });
+    const control = screen.getByRole("button", { name: /Current Exam Attempt/ });
     control.focus();
-    await act(async () => window.dispatchEvent(new Event("focus")));
-    expect(await screen.findByText("Refreshing candidate delivery status…")).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    const refreshStatus = screen.getByRole("status", { name: "Candidate delivery refresh status" });
+    expect(refreshStatus.textContent).toBe("Refreshing candidate delivery status…");
+    expect(refreshStatus.style.position).toBe("absolute");
+    expect(refreshStatus.style.width).toBe("1px");
+    expect(refreshStatus.style.height).toBe("1px");
+    expect(refreshStatus.style.overflow).toBe("hidden");
     expect(document.activeElement).toBe(control);
     await act(async () => releaseRefresh(json({ exams: [], attempts: [] })));
-    await waitFor(() => expect(screen.queryByText("Refreshing candidate delivery status…")).toBeNull());
+    expect(screen.queryByText("Refreshing candidate delivery status…")).toBeNull();
     expect(document.activeElement).toBe(control);
     expect(screen.getByRole("status", { name: "Candidate route status" }).textContent).toContain("Now showing Attempt history.");
     rendered.unmount();

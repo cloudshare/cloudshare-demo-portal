@@ -37,7 +37,6 @@ import {
   parseCandidateTaskSearchParams,
   resolveCandidateTaskRoute,
   type CandidateTaskRoute,
-  type CandidateTaskView,
 } from "./candidate-task-route";
 
 export {
@@ -61,10 +60,8 @@ type ScheduleFeedback = {
 export function CandidateHome({ email, initialRoute = { task: "current", attemptId: null, examId: null } }: CandidateHomeProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const activeTaskHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const hasLoadedResolvedRouteRef = useRef(false);
   const previousResolvedRouteKeyRef = useRef<string | null>(null);
-  const previousUrlRouteKeyRef = useRef<string | null>(null);
   const [dashboard, setDashboard] = useState<CandidateDashboardData>({
     exams: [],
     attempts: [],
@@ -79,7 +76,6 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [sessionExpired, setSessionExpired] = useState(false);
   const [announcedTaskMessage, setAnnouncedTaskMessage] = useState<string | null>(null);
-  const [focusedTaskHeading, setFocusedTaskHeading] = useState<CandidateTaskView | null>(null);
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
 
   const handleCandidateSessionExpired = useMemo(() => createPortalSessionExpiryRedirect({
@@ -343,16 +339,12 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       return;
     }
 
-    const urlRouteKey = searchParams.toString();
     if (!hasLoadedResolvedRouteRef.current) {
       hasLoadedResolvedRouteRef.current = true;
-      previousUrlRouteKeyRef.current = urlRouteKey;
       previousResolvedRouteKeyRef.current = resolvedRouteKey;
       return;
     }
 
-    const routeNavigated = previousUrlRouteKeyRef.current !== urlRouteKey;
-    previousUrlRouteKeyRef.current = urlRouteKey;
     const resolvedRouteChanged = previousResolvedRouteKeyRef.current !== resolvedRouteKey;
     if (!resolvedRouteChanged) {
       previousResolvedRouteKeyRef.current = resolvedRouteKey;
@@ -361,10 +353,6 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
 
     previousResolvedRouteKeyRef.current = resolvedRouteKey;
     setAnnouncedTaskMessage(buildCandidateTaskAnnouncement(resolvedRoute));
-    if (routeNavigated) {
-      setFocusedTaskHeading(resolvedRoute.activeTask);
-      activeTaskHeadingRef.current?.focus({ preventScroll: true });
-    }
   }, [loading, resolvedRoute, resolvedRouteKey, searchParams]);
 
   if (sessionExpired) {
@@ -400,7 +388,14 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       ) : null}
 
       <section style={{ display: "grid", gap: "1rem" }}>
-        {refreshing ? <p role="status" aria-live="polite" style={{ ...mutedPanelStyle, margin: 0 }}>Refreshing candidate delivery status…</p> : null}
+        <p
+          aria-label="Candidate delivery refresh status"
+          aria-live="polite"
+          role="status"
+          style={visuallyHiddenStyle}
+        >
+          {refreshing ? "Refreshing candidate delivery status…" : ""}
+        </p>
         <section style={taskShellStyle} aria-label="Candidate delivery tasks">
           <div style={sectionHeaderStyle}>
             <div>
@@ -460,17 +455,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                 <p style={eyebrowLabelStyle}>
                   {resolvedRoute.activeTask === "current" ? "Current task" : "Attempt history"}
                 </p>
-                <h2
-                  ref={activeTaskHeadingRef}
-                  onBlur={() => setFocusedTaskHeading(null)}
-                  tabIndex={-1}
-                  style={{
-                    ...sectionTitleStyle,
-                    ...(focusedTaskHeading === resolvedRoute.activeTask
-                      ? focusedTaskHeadingStyle
-                      : null),
-                  }}
-                >
+                <h2 style={sectionTitleStyle}>
                   {resolvedRoute.activeTask === "current"
                     ? "Your current Exam Attempt"
                     : "Completed and expired attempts"}
@@ -640,15 +625,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
             <div style={sectionHeaderStyle}>
               <div>
                 <p style={eyebrowLabelStyle}>Published Exams</p>
-                <h2
-                  ref={activeTaskHeadingRef}
-                  onBlur={() => setFocusedTaskHeading(null)}
-                  tabIndex={-1}
-                  style={{
-                    ...sectionTitleStyle,
-                    ...(focusedTaskHeading === "schedule" ? focusedTaskHeadingStyle : null),
-                  }}
-                >
+                <h2 style={sectionTitleStyle}>
                   Schedule your next session
                 </h2>
               </div>
@@ -662,15 +639,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
             <div style={sectionHeaderStyle}>
               <div>
                 <p style={eyebrowLabelStyle}>Scheduling task</p>
-                <h2
-                  ref={activeTaskHeadingRef}
-                  onBlur={() => setFocusedTaskHeading(null)}
-                  tabIndex={-1}
-                  style={{
-                    ...sectionTitleStyle,
-                    ...(focusedTaskHeading === "schedule" ? focusedTaskHeadingStyle : null),
-                  }}
-                >
+                <h2 style={sectionTitleStyle}>
                   Choose an exam
                 </h2>
               </div>
@@ -739,10 +708,16 @@ const sectionTitleStyle: CSSProperties = {
   color: "#0f172a",
 };
 
-const focusedTaskHeadingStyle: CSSProperties = {
-  outline: "3px solid #93c5fd",
-  outlineOffset: "4px",
-  borderRadius: "4px",
+const visuallyHiddenStyle: CSSProperties = {
+  position: "absolute",
+  width: "1px",
+  height: "1px",
+  padding: 0,
+  margin: "-1px",
+  overflow: "hidden",
+  clip: "rect(0, 0, 0, 0)",
+  whiteSpace: "nowrap",
+  border: 0,
 };
 
 const sectionCopyStyle: CSSProperties = {
