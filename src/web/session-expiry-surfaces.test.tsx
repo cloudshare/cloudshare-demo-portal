@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -21,7 +22,6 @@ vi.mock("./session-expiry", async (importOriginal) => {
     },
   };
 });
-
 import { AdminConsole } from "./admin-console";
 import { CandidateHome } from "./candidate-home";
 import { CandidateLabShell } from "./candidate-lab-shell";
@@ -152,6 +152,38 @@ describe("idle expiry on protected portal surfaces", () => {
     expect(router.refresh).not.toHaveBeenCalled();
   });
 
+  it("unmounts Candidate Lab after a status refresh 401 without retrying the refresh", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState({}, "", "/candidate/lab?examAttemptId=attempt-1");
+    let statusCalls = 0;
+    const fetchSpy = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/exam/status")) { statusCalls += 1; return statusCalls > 1 ? json({ error: "Session expired" }, 401) : json({ examAttemptId: "attempt-1", examTitle: "Foundations", status: "ready", timeLimitMinutes: 60, scheduledFor: null, openPeriodEndsAt: null, openPeriodClosed: false }); }
+      if (url.includes("/api/exam/suspend")) return json({ error: "Session expired" }, 401);
+      if (url.includes("/api/heartbeat")) return json({});
+      return json({ session: { expiresAtMs: Date.now() + 60_000 }, serverNowMs: Date.now() });
+    });
+    render(<CandidateLabShell email="candidate@helioscx.demo" examAttemptId="attempt-1" initialAttemptStatus="in_progress" />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(statusCalls).toBe(2);
+    expect(fetchSpy.mock.calls.filter(([input]) => String(input).includes("/api/exam/status"))).toHaveLength(2);
+    expect(router.replace).toHaveBeenCalledTimes(1);
+    expect(router.replace).toHaveBeenCalledWith("/login");
+    expect(screen.queryByText("Candidate lab")).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(fetchSpy.mock.calls.filter(([input]) => String(input).includes("/api/exam/status"))).toHaveLength(2);
+    expect(router.replace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Candidate lab")).toBeNull();
+    vi.useRealTimers();
+  });
+
   it("removes an idle Candidate Score nested surface", async () => {
     window.history.replaceState({}, "", "/candidate/score?examAttemptId=attempt-1");
     render(<ScoreDisplay email="candidate@helioscx.demo" examAttemptId="attempt-1" />);
@@ -173,5 +205,15 @@ describe("idle expiry on protected portal surfaces", () => {
     expect(screen.queryByText(title)).toBeNull();
     expect(router.replace).toHaveBeenCalledWith("/login");
     expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("preserves the exact safe Candidate task route once when expiry unmounts the shell", async () => {
+    window.history.replaceState({}, "", "/candidate?task=current&attemptId=attempt-7&examId=exam-9");
+    render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: "attempt-7", examId: "exam-9" }} />);
+    expect(screen.getByText("Certalis Candidate Portal")).not.toBeNull();
+    await expireLatestWatchdog();
+    expect(screen.queryByText("Certalis Candidate Portal")).toBeNull();
+    expect(router.replace).toHaveBeenCalledTimes(1);
+    expect(router.replace).toHaveBeenCalledWith("/login?returnTo=%2Fcandidate%3Ftask%3Dcurrent%26attemptId%3Dattempt-7%26examId%3Dexam-9");
   });
 });

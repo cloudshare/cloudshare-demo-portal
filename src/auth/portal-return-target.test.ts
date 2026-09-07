@@ -14,6 +14,8 @@ describe("portal expired-session return targets", () => {
     expect(getExpiredPortalLoginPath(adminAudit)).toBe("/login?returnTo=%2Fadmin%3Ftab%3Dsupport%26view%3Daudit");
     expect(getExpiredPortalLoginPath(salesHistory)).toBe("/login?returnTo=%2Fsales%3Ftab%3Dsessions%26queue%3Dhistory%26sort%3Dname_asc%26offset%3D20");
     expect(getExpiredPortalLoginPath("/candidate")).toBe("/login?returnTo=%2Fcandidate");
+    expect(getExpiredPortalLoginPath("/candidate?task=current&attemptId=attempt-1&examId=exam-1")).toBe("/login?returnTo=%2Fcandidate%3Ftask%3Dcurrent%26attemptId%3Dattempt-1%26examId%3Dexam-1");
+    expect(getExpiredPortalLoginPath("/candidate?task=schedule&examId=exam-1")).toBe("/login?returnTo=%2Fcandidate%3Ftask%3Dschedule%26examId%3Dexam-1");
     expect(getExpiredPortalLoginPath("/sales-trial")).toBe("/sales-trial/login?returnTo=%2Fsales-trial");
     expect(getExpiredPortalLoginPath("/admin?tab=exams&delivery=cohort")).toBe("/login?returnTo=%2Fadmin%3Ftab%3Dexams%26delivery%3Dcohort");
     expect(getExpiredPortalLoginPath("/admin?tab=support&delivery=cohort")).toBe("/login?returnTo=%2Fadmin%3Ftab%3Dsupport%26delivery%3Dcohort");
@@ -28,6 +30,13 @@ describe("portal expired-session return targets", () => {
       "/login",
       "/enter",
       "/candidate/lab?examAttemptId=attempt-1",
+      "/candidate?task=history&attemptId=attempt-1&attemptId=attempt-2",
+      "/candidate?task=schedule&attemptId=attempt-1",
+      "/candidate?task=current&examId=exam-1",
+      "/candidate?task=history&examId=exam-1",
+      "/candidate?task=current&attemptId=bad%20id",
+      "/candidate?task=current&attemptId=-attempt",
+      "/candidate?task=current&attemptId=_attempt",
       "/admin?tab=support&correlationId=protected",
       "/sales-trial?accessLink=secret",
       "/sales?tab=records&accountId=customer-2",

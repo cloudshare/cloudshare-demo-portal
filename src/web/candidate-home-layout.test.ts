@@ -4,7 +4,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   CandidateExamCard,
   CandidateCohortSessionOptions,
-  CandidateAttemptStatusFilterButtons,
   getCandidateExamCardImmediateActionReason,
   getTakeExamAvailabilitySummary,
   PublishedExamCardHeader,
@@ -96,30 +95,6 @@ describe("candidate home layout", () => {
     expect(html.indexOf("20160 minute open window")).toBeLessThan(
       html.indexOf("This deliberately long description"),
     );
-  });
-
-  it("renders candidate attempt status filters with live and history counts", () => {
-    const html = renderToStaticMarkup(
-      createElement(CandidateAttemptStatusFilterButtons, {
-        filters: [
-          { filter: "live", label: "Live", count: 2 },
-          { filter: "scheduled", label: "Scheduled / ready", count: 1 },
-          { filter: "in_progress", label: "In progress", count: 1 },
-          { filter: "suspended", label: "Suspended", count: 0 },
-          { filter: "completed", label: "Completed", count: 3 },
-          { filter: "expired", label: "Expired", count: 1 },
-        ],
-        activeFilter: "live",
-        onFilterChange: () => undefined,
-      }),
-    );
-
-    expect(html).toContain("aria-pressed=\"true\"");
-    expect(html).toContain("Live");
-    expect(html).toContain("Scheduled / ready");
-    expect(html).toContain("Completed");
-    expect(html).toContain("Expired");
-    expect(html).toContain(">3<");
   });
 
   it("renders each Exam as a candidate-facing action card with details on the back", () => {

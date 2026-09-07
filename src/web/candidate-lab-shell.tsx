@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LabLauncher } from "./lab-launcher";
 import { getCandidateLabPresentation } from "./candidate-lab-state";
@@ -15,6 +16,7 @@ import { cardStyle, mutedPanelStyle } from "./card-styles";
 import { accountLogoutButtonStyle, disabledButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
 import { PortalPageHeader } from "./portal-page-header";
+import { buildCandidateTaskHref, getCandidateTaskForAttemptStatus } from "./candidate-task-route";
 import { createPortalSessionExpiryRedirect } from "./portal-session-redirect";
 import { startPortalSessionWatchdog } from "./session-expiry";
 
@@ -43,9 +45,17 @@ export function CandidateLabShell({
       router.replace(path);
     },
   }), [router]);
-  useEffect(() => { const watchdog = startPortalSessionWatchdog({ fetchImpl: fetch, onExpired: handleSessionExpired }); void watchdog.checkNow(); return () => watchdog.stop(); }, [handleSessionExpired]);
 
   useEffect(() => {
+    const watchdog = startPortalSessionWatchdog({ fetchImpl: fetch, onExpired: handleSessionExpired });
+    void watchdog.checkNow();
+    return () => watchdog.stop();
+  }, [handleSessionExpired]);
+
+  useEffect(() => {
+    if (sessionExpired) {
+      return;
+    }
     let cancelled = false;
     let refreshInFlight = false;
 
@@ -100,7 +110,7 @@ export function CandidateLabShell({
       window.removeEventListener("focus", refreshIfVisible);
       document.removeEventListener("visibilitychange", refreshIfVisible);
     };
-  }, [examAttemptId, handleSessionExpired]);
+  }, [examAttemptId, handleSessionExpired, sessionExpired]);
 
   const presentation = labStatus ? getCandidateLabPresentation({
     status: labStatus.status ?? initialAttemptStatus,
@@ -132,7 +142,15 @@ export function CandidateLabShell({
           <div style={{ display: "grid", gap: "0.75rem" }}>
             <button
               type="button"
-              onClick={() => router.push("/candidate")}
+              onClick={() =>
+                router.push(
+                  buildCandidateTaskHref({
+                    task: getCandidateTaskForAttemptStatus(labStatus?.status ?? initialAttemptStatus, labStatus?.openPeriodClosed === true),
+                    attemptId: examAttemptId,
+                    examId: null,
+                  }),
+                )
+              }
               style={secondaryButtonStyle}
             >
               Back to Candidate Home
