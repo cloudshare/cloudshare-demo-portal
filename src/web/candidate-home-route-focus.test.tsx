@@ -33,6 +33,7 @@ describe("CandidateHome route-backed task flow", () => {
 
   beforeEach(() => {
     process.env.TZ = "Europe/London";
+    window.history.replaceState(null, "", "/candidate?task=current&attemptId=attempt-ready");
     currentSearchParams = new URLSearchParams("task=current&attemptId=attempt-ready");
     routerPush.mockReset();
     routerReplace.mockReset();
@@ -152,11 +153,12 @@ describe("CandidateHome route-backed task flow", () => {
       />,
     );
 
-    const currentHeading = await screen.findByRole("heading", { name: "Your current ExamAttempt" });
+    const currentHeading = await screen.findByRole("heading", { name: "Your current Exam Attempt" });
     expect(document.activeElement).not.toBe(currentHeading);
 
     await user.click(screen.getByRole("button", { name: /^Schedule exam/ }));
-    expect(routerPush).toHaveBeenCalledWith("/candidate?task=schedule&examId=exam-1");
+    expect(window.location.href).toContain("/candidate?task=schedule&examId=exam-1");
+    expect(routerPush).not.toHaveBeenCalled();
 
     currentSearchParams = new URLSearchParams("task=schedule");
     rendered.rerender(
@@ -185,7 +187,8 @@ describe("CandidateHome route-backed task flow", () => {
     const user = userEvent.setup();
     const scheduleButton = await screen.findByRole("button", { name: /^Schedule exam/ });
     await user.click(scheduleButton);
-    expect(routerPush).toHaveBeenCalledWith("/candidate?task=schedule&examId=exam-1");
+    expect(window.location.href).toContain("/candidate?task=schedule&examId=exam-1");
+    expect(routerPush).not.toHaveBeenCalled();
     currentSearchParams = new URLSearchParams("task=schedule");
     // The existing render represents the route transition after the browser navigation.
     await act(async () => routed.rerender(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: "attempt-scheduled", examId: null }} />));
@@ -210,7 +213,7 @@ describe("CandidateHome route-backed task flow", () => {
     vi.stubGlobal("fetch", browserFetch);
     Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
     const rendered = render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "current", attemptId: null, examId: null }} />);
-    const control = await screen.findByRole("button", { name: /Current ExamAttempt/ });
+    const control = await screen.findByRole("button", { name: /Current Exam Attempt/ });
     control.focus();
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(await screen.findByText("Refreshing candidate delivery status…")).toBeTruthy();
@@ -220,6 +223,47 @@ describe("CandidateHome route-backed task flow", () => {
     expect(document.activeElement).toBe(control);
     expect(screen.getByRole("status", { name: "Candidate route status" }).textContent).toContain("Now showing Attempt history.");
     rendered.unmount();
+  });
+
+  it("changes an empty task route without a dashboard reload and clears its fallback warning on Schedule", async () => {
+    const user = userEvent.setup();
+    const browserFetch = vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"
+      ? Promise.resolve(json({
+        exams: [{ id: "exam-1", title: "Foundations", description: "", timeLimitMinutes: 60, openPeriodMinutes: 60, storageLeaseMinutes: 60, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] }],
+        attempts: [],
+      }))
+      : Promise.resolve(new Response(null, { status: 200 })));
+    vi.stubGlobal("fetch", browserFetch);
+    Object.defineProperty(window, "fetch", { configurable: true, value: browserFetch, writable: true });
+    currentSearchParams = new URLSearchParams("task=schedule&examId=exam-1");
+    const rendered = render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "schedule", attemptId: null, examId: "exam-1" }} />);
+    await screen.findByRole("heading", { name: "Choose an exam" });
+
+    await user.click(screen.getByRole("button", { name: /^Current Exam Attempt/ }));
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(window.location.href).toContain("task=current");
+    currentSearchParams = new URLSearchParams("task=current");
+    rendered.rerender(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "schedule", attemptId: null, examId: "exam-1" }} />);
+    expect(await screen.findByText(/No live Exam Attempt is available/)).toBeTruthy();
+
+    await user.click(within(screen.getByRole("region", { name: "Candidate delivery tasks" })).getByRole("button", { name: /^Schedule exam/ }));
+    currentSearchParams = new URLSearchParams("task=schedule&examId=exam-1");
+    rendered.rerender(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "schedule", attemptId: null, examId: "exam-1" }} />);
+    await waitFor(() => expect(screen.queryByText(/No live Exam Attempt is available/)).toBeNull());
+    expect(browserFetch.mock.calls.filter(([input]) => String(input) === "/api/candidate/exams")).toHaveLength(1);
+    expect(screen.queryByText("Loading candidate dashboard...")).toBeNull();
+  });
+
+  it("uses candidate-facing Exam Attempt copy instead of the domain identifier", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"
+      ? Promise.resolve(json({ exams: [], attempts: [] }))
+      : Promise.resolve(new Response(null, { status: 200 }))));
+    currentSearchParams = new URLSearchParams("task=history");
+    const { container } = render(<CandidateHome email="candidate@helioscx.demo" initialRoute={{ task: "history", attemptId: null, examId: null }} />);
+
+    await screen.findByRole("button", { name: /^Current Exam Attempt/ });
+    expect(container.textContent).not.toContain("ExamAttempt");
+    expect(container.textContent).toContain("No completed Exam Attempt history is available yet.");
   });
 
   it("uses the detailed exam cards as the only Schedule selection surface", async () => {

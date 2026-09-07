@@ -35,7 +35,7 @@ export interface ResolvedCandidateTaskRoute {
 }
 
 const CANDIDATE_TASK_LABELS: Record<CandidateTaskView, string> = {
-  current: "Current ExamAttempt",
+  current: "Current Exam Attempt",
   schedule: "Schedule exam",
   history: "Attempt history",
 };
@@ -74,8 +74,8 @@ export function resolveCandidateTaskRoute(
         dashboard,
         nowMs,
         dashboard.exams.length > 0
-          ? "No live ExamAttempt is available right now. Choose another published Exam."
-          : "No live ExamAttempt is available right now, and no published Exams are available yet.",
+          ? "No live Exam Attempt is available right now. Choose another published Exam."
+          : "No live Exam Attempt is available right now, and no published Exams are available yet.",
         tasks,
       );
     }
@@ -92,7 +92,7 @@ export function resolveCandidateTaskRoute(
       selectedExam: selectExamById(dashboard.exams, route.examId),
       notice:
         route.attemptId && !selectAttemptById(liveAttempts, route.attemptId)
-          ? "The requested ExamAttempt is no longer available in this live task view."
+          ? "The requested Exam Attempt is no longer available in this live task view."
           : null,
       tasks,
     };
@@ -104,8 +104,8 @@ export function resolveCandidateTaskRoute(
         dashboard,
         nowMs,
         dashboard.exams.length > 0
-          ? "No completed ExamAttempt history is available yet. Choose another published Exam."
-          : "No completed ExamAttempt history is available yet.",
+          ? "No completed Exam Attempt history is available yet. Choose another published Exam."
+          : "No completed Exam Attempt history is available yet.",
         tasks,
       );
     }
@@ -122,7 +122,7 @@ export function resolveCandidateTaskRoute(
       selectedExam: selectExamById(dashboard.exams, route.examId),
       notice:
         route.attemptId && !selectAttemptById(historyAttempts, route.attemptId)
-          ? "The requested ExamAttempt is no longer available in this history view."
+          ? "The requested Exam Attempt is no longer available in this history view."
           : null,
       tasks,
     };

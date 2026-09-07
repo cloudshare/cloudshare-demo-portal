@@ -287,7 +287,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
   }
 
   function navigateToCandidateTask(route: CandidateTaskRoute) {
-    router.push(buildCandidateTaskHref(route));
+    window.history.pushState(null, "", buildCandidateTaskHref(route));
   }
 
   function openLabConsole(attemptId: string, attemptStatus: string) {
@@ -376,7 +376,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
       <PortalPageHeader
         eyebrow="Certalis Candidate Portal"
         title="Candidate delivery"
-        description="Move between your current ExamAttempt, the next published Exam you can schedule, and completed history without losing your place."
+        description="Move between your current Exam Attempt, the next published Exam you can schedule, and completed history without losing your place."
         email={email}
         actions={
           <button
@@ -472,13 +472,13 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                   }}
                 >
                   {resolvedRoute.activeTask === "current"
-                    ? "Your current ExamAttempt"
+                    ? "Your current Exam Attempt"
                     : "Completed and expired attempts"}
                 </h2>
               </div>
               <p style={sectionCopyStyle}>
                 {resolvedRoute.activeTask === "current"
-                  ? "The next valid action stays tied to the selected ExamAttempt."
+                  ? "The next valid action stays tied to the selected Exam Attempt."
                   : "Review durable result history without mixing it into the live delivery task."}
               </p>
             </div>
@@ -614,7 +614,7 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
                     <p style={mutedTaskCopyStyle}>
                       {resolvedRoute.activeTask === "current"
                         ? selectedAttempt.status === "scheduled"
-                          ? "Your ExamAttempt is scheduled. We will enable entry when the server confirms the access window is open."
+                          ? "Your Exam Attempt is scheduled. We will enable entry when the server confirms the access window is open."
                           : "No live action is available for this route state."
                         : "This attempt remains here as durable history."}
                     </p>
@@ -629,8 +629,8 @@ export function CandidateHome({ email, initialRoute = { task: "current", attempt
             ) : (
               <p style={{ ...mutedPanelStyle, margin: 0 }}>
                 {resolvedRoute.activeTask === "current"
-                  ? "No live ExamAttempt is available right now."
-                  : "No completed ExamAttempt history is available yet."}
+                  ? "No live Exam Attempt is available right now."
+                  : "No completed Exam Attempt history is available yet."}
               </p>
             )}
           </section>
@@ -998,8 +998,8 @@ function buildCandidateTaskAnnouncement(
   switch (resolvedRoute.activeTask) {
     case "current":
       return resolvedRoute.selectedAttempt
-        ? `Now showing Current ExamAttempt. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
-        : "Now showing Current ExamAttempt.";
+        ? `Now showing Current Exam Attempt. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
+        : "Now showing Current Exam Attempt.";
     case "history":
       return resolvedRoute.selectedAttempt
         ? `Now showing Attempt history. ${resolvedRoute.selectedAttempt.examTitle} is selected.`

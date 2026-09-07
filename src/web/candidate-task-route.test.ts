@@ -87,7 +87,7 @@ describe("candidate task route", () => {
     expect(resolved.selectedAttempt?.attemptId).toBe("attempt-ready");
     expect(resolved.notice).toBeNull();
     expect(resolved.tasks.map((task) => task.label)).toEqual([
-      "Current ExamAttempt",
+      "Current Exam Attempt",
       "Schedule exam",
       "Attempt history",
     ]);
@@ -103,7 +103,7 @@ describe("candidate task route", () => {
     expect(resolved.activeTask).toBe("current");
     expect(resolved.selectedAttempt?.attemptId).toBe("attempt-ready");
     expect(resolved.notice).toBe(
-      "The requested ExamAttempt is no longer available in this live task view.",
+      "The requested Exam Attempt is no longer available in this live task view.",
     );
   });
 
@@ -136,7 +136,7 @@ describe("candidate task route", () => {
 
     expect(resolved.activeTask).toBe("schedule");
     expect(resolved.selectedExam?.id).toBe("exam-1");
-    expect(resolved.notice).toBe("No live ExamAttempt is available right now. Choose another published Exam.");
+    expect(resolved.notice).toBe("No live Exam Attempt is available right now. Choose another published Exam.");
   });
 
   it("fails safely when a requested published Exam is unavailable", () => {
@@ -231,7 +231,7 @@ describe("candidate task route", () => {
       { task: "current", attemptId: null, examId: null },
     );
     expect(resolved.activeTask).toBe("history");
-    expect(resolved.notice).toBe("No live ExamAttempt is available right now, and no published Exams are available yet.");
+    expect(resolved.notice).toBe("No live Exam Attempt is available right now, and no published Exams are available yet.");
     expect(resolved.notice).not.toContain("Choose another published Exam");
   });
 
