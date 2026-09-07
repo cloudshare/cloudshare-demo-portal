@@ -3,11 +3,12 @@ import {
   type CandidateScheduledAttemptView,
 } from "./candidate-home-state";
 import type { CandidateDashboardData } from "./candidate-scheduling";
-import { isValidCandidateIdentifier, isValidCandidateRouteShape } from "../auth/candidate-route-shape";
+import { isCandidateTaskView, isValidCandidateIdentifier, isValidCandidateRouteShape } from "../auth/candidate-route-shape";
+import type { CandidateTaskView } from "../auth/candidate-route-shape";
 export { isValidCandidateIdentifier } from "../auth/candidate-route-shape";
+export type { CandidateTaskView } from "../auth/candidate-route-shape";
 import { isCandidateLabHistoryPresentation } from "./candidate-lab-state";
 
-export type CandidateTaskView = "current" | "schedule" | "history";
 type CandidateAttemptStatus = CandidateDashboardData["attempts"][number]["status"];
 
 export interface CandidateTaskRoute {
@@ -294,10 +295,6 @@ function getDefaultCandidateTask(
     return "history";
   }
   return "schedule";
-}
-
-function isCandidateTaskView(value: string | null | undefined): value is CandidateTaskView {
-  return value === "current" || value === "schedule" || value === "history";
 }
 
 function normalizeCandidateRouteId(value: string | null | undefined): string | null {

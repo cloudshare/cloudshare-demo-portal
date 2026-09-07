@@ -1,5 +1,5 @@
 import type { PortalCustomerWorkspace, PortalUserRole } from "./portal-stores";
-import { isValidCandidateIdentifier, isValidCandidateRouteShape } from "./candidate-route-shape";
+import { isCandidateTaskView, isValidCandidateIdentifier, isValidCandidateRouteShape } from "./candidate-route-shape";
 
 type PortalReturnScope = "certification_admin" | "sales_admin" | "candidate" | "sales_trial";
 
@@ -44,7 +44,7 @@ function hasValidRouteShape(scope: PortalReturnScope, searchParams: URLSearchPar
 
   if (scope === "candidate") {
     const task = searchParams.get("task");
-    if (!task || !["current", "schedule", "history"].includes(task)) return searchParams.size === 0;
+    if (!isCandidateTaskView(task)) return searchParams.size === 0;
     if (!hasOnlyQueryKeys(searchParams, ["task", "attemptId", "examId"])) return false;
     for (const key of ["attemptId", "examId"]) {
       const value = searchParams.get(key);
