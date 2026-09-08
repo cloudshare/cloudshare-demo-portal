@@ -14,6 +14,8 @@ export interface LocalSalesOauthQaConfig {
   readonly enabled: boolean;
   readonly customerId: string;
   readonly projectId: string;
+  readonly opportunityId: string;
+  readonly workflowSource: "sales-demo-sessions";
 }
 
 const firedCustomers = new Set<string>();
@@ -25,13 +27,14 @@ export function withLocalSalesOauthPrewriteFailureQaFixture(
   fired: Set<string> = firedCustomers,
   qaConfig?: LocalSalesOauthQaConfig,
 ): HttpClient {
-  const enabled = qaConfig?.enabled === true ||
-    env.NODE_ENV === "development" &&
+  const enabled = env.NODE_ENV === "development" && qaConfig?.enabled === true &&
+    qaConfig.workflowSource === "sales-demo-sessions" &&
     env.PORTAL_LOCAL_QA_SCENARIO === LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO &&
     Boolean(customerId) &&
-    env.PORTAL_LOCAL_QA_SALES_CUSTOMER_ID?.trim() === customerId;
-  const projectId = qaConfig?.projectId || env.PORTAL_LOCAL_QA_SALES_PROJECT_ID?.trim();
-  const allowedCustomerId = qaConfig?.customerId || env.PORTAL_LOCAL_QA_SALES_CUSTOMER_ID?.trim();
+    env.PORTAL_LOCAL_QA_SALES_CUSTOMER_ID?.trim() === customerId &&
+    Boolean(qaConfig.customerId && qaConfig.projectId && qaConfig.opportunityId);
+  const projectId = qaConfig?.projectId;
+  const allowedCustomerId = qaConfig?.customerId;
 
   return {
     async send(request): Promise<HttpResponse> {
@@ -47,6 +50,15 @@ export function withLocalSalesOauthPrewriteFailureQaFixture(
           headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO },
           body: JSON.stringify({ error: "Local QA fixture: OAuth unavailable before Sales provisioning." }),
         };
+      }
+      if (enabled && customerId === allowedCustomerId && isOauthToken) {
+        return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ access_token: "local-qa-token", token_type: "Bearer", expires_in: 3600 }) };
+      }
+      if (enabled && customerId === allowedCustomerId && request.method === "POST" && url.pathname.endsWith("/sales")) {
+        let opportunityId = "";
+        try { opportunityId = String((JSON.parse(request.body ?? "{}") as { opportunity?: unknown }).opportunity ?? ""); } catch { return http.send(request); }
+        if (opportunityId !== qaConfig?.opportunityId) return http.send(request);
+        return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ id: "local-qa-sales-experience", status: "notStarted" }) };
       }
       return http.send(request);
     },

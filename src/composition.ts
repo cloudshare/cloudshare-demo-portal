@@ -13,7 +13,7 @@ import {
   type PortalSessionStore,
 } from "@/auth";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
-import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers, type CloudShareClient, type CloudShareMode } from "@/integrations/cloudshare";
+import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers, type CloudShareClient, type CloudShareMode, type LocalSalesOauthQaConfig } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import {
   createCloudShareEnvironmentSimulator,
@@ -136,7 +136,7 @@ export function createCloudShareClientFactory(input: {
   readonly createIntegration?: typeof createCloudShareIntegrationForConnection;
   readonly decorateClient?: (client: CloudShareClient) => CloudShareClient;
   readonly newCorrelationId?: () => string;
-  readonly localSalesOauthQa?: { readonly enabled: boolean; readonly customerId: string; readonly projectId: string };
+  readonly localSalesOauthQa?: LocalSalesOauthQaConfig;
 }): CloudShareClientFactory {
   const createIntegration = input.createIntegration ?? createCloudShareIntegrationForConnection;
   const decorateClient = input.decorateClient ?? withLocalCohortRateLimitQaFixture;
@@ -162,7 +162,9 @@ export function createCloudShareClientFactory(input: {
           options.workflow.source === "sales-demo-sessions" &&
           (typeof options.workflow.subject === "function"
             ? options.workflow.subject().type
-            : options.workflow.subject.type) === "sales_demo_session",
+            : options.workflow.subject.type) === "sales_demo_session" &&
+          options.workflow.externalIds?.opportunityId === input.localSalesOauthQa?.opportunityId &&
+          options.workflow.externalIds?.projectId === input.localSalesOauthQa?.projectId,
         localSalesOauthQa: input.localSalesOauthQa,
         observer: {
           onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest, defaultObserver.onRequest),
@@ -504,7 +506,7 @@ export function getServices(): Services {
     mode: config.runtime.mode,
     trace: traceCloudShare,
     localSalesOauthQa: config.runtime.localQa.scenario === "sales-oauth-prewrite-503"
-      ? { enabled: true, customerId: config.runtime.localQa.salesCustomerId, projectId: config.runtime.localQa.salesProjectId }
+      ? { enabled: true, customerId: config.runtime.localQa.salesCustomerId, projectId: config.runtime.localQa.salesProjectId, opportunityId: config.runtime.localQa.salesOpportunityId, workflowSource: config.runtime.localQa.salesWorkflowSource }
       : undefined,
   });
 

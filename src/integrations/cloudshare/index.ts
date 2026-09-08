@@ -9,6 +9,7 @@ import { createFixtureHttpClient } from "./fixtures";
 import { bundledFixtures } from "./fixtures/index";
 import { createV4TokenProvider, type V4TokenAcquisitionEvent } from "./v4-auth";
 import { withLocalSalesOauthPrewriteFailureQaFixture, type LocalSalesOauthQaConfig } from "./local-sales-oauth-prewrite-qa-fixture";
+export type { LocalSalesOauthQaConfig } from "./local-sales-oauth-prewrite-qa-fixture";
 
 export type { CloudShareRequestObservation, CloudShareRequestObserver } from "./client";
 export type { V4TokenAcquisitionEvent } from "./v4-auth";

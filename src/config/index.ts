@@ -56,6 +56,16 @@ const envSchema = z.object({
 
   // Persistence
   DATABASE_URL: z.string().min(1),
+}).superRefine((env, ctx) => {
+  if (env.PORTAL_LOCAL_QA_SCENARIO === "sales-oauth-prewrite-503") {
+    for (const [key, value] of [
+      ["PORTAL_LOCAL_QA_SALES_CUSTOMER_ID", env.PORTAL_LOCAL_QA_SALES_CUSTOMER_ID],
+      ["PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID", env.PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID],
+      ["PORTAL_LOCAL_QA_SALES_PROJECT_ID", env.PORTAL_LOCAL_QA_SALES_PROJECT_ID],
+    ] as const) {
+      if (!value.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: "required for sales OAuth QA fixture" });
+    }
+  }
 });
 
 export type PortalMode = z.infer<typeof envSchema>["PORTAL_MODE"];
@@ -107,6 +117,7 @@ export interface Config {
       readonly salesCustomerId: string;
       readonly salesOpportunityId: string;
       readonly salesProjectId: string;
+      readonly salesWorkflowSource: "sales-demo-sessions";
     };
   };
   readonly seed: {
@@ -297,6 +308,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
         salesCustomerId: e.PORTAL_LOCAL_QA_SALES_CUSTOMER_ID,
         salesOpportunityId: e.PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID,
         salesProjectId: e.PORTAL_LOCAL_QA_SALES_PROJECT_ID,
+        salesWorkflowSource: "sales-demo-sessions",
       },
     },
     seed: resolveSeedConfig(e),

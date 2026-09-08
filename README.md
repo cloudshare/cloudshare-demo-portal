@@ -147,6 +147,10 @@ contacts CloudShare or mutates a provider asset. The fixture is development-only
 Customer, and has no effect on another Customer, Opportunity, Project, workflow, or production build.
 Remove the variables and restart the server to disable it.
 
+For the Sales OAuth safe-retry browser fixture, use the same three IDs with
+`PORTAL_LOCAL_QA_SCENARIO=sales-oauth-prewrite-503`. It is only enabled when the typed
+configuration contains all three IDs and the server is running in development mode.
+
 `npm test` uses a dedicated SQLite database at `prisma/test.db`. It does not run against the
 local development `DATABASE_URL` from `.env`, so running the suite should not delete QA data from
 the dev portal database.

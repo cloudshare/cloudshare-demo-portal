@@ -130,7 +130,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       return reservationPersistenceFailure(deps, request, reservation, correlationId, now, error, clearedAmbiguousReservation);
     }
   }
-  const workflowScope = certificationCloudShareWorkflow({ actor: request.actor, customerId: request.customerId, subject: { type: "sales_demo_session", id }, correlationId, source: "sales-demo-sessions" });
+  const workflowScope = certificationCloudShareWorkflow({ actor: request.actor, customerId: request.customerId, subject: { type: "sales_demo_session", id }, correlationId, source: "sales-demo-sessions", externalIds: { opportunityId: opportunity.id, projectId: item.project.id } });
   const delivery = deps.deliveryFactory?.forConnection(connection, workflowScope) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, workflowScope));
   let createDispatched = false;
   try {
