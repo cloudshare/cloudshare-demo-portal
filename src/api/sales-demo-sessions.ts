@@ -187,11 +187,12 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       ]);
       return response(502, { error: AMBIGUOUS_CREATE_REASON, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("cloudshare_v4_post_sales_ambiguous", AMBIGUOUS_CREATE_REASON, id) });
     }
-    // Only an authentication failure proven to happen before the Sales POST is
-    // eligible for reservation cleanup. Validation and member/item read failures
-    // are ordinary pre-dispatch errors and retain the existing reservation
-    // behavior, including their established response/status contract.
-    if (preWriteAuthFailure && deps.sessions.discardReservation && deps.sessions.findById) {
+    // Every proven pre-dispatch failure must release the reservation. Only the
+    // OAuth case may advertise a safe retry: it is the one failure for which
+    // the provider exchange is explicitly proven to have happened before the
+    // Sales POST. Missing cleanup/readback is therefore fail-closed.
+    const provenPreDispatchFailure = !createDispatched && (preWriteAuthFailure || validationFailure || memberSelectionFailure || memberReadFailure || itemValidationFailure || itemReadFailure);
+    if (provenPreDispatchFailure) {
       const reservationCleared = await clearReservedBeforeDispatch(deps.sessions, reservation);
       if (!reservationCleared) {
         const reason = "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
@@ -202,6 +203,9 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
         ]);
         return response(503, { error: reason, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("reservation_cleanup_unconfirmed", reason, reservation.id) });
       }
+    }
+    if (preWriteAuthFailure) {
+      // Keep the safe retry contract scoped to this proven pre-write path.
     }
     if (itemValidationFailure || itemReadFailure) {
       await recordResourceReads(deps, request, correlationId, item.id, item.project.id, error.completedReads, "failure");
@@ -216,7 +220,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       deps.audit?.write({ id: randomUUID(), occurredAt: (deps.now ?? (() => new Date()))(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "failure", correlationId, details: { externalId, opportunityId: opportunity.id, itemId: item.id, failureMode, integrationSurface }, error: error instanceof Error ? error.message : "Unknown CloudShare failure" }),
     ]);
     const errorMessage = memberReadFailure ? "CloudShare could not retrieve active Project members. Review support diagnostics before retrying." : memberSelectionFailure ? "The selected Sales Pro is no longer an active Project member. Select a current Sales Pro and try again." : validationFailure ? "CloudShare rejected the selected Sales Pro. Review support diagnostics." : itemValidationFailure ? "This Item no longer matches its CloudShare resources. Refresh the Item before provisioning." : itemReadFailure ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying." : preWriteAuthFailure ? "CloudShare authentication failed before creation. Retry the Sales Enablement Session." : "CloudShare could not create the Sales Experience. Review support diagnostics.";
-    return response(memberSelectionFailure || validationFailure || itemValidationFailure ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, creationOutcome: safeCreationOutcome(errorMessage) });
+    return response(memberSelectionFailure || validationFailure || itemValidationFailure ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, ...(preWriteAuthFailure ? { creationOutcome: safeCreationOutcome(errorMessage) } : {}) });
   }
 }
 
