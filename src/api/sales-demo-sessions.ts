@@ -34,7 +34,7 @@ export interface SalesDemoSessionDeps {
   readonly items: Pick<ItemRepository, "findById">;
   readonly sessions: SalesDemoSessionRepository;
   readonly connections: Pick<CloudShareConnectionRepository, "findByCustomerId">;
-  readonly deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): SalesDelivery };
+  readonly deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>, options?: Parameters<CloudShareClientFactory["forConnection"]>[1]): SalesDelivery };
   readonly cloudshare?: Pick<CloudShareClientFactory, "forConnection">;
   readonly itemProvisioningValidator?: SalesItemProvisioningValidator;
   readonly itemProvisioningValidatorFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): SalesItemProvisioningValidator };
@@ -130,7 +130,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     }
   }
   const workflowScope = certificationCloudShareWorkflow({ actor: request.actor, customerId: request.customerId, subject: { type: "sales_demo_session", id }, correlationId, source: "sales-demo-sessions" });
-  const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, workflowScope));
+  const delivery = deps.deliveryFactory?.forConnection(connection, workflowScope) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, workflowScope));
   let createDispatched = false;
   try {
     const validator = deps.itemProvisioningValidator ?? deps.itemProvisioningValidatorFactory?.forConnection(connection);
