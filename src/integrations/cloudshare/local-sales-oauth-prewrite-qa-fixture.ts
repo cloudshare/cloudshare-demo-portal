@@ -42,6 +42,18 @@ export function withLocalSalesOauthPrewriteFailureQaFixture(
       if (enabled && projectId && customerId === allowedCustomerId && request.method === "GET" && url.pathname === "/api/v3/users" && url.searchParams.get("projectUsers") === "true" && url.searchParams.get("projectId") === projectId) {
         return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ rows: [{ email: "qa-sales-admin@certalis.test", displayName: "QA Sales Admin" }] }) };
       }
+      if (enabled && customerId === allowedCustomerId && request.method === "GET" && url.pathname === `/api/v3/projects/${projectId}/blueprints`) {
+        return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify([{ id: "qa-blueprint-429", name: "QA Blueprint" }]) };
+      }
+      if (enabled && customerId === allowedCustomerId && request.method === "GET" && url.pathname === `/api/v3/projects/${projectId}/blueprints/qa-blueprint-429`) {
+        return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ id: "qa-blueprint-429", name: "QA Blueprint", createFromVersions: [{ id: "qa-snapshot-429", name: "QA Snapshot", isDefault: true, regions: ["qa-region-429"] }] }) };
+      }
+      if (enabled && customerId === allowedCustomerId && request.method === "GET" && url.pathname === `/api/v3/projects/${projectId}/policies`) {
+        return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify([{ id: "qa-policy-429", name: "QA Policy" }]) };
+      }
+      if (enabled && customerId === allowedCustomerId && request.method === "GET" && url.pathname === `/api/v3/projects/${projectId}/policies/qa-policy-429`) {
+        return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ id: "qa-policy-429", name: "QA Policy", storageLeaseMinutes: 60, runtimeLeaseMinutes: 60 }) };
+      }
       if (enabled && customerId === allowedCustomerId && request.method === "GET" && url.pathname === "/api/v3/timezones") {
         return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ Rows: [{ id: "UTC", displayName: "UTC" }] }) };
       }

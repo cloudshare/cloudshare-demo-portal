@@ -55,6 +55,15 @@ describe("local Sales OAuth pre-write QA fixture", () => {
     expect(send).toHaveBeenCalledOnce();
   });
 
+  it("provides only the configured Project resource reads", async () => {
+    const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
+    const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "certalis", env, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
+    await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/projects/project-qa/blueprints" })).resolves.toMatchObject({ status: 200 });
+    await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/projects/project-qa/policies" })).resolves.toMatchObject({ status: 200 });
+    await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/projects/project-other/blueprints" })).resolves.toMatchObject({ body: "delegated" });
+    expect(send).toHaveBeenCalledOnce();
+  });
+
   it("accepts the configured Project with the v4 opportunity display name on retry", async () => {
     const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
     const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "certalis", env, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
