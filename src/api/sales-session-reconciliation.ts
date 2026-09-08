@@ -20,12 +20,13 @@ export async function handleReconcileSalesSession(deps: { sessions: Pick<SalesDe
     const read = await delivery.readSession(session.cloudShareSalesExperienceId);
     if (read.status !== "notStarted" && read.status !== "inProgress" && read.status !== "ended") throw salesStatusContractError(read);
     remote = read;
-    await deps.sessions.updateOperationalState(request.customerId, session.id, { operationalStatus: "active", attentionReason: null, experienceStatus: read.status, experienceStatusObservedAt: new Date() });
+    const observedAt = new Date();
+    await deps.sessions.updateOperationalState(request.customerId, session.id, { operationalStatus: "active", attentionReason: null, experienceStatus: read.status, experienceStatusObservedAt: observedAt });
     await Promise.allSettled([
       deps.diagnostics?.record({ source: "sales-session-reconciliation", operation: "sales.demo_session.reconciled", outcome: "success", level: "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId }, message: "Sales Session reconciled with CloudShare", correlationId, request: remote.request as unknown as Record<string, unknown>, response: remote.response as unknown as Record<string, unknown>, details: { integrationSurface: "cloudshare.v4.sales", remoteStatus: remote.status } }),
       deps.audit?.write({ id: randomUUID(), occurredAt: new Date(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.reconciled", subjectType: "sales_demo_session", subjectId: session.id, outcome: "success", correlationId, details: { integrationSurface: "cloudshare.v4.sales", remoteStatus: remote.status, cloudShareSalesExperienceId: session.cloudShareSalesExperienceId } }),
     ]);
-    return { status: 200, body: { correlationId, operationalStatus: "active" } };
+    return { status: 200, body: { correlationId, operationalStatus: "active", experienceStatus: remote.status, observedAt: observedAt.toISOString(), freshness: "fresh", source: "cloudshare_v4_get_sales" } };
   } catch (error) {
     const localPersistenceFailure = remote !== undefined;
     await Promise.allSettled([deps.sessions.updateOperationalState(request.customerId, session.id, { operationalStatus: "needs_attention", attentionReason: localPersistenceFailure ? "CloudShare read succeeded but Certalis could not persist reconciliation" : "CloudShare reconciliation failed" })]);
