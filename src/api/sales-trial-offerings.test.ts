@@ -2649,6 +2649,46 @@ describe("Sales Trial Offering API", () => {
     });
   });
 
+  it("treats a branded cross-boundary 422 from POST /sales as definite and preserves provider evidence", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    await savePublishDraft(repository, "offering-cross-boundary-422");
+    const providerError = Object.assign(new Error("validation failed"), {
+      name: "CloudShareRequestError",
+      cloudShareErrorBoundaryDiscriminant: CLOUDSHARE_ERROR_DISCRIMINANT,
+      status: 422,
+      context: {
+        method: "POST", path: "/sales", responseStatus: 422,
+        requestBody: { marker: "request" }, responseBody: { marker: "provider" },
+      },
+    });
+    const result = await handlePublishSalesTrialOffering(createDeps(repository, {
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(providerError) }) },
+    }), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-cross-boundary-422" });
+    expect(result).toMatchObject({ status: 502 });
+    expect(await repository.findById("customer-1", "offering-cross-boundary-422")).toMatchObject({ status: "draft" });
+    const [entry] = await diagnosticRepository.query({ operation: "sales.trial_offering.publish", outcome: "failure" });
+    expect(entry).toMatchObject({ request: { method: "POST", path: "/sales" }, response: { status: 422, body: { marker: "provider" } }, details: { failureMode: "cloudshare_create" } });
+  });
+
+  it("preserves definite provider POST evidence when reservation cleanup also fails", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    await savePublishDraft(repository, "offering-cleanup-failure");
+    const result = await handlePublishSalesTrialOffering(createDeps(repository, {
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+      offerings: {
+        ...repository,
+        releasePublicationReservation: vi.fn().mockRejectedValue(new Error("cleanup failed")),
+      },
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(new CloudShareRequestError("rejected", 422, { method: "POST", path: "/sales", responseStatus: 422, requestBody: { marker: "request" }, responseBody: { marker: "provider" } })) }) },
+    }), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-cleanup-failure" });
+    expect(result).toMatchObject({ status: 502 });
+    const [entry] = await diagnosticRepository.query({ operation: "sales.trial_offering.publish", outcome: "failure" });
+    expect(entry).toMatchObject({ request: { method: "POST", path: "/sales" }, response: { status: 422 }, details: { reservationCleanupFailure: "cleanup failed" } });
+  });
+
   it("does not trust forged OAuth-looking context on an untyped Error", async () => {
     const repository = createOfferingRepository();
     const diagnosticRepository = createInMemoryDiagnosticLogRepository();
