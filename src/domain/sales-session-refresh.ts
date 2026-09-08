@@ -2,8 +2,8 @@ import type { CloudShareSalesExperienceStatus } from "./sales-session-status";
 import { SALES_EXPERIENCE_OBSERVATION_FRESHNESS_MS } from "./sales-session-status";
 
 type Delivery = {
-  readonly listSessions(input: { readonly field?: string; readonly offset: number; readonly limit: number }): Promise<{ readonly sessions: readonly { readonly id: string; readonly status: CloudShareSalesExperienceStatus }[]; readonly total: number }>;
-  readonly readSession(id: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus }>;
+  listSessions(input: { readonly field?: string; readonly offset: number; readonly limit: number }): Promise<{ readonly sessions: readonly { readonly id: string; readonly status: CloudShareSalesExperienceStatus }[]; readonly total: number }>;
+  readSession(id: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus }>;
 };
 type Session = { readonly id: string; readonly customerId: string; readonly cloudShareSalesExperienceId: string; readonly operationalStatus?: string };
 type Sessions = { readonly findById(customerId: string, id: string): Promise<Session | null>; readonly updateOperationalState(customerId: string, id: string, state: { readonly operationalStatus: "active"; readonly experienceStatus: CloudShareSalesExperienceStatus; readonly experienceStatusObservedAt: Date }): Promise<void> };
@@ -11,7 +11,7 @@ export function createSalesSessionRefresh(deps: { readonly listSessions: Deliver
   const now = deps.now ?? (() => new Date());
   return {
     async refreshQueue(input: { readonly customerId: string; readonly mode: "automatic" | "manual"; readonly offset: number; readonly limit: number }) {
-      const result = await deps.listSessions({ field: "type=in(sales)", offset: input.offset, limit: Math.min(input.limit, 100) });
+      const result = await deps.listSessions({ offset: input.offset, limit: Math.min(input.limit, 100) });
       return { rows: result.sessions, total: result.total, mode: input.mode, progress: { state: "complete" as const, message: "Sales Session status refreshed." } };
     },
     async verify(input: { readonly customerId: string; readonly sessionId: string }) {
