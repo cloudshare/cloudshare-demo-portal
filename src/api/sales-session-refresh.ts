@@ -18,6 +18,7 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     const renderedLocal = local.filter((session) => requestedIds.has(session.id));
     const rendered = new Set(renderedLocal.map((session) => session.cloudShareSalesExperienceId));
     const stale = input.mode === "automatic" ? new Set(renderedLocal.filter((session) => !session.experienceStatusObservedAt || Date.now() - session.experienceStatusObservedAt.getTime() > 300000).map((session) => session.cloudShareSalesExperienceId)) : rendered;
+    if (stale.size === 0) return { status: 200, body: { rows: [], total: 0, progress: { state: "complete", message: "No rendered Sales Sessions need a CloudShare refresh." } } };
     const providerRows: { id: string; status: "notStarted" | "inProgress" | "ended" }[] = [];
     const seenProviderIds = new Set<string>();
     const providerField = [...stale].map((id) => `\"${id.replaceAll('"', '')}\"`).join(",");
@@ -44,8 +45,8 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
   } catch (error) {
     const structured = error instanceof Error && "context" in error ? (error as Error & { context?: Record<string, unknown> }).context : undefined;
     const failureEvidence = projectCloudShareFailureEvidence(error);
-    const request = failureEvidence?.request ?? exchanges.at(-1)?.request ?? undefined;
-    const response = failureEvidence?.response ?? exchanges.at(-1)?.response ?? undefined;
+    const request = failureEvidence ? failureEvidence.request : exchanges.at(-1)?.request ?? undefined;
+    const response = failureEvidence ? failureEvidence.response : exchanges.at(-1)?.response ?? undefined;
     await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "warn", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare Sales Session refresh failed.", correlationId, request, response, details: { integrationSurface: "cloudshare.v4.sales", exchanges, failureMode: typeof structured?.failureMode === "string" ? structured.failureMode : error instanceof Error ? error.name : "provider_failure" } });
     return { status: 502, body: { error: "CloudShare Sales Session refresh failed. Retry or open Support Diagnostics.", durable: true, correlationId } };
   }

@@ -27,4 +27,12 @@ describe("Sales Session refresh handler", () => {
     expect(result.status).toBe(400);
     expect(list).not.toHaveBeenCalled();
   });
+
+  it("does not manufacture provider freshness when no rendered rows are targeted", async () => {
+    const listSessions = vi.fn();
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1")]), recordExperienceObservation: vi.fn() }, delivery: { listSessions } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: [] });
+    expect(result.status).toBe(200);
+    expect(listSessions).not.toHaveBeenCalled();
+    expect(result.body).not.toHaveProperty("observation");
+  });
 });
