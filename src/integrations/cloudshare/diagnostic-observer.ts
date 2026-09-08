@@ -43,6 +43,7 @@ export function createCloudShareDiagnosticObserver(input: {
     response: null,
     details: {
       ...(input.correlationId ? { sequence: ++sequence } : {}),
+      ...(event.exchangeCorrelationId ? { exchangeCorrelationId: event.exchangeCorrelationId } : {}),
       durationMs: event.durationMs,
       integrationSurface: event.integrationSurface,
       status: event.status ?? null,
@@ -99,7 +100,7 @@ export function createCloudShareWorkflowObserver(input: {
     },
     onAcquisition: async (event: V4TokenAcquisitionEvent) => {
       const sequence = sequenceAllocator.next();
-      const exchangeCorrelationId = randomUUID();
+      const exchangeCorrelationId = event.exchangeCorrelationId ?? randomUUID();
       await input.diagnostics.record({
         occurredAt: new Date(event.occurredAt), source: input.source,
         operation: "cloudshare.oauth.token", outcome: event.outcome,

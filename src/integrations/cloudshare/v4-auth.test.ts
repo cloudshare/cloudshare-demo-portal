@@ -48,6 +48,7 @@ describe("createV4TokenProvider", () => {
     await provider.getToken();
 
     expect(onAcquisition).toHaveBeenCalledWith({
+      exchangeCorrelationId: expect.any(String),
       occurredAt: "1970-01-01T00:16:40.000Z", outcome: "success", status: 200,
       durationMs: 0, integrationSurface: "cloudshare.v4.oauth.token",
     });
