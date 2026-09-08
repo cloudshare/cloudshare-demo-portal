@@ -7,7 +7,7 @@ describe("Sales Session refresh handler", () => {
   it("refreshes only the exact rendered target ids and isolates Customers", async () => {
     const record = vi.fn();
     const listSessions = vi.fn().mockResolvedValue({ sessions: [{ id: "sales-1", status: "inProgress" }], total: 1 });
-    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1"), session("local-other", "sales-other")]), recordExperienceObservation: record }, delivery: { listSessions, readSession: vi.fn() }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1"), session("local-other", "sales-other")]), recordExperienceObservation: record }, delivery: { listSessions }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
     expect(result.status).toBe(200);
     expect(record).toHaveBeenCalledWith("customer-1", "local-1", expect.objectContaining({ experienceStatus: "inProgress" }));
     expect(record).not.toHaveBeenCalledWith("customer-1", "local-other", expect.anything());
@@ -23,7 +23,7 @@ describe("Sales Session refresh handler", () => {
 
   it("rejects unbounded pagination before contacting CloudShare", async () => {
     const list = vi.fn();
-    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), recordExperienceObservation: vi.fn() }, delivery: { listSessions: list, readSession: vi.fn() } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 101 });
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), recordExperienceObservation: vi.fn() }, delivery: { listSessions: list } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 101 });
     expect(result.status).toBe(400);
     expect(list).not.toHaveBeenCalled();
   });
