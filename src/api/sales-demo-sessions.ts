@@ -51,7 +51,7 @@ export interface SalesDemoSessionDeps {
 export interface SalesDemoSessionRequest { readonly customerId: string; readonly actor: DiagnosticActor; readonly body?: unknown; }
 export type SalesSessionCreationOutcome =
   | { readonly dimension: "certalis_creation"; readonly value: "not_created"; readonly source: "certalis_pre_dispatch"; readonly retry: "safe"; readonly reason: string }
-  | { readonly dimension: "certalis_creation"; readonly value: "needs_attention"; readonly source: "cloudshare_v4_post_sales_ambiguous" | "certalis_correlation_persistence" | "certalis_support_persistence"; readonly retry: "unsafe_requires_support"; readonly reason: string; readonly sessionId: string };
+  | { readonly dimension: "certalis_creation"; readonly value: "needs_attention"; readonly source: "cloudshare_v4_post_sales_ambiguous" | "certalis_correlation_persistence" | "certalis_support_persistence" | "reservation_cleanup_unconfirmed"; readonly retry: "unsafe_requires_support"; readonly reason: string; readonly sessionId: string };
 /** Browser-safe projection; CloudShare Experience IDs remain server-side support evidence. */
 export interface PortalSalesEnablementSession {
   readonly id: string;
@@ -187,15 +187,21 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       ]);
       return response(502, { error: AMBIGUOUS_CREATE_REASON, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("cloudshare_v4_post_sales_ambiguous", AMBIGUOUS_CREATE_REASON, id) });
     }
-    const reservationCleared = await clearReservedBeforeDispatch(deps.sessions, reservation);
-    if (!reservationCleared) {
-      const reason = "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
-      const details = { integrationSurface: "portal.sales_demo_sessions", failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: false, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
-      await Promise.allSettled([
-        evidence(deps, request, correlationId, reservation, "failure", reason, undefined, details),
-        deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: reservation.id, outcome: "failure", correlationId, details, error: reason }),
-      ]);
-      return response(503, { error: reason, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("reservation_cleanup_unconfirmed", reason, reservation.id) });
+    // Only an authentication failure proven to happen before the Sales POST is
+    // eligible for reservation cleanup. Validation and member/item read failures
+    // are ordinary pre-dispatch errors and retain the existing reservation
+    // behavior, including their established response/status contract.
+    if (preWriteAuthFailure && deps.sessions.discardReservation && deps.sessions.findById) {
+      const reservationCleared = await clearReservedBeforeDispatch(deps.sessions, reservation);
+      if (!reservationCleared) {
+        const reason = "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
+        const details = { integrationSurface: "portal.sales_demo_sessions", failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: false, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
+        await Promise.allSettled([
+          evidence(deps, request, correlationId, reservation, "failure", reason, undefined, details),
+          deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: reservation.id, outcome: "failure", correlationId, details, error: reason }),
+        ]);
+        return response(503, { error: reason, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("reservation_cleanup_unconfirmed", reason, reservation.id) });
+      }
     }
     if (itemValidationFailure || itemReadFailure) {
       await recordResourceReads(deps, request, correlationId, item.id, item.project.id, error.completedReads, "failure");
