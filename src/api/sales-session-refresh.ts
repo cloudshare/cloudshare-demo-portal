@@ -7,7 +7,7 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
   if (!deps.sessions.list || !deps.sessions.findById || !deps.sessions.recordExperienceObservation) return { status: 503, body: { error: "Sales Session refresh is unavailable." } };
   try {
     const local = await deps.sessions.list(input.customerId);
-    const refresh = createSalesSessionRefresh({ listSessions: deps.delivery.listSessions, readSession: deps.delivery.readSession, sessions: { findById: deps.sessions.findById, updateOperationalState: deps.sessions.updateOperationalState } });
+    const refresh = createSalesSessionRefresh({ listSessions: deps.delivery.listSessions, readSession: deps.delivery.readSession });
     // Provider pagination is independent from Certalis queue pagination. Read one
     // bounded provider page, then target only the locally rendered Customer rows.
     const result = await refresh.refreshQueue({ ...input, offset: 0, limit: 100 });

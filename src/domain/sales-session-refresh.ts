@@ -7,7 +7,7 @@ type Delivery = {
 };
 type Session = { readonly id: string; readonly customerId: string; readonly cloudShareSalesExperienceId: string; readonly operationalStatus?: string };
 type Sessions = { findById(customerId: string, id: string): Promise<Session | null>; updateOperationalState(customerId: string, id: string, state: { readonly operationalStatus: "active"; readonly experienceStatus: CloudShareSalesExperienceStatus; readonly experienceStatusObservedAt: Date }): Promise<void> };
-export function createSalesSessionRefresh(deps: { readonly listSessions: Delivery["listSessions"]; readonly readSession?: Delivery["readSession"]; readonly sessions: Sessions; readonly now?: () => Date }) {
+export function createSalesSessionRefresh(deps: { readonly listSessions: Delivery["listSessions"]; readonly readSession?: Delivery["readSession"]; readonly sessions?: Sessions; readonly now?: () => Date }) {
   const now = deps.now ?? (() => new Date());
   return {
     async refreshQueue(input: { readonly customerId: string; readonly mode: "automatic" | "manual"; readonly offset: number; readonly limit: number }) {
@@ -16,6 +16,7 @@ export function createSalesSessionRefresh(deps: { readonly listSessions: Deliver
     },
     async verify(input: { readonly customerId: string; readonly sessionId: string }) {
       if (!deps.readSession) throw new Error("Sales Session verification is unavailable.");
+      if (!deps.sessions) throw new Error("Sales Session verification is unavailable.");
       const session = await deps.sessions.findById(input.customerId, input.sessionId);
       if (!session || session.customerId !== input.customerId) throw new Error("Sales Session was not found.");
       if (!session.cloudShareSalesExperienceId || session.cloudShareSalesExperienceId.startsWith("pending:")) throw new Error("Sales Session has no verifiable CloudShare Experience.");
