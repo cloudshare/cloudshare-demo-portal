@@ -124,6 +124,21 @@ describe("composition feature modules", () => {
     expect(integrations.map((input) => input.qaPrewriteSalesOauth)).toEqual([true, false]);
   });
 
+  it("propagates the local OAuth fixture to the customer-scoped Sales member preflight", () => {
+    const integrations: Parameters<typeof createCloudShareIntegrationForConnection>[0][] = [];
+    const factory = createCloudShareClientFactory({
+      diagnostics: { record: vi.fn() } as never,
+      mode: "fixture",
+      localSalesOauthQa: { enabled: true, customerId: "customer-a", projectId: "project-qa", opportunityId: "opportunity-qa", workflowSource: "sales-demo-sessions" },
+      createIntegration: (input) => { integrations.push(input); return {} as CloudShareClient; },
+      decorateClient: (client) => client,
+    });
+
+    factory.forConnection(CONNECTION, { scope: "customer_default", reason: "catalogue_resource_read" });
+
+    expect(integrations[0].qaPrewriteSalesOauth).toBe(true);
+  });
+
   it("keeps mandatory Customer evidence isolated across connections", async () => {
     const { factory, record, integrations } = createObservedFactory();
     factory.forConnection(CONNECTION, { scope: "customer_default", reason: "connection_check" });

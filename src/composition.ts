@@ -155,16 +155,18 @@ export function createCloudShareClientFactory(input: {
       return decorateClient(createIntegration({
         mode: input.mode,
         trace: input.trace,
-        // Only workflow-scoped clients reach the fixture; unanchored support,
-        // catalogue, and timezone reads must not consume its one-shot failure.
+        // The Sales member preflight is intentionally customer-scoped because
+        // its route has not created the Sales Session workflow yet. Keep the
+        // fixture limited to that preflight or the anchored Sales workflow.
         qaPrewriteSalesOauth:
-          options.scope === "workflow" &&
-          options.workflow.source === "sales-demo-sessions" &&
-          (typeof options.workflow.subject === "function"
-            ? options.workflow.subject().type
-            : options.workflow.subject.type) === "sales_demo_session" &&
-          options.workflow.externalIds?.opportunityId === input.localSalesOauthQa?.opportunityId &&
-          options.workflow.externalIds?.projectId === input.localSalesOauthQa?.projectId,
+          (options.scope === "customer_default" ||
+            (options.scope === "workflow" &&
+              options.workflow.source === "sales-demo-sessions" &&
+              (typeof options.workflow.subject === "function"
+                ? options.workflow.subject().type
+                : options.workflow.subject.type) === "sales_demo_session" &&
+              options.workflow.externalIds?.opportunityId === input.localSalesOauthQa?.opportunityId &&
+              options.workflow.externalIds?.projectId === input.localSalesOauthQa?.projectId)),
         localSalesOauthQa: input.localSalesOauthQa,
         observer: {
           onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest, defaultObserver.onRequest),
