@@ -18,12 +18,18 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     const stale = input.mode === "automatic" ? new Set(renderedLocal.filter((session) => !session.experienceStatusObservedAt || Date.now() - session.experienceStatusObservedAt.getTime() > 300000).map((session) => session.cloudShareSalesExperienceId)) : rendered;
     const providerRows: { id: string; status: "notStarted" | "inProgress" | "ended" }[] = [];
     const seenProviderIds = new Set<string>();
-    let lastEvidence: { readonly request?: Record<string, unknown>; readonly response?: Record<string, unknown> } | undefined;
+    const exchanges: Array<{ readonly request?: Record<string, unknown>; readonly response?: Record<string, unknown> }> = [];
     const providerField = [...stale].map((id) => `\"${id.replaceAll('"', '')}\"`).join(",");
     for (let page = 0; page < 10 && providerRows.filter((row) => stale.has(row.id)).length < stale.size; page += 1) {
       const result = await deps.delivery.listSessions({ field: `id=in(${providerField})`, offset: page * 100, limit: 100 });
-      lastEvidence = result as unknown as { readonly request?: Record<string, unknown>; readonly response?: Record<string, unknown> };
-      for (const row of result.sessions) if (!seenProviderIds.has(row.id)) { seenProviderIds.add(row.id); providerRows.push(row); }
+      exchanges.push(result as unknown as { readonly request?: Record<string, unknown>; readonly response?: Record<string, unknown> });
+      for (const row of result.sessions) {
+        if (!row || typeof row.id !== "string" || !row.id || !["notStarted", "inProgress", "ended"].includes(row.status)) {
+          throw new Error("CloudShare returned a malformed Sales Experience row.");
+        }
+        if (seenProviderIds.has(row.id)) throw new Error("CloudShare returned duplicate Sales Experience IDs.");
+        seenProviderIds.add(row.id); providerRows.push(row);
+      }
       if (result.sessions.length < 100) break;
     }
     const rows = providerRows.filter((row) => stale.has(row.id)).map((row) => {
@@ -32,7 +38,7 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     }).filter((row): row is { id: string; status: CloudShareSalesExperienceStatus } => row !== null);
     await Promise.all(rows.map((row) => deps.sessions.recordExperienceObservation!(input.customerId, row.id, { experienceStatus: row.status, experienceStatusObservedAt: new Date() })));
     if (rows.length < stale.size) { await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "warn", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare did not return every targeted Sales Session.", correlationId }); return { status: 502, body: { error: "CloudShare did not return every targeted Sales Session. Retry or open Support Diagnostics.", durable: true, correlationId } }; }
-    await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "success", level: "info", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare Sales Session status refreshed.", correlationId, request: lastEvidence?.request, response: lastEvidence?.response, details: { mode: input.mode, targetCount: stale.size, observedCount: rows.length, integrationSurface: "cloudshare.v4.sales" } });
+    await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "success", level: "info", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare Sales Session status refreshed.", correlationId, request: exchanges.at(-1)?.request, response: exchanges.at(-1)?.response, details: { mode: input.mode, targetCount: stale.size, observedCount: rows.length, integrationSurface: "cloudshare.v4.sales", exchanges } });
     return { status: 200, body: { rows: rows.map(({ id, status }) => ({ id, status })), total: rows.length, progress: { state: "complete", message: "Sales Session status refreshed." }, observation: { source: "cloudshare_v4_sales_list", freshness: "fresh", correlation: correlationId } } };
   } catch {
     await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "warn", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare Sales Session refresh failed.", correlationId });

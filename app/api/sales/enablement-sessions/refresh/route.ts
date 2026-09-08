@@ -14,10 +14,14 @@ export async function POST(request: Request) {
   const connection = await services.cloudshareConnections.findByCustomerId(session.customerId);
   if (!connection) return NextResponse.json({ error: "CloudShare Connection is not configured." }, { status: 404 });
   const query = new URL(request.url).searchParams;
+  const rawOffset = query.get("offset");
+  const rawLimit = query.get("limit");
+  const offset = rawOffset === null ? 0 : Number(rawOffset);
+  const limit = rawLimit === null ? 25 : Number(rawLimit);
   const result = await handleRefreshSalesSessions({
     sessions: createPrismaSalesDemoSessionRepository(services.prisma),
     delivery: createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })),
     diagnostics: services.diagnosticRecorder,
-  }, { customerId: session.customerId, mode: query.get("mode") === "automatic" ? "automatic" : "manual", offset: Math.max(0, Number(query.get("offset") ?? 0) || 0), limit: Math.min(100, Math.max(1, Number(query.get("limit") ?? 25) || 25)) });
+  }, { customerId: session.customerId, mode: query.get("mode") === "automatic" ? "automatic" : "manual", offset, limit });
   return NextResponse.json(result.body, { status: result.status });
 }
