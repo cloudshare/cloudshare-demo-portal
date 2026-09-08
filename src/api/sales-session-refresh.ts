@@ -3,6 +3,7 @@ import { createSalesSessionRefresh } from "@/domain/sales-session-refresh";
 import type { SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 
 export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick<SalesDemoSessionRepository, "list" | "findById" | "updateOperationalState">; readonly delivery: Pick<SalesDelivery, "listSessions" | "readSession"> }, input: { readonly customerId: string; readonly mode: "automatic" | "manual"; readonly offset: number; readonly limit: number }) {
+  if (!Number.isInteger(input.offset) || input.offset < 0 || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) return { status: 400, body: { error: "Invalid bounded refresh pagination." } };
   if (!deps.sessions.list || !deps.sessions.findById || !deps.sessions.updateOperationalState) return { status: 503, body: { error: "Sales Session refresh is unavailable." } };
   try {
     const local = await deps.sessions.list(input.customerId);
@@ -12,7 +13,8 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
       const match = local.find((session) => session.cloudShareSalesExperienceId === row.id);
       return match ? { id: match.id, status: row.status } : null;
     }).filter((row): row is { id: string; status: typeof result.rows[number]["status"] } => row !== null);
-    return { status: 200, body: { rows, total: result.total, progress: result.progress, observation: { source: "cloudshare_v4_sales_list", freshness: "fresh" } } };
+    await Promise.all(rows.map((row) => row ? deps.sessions.updateOperationalState!(input.customerId, row.id, { operationalStatus: "active", experienceStatus: row.status, experienceStatusObservedAt: new Date() }) : undefined));
+    return { status: 200, body: { rows, total: result.total, progress: result.progress, observation: { source: "cloudshare_v4_sales_list", freshness: "fresh", correlation: "server-side" } } };
   } catch {
     return { status: 502, body: { error: "CloudShare Sales Session refresh failed. Retry or open Support Diagnostics.", durable: true } };
   }
