@@ -82,7 +82,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
         const refreshParams = new URLSearchParams({ mode: "automatic", offset: String(offset), limit: "25" });
         rows.forEach((row) => refreshParams.append("targetId", row.id));
         const response = await fetchRef.current(`/api/sales/enablement-sessions/refresh?${refreshParams}`, { method: "POST" });
-        if (live && response.ok) { setRefreshFeedback("Sales Session status refreshed from CloudShare."); setQueueReload((value) => value + 1); }
+        if (live && response.ok) { const body = await response.json() as { progress?: { message?: string } }; setRefreshFeedback(body.progress?.message ?? "Sales Session status refreshed from CloudShare."); setQueueReload((value) => value + 1); }
         else if (live) setRefreshFeedback("CloudShare refresh failed. Retry or open Sales support.");
       } catch { if (live) setRefreshFeedback("CloudShare refresh failed. Retry or open Sales support."); }
     }, 250);
