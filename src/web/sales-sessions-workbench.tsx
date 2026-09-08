@@ -31,6 +31,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFeedback, setRefreshFeedback] = useState<string | null>(null);
   const selectedRef = useRef<HTMLAnchorElement | null>(null);
+  const automaticRefreshKey = useRef<string | null>(null);
   const view = route.queueView ?? "active";
   const sort = route.queueSort ?? "start_desc";
   const offset = route.queueOffset ?? 0;
@@ -68,6 +69,20 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
     };
     void load(); return () => { live = false; };
   }, [offset, queueReload, route.accountId, route.opportunityId, route.sessionId, search, sort, view]);
+  useEffect(() => {
+    if (!result || loading || !result.response.rows.some((row) => row.experience.freshness !== "fresh")) return;
+    const key = `${view}:${offset}:${result.response.rows.map((row) => row.id).join(",")}`;
+    if (automaticRefreshKey.current === key) return;
+    automaticRefreshKey.current = key;
+    let live = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetchRef.current(`/api/sales/enablement-sessions/refresh?mode=automatic&offset=${offset}&limit=25`, { method: "POST" });
+        if (live && response.ok) setQueueReload((value) => value + 1);
+      } catch { /* stale refresh is best effort; existing safe rows remain visible */ }
+    }, 250);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [loading, offset, result]);
   useEffect(() => {
     if (result?.response.target?.state === "available" && selectedRef.current) {
       selectedRef.current.focus({ preventScroll: true });
