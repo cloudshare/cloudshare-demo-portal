@@ -4,6 +4,11 @@ import { SalesDemoSessionRevisionConflictError, type SalesDemoSession } from "@/
 import { createInMemorySalesRecordRepository } from "@/domain/sales-records";
 import { CloudShareAuthError, CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare/errors";
 import { SalesItemProvisioningReadError } from "@/integrations/cloudshare/sales-item-provisioning";
+import { createCloudShareClient } from "@/integrations/cloudshare/client";
+import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
+import { createV4TokenProvider } from "@/integrations/cloudshare/v4-auth";
+import { createCloudShareWorkflowObserver } from "@/integrations/cloudshare/diagnostic-observer";
+import type { HttpClient } from "@/integrations/cloudshare/http";
 
 const admin = { type: "admin", id: "sales-admin", email: "sales-admin@certalis.demo" };
 const projectMembers = {
@@ -17,6 +22,22 @@ const documentedTimezones = { find: vi.fn().mockResolvedValue({ customerId: "cer
 const handleCreateSalesDemoSession = (deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest) => createSalesDemoSession({ ...deps, timezones: deps.timezones ?? documentedTimezones }, request);
 
 describe("Sales Enablement Session API handler", () => {
+  it("records the real OAuth child workflow and safely clears a pre-write 504 without POST /sales", async () => {
+    const records = createInMemorySalesRecordRepository(); await records.saveOpportunity({ id: "opp-real", customerId: "customer-real", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-real", customerId: "customer-real", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) }; const stored: SalesDemoSession[] = [];
+    const sessions = { save: vi.fn(async (value) => { stored.push(value); }), listByOpportunity: vi.fn().mockResolvedValue([]), findById: vi.fn(async () => stored[0] ?? null), discardReservation: vi.fn(async () => { stored.length = 0; return true; }) };
+    const workflow = createCloudShareWorkflowObserver({ diagnostics, customerId: "customer-real", actor: admin, subject: { type: "sales_demo_session", id: "session-real" }, correlationId: "parent-real", source: "sales-demo-sessions" });
+    let httpCalls = 0; const http: HttpClient = { send: vi.fn(async () => { httpCalls += 1; return { status: 504, body: "provider-secret" }; }) };
+    const tokenProvider = createV4TokenProvider({ http, baseUrl: "https://api.test/v4", clientId: "private", clientSecret: "secret", now: () => 15360, onAcquisition: workflow.onAcquisition });
+    const client = createCloudShareClient({ http, endpoints: { v4BaseUrl: "https://api.test/v4", v3BaseUrl: "https://api.test/v3" }, tokenProvider, v3: { apiId: "id", apiKey: "key" }, observer: workflow });
+    const delivery = createCloudShareSalesDelivery(client);
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-real" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, projectMembers, itemProvisioningValidator: { revalidate: vi.fn().mockResolvedValue([]) }, diagnostics, audit: { write: vi.fn() }, newId: () => "session-real" }, { customerId: "customer-real", actor: admin, body: { opportunityId: "opp-real", itemId: "item-real", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+    const child = diagnostics.record.mock.calls.map(([entry]) => entry).find((entry) => entry.operation === "cloudshare.oauth.token");
+    expect(result).toMatchObject({ status: 503, body: { needsAttention: false, creationOutcome: { retry: "safe" } } }); expect(httpCalls).toBe(1); expect(sessions.discardReservation).toHaveBeenCalled();
+    expect(child).toMatchObject({ customerId: "customer-real", subject: { type: "sales_demo_session", id: "session-real" }, correlationId: "parent-real", details: { parentCorrelationId: "parent-real", exchangeCorrelationId: expect.any(String), status: 504, sequence: 1 } });
+    expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("provider-secret"); expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("private");
+  });
   it("fails closed when the Customer has no verified CloudShare timezone catalogue", async () => {
     const delivery = { createSession: vi.fn() };
     const result = await createSalesDemoSession({ records: { findOpportunity: vi.fn() }, items: { findById: vi.fn() }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, timezones: { find: vi.fn().mockResolvedValue(null) } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "Line Islands Standard Time" } });
