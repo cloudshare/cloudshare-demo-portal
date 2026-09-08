@@ -87,7 +87,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
       } catch { if (live) setRefreshFeedback("CloudShare refresh failed. Retry or open Sales support."); }
     }, 250);
     return () => { live = false; window.clearTimeout(timer); };
-  }, [loading, offset, result]);
+  }, [loading, offset, result, view]);
   useEffect(() => {
     if (result?.response.target?.state === "available" && selectedRef.current) {
       selectedRef.current.focus({ preventScroll: true });
