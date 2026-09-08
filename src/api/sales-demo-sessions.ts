@@ -212,9 +212,6 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
         return response(503, { error: reason, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("reservation_cleanup_unconfirmed", reason, reservation.id) });
       }
     }
-    if (preWriteAuthFailure) {
-      // Keep the safe retry contract scoped to this proven pre-write path.
-    }
     if (itemValidationFailure || itemReadFailure) {
       await recordResourceReads(deps, request, correlationId, item.id, item.project.id, error.completedReads, "failure");
     }

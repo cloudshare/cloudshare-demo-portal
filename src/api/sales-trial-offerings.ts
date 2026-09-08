@@ -495,10 +495,6 @@ export async function handlePublishSalesTrialOffering(
     updatedAt: reservationUpdatedAt,
     attentionReason: PROVISIONING_RESERVATION_REASON,
   };
-  // A failed reservation claim is not a persisted local reservation. Keep this
-  // distinction so later provider failures never attempt (or require) cleanup
-  // for a row this request did not save.
-  let reservationPersisted = false;
   try {
     const reserved =
       (await deps.offerings.reservePublication?.(request.customerId, offering.id, {
@@ -525,7 +521,6 @@ export async function handlePublishSalesTrialOffering(
       }
       throw new Error("Sales Trial Offering reservation was not claimed.");
     }
-    reservationPersisted = true;
   } catch (error) {
     await Promise.allSettled([
       deps.diagnostics?.record({
@@ -720,14 +715,12 @@ export async function handlePublishSalesTrialOffering(
     return response(200, { offering: toPortalOffering(published) });
   } catch (error) {
     if (!isOutcomeAmbiguousCreateFailure(error)) {
-      if (reservationPersisted) {
-        await releaseReservationToDraft(
-          deps,
-          request.customerId,
-          offering.id,
-          reservation.updatedAt,
-        );
-      }
+      await releaseReservationToDraft(
+        deps,
+        request.customerId,
+        offering.id,
+        reservation.updatedAt,
+      );
       return publishFailure(deps, request, offering, correlationId, externalId, error);
     }
     const needsAttention = {
