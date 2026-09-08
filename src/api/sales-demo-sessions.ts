@@ -122,8 +122,9 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   // Reserve before *any* CloudShare read. A rejected reservation is a wholly
   // local event, so retry safety must not depend on external preflight calls.
   const reservation: SalesDemoSession = { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: `pending:${id}`, externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: parsed.data.salesProEmail, salesProDisplayName: "Pending CloudShare validation", registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants", sessionName, revision, operationalStatus: "provisioning", createdAt: now };
+  let reservationClaimed = false;
   if (deps.sessions.updateOperationalState) {
-    try { await deps.sessions.save(reservation); }
+    try { await deps.sessions.save(reservation); reservationClaimed = true; }
     catch (error) {
       const clearedAmbiguousReservation = await clearAmbiguousReservation(deps.sessions, reservation, error);
       return reservationPersistenceFailure(deps, request, reservation, correlationId, now, error, clearedAmbiguousReservation);
@@ -193,7 +194,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     // Sales POST. Missing cleanup/readback is therefore fail-closed.
     const provenPreDispatchFailure = !createDispatched && (preWriteAuthFailure || validationFailure || memberSelectionFailure || memberReadFailure || itemValidationFailure || itemReadFailure);
     if (provenPreDispatchFailure) {
-      const reservationCleared = await clearReservedBeforeDispatch(deps.sessions, reservation);
+      const reservationCleared = !reservationClaimed || (!deps.sessions.discardReservation || !deps.sessions.findById) || await clearReservedBeforeDispatch(deps.sessions, reservation);
       if (!reservationCleared) {
         const reason = "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
         const details = { integrationSurface: "portal.sales_demo_sessions", failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: false, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
