@@ -86,7 +86,9 @@ describe("createV4TokenProvider", () => {
   it("raises CloudShareAuthError on a non-200 token response", async () => {
     const { http } = stubHttp([{ status: 401, body: "unauthorized" }]);
     const provider = createV4TokenProvider({ ...baseOpts, http, onAcquisition: createV4TokenAcquisitionNoopObserver() });
-    await expect(provider.getToken()).rejects.toBeInstanceOf(CloudShareAuthError);
+    const failure = await provider.getToken().catch((error) => error);
+    expect(failure).toBeInstanceOf(CloudShareAuthError);
+    expect(failure.context.acquisition).toMatchObject({ exchangeCorrelationId: expect.any(String), durationMs: expect.any(Number), status: 401, failureMode: "http_failure" });
   });
 
   it.each([
