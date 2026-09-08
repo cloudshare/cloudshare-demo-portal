@@ -166,7 +166,7 @@ export function createCloudShareClientFactory(input: {
                 ? options.workflow.subject().type
                 : options.workflow.subject.type) === "sales_demo_session" &&
               options.workflow.externalIds?.opportunityId === input.localSalesOauthQa?.opportunityId &&
-              options.workflow.externalIds?.projectId === input.localSalesOauthQa?.projectId)),
+              options.workflow.externalIds?.projectId === input.localSalesOauthQa?.projectId),
         localSalesOauthQa: input.localSalesOauthQa,
         observer: {
           onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest, defaultObserver.onRequest),
