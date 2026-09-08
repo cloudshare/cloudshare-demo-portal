@@ -33,6 +33,8 @@ export interface CreateSalesDemoSessionInput {
   readonly sendInvitations: "dontSend" | "salesProsAndParticipants";
 }
 export interface SalesDelivery {
+  /** Documented bounded list read used by the shared Session refresh module. */
+  listSessions(input: { readonly field?: string; readonly offset: number; readonly limit: number }): Promise<{ readonly sessions: readonly { readonly id: string; readonly status: CloudShareSalesExperienceStatus }[]; readonly total: number } & SalesDeliveryEvidence>;
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
   /** Documented v4 read used only for reconciliation; the provider ID remains server-side. */
   readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus; readonly end?: string | null } & SalesDeliveryEvidence>;
@@ -140,6 +142,7 @@ const salesExperienceSchema = z.object({
   timeZone: z.string().optional(),
 }).passthrough();
 const salesExperienceReadSchema = salesExperienceSchema.extend({ status: z.enum(["notStarted", "inProgress", "ended"]) });
+const salesExperienceListSchema = z.object({ count: z.number().int().nonnegative(), items: z.array(salesExperienceReadSchema) });
 const SALES_ENVIRONMENT_STATUSES = [
   "FutureAllocationScheduled", "AllocationScheduledNoRun", "Ready", "Suspended", "Archived", "Deleted",
   "Publishing", "Preparing", "CreationFailed", "InGrace", "Stopping", "EditingNetworks",
@@ -208,6 +211,11 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     return { data: result.data, evidence: { request: result.request, response: result.response } };
   }
   return {
+    async listSessions(input) {
+      const query = { ...(input.field ? { field: input.field } : {}), offset: String(input.offset), limit: String(input.limit) };
+      const { data, evidence } = await detailed({ method: "GET", path: "/sales", query, schema: salesExperienceListSchema });
+      return { sessions: data.items.map(({ id, status }) => ({ id, status })), total: data.count, ...evidence };
+    },
     async createSession(input) {
       const body = { name: input.name, type: input.type, projectId: input.projectId, blueprintIds: input.blueprintIds, cloudshareRegionIds: input.regionIds, policyId: input.policyId, opportunity: input.opportunity, externalId: input.externalId, passphrase: input.passphrase, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesPro: { email: input.mainSalesProEmail }, registrationType: input.registrationType, sendInvitations: input.sendInvitations };
       const { data, evidence } = await detailed({ method: "POST", path: "/sales", body, schema: salesExperienceSchema });

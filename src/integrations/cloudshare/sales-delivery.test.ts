@@ -28,6 +28,12 @@ function documentedParticipant(overrides: Record<string, unknown> = {}) {
 }
 
 describe("CloudShare Sales Delivery", () => {
+  it("reads the documented filtered, paginated Sales Experience list", async () => {
+    const requestV4Detailed = vi.fn().mockResolvedValue({ data: { count: 1, items: [{ id: "sales-1", status: "inProgress" }] }, request: { method: "GET", path: "/sales" }, response: { status: 200 } });
+    const result = await createCloudShareSalesDelivery({ requestV4Detailed } as never).listSessions({ field: "status=in(inProgress)", offset: 0, limit: 25 });
+    expect(result.sessions).toEqual([{ id: "sales-1", status: "inProgress" }]);
+    expect(requestV4Detailed).toHaveBeenCalledWith(expect.objectContaining({ path: "/sales", query: { field: "status=in(inProgress)", offset: "0", limit: "25" } }));
+  });
   it("reads and deduplicates the documented Sales Pros recovery contacts", async () => {
     const requestV4Detailed = vi.fn().mockResolvedValue({ data: { count: 3, salesPros: [{ name: "Main <Owner>", email: "main@example.test", type: "mainSalesPro" }, { name: "Additional", email: "extra@example.test", type: "salesPro" }, { name: "Duplicate", email: "MAIN@example.test", type: "salesPro" }] }, request: { method: "GET", path: "/sales/sales-1/salespros" }, response: { status: 200 } });
     const result = await createCloudShareSalesDelivery({ requestV4Detailed } as never).listSalesPros("sales-1");
