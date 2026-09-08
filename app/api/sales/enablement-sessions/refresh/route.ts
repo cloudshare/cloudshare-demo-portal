@@ -18,10 +18,11 @@ export async function POST(request: Request) {
   const rawLimit = query.get("limit");
   const offset = rawOffset === null ? 0 : Number(rawOffset);
   const limit = rawLimit === null ? 25 : Number(rawLimit);
+  const targetIds = query.getAll("targetId");
   const result = await handleRefreshSalesSessions({
     sessions: createPrismaSalesDemoSessionRepository(services.prisma),
     delivery: createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })),
     diagnostics: services.diagnosticRecorder,
-  }, { customerId: session.customerId, mode: query.get("mode") === "automatic" ? "automatic" : "manual", offset, limit });
+  }, { customerId: session.customerId, mode: query.get("mode") === "automatic" ? "automatic" : "manual", offset, limit, ...(targetIds.length ? { targetIds } : {}) });
   return NextResponse.json(result.body, { status: result.status });
 }

@@ -77,9 +77,12 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
     let live = true;
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetchRef.current(`/api/sales/enablement-sessions/refresh?mode=automatic&offset=${offset}&limit=25`, { method: "POST" });
+        const refreshParams = new URLSearchParams({ mode: "automatic", offset: String(offset), limit: "25" });
+        result.response.rows.forEach((row) => refreshParams.append("targetId", row.id));
+        const response = await fetchRef.current(`/api/sales/enablement-sessions/refresh?${refreshParams}`, { method: "POST" });
         if (live && response.ok) setQueueReload((value) => value + 1);
-      } catch { /* stale refresh is best effort; existing safe rows remain visible */ }
+        else if (live) setRefreshFeedback("CloudShare refresh failed. Retry or open Sales support.");
+      } catch { if (live) setRefreshFeedback("CloudShare refresh failed. Retry or open Sales support."); }
     }, 250);
     return () => { live = false; window.clearTimeout(timer); };
   }, [loading, offset, result]);
@@ -111,7 +114,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
   const data = result?.response ?? null;
   const refreshCloudShare = async () => {
     setRefreshing(true); setRefreshFeedback("Refreshing Sales Session status from CloudShare…");
-    try { const response = await fetchRef.current(`/api/sales/enablement-sessions/refresh?mode=manual&offset=${offset}&limit=25`, { method: "POST" }); const body = await response.json() as { error?: string }; if (!response.ok) throw new Error(body.error ?? "CloudShare refresh failed."); setRefreshFeedback("Sales Session status refreshed."); setQueueReload((value) => value + 1); } catch (cause) { setRefreshFeedback(cause instanceof Error ? `${cause.message} Retry or open Sales support.` : "CloudShare refresh failed. Retry or open Sales support."); } finally { setRefreshing(false); }
+    try { const refreshParams = new URLSearchParams({ mode: "manual", offset: String(offset), limit: "25" }); rows.forEach((row) => refreshParams.append("targetId", row.id)); const response = await fetchRef.current(`/api/sales/enablement-sessions/refresh?${refreshParams}`, { method: "POST" }); const body = await response.json() as { error?: string }; if (!response.ok) throw new Error(body.error ?? "CloudShare refresh failed."); setRefreshFeedback("Sales Session status refreshed."); setQueueReload((value) => value + 1); } catch (cause) { setRefreshFeedback(cause instanceof Error ? `${cause.message} Retry or open Sales support.` : "CloudShare refresh failed. Retry or open Sales support."); } finally { setRefreshing(false); }
   };
   const displayedRequest = result?.request;
   const rows = data?.rows ?? [];
