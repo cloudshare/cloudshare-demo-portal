@@ -154,6 +154,9 @@ export function createCloudShareClientFactory(input: {
       return decorateClient(createIntegration({
         mode: input.mode,
         trace: input.trace,
+        // Only workflow-scoped clients reach the fixture; unanchored support,
+        // catalogue, and timezone reads must not consume its one-shot failure.
+        qaPrewriteSalesOauth: options.scope === "workflow",
         observer: {
           onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest, defaultObserver.onRequest),
           onAcquisition: composeCloudShareObservers(options.onAcquisition, workflowObserver?.onAcquisition, defaultObserver.onAcquisition),
