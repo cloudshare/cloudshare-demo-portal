@@ -70,15 +70,16 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
     void load(); return () => { live = false; };
   }, [offset, queueReload, route.accountId, route.opportunityId, route.sessionId, search, sort, view]);
   useEffect(() => {
-    if (!result || loading || !result.response.rows.some((row) => row.experience.freshness !== "fresh")) return;
-    const key = `${view}:${offset}:${result.response.rows.map((row) => row.id).join(",")}`;
+    const rows = result?.response.rows;
+    if (!result || loading || !Array.isArray(rows) || !rows.some((row) => row.experience.freshness !== "fresh")) return;
+    const key = `${view}:${offset}:${rows.map((row) => row.id).join(",")}`;
     if (automaticRefreshKey.current === key) return;
     automaticRefreshKey.current = key;
     let live = true;
     const timer = window.setTimeout(async () => {
       try {
         const refreshParams = new URLSearchParams({ mode: "automatic", offset: String(offset), limit: "25" });
-        result.response.rows.forEach((row) => refreshParams.append("targetId", row.id));
+        rows.forEach((row) => refreshParams.append("targetId", row.id));
         const response = await fetchRef.current(`/api/sales/enablement-sessions/refresh?${refreshParams}`, { method: "POST" });
         if (live && response.ok) setQueueReload((value) => value + 1);
         else if (live) setRefreshFeedback("CloudShare refresh failed. Retry or open Sales support.");
