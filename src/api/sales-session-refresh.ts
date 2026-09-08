@@ -11,10 +11,10 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     const result = await refresh.refreshQueue(input);
     const rows = result.rows.map((row) => {
       const match = local.find((session) => session.cloudShareSalesExperienceId === row.id);
-      return match ? { id: match.id, status: row.status } : null;
-    }).filter((row): row is { id: string; status: typeof result.rows[number]["status"] } => row !== null);
-    await Promise.all(rows.map((row) => row ? deps.sessions.updateOperationalState!(input.customerId, row.id, { operationalStatus: "active", experienceStatus: row.status, experienceStatusObservedAt: new Date() }) : undefined));
-    return { status: 200, body: { rows, total: result.total, progress: result.progress, observation: { source: "cloudshare_v4_sales_list", freshness: "fresh", correlation: "server-side" } } };
+      return match ? { id: match.id, status: row.status, operationalStatus: match.operationalStatus ?? "active" } : null;
+    }).filter((row): row is { id: string; status: typeof result.rows[number]["status"]; operationalStatus: string } => row !== null);
+    await Promise.all(rows.map((row) => deps.sessions.updateOperationalState!(input.customerId, row.id, { operationalStatus: row.operationalStatus === "needs_attention" ? "needs_attention" : row.operationalStatus === "provisioning" ? "provisioning" : "active", experienceStatus: row.status, experienceStatusObservedAt: new Date() })));
+    return { status: 200, body: { rows: rows.map(({ id, status }) => ({ id, status })), total: result.total, progress: result.progress, observation: { source: "cloudshare_v4_sales_list", freshness: "fresh", correlation: "server-side" } } };
   } catch {
     return { status: 502, body: { error: "CloudShare Sales Session refresh failed. Retry or open Support Diagnostics.", durable: true } };
   }
