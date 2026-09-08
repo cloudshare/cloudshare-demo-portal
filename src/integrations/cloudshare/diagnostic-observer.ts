@@ -3,6 +3,7 @@ import { createCloudShareWorkflowSequenceAllocator, type CloudShareWorkflowObser
 import type { CloudShareRequestObservation } from "./client";
 import type { V4TokenAcquisitionEvent } from "./v4-auth";
 import { projectCloudShareFailureContext } from "./diagnostic-failure-projection";
+import { randomUUID } from "node:crypto";
 
 /** Customer-scoped default observer. OAuth evidence never records credentials. */
 export function createCloudShareDiagnosticObserver(input: {
@@ -98,6 +99,7 @@ export function createCloudShareWorkflowObserver(input: {
     },
     onAcquisition: async (event: V4TokenAcquisitionEvent) => {
       const sequence = sequenceAllocator.next();
+      const exchangeCorrelationId = randomUUID();
       await input.diagnostics.record({
         occurredAt: new Date(event.occurredAt), source: input.source,
         operation: "cloudshare.oauth.token", outcome: event.outcome,
@@ -106,6 +108,7 @@ export function createCloudShareWorkflowObserver(input: {
         request: null, response: null,
         details: {
           sequence, durationMs: event.durationMs, integrationSurface: event.integrationSurface,
+          parentCorrelationId: input.correlationId, exchangeCorrelationId,
           ...(event.status !== undefined ? { status: event.status } : {}),
           ...(event.failureMode ? { failureMode: event.failureMode } : {}),
           ...(event.causeClassification ? { causeClassification: event.causeClassification } : {}),

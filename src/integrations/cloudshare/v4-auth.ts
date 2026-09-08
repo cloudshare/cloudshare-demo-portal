@@ -65,6 +65,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
 
   async function acquire(): Promise<CachedToken> {
     const startedAtMs = now();
+    const acquisitionMetadata = (event: Pick<V4TokenAcquisitionEvent, "durationMs" | "status" | "failureMode" | "causeClassification">) => ({ acquisition: { durationMs: event.durationMs, ...(event.status === undefined ? {} : { status: event.status }), ...(event.failureMode ? { failureMode: event.failureMode } : {}), ...(event.causeClassification ? { causeClassification: event.causeClassification } : {}) } });
     const body = new URLSearchParams({
       grant_type: "client_credentials",
       client_id: opts.clientId,
@@ -95,6 +96,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
         requestBody: body,
         cause: cause instanceof Error ? cause.message : String(cause),
+        ...acquisitionMetadata({ durationMs: Math.max(0, now() - startedAtMs), failureMode: "transport_failure", causeClassification: classifyTransportCause(cause) }),
       });
     }
 
@@ -125,6 +127,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
             responseStatus: response.status,
             ...(rateLimitHeaders ? { responseHeaders: rateLimitHeaders, rateLimitHeaders } : {}),
             responseBody: response.body,
+            ...acquisitionMetadata({ durationMs: Math.max(0, now() - startedAtMs), status: response.status, failureMode: "http_failure" }),
             ...(retryAfterSeconds !== undefined
               ? { retryAfterSeconds }
               : {}),
@@ -140,6 +143,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         status: response.status,
         responseHeaders: response.headers,
         responseBody: response.body,
+        ...acquisitionMetadata({ durationMs: Math.max(0, now() - startedAtMs), status: response.status, failureMode: "http_failure" }),
       });
     }
 
@@ -152,6 +156,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
         requestHeaders: { "content-type": "application/x-www-form-urlencoded" }, requestBody: body,
         status: response.status, responseHeaders: response.headers, responseBody: response.body,
+        ...acquisitionMetadata({ durationMs: Math.max(0, now() - startedAtMs), status: response.status, failureMode: "unexpected_response", causeClassification: "invalid_json" }),
       });
     }
 
@@ -163,6 +168,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         requestHeaders: { "content-type": "application/x-www-form-urlencoded" }, requestBody: body,
         status: response.status, responseHeaders: response.headers, responseBody: response.body,
         issues: parsed.error.issues.map((i) => i.message),
+        ...acquisitionMetadata({ durationMs: Math.max(0, now() - startedAtMs), status: response.status, failureMode: "unexpected_response", causeClassification: "invalid_schema" }),
       });
     }
 
