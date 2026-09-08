@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleRefreshSalesSessions } from "./sales-session-refresh";
+import { CloudShareAuthError } from "@/integrations/cloudshare/errors";
 
 const session = (id: string, experience: string, observedAt?: Date) => ({ id, customerId: "customer-1", opportunityId: "opp-1", itemId: "item-1", cloudShareSalesExperienceId: experience, externalId: id, type: "demo" as const, start: "2026-09-08T09:00", end: "2026-09-08T10:00", timeZone: "UTC", salesProEmail: "owner@example.test", salesProDisplayName: "Owner", registrationType: "registeredParticipantsOnly" as const, sendInvitations: "dontSend" as const, createdAt: new Date("2026-09-08T08:00Z"), experienceStatusObservedAt: observedAt });
 
@@ -38,17 +39,17 @@ describe("Sales Session refresh handler", () => {
 
   it("rejects a 51-row rendered target set and never crosses the Customer boundary", async () => {
     const list = vi.fn();
-    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), recordExperienceObservation: vi.fn() }, delivery: { listSessions: list, readSession: vi.fn() } }, { customerId: "customer-1", mode: "automatic", offset: 0, limit: 25, targetIds: Array.from({ length: 51 }, (_, index) => `local-${index}`) });
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), recordExperienceObservation: vi.fn() }, delivery: { listSessions: list } }, { customerId: "customer-1", mode: "automatic", offset: 0, limit: 25, targetIds: Array.from({ length: 51 }, (_, index) => `local-${index}`) });
     expect(result.status).toBe(400);
     expect(list).not.toHaveBeenCalled();
   });
 
   it("retains later-page provider evidence and structured OAuth failures under one correlation", async () => {
     const record = vi.fn();
-    const error = Object.assign(new Error("unauthorized"), { context: { failureMode: "oauth_failure", request: { method: "GET", path: "/v4/sales", query: { offset: "100" } }, response: { status: 401, body: { error: "unauthorized" } } } });
+    const error = new CloudShareAuthError("unauthorized", { failureMode: "oauth_failure", path: "/oauth/token" });
     const firstPage = Array.from({ length: 100 }, (_, index) => ({ id: `other-${index}`, status: "inProgress" as const }));
-    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1")]), recordExperienceObservation: vi.fn() }, delivery: { listSessions: vi.fn().mockResolvedValueOnce({ sessions: firstPage, total: 101 }).mockRejectedValueOnce(error) }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25 });
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1")]), recordExperienceObservation: vi.fn() }, delivery: { listSessions: vi.fn().mockResolvedValueOnce({ sessions: firstPage, total: 101 }).mockRejectedValueOnce(error) }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
     expect(result.status).toBe(502);
-    expect(record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: expect.any(String), request: expect.objectContaining({ path: "/v4/sales" }), response: expect.objectContaining({ status: 401 }), details: expect.objectContaining({ failureMode: "oauth_failure" }) }));
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: expect.any(String), request: null, response: null, details: expect.objectContaining({ failureMode: "oauth_failure" }) }));
   });
 });
