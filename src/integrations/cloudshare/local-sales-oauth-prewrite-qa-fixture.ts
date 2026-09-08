@@ -42,6 +42,9 @@ export function withLocalSalesOauthPrewriteFailureQaFixture(
       if (enabled && projectId && customerId === allowedCustomerId && request.method === "GET" && url.pathname === "/api/v3/users" && url.searchParams.get("projectUsers") === "true" && url.searchParams.get("projectId") === projectId) {
         return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ rows: [{ email: "qa-sales-pro@certalis.test", displayName: "QA Sales Pro" }] }) };
       }
+      if (enabled && customerId === allowedCustomerId && request.method === "GET" && url.pathname === "/api/v3/timezones") {
+        return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ Rows: [{ id: "UTC", displayName: "UTC" }] }) };
+      }
       const isOauthToken = request.method === "POST" && url.pathname.endsWith("/oauth/token");
       if (enabled && customerId === allowedCustomerId && isOauthToken && !fired.has(customerId!)) {
         fired.add(customerId!);

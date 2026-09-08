@@ -39,6 +39,22 @@ describe("local Sales OAuth pre-write QA fixture", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it("provides the hermetic timezone catalogue only for the configured Customer", async () => {
+    const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
+    const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "certalis", env, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
+
+    await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/timezones" })).resolves.toMatchObject({ status: 200, body: JSON.stringify({ Rows: [{ id: "UTC", displayName: "UTC" }] }) });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("delegates the timezone catalogue for another Customer", async () => {
+    const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
+    const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "other-customer", env, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
+
+    await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/timezones" })).resolves.toMatchObject({ body: "delegated" });
+    expect(send).toHaveBeenCalledOnce();
+  });
+
   it("accepts the configured Project with the v4 opportunity display name on retry", async () => {
     const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
     const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "certalis", env, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
