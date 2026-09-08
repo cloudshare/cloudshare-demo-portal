@@ -17,6 +17,7 @@ export async function POST(request: Request) {
   const result = await handleRefreshSalesSessions({
     sessions: createPrismaSalesDemoSessionRepository(services.prisma),
     delivery: createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })),
+    diagnostics: services.diagnosticRecorder,
   }, { customerId: session.customerId, mode: query.get("mode") === "automatic" ? "automatic" : "manual", offset: Math.max(0, Number(query.get("offset") ?? 0) || 0), limit: Math.min(100, Math.max(1, Number(query.get("limit") ?? 25) || 25)) });
   return NextResponse.json(result.body, { status: result.status });
 }

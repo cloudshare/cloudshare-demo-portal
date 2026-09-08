@@ -3,8 +3,9 @@ import { createSalesSessionRefresh } from "@/domain/sales-session-refresh";
 import type { SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import type { CloudShareSalesExperienceStatus } from "@/domain/sales-session-status";
 import { randomUUID } from "node:crypto";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 
-export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick<SalesDemoSessionRepository, "list" | "findById" | "recordExperienceObservation">; readonly delivery: Pick<SalesDelivery, "listSessions" | "readSession"> }, input: { readonly customerId: string; readonly mode: "automatic" | "manual"; readonly offset: number; readonly limit: number }) {
+export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick<SalesDemoSessionRepository, "list" | "findById" | "recordExperienceObservation">; readonly delivery: Pick<SalesDelivery, "listSessions" | "readSession">; readonly diagnostics?: DiagnosticRecorder }, input: { readonly customerId: string; readonly mode: "automatic" | "manual"; readonly offset: number; readonly limit: number }) {
   if (!Number.isInteger(input.offset) || input.offset < 0 || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) return { status: 400, body: { error: "Invalid bounded refresh pagination." } };
   if (!deps.sessions.list || !deps.sessions.findById || !deps.sessions.recordExperienceObservation) return { status: 503, body: { error: "Sales Session refresh is unavailable." } };
   try {
@@ -27,7 +28,7 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     }).filter((row): row is { id: string; status: CloudShareSalesExperienceStatus } => row !== null);
     await Promise.all(rows.map((row) => deps.sessions.recordExperienceObservation!(input.customerId, row.id, { experienceStatus: row.status, experienceStatusObservedAt: new Date() })));
     const correlationId = randomUUID();
-    if (rows.length < stale.size) return { status: 502, body: { error: "CloudShare did not return every targeted Sales Session. Retry or open Support Diagnostics.", durable: true, correlationId } };
+    if (rows.length < stale.size) { await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "warn", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare did not return every targeted Sales Session.", correlationId }); return { status: 502, body: { error: "CloudShare did not return every targeted Sales Session. Retry or open Support Diagnostics.", durable: true, correlationId } }; }
     return { status: 200, body: { rows: rows.map(({ id, status }) => ({ id, status })), total: rows.length, progress: { state: "complete", message: "Sales Session status refreshed." }, observation: { source: "cloudshare_v4_sales_list", freshness: "fresh", correlation: correlationId } } };
   } catch {
     return { status: 502, body: { error: "CloudShare Sales Session refresh failed. Retry or open Support Diagnostics.", durable: true, correlationId: randomUUID() } };
