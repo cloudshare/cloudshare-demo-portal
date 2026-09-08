@@ -102,7 +102,7 @@ export function createCloudShareIntegration(
 
   // Local QA stays at the integration HTTP seam: it cannot bypass the OAuth
   // observer or accidentally dispatch a Sales create request.
-  const qaHttp = opts.qaPrewriteSalesOauth
+  const qaHttp = opts.mode === "fixture" && opts.qaPrewriteSalesOauth
     ? withLocalSalesOauthPrewriteFailureQaFixture(http, opts.customerId, process.env, undefined, opts.localSalesOauthQa)
     : http;
   const tokenProvider = createV4TokenProvider({

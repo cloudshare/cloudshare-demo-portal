@@ -58,6 +58,9 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
 }).superRefine((env, ctx) => {
   if (env.PORTAL_LOCAL_QA_SCENARIO === "sales-oauth-prewrite-503") {
+    if (env.PORTAL_MODE !== "fixture") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["PORTAL_MODE"], message: "sales OAuth QA fixture requires PORTAL_MODE=fixture" });
+    }
     for (const [key, value] of [
       ["PORTAL_LOCAL_QA_SALES_CUSTOMER_ID", env.PORTAL_LOCAL_QA_SALES_CUSTOMER_ID],
       ["PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID", env.PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID],

@@ -505,7 +505,7 @@ export function getServices(): Services {
     diagnostics: diagnosticRecorder,
     mode: config.runtime.mode,
     trace: traceCloudShare,
-    localSalesOauthQa: config.runtime.localQa.scenario === "sales-oauth-prewrite-503"
+    localSalesOauthQa: config.runtime.mode === "fixture" && config.runtime.localQa.scenario === "sales-oauth-prewrite-503"
       ? { enabled: true, customerId: config.runtime.localQa.salesCustomerId, projectId: config.runtime.localQa.salesProjectId, opportunityId: config.runtime.localQa.salesOpportunityId, workflowSource: config.runtime.localQa.salesWorkflowSource }
       : undefined,
   });

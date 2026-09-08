@@ -68,6 +68,10 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...validEnv, PORTAL_LOCAL_QA_SCENARIO: "sales-oauth-prewrite-503", PORTAL_LOCAL_QA_SALES_CUSTOMER_ID: "customer", PORTAL_LOCAL_QA_SALES_PROJECT_ID: "project" })).toThrow("PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID");
   });
 
+  it("fails closed when the Sales OAuth fixture is enabled outside fixture mode", () => {
+    expect(() => loadConfig({ ...validEnv, PORTAL_MODE: "live", PORTAL_LOCAL_QA_SCENARIO: "sales-oauth-prewrite-503", PORTAL_LOCAL_QA_SALES_CUSTOMER_ID: "customer", PORTAL_LOCAL_QA_SALES_PROJECT_ID: "project", PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID: "opportunity" })).toThrow("PORTAL_MODE=fixture");
+  });
+
   it("loads the seed from a local JSON config file when PORTAL_SEED_SOURCE=file", () => {
     const dir = mkdtempSync(join(tmpdir(), "portal-seed-"));
     const path = join(dir, "portal-seed.local.json");

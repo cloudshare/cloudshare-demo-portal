@@ -27,7 +27,7 @@ export function withLocalSalesOauthPrewriteFailureQaFixture(
   fired: Set<string> = firedCustomers,
   qaConfig?: LocalSalesOauthQaConfig,
 ): HttpClient {
-  const enabled = env.NODE_ENV === "development" && qaConfig?.enabled === true &&
+  const enabled = env.NODE_ENV === "development" && env.PORTAL_MODE === "fixture" && qaConfig?.enabled === true &&
     qaConfig.workflowSource === "sales-demo-sessions" &&
     env.PORTAL_LOCAL_QA_SCENARIO === LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO &&
     Boolean(customerId) &&

@@ -8,6 +8,7 @@ describe("local Sales OAuth pre-write QA fixture", () => {
     PORTAL_LOCAL_QA_SALES_CUSTOMER_ID: "certalis",
     PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID: "opp-qa",
     PORTAL_LOCAL_QA_SALES_PROJECT_ID: "project-qa",
+    PORTAL_MODE: "fixture",
   } as NodeJS.ProcessEnv;
 
   it("fails only the first allowed Customer OAuth exchange, then delegates", async () => {
@@ -41,6 +42,13 @@ describe("local Sales OAuth pre-write QA fixture", () => {
   it("is inert in production even with the scenario enabled", async () => {
     const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
     const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "certalis", { ...env, NODE_ENV: "production" }, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
+    await expect(http.send({ method: "POST", url: "https://api.accelerate.cloudshare.com/v4/oauth/token" })).resolves.toMatchObject({ status: 200 });
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  it("is inert outside fixture mode even in development", async () => {
+    const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
+    const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "certalis", { ...env, PORTAL_MODE: "live" }, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
     await expect(http.send({ method: "POST", url: "https://api.accelerate.cloudshare.com/v4/oauth/token" })).resolves.toMatchObject({ status: 200 });
     expect(send).toHaveBeenCalledOnce();
   });
