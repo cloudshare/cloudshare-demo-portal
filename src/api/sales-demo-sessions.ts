@@ -187,7 +187,16 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       ]);
       return response(502, { error: AMBIGUOUS_CREATE_REASON, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("cloudshare_v4_post_sales_ambiguous", AMBIGUOUS_CREATE_REASON, id) });
     }
-    await clearReservedBeforeDispatch(deps.sessions, reservation);
+    const reservationCleared = await clearReservedBeforeDispatch(deps.sessions, reservation);
+    if (!reservationCleared) {
+      const reason = "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
+      const details = { integrationSurface: "portal.sales_demo_sessions", failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: false, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
+      await Promise.allSettled([
+        evidence(deps, request, correlationId, reservation, "failure", reason, undefined, details),
+        deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: reservation.id, outcome: "failure", correlationId, details, error: reason }),
+      ]);
+      return response(503, { error: reason, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("reservation_cleanup_unconfirmed", reason, reservation.id) });
+    }
     if (itemValidationFailure || itemReadFailure) {
       await recordResourceReads(deps, request, correlationId, item.id, item.project.id, error.completedReads, "failure");
     }
@@ -263,7 +272,10 @@ async function clearAmbiguousReservation(sessions: SalesDemoSessionRepository, r
   try {
     const persisted = await sessions.findById(reservation.customerId, reservation.id);
     const isOwnPendingReservation = persisted?.id === reservation.id && persisted.customerId === reservation.customerId && persisted.opportunityId === reservation.opportunityId && persisted.revision === reservation.revision && persisted.cloudShareSalesExperienceId === reservation.cloudShareSalesExperienceId && persisted.operationalStatus === "provisioning";
-    return isOwnPendingReservation ? await sessions.discardReservation(reservation) : false;
+    if (!isOwnPendingReservation) return false;
+    const discarded = await sessions.discardReservation(reservation);
+    if (!discarded) return false;
+    return (await sessions.findById(reservation.customerId, reservation.id)) === null;
   } catch { return false; }
 }
 const AMBIGUOUS_CREATE_REASON = "CloudShare POST /sales completed without a response, so the creation outcome is unknown. Do not retry creation; review support diagnostics.";
@@ -276,9 +288,16 @@ function isOutcomeAmbiguousCreateFailure(error: unknown): boolean {
   if (error instanceof CloudShareRequestError) return error.status >= 500;
   return error instanceof CloudShareTransportError || error instanceof CloudShareResponseError || !(error instanceof CloudShareAuthError);
 }
-async function clearReservedBeforeDispatch(sessions: SalesDemoSessionRepository, reservation: SalesDemoSession): Promise<void> {
-  if (!sessions.discardReservation) return;
-  await Promise.allSettled([sessions.discardReservation(reservation)]);
+async function clearReservedBeforeDispatch(sessions: SalesDemoSessionRepository, reservation: SalesDemoSession): Promise<boolean> {
+  if (!sessions.discardReservation || !sessions.findById) return false;
+  try {
+    const discarded = await sessions.discardReservation(reservation);
+    if (!discarded) return false;
+    const remaining = await sessions.findById(reservation.customerId, reservation.id);
+    return remaining === null;
+  } catch {
+    return false;
+  }
 }
 async function evidence(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, session: SalesDemoSession, outcome: "success" | "failure", message: string, cloudshare: { request: unknown; response: unknown } | undefined, details: Record<string, unknown>) {
   await deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, externalId: session.externalId, opportunityId: session.opportunityId, itemId: session.itemId }, request: cloudshare?.request as Record<string, unknown> | undefined, response: cloudshare?.response as Record<string, unknown> | undefined, details });
