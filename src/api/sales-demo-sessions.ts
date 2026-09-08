@@ -13,7 +13,7 @@ import { DEFAULT_SALES_SESSION_NAME_TEMPLATE, renderSalesSessionName } from "@/d
 import type { SalesSessionConfigurationRepository } from "@/domain/sales-session-configuration";
 import type { SalesTimezoneCacheRepository } from "@/domain/sales-timezones";
 import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
-import { CloudShareAuthError, CloudShareError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError } from "@/integrations/cloudshare/errors";
+import { CloudShareAuthError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError, isCloudShareErrorAcrossBoundaries } from "@/integrations/cloudshare/errors";
 import { SalesItemProvisioningReadError, SalesItemProvisioningValidationError, type SalesItemProvisioningValidator } from "@/integrations/cloudshare/sales-item-provisioning";
 import { createCloudShareProjectMemberSource, type CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
@@ -177,7 +177,8 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     const memberReadFailure = error instanceof SalesProjectMemberReadError;
     const itemValidationFailure = error instanceof SalesItemProvisioningValidationError;
     const itemReadFailure = error instanceof SalesItemProvisioningReadError;
-    const ambiguousCreate = createDispatched && !validationFailure && isOutcomeAmbiguousCreateFailure(error);
+    const preWriteAuthFailure = isPreWriteAuthFailure(error);
+    const ambiguousCreate = !preWriteAuthFailure && createDispatched && !validationFailure && isOutcomeAmbiguousCreateFailure(error);
     if (ambiguousCreate) {
       await Promise.allSettled([
         deps.sessions.updateOperationalState?.(request.customerId, id, { operationalStatus: "needs_attention", attentionReason: `cloudshare_v4_post_sales_ambiguous: ${AMBIGUOUS_CREATE_REASON}` }),
@@ -192,7 +193,6 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     }
     const causeEvidence = cloudShareEvidence(itemReadFailure || memberReadFailure ? error.cause : error);
     if (memberSelectionFailure) await recordProjectMemberRead(deps, request, correlationId, item.id, item.project.id, error.read, "failure");
-    const preWriteAuthFailure = isPreWriteAuthFailure(error);
     const oauthMetadata = preWriteAuthFailure ? oauthFailureMetadata(error) : undefined;
     const integrationSurface = preWriteAuthFailure ? "cloudshare.v4.oauth.token" : memberSelectionFailure || memberReadFailure ? "cloudshare.v3.project_members_gui" : itemValidationFailure || itemReadFailure ? "cloudshare.v3.sales_item_resources" : "cloudshare.v4.sales";
     const failureMode = preWriteAuthFailure ? "cloudshare_auth_pre_write" : memberReadFailure ? "project_member_read" : memberSelectionFailure ? "selected_sales_pro_inactive" : validationFailure ? "main_sales_pro_validation" : itemValidationFailure ? "item_resource_drift" : itemReadFailure ? "item_resource_read" : "cloudshare_create";
@@ -219,7 +219,7 @@ function cloudShareErrorContext(error: unknown): Record<string, unknown> | undef
 }
 function isPreWriteAuthFailure(error: unknown): boolean {
   if (error instanceof SalesItemProvisioningReadError || error instanceof SalesProjectMemberReadError) return isPreWriteAuthFailure(error.cause);
-  if (!(error instanceof CloudShareError)) return false;
+  if (!isCloudShareErrorAcrossBoundaries(error)) return false;
   const context = cloudShareErrorContext(error);
   return error instanceof CloudShareAuthError || context?.path === "/oauth/token" || context?.integrationSurface === "cloudshare.v4.oauth.token";
 }
@@ -228,7 +228,7 @@ function oauthFailureMetadata(error: unknown): Record<string, unknown> {
   const context = cloudShareErrorContext(error) ?? {};
   const acquisition = context.acquisition && typeof context.acquisition === "object" ? context.acquisition as Record<string, unknown> : {};
   const status = typeof acquisition.status === "number" ? acquisition.status : typeof context.responseStatus === "number" ? context.responseStatus : typeof context.status === "number" ? context.status : undefined;
-  return { ...(status === undefined ? {} : { oauthStatus: status }), ...(typeof acquisition.durationMs === "number" ? { oauthDurationMs: acquisition.durationMs } : {}), ...(typeof acquisition.failureMode === "string" ? { oauthFailureMode: acquisition.failureMode } : {}), ...(typeof context.network === "object" && context.network ? { oauthTransport: context.network } : {}), ...(typeof acquisition.causeClassification === "string" ? { oauthCause: acquisition.causeClassification } : {}) };
+  return { ...(typeof acquisition.exchangeCorrelationId === "string" ? { oauthExchangeCorrelationId: acquisition.exchangeCorrelationId } : {}), ...(status === undefined ? {} : { oauthStatus: status }), ...(typeof acquisition.durationMs === "number" ? { oauthDurationMs: acquisition.durationMs } : {}), ...(typeof acquisition.failureMode === "string" ? { oauthFailureMode: acquisition.failureMode } : {}), ...(typeof context.network === "object" && context.network ? { oauthTransport: context.network } : {}), ...(typeof acquisition.causeClassification === "string" ? { oauthCause: acquisition.causeClassification } : {}) };
 }
 function isMainSalesProValidationFailure(error: unknown): boolean {
   if (!(error instanceof Error)) return false;

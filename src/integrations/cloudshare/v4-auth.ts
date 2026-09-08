@@ -68,7 +68,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
   async function acquire(): Promise<CachedToken> {
     const startedAtMs = now();
     const exchangeCorrelationId = randomUUID();
-    const acquisitionMetadata = (event: Pick<V4TokenAcquisitionEvent, "durationMs" | "status" | "failureMode" | "causeClassification">) => ({ acquisition: { durationMs: event.durationMs, ...(event.status === undefined ? {} : { status: event.status }), ...(event.failureMode ? { failureMode: event.failureMode } : {}), ...(event.causeClassification ? { causeClassification: event.causeClassification } : {}) } });
+    const acquisitionMetadata = (event: Pick<V4TokenAcquisitionEvent, "durationMs" | "status" | "failureMode" | "causeClassification">) => ({ acquisition: { exchangeCorrelationId, durationMs: event.durationMs, ...(event.status === undefined ? {} : { status: event.status }), ...(event.failureMode ? { failureMode: event.failureMode } : {}), ...(event.causeClassification ? { causeClassification: event.causeClassification } : {}) } });
     const body = new URLSearchParams({
       grant_type: "client_credentials",
       client_id: opts.clientId,
