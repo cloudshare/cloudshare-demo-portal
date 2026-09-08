@@ -11,7 +11,7 @@ describe("Sales Session refresh handler", () => {
     expect(result.status).toBe(200);
     expect(record).toHaveBeenCalledWith("customer-1", "local-1", expect.objectContaining({ experienceStatus: "inProgress" }));
     expect(record).not.toHaveBeenCalledWith("customer-1", "local-other", expect.anything());
-    expect(listSessions).toHaveBeenCalledWith(expect.objectContaining({ field: '"sales-1"' }));
+    expect(listSessions).toHaveBeenCalledWith(expect.objectContaining({ field: 'id=in("sales-1")' }));
   });
 
   it("fails closed on duplicate provider rows without persisting either row", async () => {
