@@ -47,6 +47,7 @@ export interface SalesDemoSessionRepository {
    * longer matches, so a concurrent request can never be removed. */
   discardReservation?(reservation: Pick<SalesDemoSession, "id" | "customerId" | "opportunityId" | "revision" | "cloudShareSalesExperienceId" | "operationalStatus">): Promise<boolean>;
   updateOperationalState?(customerId: string, id: string, state: { cloudShareSalesExperienceId?: string; salesProEmail?: string; salesProDisplayName?: string; operationalStatus: "active" | "needs_attention"; attentionReason?: string | null; experienceStatus?: CloudShareSalesExperienceStatus | null; experienceStatusObservedAt?: Date | null }): Promise<void>;
+  recordExperienceObservation?(customerId: string, id: string, observation: { readonly experienceStatus: CloudShareSalesExperienceStatus; readonly experienceStatusObservedAt: Date }): Promise<void>;
   updateDisplayName?(id: string, sessionName: string): Promise<void>;
 }
 

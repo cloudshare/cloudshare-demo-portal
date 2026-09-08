@@ -22,6 +22,10 @@ export function createPrismaSalesDemoSessionRepository(prisma: PrismaClient): Sa
       const updated = await prisma.salesDemoSession.updateMany({ where: { customerId, id }, data: state });
       if (updated.count !== 1) throw new Error("Sales Enablement Session was not found for this Customer");
     },
+    async recordExperienceObservation(customerId, id, observation) {
+      const updated = await prisma.salesDemoSession.updateMany({ where: { customerId, id }, data: observation });
+      if (updated.count !== 1) throw new Error("Sales Enablement Session was not found for this Customer");
+    },
     async updateDisplayName(id, sessionName) { await prisma.salesDemoSession.update({ where: { id }, data: { sessionName } }); },
   };
 }
