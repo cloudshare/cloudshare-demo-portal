@@ -28,6 +28,8 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
   const [recordOptions, setRecordOptions] = useState<SalesRecordOptions>({});
   const [optionsError, setOptionsError] = useState<string | null>(null);
   const [queueReload, setQueueReload] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshFeedback, setRefreshFeedback] = useState<string | null>(null);
   const selectedRef = useRef<HTMLAnchorElement | null>(null);
   const view = route.queueView ?? "active";
   const sort = route.queueSort ?? "start_desc";
@@ -92,6 +94,10 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
     window.history.replaceState(window.history.state, "", queueHref);
   };
   const data = result?.response ?? null;
+  const refreshCloudShare = async () => {
+    setRefreshing(true); setRefreshFeedback("Refreshing Sales Session status from CloudShare…");
+    try { const response = await fetchRef.current(`/api/sales/enablement-sessions/refresh?mode=manual&offset=${offset}&limit=25`, { method: "POST" }); const body = await response.json() as { error?: string }; if (!response.ok) throw new Error(body.error ?? "CloudShare refresh failed."); setRefreshFeedback("Sales Session status refreshed."); setQueueReload((value) => value + 1); } catch (cause) { setRefreshFeedback(cause instanceof Error ? `${cause.message} Retry or open Sales support.` : "CloudShare refresh failed. Retry or open Sales support."); } finally { setRefreshing(false); }
+  };
   const displayedRequest = result?.request;
   const rows = data?.rows ?? [];
   const range = data ? `${data.total ? data.offset + 1 : 0}–${Math.min(data.offset + rows.length, data.total)} of ${data.total}` : null;
@@ -102,7 +108,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
         <h2 className={styles.title}>Sessions</h2>
         <p className={styles.description}>Triage the Customer&apos;s scheduled and live Sales Experiences. Certalis operation, CloudShare Experience, and Participant Environment remain separate.</p>
       </div>
-      <button type="button" style={primaryButtonStyle} className={styles.provisionButton} onClick={() => onNavigate({ tab: "sessions", sessionView: "provision" })}>Provision a Session</button>
+      <button type="button" style={primaryButtonStyle} className={styles.provisionButton} onClick={() => onNavigate({ tab: "sessions", sessionView: "provision" })}>Provision a Session</button><button type="button" className={styles.pageButton} onClick={() => void refreshCloudShare()} disabled={refreshing} aria-busy={refreshing}>{refreshing ? "Refreshing…" : "Refresh CloudShare status"}</button>
     </header>
 
     <section className={styles.commandRail} aria-label="Session queue controls">
@@ -118,7 +124,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
     </section>
 
     {creationNotice ? <div role="alert" className={`${styles.feedback} ${styles.feedbackError}`}><p>{creationNotice.message} <strong>Do not retry creation.</strong></p>{creationNotice.correlationId ? <button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support", correlationId: creationNotice.correlationId })}>Open support diagnostics ({creationNotice.correlationId})</button> : null}</div> : null}
-    {error ? <div role="alert" className={`${styles.feedback} ${styles.feedbackError}`}><p>{error} The last successfully loaded queue remains visible.</p><div className={styles.failureActions}><button type="button" className={styles.pageButton} onClick={() => setQueueReload((value) => value + 1)}>Retry queue</button><button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support" })}>Open Sales support</button></div></div> : null}
+    {refreshFeedback ? <div role="status" className={styles.feedback}><p>{refreshFeedback}</p>{refreshFeedback.includes("Retry") ? <div className={styles.failureActions}><button type="button" className={styles.pageButton} onClick={() => void refreshCloudShare()}>Retry refresh</button><button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support" })}>Open Sales support</button></div> : null}</div> : null}{error ? <div role="alert" className={`${styles.feedback} ${styles.feedbackError}`}><p>{error} The last successfully loaded queue remains visible.</p><div className={styles.failureActions}><button type="button" className={styles.pageButton} onClick={() => setQueueReload((value) => value + 1)}>Retry queue</button><button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support" })}>Open Sales support</button></div></div> : null}
     {data?.target && data.target.state !== "available" ? <p role="status" className={styles.feedback}>{data.target.message}</p> : null}
     {optionsError ? <p role="alert" className={`${styles.feedback} ${styles.feedbackError}`}>{optionsError}</p> : null}
 
