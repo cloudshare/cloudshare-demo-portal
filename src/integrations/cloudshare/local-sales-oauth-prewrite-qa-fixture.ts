@@ -55,9 +55,13 @@ export function withLocalSalesOauthPrewriteFailureQaFixture(
         return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ access_token: "local-qa-token", token_type: "Bearer", expires_in: 3600 }) };
       }
       if (enabled && customerId === allowedCustomerId && request.method === "POST" && url.pathname.endsWith("/sales")) {
-        let opportunityId = "";
-        try { opportunityId = String((JSON.parse(request.body ?? "{}") as { opportunity?: unknown }).opportunity ?? ""); } catch { return http.send(request); }
-        if (opportunityId !== qaConfig?.opportunityId) return http.send(request);
+        let body: { projectId?: unknown; opportunity?: unknown };
+        try { body = JSON.parse(request.body ?? "{}") as { projectId?: unknown; opportunity?: unknown }; } catch { return http.send(request); }
+        // The v4 payload carries the opportunity display name, while the exact
+        // configured Opportunity ID is already enforced by composition's
+        // workflow gate. Keep this fixture bound to the configured Project and
+        // require a real display name instead of comparing unlike identifiers.
+        if (String(body.projectId ?? "") !== projectId || !String(body.opportunity ?? "").trim()) return http.send(request);
         return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ id: "local-qa-sales-experience", status: "notStarted" }) };
       }
       return http.send(request);

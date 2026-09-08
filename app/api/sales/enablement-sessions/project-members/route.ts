@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   if (!itemId) return NextResponse.json({ error: "itemId is required" }, { status: 400 });
   const result = await handleListSalesProjectMembers({
     items: createPrismaItemRepository(services.prisma), connections: services.cloudshareConnections,
-    sourceFactory: { forConnection: (connection) => createCloudShareProjectMemberSource(services.cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "catalogue_resource_read" })) },
+    sourceFactory: { forConnection: (connection) => createCloudShareProjectMemberSource(services.cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "sales_project_member_preflight" })) },
     diagnostics: services.diagnosticRecorder, audit: services.audit,
   }, { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, itemId });
   return NextResponse.json(result.body, { status: result.status });

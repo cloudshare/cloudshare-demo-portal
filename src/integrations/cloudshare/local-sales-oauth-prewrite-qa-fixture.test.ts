@@ -39,6 +39,14 @@ describe("local Sales OAuth pre-write QA fixture", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts the configured Project with the v4 opportunity display name on retry", async () => {
+    const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
+    const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "certalis", env, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
+
+    await expect(http.send({ method: "POST", url: "https://use.cloudshare.com/api/v4/sales", body: JSON.stringify({ projectId: "project-qa", opportunity: "Renewal" }) })).resolves.toMatchObject({ status: 200, headers: expect.objectContaining({ "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }) });
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("is inert in production even with the scenario enabled", async () => {
     const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
     const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "certalis", { ...env, NODE_ENV: "production" }, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
