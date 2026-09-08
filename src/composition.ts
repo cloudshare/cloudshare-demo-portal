@@ -159,7 +159,7 @@ export function createCloudShareClientFactory(input: {
         // its route has not created the Sales Session workflow yet. Keep the
         // fixture limited to that preflight or the anchored Sales workflow.
         qaPrewriteSalesOauth:
-          (options.scope === "customer_default" ||
+          (options.scope === "customer_default" && options.reason === "sales_project_member_preflight" && connection.customerId === input.localSalesOauthQa?.customerId) ||
             (options.scope === "workflow" &&
               options.workflow.source === "sales-demo-sessions" &&
               (typeof options.workflow.subject === "function"
