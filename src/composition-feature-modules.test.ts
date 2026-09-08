@@ -111,6 +111,19 @@ describe("composition feature modules", () => {
     }));
   });
 
+  it("only enables the local OAuth fixture for the Sales Session workflow", () => {
+    const { factory, integrations } = createObservedFactory();
+    factory.forConnection(CONNECTION, { scope: "workflow", workflow: {
+      actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_demo_session", id: "session-1" },
+      correlationId: "sales-correlation", source: "sales-demo-sessions",
+    } });
+    factory.forConnection(CONNECTION, { scope: "workflow", workflow: {
+      actor: { type: "admin", id: "admin-1" }, subject: { type: "exam_attempt", id: "attempt-1" },
+      correlationId: "other-correlation", source: "exam-attempts",
+    } });
+    expect(integrations.map((input) => input.qaPrewriteSalesOauth)).toEqual([true, false]);
+  });
+
   it("keeps mandatory Customer evidence isolated across connections", async () => {
     const { factory, record, integrations } = createObservedFactory();
     factory.forConnection(CONNECTION, { scope: "customer_default", reason: "connection_check" });

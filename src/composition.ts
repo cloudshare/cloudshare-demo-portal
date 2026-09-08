@@ -156,7 +156,12 @@ export function createCloudShareClientFactory(input: {
         trace: input.trace,
         // Only workflow-scoped clients reach the fixture; unanchored support,
         // catalogue, and timezone reads must not consume its one-shot failure.
-        qaPrewriteSalesOauth: options.scope === "workflow",
+        qaPrewriteSalesOauth:
+          options.scope === "workflow" &&
+          options.workflow.source === "sales-demo-sessions" &&
+          (typeof options.workflow.subject === "function"
+            ? options.workflow.subject().type
+            : options.workflow.subject.type) === "sales_demo_session",
         observer: {
           onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest, defaultObserver.onRequest),
           onAcquisition: composeCloudShareObservers(options.onAcquisition, workflowObserver?.onAcquisition, defaultObserver.onAcquisition),

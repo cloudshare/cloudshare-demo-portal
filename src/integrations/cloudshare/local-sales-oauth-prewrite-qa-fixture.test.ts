@@ -25,4 +25,21 @@ describe("local Sales OAuth pre-write QA fixture", () => {
     await http.send({ method: "POST", url: "https://api.accelerate.cloudshare.com/v4/sales" });
     expect(send).toHaveBeenCalledTimes(2);
   });
+
+  it("allows only the configured project-member lookup and delegates other projects", async () => {
+    const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
+    const scopedEnv = { ...env, PORTAL_LOCAL_QA_SALES_PROJECT_ID: "project-qa" };
+    const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "certalis", scopedEnv, new Set());
+
+    await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/users?projectUsers=true&projectId=project-qa" })).resolves.toMatchObject({ status: 200, headers: expect.objectContaining({ "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }) });
+    await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/users?projectUsers=true&projectId=project-other" })).resolves.toMatchObject({ body: "delegated" });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("is inert in production even with the scenario enabled", async () => {
+    const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
+    const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "certalis", { ...env, NODE_ENV: "production" }, new Set());
+    await expect(http.send({ method: "POST", url: "https://api.accelerate.cloudshare.com/v4/oauth/token" })).resolves.toMatchObject({ status: 200 });
+    expect(send).toHaveBeenCalledOnce();
+  });
 });
