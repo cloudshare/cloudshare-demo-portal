@@ -192,7 +192,11 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     // OAuth case may advertise a safe retry: it is the one failure for which
     // the provider exchange is explicitly proven to have happened before the
     // Sales POST. Missing cleanup/readback is therefore fail-closed.
-    const provenPreDispatchFailure = !createDispatched && (preWriteAuthFailure || validationFailure || memberSelectionFailure || memberReadFailure || itemValidationFailure || itemReadFailure);
+    // `createDispatched` marks entry into the delivery boundary, but OAuth is
+    // acquired inside that boundary before the provider POST /sales. Treat a
+    // proven OAuth failure as pre-dispatch so its local reservation is cleared;
+    // other failures remain gated by the delivery-entry marker.
+    const provenPreDispatchFailure = preWriteAuthFailure || (!createDispatched && (validationFailure || memberSelectionFailure || memberReadFailure || itemValidationFailure || itemReadFailure));
     if (provenPreDispatchFailure) {
       const reservationCleared = !reservationClaimed || (!deps.sessions.discardReservation || !deps.sessions.findById) || await clearReservedBeforeDispatch(deps.sessions, reservation);
       if (!reservationCleared) {
