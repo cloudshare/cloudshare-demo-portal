@@ -715,12 +715,19 @@ export async function handlePublishSalesTrialOffering(
     return response(200, { offering: toPortalOffering(published) });
   } catch (error) {
     if (!isOutcomeAmbiguousCreateFailure(error)) {
-      await releaseReservationToDraft(
+      const released = await releaseReservationToDraft(
         deps,
         request.customerId,
         offering.id,
         reservation.updatedAt,
       );
+      if (!released) {
+        return response(503, {
+          error: "CloudShare authentication failed before the Sales Trial Offering was created, but Certalis could not confirm the local reservation was released. Do not retry publication; review support diagnostics.",
+          needsAttention: true,
+          correlationId,
+        });
+      }
       return publishFailure(deps, request, offering, correlationId, externalId, error);
     }
     const needsAttention = {
@@ -1546,13 +1553,17 @@ async function releaseReservationToDraft(
   customerId: string,
   id: string,
   updatedAt: Date,
-) {
+) : Promise<boolean> {
   const released =
     (await deps.offerings.releasePublicationReservation?.(customerId, id, {
       updatedAt,
       attentionReason: null,
     })) ?? false;
-  if (!released) {
+  if (released) {
+    const verified = await deps.offerings.findById(customerId, id);
+    return verified?.status === "draft" && !verified.cloudShareSalesExperienceId && verified.externalId === null;
+  }
+  try {
     const persisted = await deps.offerings.findById(customerId, id);
     if (
       persisted &&
@@ -1566,8 +1577,13 @@ async function releaseReservationToDraft(
         updatedAt,
         attentionReason: null,
       });
+      const verified = await deps.offerings.findById(customerId, id);
+      return verified?.status === "draft" && !verified.cloudShareSalesExperienceId && verified.externalId === null;
     }
+  } catch {
+    return false;
   }
+  return false;
 }
 
 async function rejectPublishPreflight(
