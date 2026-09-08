@@ -75,13 +75,14 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
     const key = `${view}:${offset}:${rows.map((row) => row.id).join(",")}`;
     if (automaticRefreshKey.current === key) return;
     automaticRefreshKey.current = key;
+    setRefreshFeedback("Refreshing visible Sales Session status from CloudShare…");
     let live = true;
     const timer = window.setTimeout(async () => {
       try {
         const refreshParams = new URLSearchParams({ mode: "automatic", offset: String(offset), limit: "25" });
         rows.forEach((row) => refreshParams.append("targetId", row.id));
         const response = await fetchRef.current(`/api/sales/enablement-sessions/refresh?${refreshParams}`, { method: "POST" });
-        if (live && response.ok) setQueueReload((value) => value + 1);
+        if (live && response.ok) { setRefreshFeedback("Sales Session status refreshed from CloudShare."); setQueueReload((value) => value + 1); }
         else if (live) setRefreshFeedback("CloudShare refresh failed. Retry or open Sales support.");
       } catch { if (live) setRefreshFeedback("CloudShare refresh failed. Retry or open Sales support."); }
     }, 250);
