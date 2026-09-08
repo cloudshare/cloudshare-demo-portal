@@ -5,7 +5,7 @@ import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleListSalesProjectMembers } from "@/api/sales-project-members";
 import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
-import { createSalesProjectMemberSourceFactory } from "@/api/sales-project-members-route";
+import { createCloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 
 export async function GET(request: Request) {
   const services = getServices();
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   if (!itemId) return NextResponse.json({ error: "itemId is required" }, { status: 400 });
   const result = await handleListSalesProjectMembers({
     items: createPrismaItemRepository(services.prisma), connections: services.cloudshareConnections,
-    sourceFactory: createSalesProjectMemberSourceFactory(services),
+    sourceFactory: { forConnection: (connection) => createCloudShareProjectMemberSource(services.cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "sales_project_member_preflight" })) },
     diagnostics: services.diagnosticRecorder, audit: services.audit,
   }, { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, itemId });
   return NextResponse.json(result.body, { status: result.status });
