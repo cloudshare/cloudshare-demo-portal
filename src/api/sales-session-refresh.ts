@@ -1,5 +1,4 @@
 import type { SalesDemoSessionRepository } from "@/domain/sales-demo-session";
-import { createSalesSessionRefresh } from "@/domain/sales-session-refresh";
 import type { SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import type { CloudShareSalesExperienceStatus } from "@/domain/sales-session-status";
 import { randomUUID } from "node:crypto";
