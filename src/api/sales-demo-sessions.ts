@@ -196,7 +196,8 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     // acquired inside that boundary before the provider POST /sales. Treat a
     // proven OAuth failure as pre-dispatch so its local reservation is cleared;
     // other failures remain gated by the delivery-entry marker.
-    const provenPreDispatchFailure = preWriteAuthFailure || (!createDispatched && (validationFailure || memberSelectionFailure || memberReadFailure || itemValidationFailure || itemReadFailure));
+    const definiteCreateFailure = createDispatched && isDefiniteCreateFailure(error);
+    const provenPreDispatchFailure = preWriteAuthFailure || definiteCreateFailure || (!createDispatched && (validationFailure || memberSelectionFailure || memberReadFailure || itemValidationFailure || itemReadFailure));
     if (provenPreDispatchFailure) {
       // A claimed reservation is only safe to retry after discard *and*
       // readback have both been confirmed. Missing either capability is an
@@ -313,6 +314,9 @@ async function clearReservedBeforeDispatch(sessions: SalesDemoSessionRepository,
   } catch {
     return false;
   }
+}
+function isDefiniteCreateFailure(error: unknown): boolean {
+  return error instanceof CloudShareRequestError && error.status >= 400 && error.status < 500;
 }
 async function evidence(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, session: SalesDemoSession, outcome: "success" | "failure", message: string, cloudshare: { request: unknown; response: unknown } | undefined, details: Record<string, unknown>) {
   await deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, externalId: session.externalId, opportunityId: session.opportunityId, itemId: session.itemId }, request: cloudshare?.request as Record<string, unknown> | undefined, response: cloudshare?.response as Record<string, unknown> | undefined, details });

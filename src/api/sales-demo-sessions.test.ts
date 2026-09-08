@@ -189,6 +189,24 @@ describe("Sales Enablement Session API handler", () => {
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure", details: expect.objectContaining({ failureMode: "main_sales_pro_validation" }) }));
   });
 
+  it("clears a claimed reservation after a definite post-dispatch 4xx rejection", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-4xx", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-4xx", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const stored: SalesDemoSession[] = [];
+    const discardReservation = vi.fn(async (reservation: SalesDemoSession) => {
+      const index = stored.findIndex((value) => value.id === reservation.id && value.customerId === reservation.customerId && value.cloudShareSalesExperienceId === reservation.cloudShareSalesExperienceId);
+      if (index < 0) return false;
+      stored.splice(index, 1);
+      return true;
+    });
+    const sessions = { save: vi.fn(async (value: SalesDemoSession) => { stored.push(value); }), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]), findById: vi.fn(async (_customerId: string, id: string) => stored.find((value) => value.id === id) ?? null), discardReservation };
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(new CloudShareRequestError("CloudShare rejected the Sales payload", 422, { path: "/sales" })) }) }, projectMembers, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, newId: () => "session-4xx" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-4xx", itemId: "item-4xx", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+    expect(result).toMatchObject({ status: 502, body: { needsAttention: false } });
+    expect(discardReservation).toHaveBeenCalledWith(expect.objectContaining({ id: "session-4xx", cloudShareSalesExperienceId: "pending:session-4xx" }));
+    expect(stored).toHaveLength(0);
+  });
+
   it("keeps OAuth token failure evidence metadata-only during Sales Enablement Session creation", async () => {
     const records = createInMemorySalesRecordRepository();
     await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
