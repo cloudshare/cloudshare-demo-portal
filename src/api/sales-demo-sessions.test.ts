@@ -36,6 +36,21 @@ describe("Sales Enablement Session API handler", () => {
     expect(child).toMatchObject({ customerId: "customer-real", subject: { type: "sales_demo_session", id: "session-real" }, correlationId: parentCorrelationId, details: { parentCorrelationId, exchangeCorrelationId: expect.any(String), status: 504, sequence: 1 } });
     expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("provider-secret"); expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("private");
   });
+  it("fails closed when a claimed reservation cannot be discarded or read back", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-capability", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-capability", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const result = await handleCreateSalesDemoSession({
+      records, items: { findById: vi.fn().mockResolvedValue(item) },
+      sessions: { save: vi.fn().mockResolvedValue(undefined), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]) },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) },
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(new CloudShareAuthError("OAuth failed", { path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token" })) }) },
+      projectMembers, diagnostics, audit: { write: vi.fn() }, newId: () => "capability-session",
+    }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-capability", itemId: "item-capability", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+    expect(result).toMatchObject({ status: 503, body: { needsAttention: true, creationOutcome: { source: "reservation_cleanup_unconfirmed", retry: "unsafe_requires_support" } } });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "reservation_cleanup_unconfirmed", retry: "unsafe_requires_support" }) }));
+  });
   it("fails closed when the Customer has no verified CloudShare timezone catalogue", async () => {
     const delivery = { createSession: vi.fn() };
     const result = await createSalesDemoSession({ records: { findOpportunity: vi.fn() }, items: { findById: vi.fn() }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, timezones: { find: vi.fn().mockResolvedValue(null) } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "Line Islands Standard Time" } });

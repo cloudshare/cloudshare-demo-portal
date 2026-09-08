@@ -198,7 +198,10 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     // other failures remain gated by the delivery-entry marker.
     const provenPreDispatchFailure = preWriteAuthFailure || (!createDispatched && (validationFailure || memberSelectionFailure || memberReadFailure || itemValidationFailure || itemReadFailure));
     if (provenPreDispatchFailure) {
-      const reservationCleared = !reservationClaimed || (!deps.sessions.discardReservation || !deps.sessions.findById) || await clearReservedBeforeDispatch(deps.sessions, reservation);
+      // A claimed reservation is only safe to retry after discard *and*
+      // readback have both been confirmed. Missing either capability is an
+      // unknown cleanup state, not proof that no reservation remains.
+      const reservationCleared = !reservationClaimed || (Boolean(deps.sessions.discardReservation && deps.sessions.findById) && await clearReservedBeforeDispatch(deps.sessions, reservation));
       if (!reservationCleared) {
         const reason = "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
         const details = { integrationSurface: "portal.sales_demo_sessions", failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: false, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
