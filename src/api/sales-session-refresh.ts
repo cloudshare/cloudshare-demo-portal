@@ -6,7 +6,7 @@ import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick<SalesDemoSessionRepository, "list" | "recordExperienceObservation">; readonly delivery: Pick<SalesDelivery, "listSessions">; readonly diagnostics?: DiagnosticRecorder }, input: { readonly customerId: string; readonly mode: "automatic" | "manual"; readonly offset: number; readonly limit: number; readonly targetIds?: readonly string[] }) {
-  if (!Number.isInteger(input.offset) || input.offset < 0 || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100 || (input.targetIds && (input.targetIds.length < 1 || input.targetIds.length > 50 || input.targetIds.some((id) => typeof id !== "string" || id.length < 1 || id.length > 100)))) return { status: 400, body: { error: "Invalid bounded refresh pagination." } };
+  if (!Number.isInteger(input.offset) || input.offset < 0 || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100 || (input.targetIds && (input.targetIds.length > 50 || input.targetIds.some((id) => typeof id !== "string" || id.length < 1 || id.length > 100)))) return { status: 400, body: { error: "Invalid bounded refresh pagination." } };
   if (!deps.sessions.list || !deps.sessions.recordExperienceObservation) return { status: 503, body: { error: "Sales Session refresh is unavailable." } };
   const correlationId = randomUUID();
   const exchanges: Array<{ readonly request?: Record<string, unknown>; readonly response?: Record<string, unknown> }> = [];
@@ -14,8 +14,8 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     const local = await deps.sessions.list(input.customerId);
     // Provider pagination is independent from Certalis queue pagination. Read one
     // bounded provider page, then target only the locally rendered Customer rows.
-    const requestedIds = input.targetIds?.length ? new Set(input.targetIds) : null;
-    const renderedLocal = requestedIds ? local.filter((session) => requestedIds.has(session.id)) : local.slice(input.offset, input.offset + input.limit);
+    const requestedIds = new Set(input.targetIds ?? []);
+    const renderedLocal = local.filter((session) => requestedIds.has(session.id));
     const rendered = new Set(renderedLocal.map((session) => session.cloudShareSalesExperienceId));
     const stale = input.mode === "automatic" ? new Set(renderedLocal.filter((session) => !session.experienceStatusObservedAt || Date.now() - session.experienceStatusObservedAt.getTime() > 300000).map((session) => session.cloudShareSalesExperienceId)) : rendered;
     const providerRows: { id: string; status: "notStarted" | "inProgress" | "ended" }[] = [];
@@ -44,8 +44,8 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
   } catch (error) {
     const structured = error instanceof Error && "context" in error ? (error as Error & { context?: Record<string, unknown> }).context : undefined;
     const failureEvidence = projectCloudShareFailureEvidence(error);
-    const request = exchanges.at(-1)?.request ?? failureEvidence?.request ?? undefined;
-    const response = exchanges.at(-1)?.response ?? failureEvidence?.response ?? undefined;
+    const request = failureEvidence?.request ?? exchanges.at(-1)?.request ?? undefined;
+    const response = failureEvidence?.response ?? exchanges.at(-1)?.response ?? undefined;
     await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "warn", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare Sales Session refresh failed.", correlationId, request, response, details: { integrationSurface: "cloudshare.v4.sales", exchanges, failureMode: typeof structured?.failureMode === "string" ? structured.failureMode : error instanceof Error ? error.name : "provider_failure" } });
     return { status: 502, body: { error: "CloudShare Sales Session refresh failed. Retry or open Support Diagnostics.", durable: true, correlationId } };
   }
