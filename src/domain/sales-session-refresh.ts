@@ -6,7 +6,7 @@ type Delivery = {
   readSession(id: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus }>;
 };
 type Session = { readonly id: string; readonly customerId: string; readonly cloudShareSalesExperienceId: string; readonly operationalStatus?: string };
-type Sessions = { readonly findById(customerId: string, id: string): Promise<Session | null>; readonly updateOperationalState(customerId: string, id: string, state: { readonly operationalStatus: "active"; readonly experienceStatus: CloudShareSalesExperienceStatus; readonly experienceStatusObservedAt: Date }): Promise<void> };
+type Sessions = { findById(customerId: string, id: string): Promise<Session | null>; updateOperationalState(customerId: string, id: string, state: { readonly operationalStatus: "active"; readonly experienceStatus: CloudShareSalesExperienceStatus; readonly experienceStatusObservedAt: Date }): Promise<void> };
 export function createSalesSessionRefresh(deps: { readonly listSessions: Delivery["listSessions"]; readonly readSession?: Delivery["readSession"]; readonly sessions: Sessions; readonly now?: () => Date }) {
   const now = deps.now ?? (() => new Date());
   return {
