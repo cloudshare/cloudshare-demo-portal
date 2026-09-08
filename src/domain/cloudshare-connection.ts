@@ -52,7 +52,7 @@ type CloudShareClientObservationCallbacks = {
 /** Each production client declares a real workflow or an intentional Customer-only escape. */
 export type CloudShareClientObservationOptions = CloudShareClientObservationCallbacks & (
   | { readonly scope: "workflow"; readonly workflow: CloudShareWorkflowObservationContext }
-  | { readonly scope: "customer_default"; readonly reason: "catalogue_resource_read" | "connection_check" | "unanchored_support_read" | "sales_project_member_preflight" }
+  | { readonly scope: "customer_default"; readonly reason: "catalogue_resource_read" | "connection_check" | "unanchored_support_read" | "sales_project_member_preflight" | "sales_timezone_preflight" }
   | { readonly scope: "custom_observer"; readonly correlationId: string }
 );
 

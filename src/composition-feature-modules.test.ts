@@ -137,6 +137,9 @@ describe("composition feature modules", () => {
     factory.forConnection(CONNECTION, { scope: "customer_default", reason: "sales_project_member_preflight" });
 
     expect(integrations[0].qaPrewriteSalesOauth).toBe(true);
+
+    factory.forConnection(CONNECTION, { scope: "customer_default", reason: "sales_timezone_preflight" });
+    expect(integrations[1].qaPrewriteSalesOauth).toBe(true);
   });
 
   it.each(["catalogue_resource_read", "connection_check", "unanchored_support_read"] as const)(
@@ -166,6 +169,9 @@ describe("composition feature modules", () => {
     });
     factory.forConnection({ ...CONNECTION, customerId: "customer-b" }, { scope: "customer_default", reason: "sales_project_member_preflight" });
     expect(integrations[0].qaPrewriteSalesOauth).toBe(false);
+
+    factory.forConnection({ ...CONNECTION, customerId: "customer-b" }, { scope: "customer_default", reason: "sales_timezone_preflight" });
+    expect(integrations[1].qaPrewriteSalesOauth).toBe(false);
   });
 
   it("keeps mandatory Customer evidence isolated across connections", async () => {
