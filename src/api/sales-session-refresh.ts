@@ -17,12 +17,13 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     const rendered = new Set(renderedLocal.map((session) => session.cloudShareSalesExperienceId));
     const stale = input.mode === "automatic" ? new Set(renderedLocal.filter((session) => !session.experienceStatusObservedAt || Date.now() - session.experienceStatusObservedAt.getTime() > 300000).map((session) => session.cloudShareSalesExperienceId)) : rendered;
     const providerRows: { id: string; status: "notStarted" | "inProgress" | "ended" }[] = [];
+    const seenProviderIds = new Set<string>();
     let lastEvidence: { readonly request?: Record<string, unknown>; readonly response?: Record<string, unknown> } | undefined;
     const providerField = [...stale].map((id) => `\"${id.replaceAll('"', '')}\"`).join(",");
     for (let page = 0; page < 10 && providerRows.filter((row) => stale.has(row.id)).length < stale.size; page += 1) {
       const result = await deps.delivery.listSessions({ field: `id=in(${providerField})`, offset: page * 100, limit: 100 });
       lastEvidence = result as unknown as { readonly request?: Record<string, unknown>; readonly response?: Record<string, unknown> };
-      providerRows.push(...result.sessions);
+      for (const row of result.sessions) if (!seenProviderIds.has(row.id)) { seenProviderIds.add(row.id); providerRows.push(row); }
       if (result.sessions.length < 100) break;
     }
     const rows = providerRows.filter((row) => stale.has(row.id)).map((row) => {
