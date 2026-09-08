@@ -180,11 +180,11 @@ describe("Sales Enablement Session API handler", () => {
       .map(([entry]) => entry)
       .find((entry) => entry.operation === "sales.demo_session.created" && entry.outcome === "failure");
 
-    expect(result).toMatchObject({ status: 502, body: { needsAttention: false, correlationId: expect.any(String) } });
+    expect(result).toMatchObject({ status: 503, body: { needsAttention: false, correlationId: expect.any(String), creationOutcome: { retry: "safe" } } });
     expect(failure).toMatchObject({
       request: null,
       response: null,
-      details: expect.objectContaining({ failureMode: "cloudshare_create" }),
+      details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "cloudshare_auth_pre_write", retry: "safe", cloudShareAttempted: false }),
     });
     const persisted = JSON.stringify(failure);
     expect(persisted).not.toContain("private-client");
