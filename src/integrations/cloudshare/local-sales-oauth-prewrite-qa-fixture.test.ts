@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO, withLocalSalesOauthPrewriteFailureQaFixture } from "./local-sales-oauth-prewrite-qa-fixture";
+import { createCloudShareClient, createCloudShareNoopRequestObserver } from "./client";
+import { createCloudShareSalesItemResourceSource } from "./resources";
+import { createCloudShareSalesItemProvisioningValidator } from "./sales-item-provisioning";
 
 describe("local Sales OAuth pre-write QA fixture", () => {
   const env = {
@@ -62,6 +65,59 @@ describe("local Sales OAuth pre-write QA fixture", () => {
     await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/projects/project-qa/policies" })).resolves.toMatchObject({ status: 200 });
     await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/projects/project-other/blueprints" })).resolves.toMatchObject({ body: "delegated" });
     expect(send).toHaveBeenCalledOnce();
+  });
+
+  it("parses all four configured Project resource reads during real Item revalidation", async () => {
+    const delegated = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
+    const http = withLocalSalesOauthPrewriteFailureQaFixture({ send: delegated }, "certalis", env, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
+    const client = createCloudShareClient({
+      http,
+      endpoints: { v3BaseUrl: "https://use.cloudshare.com/api/v3", v4BaseUrl: "https://api.accelerate.cloudshare.com/v4" },
+      tokenProvider: { getToken: async () => "test-token" },
+      v3: { apiId: "test-api-id", apiKey: "test-api-key" },
+      observer: createCloudShareNoopRequestObserver(),
+      newToken: () => "tokfixed01",
+      now: () => 1_700_000_000_000,
+    });
+    const validator = createCloudShareSalesItemProvisioningValidator(client);
+    const reads = await validator.revalidate({ id: "item-qa", customerId: "certalis", name: "QA Item", description: "", project: { id: "project-qa", name: "QA Project" }, blueprints: [{ id: "qa-blueprint-429", name: "QA Blueprint" }], policy: { id: "qa-policy-429", name: "QA Policy" }, regions: [], defaultDurationMinutes: 60, status: "active", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    expect(reads).toHaveLength(4);
+    expect(reads.map((read) => read.integrationSurface)).toEqual([
+      "cloudshare.v3.projects.blueprints",
+      "cloudshare.v3.projects.blueprint_detail",
+      "cloudshare.v3.projects.policies",
+      "cloudshare.v3.projects.policy_detail",
+    ]);
+    expect(reads.map((read) => read.request.path)).toEqual([
+      "/api/v3/projects/project-qa/blueprints",
+      "/api/v3/projects/project-qa/blueprints/qa-blueprint-429",
+      "/api/v3/projects/project-qa/policies",
+      "/api/v3/projects/project-qa/policies/qa-policy-429",
+    ]);
+    expect(delegated).not.toHaveBeenCalled();
+  });
+
+  it("delegates foreign blueprint or policy detail IDs and method variations", async () => {
+    const delegated = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
+    const http = withLocalSalesOauthPrewriteFailureQaFixture({ send: delegated }, "certalis", env, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
+    await http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/projects/project-qa/blueprints/foreign-blueprint" });
+    await http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/projects/project-qa/policies/foreign-policy" });
+    await http.send({ method: "POST", url: "https://use.cloudshare.com/api/v3/projects/project-qa/blueprints" });
+    expect(delegated).toHaveBeenCalledTimes(3);
+  });
+
+  it("delegates resource reads with query strings, another Customer, or disabled QA config", async () => {
+    const send = vi.fn().mockResolvedValue({ status: 200, body: "delegated" });
+    const requests = [
+      { customerId: "certalis", config: { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" as const }, url: "https://use.cloudshare.com/api/v3/projects/project-qa/blueprints?brief=true" },
+      { customerId: "other-customer", config: { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" as const }, url: "https://use.cloudshare.com/api/v3/projects/project-qa/policies/qa-policy-429" },
+      { customerId: "certalis", config: { enabled: false, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" as const }, url: "https://use.cloudshare.com/api/v3/projects/project-qa/policies" },
+    ];
+    for (const request of requests) {
+      const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, request.customerId, env, new Set(), request.config);
+      await expect(http.send({ method: "GET", url: request.url })).resolves.toMatchObject({ body: "delegated" });
+    }
+    expect(send).toHaveBeenCalledTimes(requests.length);
   });
 
   it("accepts the configured Project with the v4 opportunity display name on retry", async () => {
