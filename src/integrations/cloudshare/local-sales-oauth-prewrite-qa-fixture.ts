@@ -40,7 +40,7 @@ export function withLocalSalesOauthPrewriteFailureQaFixture(
     async send(request): Promise<HttpResponse> {
       const url = new URL(request.url);
       if (enabled && projectId && customerId === allowedCustomerId && request.method === "GET" && url.pathname === "/api/v3/users" && url.searchParams.get("projectUsers") === "true" && url.searchParams.get("projectId") === projectId) {
-        return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ rows: [{ email: "sales-admin@certalis.demo", displayName: "Sales Admin" }] }) };
+        return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ rows: [{ email: "qa-sales-admin@certalis.test", displayName: "QA Sales Admin" }] }) };
       }
       if (enabled && customerId === allowedCustomerId && request.method === "GET" && url.pathname === "/api/v3/timezones") {
         return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ Rows: [{ id: "UTC", displayName: "UTC" }] }) };

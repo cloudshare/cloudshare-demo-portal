@@ -701,7 +701,7 @@ describe("SalesWorkspace interaction", () => {
       const path = String(input);
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", label: "Acme - Acme evaluation" }], total: 1 });
       if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
-      if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
+      if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "qa-sales-admin@certalis.test", displayName: "QA Sales Admin" }] });
       if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [] });
       if (path === "/api/sales/enablement-sessions" && init?.method === "POST") {
         attempts += 1;
@@ -711,7 +711,7 @@ describe("SalesWorkspace interaction", () => {
       return json({ error: "unexpected" }, 500);
     });
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
-    await chooseSearchableOption(user, "Opportunity", "Acme - Acme evaluation"); await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1"); await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
+    await chooseSearchableOption(user, "Opportunity", "Acme - Acme evaluation"); await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1"); await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "qa-sales-admin@certalis.test");
     await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
     await screen.findByRole("alert");
     const retry = screen.getByRole("button", { name: "Create Sales Enablement Session" }) as HTMLButtonElement;
