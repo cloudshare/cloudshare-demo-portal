@@ -202,9 +202,19 @@ describe("Sales Enablement Session API handler", () => {
     });
     const sessions = { save: vi.fn(async (value: SalesDemoSession) => { stored.push(value); }), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]), findById: vi.fn(async (_customerId: string, id: string) => stored.find((value) => value.id === id) ?? null), discardReservation };
     const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(new CloudShareRequestError("CloudShare rejected the Sales payload", 422, { path: "/sales" })) }) }, projectMembers, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, newId: () => "session-4xx" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-4xx", itemId: "item-4xx", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
-    expect(result).toMatchObject({ status: 502, body: { needsAttention: false } });
+    expect(result).toMatchObject({ status: 422, body: { needsAttention: false } });
     expect(discardReservation).toHaveBeenCalledWith(expect.objectContaining({ id: "session-4xx", cloudShareSalesExperienceId: "pending:session-4xx" }));
     expect(stored).toHaveLength(0);
+  });
+
+  it("classifies a boundary-safe branded CloudShare 422 as definite and retryable after cleanup", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-boundary-422", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const stored: SalesDemoSession[] = [];
+    const sessions = { save: vi.fn(async (value: SalesDemoSession) => { stored.push(value); }), listByOpportunity: vi.fn().mockResolvedValue([]), findById: vi.fn(async (_customerId: string, id: string) => stored.find((value) => value.id === id) ?? null), discardReservation: vi.fn(async (reservation: SalesDemoSession) => { const index = stored.findIndex((value) => value.id === reservation.id); if (index < 0) return false; stored.splice(index, 1); return true; }) };
+    const error = { name: "CloudShareRequestError", cloudShareErrorBoundaryDiscriminant: "cloudshare.error.v1", status: 422, context: { method: "POST", path: "/sales" } };
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue({ id: "item-boundary-422", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1" }], policy: { id: "policy-1" }, regions: [{ id: "region-1" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(error) }) }, projectMembers, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, newId: () => "boundary-422" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-boundary-422", itemId: "item-boundary-422", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+    expect(result).toMatchObject({ status: 422, body: { needsAttention: false } });
   });
 
   it("keeps OAuth token failure evidence metadata-only during Sales Enablement Session creation", async () => {

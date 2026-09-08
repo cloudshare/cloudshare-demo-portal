@@ -226,7 +226,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       deps.audit?.write({ id: randomUUID(), occurredAt: (deps.now ?? (() => new Date()))(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "failure", correlationId, details: { externalId, opportunityId: opportunity.id, itemId: item.id, failureMode, integrationSurface }, error: error instanceof Error ? error.message : "Unknown CloudShare failure" }),
     ]);
     const errorMessage = memberReadFailure ? "CloudShare could not retrieve active Project members. Review support diagnostics before retrying." : memberSelectionFailure ? "The selected Sales Pro is no longer an active Project member. Select a current Sales Pro and try again." : validationFailure ? "CloudShare rejected the selected Sales Pro. Review support diagnostics." : itemValidationFailure ? "This Item no longer matches its CloudShare resources. Refresh the Item before provisioning." : itemReadFailure ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying." : preWriteAuthFailure ? "CloudShare authentication failed before creation. Retry the Sales Enablement Session." : "CloudShare could not create the Sales Experience. Review support diagnostics.";
-    return response(memberSelectionFailure || validationFailure || itemValidationFailure ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, ...(preWriteAuthFailure ? { creationOutcome: safeCreationOutcome(errorMessage) } : {}) });
+    return response(memberSelectionFailure || validationFailure || itemValidationFailure || isDefiniteCreateFailure(error) ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, ...(preWriteAuthFailure ? { creationOutcome: safeCreationOutcome(errorMessage) } : {}) });
   }
 }
 
@@ -253,7 +253,18 @@ function oauthFailureMetadata(error: unknown): Record<string, unknown> {
   const context = cloudShareErrorContext(error) ?? {};
   const acquisition = context.acquisition && typeof context.acquisition === "object" ? context.acquisition as Record<string, unknown> : {};
   const status = typeof acquisition.status === "number" ? acquisition.status : typeof context.responseStatus === "number" ? context.responseStatus : typeof context.status === "number" ? context.status : undefined;
-  return { ...(typeof acquisition.exchangeCorrelationId === "string" ? { oauthExchangeCorrelationId: acquisition.exchangeCorrelationId } : {}), ...(status === undefined ? {} : { oauthStatus: status }), ...(typeof acquisition.durationMs === "number" ? { oauthDurationMs: acquisition.durationMs } : {}), ...(typeof acquisition.failureMode === "string" ? { oauthFailureMode: acquisition.failureMode } : {}), ...(typeof context.network === "object" && context.network ? { oauthTransport: context.network } : {}), ...(typeof acquisition.causeClassification === "string" ? { oauthCause: acquisition.causeClassification } : {}) };
+  return { ...(typeof acquisition.exchangeCorrelationId === "string" ? { oauthExchangeCorrelationId: acquisition.exchangeCorrelationId } : {}), ...(status === undefined ? {} : { oauthStatus: status }), ...(typeof acquisition.durationMs === "number" ? { oauthDurationMs: acquisition.durationMs } : {}), ...(typeof acquisition.failureMode === "string" ? { oauthFailureMode: acquisition.failureMode } : {}), ...(safeOauthTransport(context.network) ? { oauthTransport: safeOauthTransport(context.network) } : {}), ...(typeof acquisition.causeClassification === "string" ? { oauthCause: acquisition.causeClassification } : {}) };
+}
+function safeOauthTransport(value: unknown): Record<string, string | number | boolean | null> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const allowed = ["transport", "localFamily", "remoteFamily", "localPort", "remotePort"] as const;
+  const result: Record<string, string | number | boolean | null> = {};
+  for (const key of allowed) {
+    const item = source[key];
+    if (typeof item === "string" || typeof item === "number" || typeof item === "boolean" || item === null) result[key] = item;
+  }
+  return Object.keys(result).length ? result : undefined;
 }
 function isMainSalesProValidationFailure(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -302,6 +313,10 @@ function matchesUnresolvedCreateIntent(session: SalesDemoSession, input: Session
 }
 function isOutcomeAmbiguousCreateFailure(error: unknown): boolean {
   if (error instanceof CloudShareRequestError) return error.status >= 500;
+  if (isCloudShareErrorAcrossBoundaries(error) && error.name === "CloudShareRequestError") {
+    const status = (error as { status?: unknown }).status;
+    return typeof status !== "number" || status >= 500;
+  }
   return error instanceof CloudShareTransportError || error instanceof CloudShareResponseError || !(error instanceof CloudShareAuthError);
 }
 async function clearReservedBeforeDispatch(sessions: SalesDemoSessionRepository, reservation: SalesDemoSession): Promise<boolean> {
@@ -316,7 +331,10 @@ async function clearReservedBeforeDispatch(sessions: SalesDemoSessionRepository,
   }
 }
 function isDefiniteCreateFailure(error: unknown): boolean {
-  return error instanceof CloudShareRequestError && error.status >= 400 && error.status < 500;
+  if (error instanceof CloudShareRequestError) return error.status >= 400 && error.status < 500;
+  if (!isCloudShareErrorAcrossBoundaries(error) || error.name !== "CloudShareRequestError") return false;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" && status >= 400 && status < 500;
 }
 async function evidence(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, session: SalesDemoSession, outcome: "success" | "failure", message: string, cloudshare: { request: unknown; response: unknown } | undefined, details: Record<string, unknown>) {
   await deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, externalId: session.externalId, opportunityId: session.opportunityId, itemId: session.itemId }, request: cloudshare?.request as Record<string, unknown> | undefined, response: cloudshare?.response as Record<string, unknown> | undefined, details });
