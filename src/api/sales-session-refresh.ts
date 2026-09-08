@@ -8,11 +8,14 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
   try {
     const local = await deps.sessions.list(input.customerId);
     const refresh = createSalesSessionRefresh({ listSessions: deps.delivery.listSessions, readSession: deps.delivery.readSession, sessions: { findById: deps.sessions.findById, updateOperationalState: deps.sessions.updateOperationalState } });
-    const result = await refresh.refreshQueue(input);
+    // Provider pagination is independent from Certalis queue pagination. Read one
+    // bounded provider page, then target only the locally rendered Customer rows.
+    const result = await refresh.refreshQueue({ ...input, offset: 0, limit: 100 });
+    const rendered = new Set(local.slice(input.offset, input.offset + input.limit).map((session) => session.cloudShareSalesExperienceId));
     const rows = result.rows.map((row) => {
-      const match = local.find((session) => session.cloudShareSalesExperienceId === row.id);
-      return match ? { id: match.id, status: row.status, operationalStatus: match.operationalStatus ?? "active" } : null;
-    }).filter((row): row is { id: string; status: typeof result.rows[number]["status"]; operationalStatus: string } => row !== null);
+      const match = rendered.has(row.id) ? local.find((session) => session.cloudShareSalesExperienceId === row.id) : undefined;
+      return match ? { id: match.id, status: row.status } : null;
+    }).filter((row): row is { id: string; status: typeof result.rows[number]["status"] } => row !== null);
     await Promise.all(rows.map((row) => deps.sessions.recordExperienceObservation!(input.customerId, row.id, { experienceStatus: row.status, experienceStatusObservedAt: new Date() })));
     return { status: 200, body: { rows: rows.map(({ id, status }) => ({ id, status })), total: result.total, progress: result.progress, observation: { source: "cloudshare_v4_sales_list", freshness: "fresh", correlation: "server-side" } } };
   } catch {
