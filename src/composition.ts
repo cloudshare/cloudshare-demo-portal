@@ -136,6 +136,7 @@ export function createCloudShareClientFactory(input: {
   readonly createIntegration?: typeof createCloudShareIntegrationForConnection;
   readonly decorateClient?: (client: CloudShareClient) => CloudShareClient;
   readonly newCorrelationId?: () => string;
+  readonly localSalesOauthQa?: { readonly enabled: boolean; readonly customerId: string; readonly projectId: string };
 }): CloudShareClientFactory {
   const createIntegration = input.createIntegration ?? createCloudShareIntegrationForConnection;
   const decorateClient = input.decorateClient ?? withLocalCohortRateLimitQaFixture;
@@ -162,6 +163,7 @@ export function createCloudShareClientFactory(input: {
           (typeof options.workflow.subject === "function"
             ? options.workflow.subject().type
             : options.workflow.subject.type) === "sales_demo_session",
+        localSalesOauthQa: input.localSalesOauthQa,
         observer: {
           onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest, defaultObserver.onRequest),
           onAcquisition: composeCloudShareObservers(options.onAcquisition, workflowObserver?.onAcquisition, defaultObserver.onAcquisition),
@@ -501,6 +503,9 @@ export function getServices(): Services {
     diagnostics: diagnosticRecorder,
     mode: config.runtime.mode,
     trace: traceCloudShare,
+    localSalesOauthQa: config.runtime.localQa.scenario === "sales-oauth-prewrite-503"
+      ? { enabled: true, customerId: config.runtime.localQa.salesCustomerId, projectId: config.runtime.localQa.salesProjectId }
+      : undefined,
   });
 
   // Heartbeat auto-suspend. The suspend function is pre-bound to the current

@@ -34,6 +34,10 @@ const envSchema = z.object({
   HEARTBEAT_TIMEOUT_MS: z.coerce.number().int().positive().optional().default(60_000),
   PORTAL_SEED_SOURCE: z.enum(["off", "env", "file"]).optional().default("env"),
   PORTAL_SEED_CONFIG_PATH: z.string().optional().default("./config/portal-seed.local.json"),
+  PORTAL_LOCAL_QA_SCENARIO: z.enum(["", "cohort-participant-429", "sales-oauth-prewrite-503", "sales-reservation-persistence-failure"]).optional().default(""),
+  PORTAL_LOCAL_QA_SALES_CUSTOMER_ID: z.string().optional().default(""),
+  PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID: z.string().optional().default(""),
+  PORTAL_LOCAL_QA_SALES_PROJECT_ID: z.string().optional().default(""),
 
   // Seeded Helios admin login for the demo.
   HELIOS_ADMIN_EMAIL: z.string().email().optional(),
@@ -98,6 +102,12 @@ export interface Config {
     /** Milliseconds without a client heartbeat before the server auto-suspends the lab. */
     readonly heartbeatTimeoutMs: number;
     readonly seedSource: PortalSeedSource;
+    readonly localQa: {
+      readonly scenario: "" | "cohort-participant-429" | "sales-oauth-prewrite-503" | "sales-reservation-persistence-failure";
+      readonly salesCustomerId: string;
+      readonly salesOpportunityId: string;
+      readonly salesProjectId: string;
+    };
   };
   readonly seed: {
     readonly source: PortalSeedSource;
@@ -282,6 +292,12 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
       tunnelUrl: e.PORTAL_TUNNEL_URL,
       heartbeatTimeoutMs: e.HEARTBEAT_TIMEOUT_MS,
       seedSource: e.PORTAL_SEED_SOURCE,
+      localQa: {
+        scenario: e.PORTAL_LOCAL_QA_SCENARIO,
+        salesCustomerId: e.PORTAL_LOCAL_QA_SALES_CUSTOMER_ID,
+        salesOpportunityId: e.PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID,
+        salesProjectId: e.PORTAL_LOCAL_QA_SALES_PROJECT_ID,
+      },
     },
     seed: resolveSeedConfig(e),
     databaseUrl: e.DATABASE_URL,

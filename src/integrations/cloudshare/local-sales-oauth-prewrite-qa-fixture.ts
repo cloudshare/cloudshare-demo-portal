@@ -10,6 +10,11 @@ import type { HttpClient, HttpResponse } from "./http";
  * CloudShare Sales POST can be reached on that attempt.
  */
 export const LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO = "sales-oauth-prewrite-503";
+export interface LocalSalesOauthQaConfig {
+  readonly enabled: boolean;
+  readonly customerId: string;
+  readonly projectId: string;
+}
 
 const firedCustomers = new Set<string>();
 
@@ -18,22 +23,24 @@ export function withLocalSalesOauthPrewriteFailureQaFixture(
   customerId: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
   fired: Set<string> = firedCustomers,
+  qaConfig?: LocalSalesOauthQaConfig,
 ): HttpClient {
-  const enabled =
+  const enabled = qaConfig?.enabled === true ||
     env.NODE_ENV === "development" &&
     env.PORTAL_LOCAL_QA_SCENARIO === LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO &&
     Boolean(customerId) &&
     env.PORTAL_LOCAL_QA_SALES_CUSTOMER_ID?.trim() === customerId;
-  const projectId = env.PORTAL_LOCAL_QA_SALES_PROJECT_ID?.trim();
+  const projectId = qaConfig?.projectId || env.PORTAL_LOCAL_QA_SALES_PROJECT_ID?.trim();
+  const allowedCustomerId = qaConfig?.customerId || env.PORTAL_LOCAL_QA_SALES_CUSTOMER_ID?.trim();
 
   return {
     async send(request): Promise<HttpResponse> {
       const url = new URL(request.url);
-      if (enabled && projectId && request.method === "GET" && url.pathname === "/api/v3/users" && url.searchParams.get("projectUsers") === "true" && url.searchParams.get("projectId") === projectId) {
+      if (enabled && projectId && customerId === allowedCustomerId && request.method === "GET" && url.pathname === "/api/v3/users" && url.searchParams.get("projectUsers") === "true" && url.searchParams.get("projectId") === projectId) {
         return { status: 200, headers: { "content-type": "application/json", "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }, body: JSON.stringify({ rows: [{ email: "qa-sales-pro@certalis.test", displayName: "QA Sales Pro" }] }) };
       }
       const isOauthToken = request.method === "POST" && url.pathname.endsWith("/oauth/token");
-      if (enabled && isOauthToken && !fired.has(customerId!)) {
+      if (enabled && customerId === allowedCustomerId && isOauthToken && !fired.has(customerId!)) {
         fired.add(customerId!);
         return {
           status: 503,

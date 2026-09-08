@@ -32,8 +32,23 @@ describe("loadConfig", () => {
     expect(config.secrets.webhookSecret).toBe("whsecret");
     expect(config.runtime.mode).toBe("fixture");
     expect(config.runtime.seedSource).toBe("env");
+    expect(config.runtime.localQa).toEqual({ scenario: "", salesCustomerId: "", salesOpportunityId: "", salesProjectId: "" });
     expect(config.seed.heliosAdmin?.email).toBe("admin@helioscx.demo");
     expect(config.seed.heliosInstructor?.id).toBe("instructor-1");
+  });
+
+  it("parses the development-only Sales OAuth fixture allowlist as typed runtime config", () => {
+    const config = loadConfig({ ...validEnv,
+      PORTAL_LOCAL_QA_SCENARIO: "sales-oauth-prewrite-503",
+      PORTAL_LOCAL_QA_SALES_CUSTOMER_ID: "customer-disposable",
+      PORTAL_LOCAL_QA_SALES_PROJECT_ID: "project-disposable",
+    });
+    expect(config.runtime.localQa).toEqual({
+      scenario: "sales-oauth-prewrite-503",
+      salesCustomerId: "customer-disposable",
+      salesOpportunityId: "",
+      salesProjectId: "project-disposable",
+    });
   });
 
   it("throws ConfigError when a required secret is missing", () => {
