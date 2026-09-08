@@ -34,7 +34,7 @@ describe("local Sales OAuth pre-write QA fixture", () => {
     const scopedEnv = env;
     const http = withLocalSalesOauthPrewriteFailureQaFixture({ send }, "certalis", scopedEnv, new Set(), { enabled: true, customerId: "certalis", projectId: "project-qa", opportunityId: "opp-qa", workflowSource: "sales-demo-sessions" });
 
-    await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/users?projectUsers=true&projectId=project-qa" })).resolves.toMatchObject({ status: 200, headers: expect.objectContaining({ "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }) });
+    await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/users?projectUsers=true&projectId=project-qa" })).resolves.toMatchObject({ status: 200, headers: expect.objectContaining({ "x-local-qa-fixture": LOCAL_SALES_OAUTH_PREWRITE_FAILURE_SCENARIO }), body: JSON.stringify({ rows: [{ email: "sales-admin@certalis.demo", displayName: "Sales Admin" }] }) });
     await expect(http.send({ method: "GET", url: "https://use.cloudshare.com/api/v3/users?projectUsers=true&projectId=project-other" })).resolves.toMatchObject({ body: "delegated" });
     expect(send).toHaveBeenCalledTimes(1);
   });
