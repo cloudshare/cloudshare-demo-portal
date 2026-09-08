@@ -13,7 +13,7 @@ import {
   type PortalSessionStore,
 } from "@/auth";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
-import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers, type CloudShareClient, type CloudShareMode, type LocalSalesOauthQaConfig } from "@/integrations/cloudshare";
+import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers, type CloudShareClient, type CloudShareMode } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import {
   createCloudShareEnvironmentSimulator,
@@ -136,7 +136,6 @@ export function createCloudShareClientFactory(input: {
   readonly createIntegration?: typeof createCloudShareIntegrationForConnection;
   readonly decorateClient?: (client: CloudShareClient) => CloudShareClient;
   readonly newCorrelationId?: () => string;
-  readonly localSalesOauthQa?: LocalSalesOauthQaConfig;
 }): CloudShareClientFactory {
   const createIntegration = input.createIntegration ?? createCloudShareIntegrationForConnection;
   const decorateClient = input.decorateClient ?? withLocalCohortRateLimitQaFixture;
@@ -155,19 +154,6 @@ export function createCloudShareClientFactory(input: {
       return decorateClient(createIntegration({
         mode: input.mode,
         trace: input.trace,
-        // The Sales member preflight is intentionally customer-scoped because
-        // its route has not created the Sales Session workflow yet. Keep the
-        // fixture limited to that preflight or the anchored Sales workflow.
-        qaPrewriteSalesOauth:
-          (options.scope === "customer_default" && (options.reason === "sales_project_member_preflight" || options.reason === "sales_timezone_preflight") && connection.customerId === input.localSalesOauthQa?.customerId) ||
-            (options.scope === "workflow" &&
-              options.workflow.source === "sales-demo-sessions" &&
-              (typeof options.workflow.subject === "function"
-                ? options.workflow.subject().type
-                : options.workflow.subject.type) === "sales_demo_session" &&
-              options.workflow.externalIds?.opportunityId === input.localSalesOauthQa?.opportunityId &&
-              options.workflow.externalIds?.projectId === input.localSalesOauthQa?.projectId),
-        localSalesOauthQa: input.localSalesOauthQa,
         observer: {
           onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest, defaultObserver.onRequest),
           onAcquisition: composeCloudShareObservers(options.onAcquisition, workflowObserver?.onAcquisition, defaultObserver.onAcquisition),
@@ -507,9 +493,6 @@ export function getServices(): Services {
     diagnostics: diagnosticRecorder,
     mode: config.runtime.mode,
     trace: traceCloudShare,
-    localSalesOauthQa: config.runtime.mode === "fixture" && config.runtime.localQa.scenario === "sales-oauth-prewrite-503"
-      ? { enabled: true, customerId: config.runtime.localQa.salesCustomerId, projectId: config.runtime.localQa.salesProjectId, opportunityId: config.runtime.localQa.salesOpportunityId, workflowSource: config.runtime.localQa.salesWorkflowSource }
-      : undefined,
   });
 
   // Heartbeat auto-suspend. The suspend function is pre-bound to the current

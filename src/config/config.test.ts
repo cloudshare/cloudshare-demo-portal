@@ -32,25 +32,8 @@ describe("loadConfig", () => {
     expect(config.secrets.webhookSecret).toBe("whsecret");
     expect(config.runtime.mode).toBe("fixture");
     expect(config.runtime.seedSource).toBe("env");
-    expect(config.runtime.localQa).toEqual({ scenario: "", salesCustomerId: "", salesOpportunityId: "", salesProjectId: "", salesWorkflowSource: "sales-demo-sessions" });
     expect(config.seed.heliosAdmin?.email).toBe("admin@helioscx.demo");
     expect(config.seed.heliosInstructor?.id).toBe("instructor-1");
-  });
-
-  it("parses the development-only Sales OAuth fixture allowlist as typed runtime config", () => {
-    const config = loadConfig({ ...validEnv,
-      PORTAL_LOCAL_QA_SCENARIO: "sales-oauth-prewrite-503",
-      PORTAL_LOCAL_QA_SALES_CUSTOMER_ID: "customer-disposable",
-      PORTAL_LOCAL_QA_SALES_PROJECT_ID: "project-disposable",
-      PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID: "opportunity-disposable",
-    });
-    expect(config.runtime.localQa).toEqual({
-      scenario: "sales-oauth-prewrite-503",
-      salesCustomerId: "customer-disposable",
-      salesOpportunityId: "opportunity-disposable",
-      salesProjectId: "project-disposable",
-      salesWorkflowSource: "sales-demo-sessions",
-    });
   });
 
   it("throws ConfigError when a required secret is missing", () => {
@@ -62,14 +45,6 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...validEnv, PORTAL_MODE: "banana" })).toThrow(
       ConfigError,
     );
-  });
-
-  it("fails closed when the Sales OAuth fixture is missing an allowlist ID", () => {
-    expect(() => loadConfig({ ...validEnv, PORTAL_LOCAL_QA_SCENARIO: "sales-oauth-prewrite-503", PORTAL_LOCAL_QA_SALES_CUSTOMER_ID: "customer", PORTAL_LOCAL_QA_SALES_PROJECT_ID: "project" })).toThrow("PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID");
-  });
-
-  it("fails closed when the Sales OAuth fixture is enabled outside fixture mode", () => {
-    expect(() => loadConfig({ ...validEnv, PORTAL_MODE: "live", PORTAL_LOCAL_QA_SCENARIO: "sales-oauth-prewrite-503", PORTAL_LOCAL_QA_SALES_CUSTOMER_ID: "customer", PORTAL_LOCAL_QA_SALES_PROJECT_ID: "project", PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID: "opportunity" })).toThrow("PORTAL_MODE=fixture");
   });
 
   it("loads the seed from a local JSON config file when PORTAL_SEED_SOURCE=file", () => {

@@ -111,69 +111,6 @@ describe("composition feature modules", () => {
     }));
   });
 
-  it("only enables the local OAuth fixture for the Sales Session workflow", () => {
-    const { factory, integrations } = createObservedFactory();
-    factory.forConnection(CONNECTION, { scope: "workflow", workflow: {
-      actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_demo_session", id: "session-1" },
-      correlationId: "sales-correlation", source: "sales-demo-sessions",
-    } });
-    factory.forConnection(CONNECTION, { scope: "workflow", workflow: {
-      actor: { type: "admin", id: "admin-1" }, subject: { type: "exam_attempt", id: "attempt-1" },
-      correlationId: "other-correlation", source: "exam-attempts",
-    } });
-    expect(integrations.map((input) => input.qaPrewriteSalesOauth)).toEqual([true, false]);
-  });
-
-  it("propagates the local OAuth fixture to the customer-scoped Sales member preflight", () => {
-    const integrations: Parameters<typeof createCloudShareIntegrationForConnection>[0][] = [];
-    const factory = createCloudShareClientFactory({
-      diagnostics: { record: vi.fn() } as never,
-      mode: "fixture",
-      localSalesOauthQa: { enabled: true, customerId: "customer-a", projectId: "project-qa", opportunityId: "opportunity-qa", workflowSource: "sales-demo-sessions" },
-      createIntegration: (input) => { integrations.push(input); return {} as CloudShareClient; },
-      decorateClient: (client) => client,
-    });
-
-    factory.forConnection(CONNECTION, { scope: "customer_default", reason: "sales_project_member_preflight" });
-
-    expect(integrations[0].qaPrewriteSalesOauth).toBe(true);
-
-    factory.forConnection(CONNECTION, { scope: "customer_default", reason: "sales_timezone_preflight" });
-    expect(integrations[1].qaPrewriteSalesOauth).toBe(true);
-  });
-
-  it.each(["catalogue_resource_read", "connection_check", "unanchored_support_read"] as const)(
-    "does not enable the local OAuth fixture for ordinary Customer-only %s",
-    (reason) => {
-      const integrations: Parameters<typeof createCloudShareIntegrationForConnection>[0][] = [];
-      const factory = createCloudShareClientFactory({
-        diagnostics: { record: vi.fn() } as never,
-        mode: "fixture",
-        localSalesOauthQa: { enabled: true, customerId: "customer-a", projectId: "project-qa", opportunityId: "opportunity-qa", workflowSource: "sales-demo-sessions" },
-        createIntegration: (input) => { integrations.push(input); return {} as CloudShareClient; },
-        decorateClient: (client) => client,
-      });
-      factory.forConnection(CONNECTION, { scope: "customer_default", reason });
-      expect(integrations[0].qaPrewriteSalesOauth).toBe(false);
-    },
-  );
-
-  it("does not enable the Customer-only fixture for another Customer", () => {
-    const integrations: Parameters<typeof createCloudShareIntegrationForConnection>[0][] = [];
-    const factory = createCloudShareClientFactory({
-      diagnostics: { record: vi.fn() } as never,
-      mode: "fixture",
-      localSalesOauthQa: { enabled: true, customerId: "customer-a", projectId: "project-qa", opportunityId: "opportunity-qa", workflowSource: "sales-demo-sessions" },
-      createIntegration: (input) => { integrations.push(input); return {} as CloudShareClient; },
-      decorateClient: (client) => client,
-    });
-    factory.forConnection({ ...CONNECTION, customerId: "customer-b" }, { scope: "customer_default", reason: "sales_project_member_preflight" });
-    expect(integrations[0].qaPrewriteSalesOauth).toBe(false);
-
-    factory.forConnection({ ...CONNECTION, customerId: "customer-b" }, { scope: "customer_default", reason: "sales_timezone_preflight" });
-    expect(integrations[1].qaPrewriteSalesOauth).toBe(false);
-  });
-
   it("keeps mandatory Customer evidence isolated across connections", async () => {
     const { factory, record, integrations } = createObservedFactory();
     factory.forConnection(CONNECTION, { scope: "customer_default", reason: "connection_check" });

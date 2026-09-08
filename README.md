@@ -135,21 +135,14 @@ restart `next dev`:
 PORTAL_LOCAL_QA_SCENARIO=sales-reservation-persistence-failure
 PORTAL_LOCAL_QA_SALES_CUSTOMER_ID=<exact disposable Customer ID>
 PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID=<exact disposable Opportunity ID>
-PORTAL_LOCAL_QA_SALES_PROJECT_ID=<exact disposable Project ID used by the Opportunity>
 ```
 
-The values are parsed by the typed portal configuration at boot. The first matching Session creation
-returns the normal correlated 503, Support diagnostic, and audit evidence before any CloudShare
-client/read/mutation and leaves no reservation row. For the OAuth retry fixture, the first exchange
-fails before a Sales POST; the second submission is hermetic and delegates only the exact configured
-Customer/project-member lookup and Sales create response through the fixture transport. It never
-contacts CloudShare or mutates a provider asset. The fixture is development-only, one-shot per
-Customer, and has no effect on another Customer, Opportunity, Project, workflow, or production build.
-Remove the variables and restart the server to disable it.
-
-For the Sales OAuth safe-retry browser fixture, use the same three IDs with
-`PORTAL_LOCAL_QA_SCENARIO=sales-oauth-prewrite-503`. It is only enabled when the typed
-configuration contains all three IDs and the server is running in development mode.
+The first matching Session creation returns the normal correlated 503, Support diagnostic, and audit
+evidence before any CloudShare client/read/mutation and leaves no reservation row. It fires once per
+server process and has no effect on any other Customer or Opportunity. A retry follows the ordinary
+provisioning path, so use only an approved disposable target when live CloudShare credentials are
+configured. Remove all three values and restart the server to disable it. Production builds ignore
+the scenario even if all values are present.
 
 `npm test` uses a dedicated SQLite database at `prisma/test.db`. It does not run against the
 local development `DATABASE_URL` from `.env`, so running the suite should not delete QA data from

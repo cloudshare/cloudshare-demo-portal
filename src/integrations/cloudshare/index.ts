@@ -8,8 +8,6 @@ import { createFetchHttpClient } from "./http";
 import { createFixtureHttpClient } from "./fixtures";
 import { bundledFixtures } from "./fixtures/index";
 import { createV4TokenProvider, type V4TokenAcquisitionEvent } from "./v4-auth";
-import { withLocalSalesOauthPrewriteFailureQaFixture, type LocalSalesOauthQaConfig } from "./local-sales-oauth-prewrite-qa-fixture";
-export type { LocalSalesOauthQaConfig } from "./local-sales-oauth-prewrite-qa-fixture";
 
 export type { CloudShareRequestObservation, CloudShareRequestObserver } from "./client";
 export type { V4TokenAcquisitionEvent } from "./v4-auth";
@@ -81,9 +79,6 @@ export interface CloudShareIntegrationOptions {
   readonly endpoints?: CloudShareEndpoints;
   readonly trace?: Parameters<typeof createCloudShareClient>[0]["trace"];
   readonly observer: CloudShareObservationPort;
-  /** Internal, workflow-scoped switch for the development-only #429 browser fixture. */
-  readonly qaPrewriteSalesOauth?: boolean;
-  readonly localSalesOauthQa?: LocalSalesOauthQaConfig;
 }
 
 /**
@@ -100,13 +95,8 @@ export function createCloudShareIntegration(
       ? createFixtureHttpClient(bundledFixtures)
       : createFetchHttpClient();
 
-  // Local QA stays at the integration HTTP seam: it cannot bypass the OAuth
-  // observer or accidentally dispatch a Sales create request.
-  const qaHttp = opts.mode === "fixture" && opts.qaPrewriteSalesOauth
-    ? withLocalSalesOauthPrewriteFailureQaFixture(http, opts.customerId, process.env, undefined, opts.localSalesOauthQa)
-    : http;
   const tokenProvider = createV4TokenProvider({
-    http: qaHttp,
+    http,
     baseUrl: endpoints.v4BaseUrl,
     clientId: opts.v4.clientId,
     clientSecret: opts.v4.clientSecret,
@@ -114,7 +104,7 @@ export function createCloudShareIntegration(
   });
 
   return createCloudShareClient({
-    http: qaHttp,
+    http,
     endpoints,
     tokenProvider,
     customerId: opts.customerId,
@@ -136,8 +126,6 @@ export function createCloudShareIntegrationForConnection(
     endpoints: opts.endpoints,
     trace: opts.trace,
     observer: opts.observer,
-    qaPrewriteSalesOauth: opts.qaPrewriteSalesOauth,
-    localSalesOauthQa: opts.localSalesOauthQa,
     customerId: opts.connection.customerId,
     v3: {
       apiId: opts.connection.apiId,
