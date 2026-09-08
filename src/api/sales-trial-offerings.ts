@@ -715,20 +715,13 @@ export async function handlePublishSalesTrialOffering(
     return response(200, { offering: toPortalOffering(published) });
   } catch (error) {
     if (!isOutcomeAmbiguousCreateFailure(error)) {
-      let reservationCleanupError: unknown;
-      try {
-        await releaseReservationToDraft(
-          deps,
-          request.customerId,
-          offering.id,
-          reservation.updatedAt,
-        );
-      } catch (cleanupError) {
-        // Preserve the provider failure as the primary outcome. Cleanup is a
-        // separate local failure and must not erase the attempted POST evidence.
-        reservationCleanupError = cleanupError;
-      }
-      return publishFailure(deps, request, offering, correlationId, externalId, error, reservationCleanupError);
+      await releaseReservationToDraft(
+        deps,
+        request.customerId,
+        offering.id,
+        reservation.updatedAt,
+      );
+      return publishFailure(deps, request, offering, correlationId, externalId, error);
     }
     const needsAttention = {
       ...reservation,
@@ -1390,8 +1383,8 @@ function isOutcomeAmbiguousCreateFailure(error: unknown): boolean {
 }
 
 function cloudShareErrorContext(error: unknown): Record<string, unknown> | undefined {
-  return isCloudShareErrorAcrossBoundaries(error)
-    ? error.context
+  return error instanceof Error && "context" in error
+    ? (error as { context?: Record<string, unknown> }).context
     : undefined;
 }
 
@@ -1446,7 +1439,6 @@ async function publishFailure(
   correlationId: string,
   externalId: string,
   error: unknown,
-  reservationCleanupError?: unknown,
 ) {
   const itemValidationFailure = error instanceof SalesItemProvisioningValidationError;
   const itemReadFailure = error instanceof SalesItemProvisioningReadError;
@@ -1491,11 +1483,6 @@ async function publishFailure(
       integrationSurface,
       failureMode,
       error: error instanceof Error ? error.message : String(error),
-      ...(reservationCleanupError ? {
-        reservationCleanupFailure: reservationCleanupError instanceof Error
-          ? reservationCleanupError.message
-          : String(reservationCleanupError),
-      } : {}),
     },
   });
   const errorMessage = oauthTokenFailure
