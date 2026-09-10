@@ -20,7 +20,7 @@ export async function handleReconcileSalesSession(deps: { sessions: Pick<SalesDe
   try {
     const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare as NonNullable<typeof deps.cloudshare>).forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" }));
     const read = await delivery.readSession(session.cloudShareSalesExperienceId);
-    if (read.id !== session.cloudShareSalesExperienceId) throw new CloudShareResponseError("CloudShare returned a different Sales Experience ID.", { method: "GET", path: `/sales/${encodeURIComponent(session.cloudShareSalesExperienceId)}`, status: read.response.status ?? 200, responseStatus: read.response.status ?? 200, responseBody: read.response.body, failureMode: "sales_identity_contract" });
+    if (read.id !== session.cloudShareSalesExperienceId) throw new CloudShareResponseError("CloudShare returned a different Sales Experience ID.", { method: read.request.method, path: read.request.path, requestQuery: read.request.query, requestHeaders: read.request.headers, requestBody: read.request.body, status: read.response.status ?? 200, responseStatus: read.response.status ?? 200, responseHeaders: read.response.headers, responseBody: read.response.body, network: read.response.network, tls: read.response.tls, failureMode: "sales_identity_contract" });
     if (read.status !== "notStarted" && read.status !== "inProgress" && read.status !== "ended") throw salesStatusContractError(read);
     remote = read;
     const observedAt = new Date();
