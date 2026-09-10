@@ -49,7 +49,7 @@ describe("CloudShare Sales Delivery", () => {
   });
   it("projects malformed provider bodies with real client request/response evidence", async () => {
     const http: HttpClient = { async send(request) { return { status: 200, body: JSON.stringify({ count: 1, items: [{ id: "sales-1", status: "invalid" }] }), headers: { "x-test": "sentinel" }, network: { transport: "tcp" } }; } };
-    const client = createCloudShareClient({ http, endpoints: { v4BaseUrl: "https://api.example.test/v4", v3BaseUrl: "https://api.example.test/v3" }, tokenProvider: { getToken: async () => "token" }, v3: { apiId: "id", apiKey: "key" }, now: () => 1700000000000 });
+    const client = createCloudShareClient({ http, endpoints: { v4BaseUrl: "https://api.example.test/v4", v3BaseUrl: "https://api.example.test/v3" }, tokenProvider: { getToken: async () => "token" }, v3: { apiId: "id", apiKey: "key" }, observer: createCloudShareNoopRequestObserver(), now: () => 1700000000000 });
     await expect(createCloudShareSalesDelivery(client).listSessions({ offset: 0, limit: 25 })).rejects.toMatchObject({ context: expect.objectContaining({ path: "/v4/sales", responseBody: expect.objectContaining({ count: 1 }), responseHeaders: expect.objectContaining({ "x-test": "sentinel" }) }) });
   });
   it("reads and deduplicates the documented Sales Pros recovery contacts", async () => {
