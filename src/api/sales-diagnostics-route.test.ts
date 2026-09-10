@@ -85,6 +85,8 @@ describe("Sales diagnostics HTTP isolation", () => {
       customerId: "customer-certalis",
       query: { source: "sales-items", operation: "item.resource_read" },
     });
+    await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?customerId=customer-other"));
+    expect(mockHandleGetDiagnosticLog).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ customerId: "customer-certalis" }));
   });
 
   it("retrieves Customer-scoped launch correlations through the Sales diagnostics source", async () => {

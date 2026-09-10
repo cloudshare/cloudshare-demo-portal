@@ -37,6 +37,8 @@ describe("Sales Enablement Session API handler", () => {
     expect(child.details.exchangeCorrelationId).not.toBe(parentCorrelationId);
     expect(child.details.durationMs).toBeGreaterThanOrEqual(0);
     expect(parent).toMatchObject({ details: expect.objectContaining({ oauthTransport: { transport: "tls", remoteFamily: "IPv4", remotePort: 443 } }) });
+    expect(parent.details).not.toHaveProperty("contributingExchangeIds");
+    expect(httpCalls).toBe(1);
     expect(JSON.stringify(parent)).not.toContain("provider-private-address");
     expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("provider-secret"); expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("private");
   });
