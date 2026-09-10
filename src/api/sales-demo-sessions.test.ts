@@ -71,7 +71,19 @@ describe("Sales Enablement Session API handler", () => {
       projectMembers, diagnostics, audit: { write: vi.fn() }, newId: () => "capability-session",
     }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-capability", itemId: "item-capability", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
     expect(result).toMatchObject({ status: 503, body: { needsAttention: true, creationOutcome: { source: "reservation_cleanup_unconfirmed", retry: "unsafe_requires_support" } } });
-    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "reservation_cleanup_unconfirmed", retry: "unsafe_requires_support" }) }));
+    const cleanupFailure = diagnostics.record.mock.calls
+      .map(([entry]) => entry)
+      .find((entry) => entry.operation === "sales.demo_session.created" && entry.outcome === "failure");
+    expect(cleanupFailure).toMatchObject({
+      details: expect.objectContaining({
+        integrationSurface: "portal.sales_demo_sessions",
+        failureMode: "reservation_cleanup_unconfirmed",
+        cloudShareAttempted: false,
+        retry: "unsafe_requires_support",
+      }),
+    });
+    expect(cleanupFailure?.request).toBeUndefined();
+    expect(cleanupFailure?.response).toBeUndefined();
   });
   it("retains a definite provider rejection when post-dispatch reservation cleanup cannot be confirmed", async () => {
     const records = createInMemorySalesRecordRepository();

@@ -204,7 +204,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       // unknown cleanup state, not proof that no reservation remains.
       const reservationCleared = !reservationClaimed || (Boolean(deps.sessions.discardReservation && deps.sessions.findById) && await clearReservedBeforeDispatch(deps.sessions, reservation));
       if (!reservationCleared) {
-        const cleanupAfterProviderAttempt = definiteCreateFailure;
+        const cleanupAfterProviderAttempt = definiteCreateFailure && !preWriteAuthFailure;
         const reason = cleanupAfterProviderAttempt
           ? "Certalis could not confirm the Sales Enablement reservation was discarded after CloudShare rejected the create request. Do not retry creation; review support diagnostics."
           : "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
