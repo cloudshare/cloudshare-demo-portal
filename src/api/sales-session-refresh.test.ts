@@ -52,6 +52,16 @@ describe("Sales Session refresh handler", () => {
     expect(result.body).not.toHaveProperty("observation");
   });
 
+  it("keeps an observation fresh at exactly five minutes and refreshes after the boundary", async () => {
+    const observedAt = new Date("2026-09-10T12:00:00.000Z");
+    const listSessions = vi.fn().mockResolvedValue({ sessions: [{ id: "sales-1", status: "inProgress" }], total: 1 });
+    const sessions = { list: vi.fn().mockResolvedValue([session("local-1", "sales-1", observedAt)]), recordExperienceObservations: vi.fn() };
+    const exact = await handleRefreshSalesSessions({ sessions, delivery: { listSessions }, now: () => new Date("2026-09-10T12:05:00.000Z") }, { customerId: "customer-1", mode: "automatic", offset: 25, limit: 25, targetIds: ["local-1"] });
+    expect(exact.body).not.toHaveProperty("correlationId");
+    const stale = await handleRefreshSalesSessions({ sessions, delivery: { listSessions }, now: () => new Date("2026-09-10T12:05:00.001Z") }, { customerId: "customer-1", mode: "automatic", offset: 25, limit: 25, targetIds: ["local-1"] });
+    expect(stale.body).toHaveProperty("correlationId");
+  });
+
   it("rejects a 51-row rendered target set and never crosses the Customer boundary", async () => {
     const list = vi.fn();
     const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), recordExperienceObservations: vi.fn() }, delivery: { listSessions: list } }, { customerId: "customer-1", mode: "automatic", offset: 0, limit: 25, targetIds: Array.from({ length: 51 }, (_, index) => `local-${index}`) });
