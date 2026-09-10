@@ -38,6 +38,12 @@ describe("Sales Sessions workbench", () => {
     await waitFor(() => expect(refreshCalls).toBe(2));
     await waitFor(() => expect(queueReads).toBeGreaterThan(1));
   });
+  it("announces pending manual refresh without moving focus and succeeds on Retry's second request", async () => {
+    const user = userEvent.setup(); let resolveRefresh!: (value: Response) => void; let calls = 0;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => { const path = String(input); if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] }); if (path.includes("/refresh")) { calls += 1; if (calls === 1) return new Promise<Response>((resolve) => { resolveRefresh = resolve; }); return json({ correlationId: "retry-ok", progress: { message: "Sales Session status refreshed." } }); } return json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, experience: { ...row.experience, freshness: "fresh" } }] }); });
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={vi.fn()} />); await screen.findByRole("link", { name: "Acme evaluation" });
+    const button = screen.getByRole("button", { name: "Refresh CloudShare status" }); await user.click(button); expect(screen.getByRole("status").textContent).toContain("Refreshing"); expect(document.activeElement).toBe(button); resolveRefresh(json({ error: "temporary", correlationId: "retry-1" }, 503)); await screen.findByText("temporary", { exact: false }); await user.click(screen.getByRole("button", { name: "Retry refresh" })); await waitFor(() => expect(calls).toBe(2)); await screen.findByText("Sales Session status refreshed.", { exact: false });
+  });
 
   it("reports manual refresh progress and preserves rows on a correlated failure", async () => {
     const user = userEvent.setup();
