@@ -200,8 +200,8 @@ export function createSalesTrialCloudShareObserver(input: {
         details: {
           evidenceKind: "transport",
           exchangeId: event.exchangeCorrelationId,
-          attemptStartSequence: sequence,
-          completedAt: new Date().toISOString(),
+          attemptStartSequence: event.attemptStartSequence,
+          completedAt: event.completedAt,
           sequence,
           durationMs: event.durationMs,
           integrationSurface: event.integrationSurface,

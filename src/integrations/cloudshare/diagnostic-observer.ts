@@ -45,7 +45,10 @@ export function createCloudShareDiagnosticObserver(input: {
     request: null,
     response: null,
     details: {
-          exchangeId: event.exchangeCorrelationId,
+      exchangeId: event.exchangeCorrelationId,
+      evidenceKind: "transport",
+      attemptStartSequence: event.attemptStartSequence,
+      completedAt: event.completedAt,
       ...(input.correlationId ? { sequence: ++sequence } : {}),
       ...(event.exchangeCorrelationId ? { exchangeCorrelationId: event.exchangeCorrelationId } : {}),
       durationMs: event.durationMs,
@@ -94,6 +97,7 @@ export function createCloudShareWorkflowObserver(input: {
         response: event.result?.response as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.response : projectFailureResponse(event.error?.context)) ?? null,
         details: {
           exchangeId: event.exchangeId,
+          evidenceKind: "transport",
           attemptStartSequence: event.attemptStartSequence,
           completedAt: event.completedAt,
           sequence, durationMs: event.durationMs,
@@ -116,8 +120,8 @@ export function createCloudShareWorkflowObserver(input: {
         request: null, response: null,
         details: {
           exchangeId: exchangeCorrelationId,
-          attemptStartSequence: sequence,
-          completedAt: new Date().toISOString(),
+          attemptStartSequence: event.attemptStartSequence,
+          completedAt: event.completedAt,
           sequence, durationMs: event.durationMs, integrationSurface: event.integrationSurface,
           parentCorrelationId: input.correlationId, exchangeCorrelationId,
           ...(event.status !== undefined ? { status: event.status } : {}),

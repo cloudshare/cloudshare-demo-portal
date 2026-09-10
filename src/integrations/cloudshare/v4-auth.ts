@@ -66,7 +66,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
   const now = opts.now ?? Date.now;
   const safetyMarginMs = opts.safetyMarginMs ?? 30_000;
   let cached: CachedToken | undefined;
-  let currentAttemptStartSequence: number | undefined;
+  const acquisitionTiming = new Map<string, { readonly attemptStartSequence?: number; readonly startedAtMs: number }>();
 
   function isFresh(token: CachedToken | undefined): token is CachedToken {
     return token !== undefined && now() < token.expiresAtMs - safetyMarginMs;
@@ -76,7 +76,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
     const startedAtMs = now();
     const exchangeCorrelationId = randomUUID();
     const attemptStartSequence = opts.attemptStartAllocator?.next();
-    currentAttemptStartSequence = attemptStartSequence;
+    acquisitionTiming.set(exchangeCorrelationId, { attemptStartSequence, startedAtMs });
     const acquisitionMetadata = (event: Pick<V4TokenAcquisitionEvent, "durationMs" | "status" | "failureMode" | "causeClassification">) => ({ acquisition: { exchangeCorrelationId, durationMs: event.durationMs, ...(attemptStartSequence === undefined ? {} : { attemptStartSequence }), ...(event.status === undefined ? {} : { status: event.status }), ...(event.failureMode ? { failureMode: event.failureMode } : {}), ...(event.causeClassification ? { causeClassification: event.causeClassification } : {}) } });
     const body = new URLSearchParams({
       grant_type: "client_credentials",
@@ -223,7 +223,8 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
 
   async function notifyAcquisition(event: V4TokenAcquisitionEvent): Promise<void> {
     try {
-      await opts.onAcquisition({ ...event, ...(currentAttemptStartSequence === undefined ? {} : { attemptStartSequence: currentAttemptStartSequence, completedAt: event.completedAt ?? new Date().toISOString() }) });
+      const timing = event.exchangeCorrelationId ? acquisitionTiming.get(event.exchangeCorrelationId) : undefined;
+      await opts.onAcquisition({ ...event, ...(timing?.attemptStartSequence === undefined ? {} : { attemptStartSequence: timing.attemptStartSequence, completedAt: event.completedAt ?? new Date(now()).toISOString() }) });
     } catch {
       // Diagnostics must not break CloudShare authentication.
     }
