@@ -159,6 +159,18 @@ describe("Sales Enablement Session API handler", () => {
     expect(result).toMatchObject({ status: 429, body: { needsAttention: false, retryAfterSeconds: 30, creationOutcome: { source: "cloudshare_v4_definite_rejection", retry: "safe" } } });
     expect(sessions.discardReservation).toHaveBeenCalledOnce();
   });
+  it("returns an integration authorization failure instead of 422 when POST sales is forbidden", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-sales-forbidden", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-sales-forbidden", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const stored: SalesDemoSession[] = [];
+    const sessions = { save: vi.fn(async (value: SalesDemoSession) => { stored.push(value); }), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]), findById: vi.fn(async () => stored[0] ?? null), discardReservation: vi.fn(async () => { stored.length = 0; return true; }) };
+    const forbidden = new CloudShareRequestError("CloudShare rejected the configured permission", 403, { method: "POST", path: "/sales", responseStatus: 403, responseBody: { error: "forbidden" } });
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(forbidden) }) }, projectMembers, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, newId: () => "sales-forbidden-session" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-sales-forbidden", itemId: "item-sales-forbidden", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+
+    expect(result).toMatchObject({ status: 502, body: { error: expect.stringContaining("credentials or permissions"), needsAttention: false, creationOutcome: { source: "cloudshare_v4_definite_rejection", retry: "safe" } } });
+    expect(sessions.discardReservation).toHaveBeenCalledOnce();
+  });
   it("treats a boundary-safe branded Sales rate limit as a definite rejection", async () => {
     const records = createInMemorySalesRecordRepository();
     await records.saveOpportunity({ id: "opp-boundary-rate-limit", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
