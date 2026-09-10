@@ -7,7 +7,7 @@ const session = (id: string, experience: string, observedAt?: Date) => ({ id, cu
 describe("Sales Session refresh handler", () => {
   it("classifies local target reads separately from provider failures", async () => {
     const record = vi.fn();
-    const result = await handleRefreshSalesSessions({ sessions: { listForRefresh: vi.fn().mockRejectedValue(new Error("database unavailable")), list: vi.fn(), recordExperienceObservation: vi.fn() }, delivery: { listSessions: vi.fn() }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
+    const result = await handleRefreshSalesSessions({ sessions: { listForRefresh: vi.fn().mockRejectedValue(new Error("database unavailable")), list: vi.fn(), recordExperienceObservations: vi.fn() }, delivery: { listSessions: vi.fn() }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
     expect(result).toMatchObject({ status: 500, body: { correlationId: expect.any(String) } });
     expect(record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ integrationSurface: "certalis.persistence", failureMode: "local_observation_read" }) }));
   });
@@ -15,9 +15,9 @@ describe("Sales Session refresh handler", () => {
     const record = vi.fn();
     const listSessions = vi.fn().mockResolvedValue({ sessions: [{ id: "sales-1", status: "inProgress" }], total: 1 });
     const listForRefresh = vi.fn().mockResolvedValue([session("local-1", "sales-1")]);
-    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), listForRefresh, recordExperienceObservation: record }, delivery: { listSessions }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), listForRefresh, recordExperienceObservations: record }, delivery: { listSessions }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
     expect(result.status).toBe(200);
-    expect(record).toHaveBeenCalledWith("customer-1", "local-1", expect.objectContaining({ experienceStatus: "inProgress" }));
+    expect(record).toHaveBeenCalledWith("customer-1", [expect.objectContaining({ id: "local-1", experienceStatus: "inProgress" })]);
     expect(record).not.toHaveBeenCalledWith("customer-1", "local-other", expect.anything());
     expect(listForRefresh).toHaveBeenCalledWith("customer-1", { targetIds: ["local-1"], offset: 0, limit: 25 });
     expect(listSessions).toHaveBeenCalledWith(expect.objectContaining({ field: 'id=in("sales-1")' }));
@@ -25,21 +25,21 @@ describe("Sales Session refresh handler", () => {
 
   it("fails closed on duplicate provider rows without persisting either row", async () => {
     const persist = vi.fn();
-    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1")]), recordExperienceObservation: persist }, delivery: { listSessions: vi.fn().mockResolvedValue({ sessions: [{ id: "sales-1", status: "inProgress" }, { id: "sales-1", status: "ended" }], total: 2 }) } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1")]), recordExperienceObservations: persist }, delivery: { listSessions: vi.fn().mockResolvedValue({ sessions: [{ id: "sales-1", status: "inProgress" }, { id: "sales-1", status: "ended" }], total: 2 }) } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
     expect(result.status).toBe(502);
     expect(persist).not.toHaveBeenCalled();
   });
 
   it("rejects unbounded pagination before contacting CloudShare", async () => {
     const list = vi.fn();
-    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), recordExperienceObservation: vi.fn() }, delivery: { listSessions: list } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 101 });
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), recordExperienceObservations: vi.fn() }, delivery: { listSessions: list } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 101 });
     expect(result.status).toBe(400);
     expect(list).not.toHaveBeenCalled();
   });
 
   it("does not manufacture provider freshness when no rendered rows are targeted", async () => {
     const listSessions = vi.fn();
-    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1")]), recordExperienceObservation: vi.fn() }, delivery: { listSessions } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: [] });
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1")]), recordExperienceObservations: vi.fn() }, delivery: { listSessions } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: [] });
     expect(result.status).toBe(200);
     expect(listSessions).not.toHaveBeenCalled();
     expect(result.body).not.toHaveProperty("observation");
@@ -47,7 +47,7 @@ describe("Sales Session refresh handler", () => {
 
   it("rejects a 51-row rendered target set and never crosses the Customer boundary", async () => {
     const list = vi.fn();
-    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), recordExperienceObservation: vi.fn() }, delivery: { listSessions: list } }, { customerId: "customer-1", mode: "automatic", offset: 0, limit: 25, targetIds: Array.from({ length: 51 }, (_, index) => `local-${index}`) });
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), recordExperienceObservations: vi.fn() }, delivery: { listSessions: list } }, { customerId: "customer-1", mode: "automatic", offset: 0, limit: 25, targetIds: Array.from({ length: 51 }, (_, index) => `local-${index}`) });
     expect(result.status).toBe(400);
     expect(list).not.toHaveBeenCalled();
   });
@@ -56,7 +56,7 @@ describe("Sales Session refresh handler", () => {
     const record = vi.fn();
     const error = new CloudShareAuthError("unauthorized", { failureMode: "oauth_failure", path: "/oauth/token" });
     const firstPage = Array.from({ length: 100 }, (_, index) => ({ id: `other-${index}`, status: "inProgress" as const }));
-    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1")]), recordExperienceObservation: vi.fn() }, delivery: { listSessions: vi.fn().mockResolvedValueOnce({ sessions: firstPage, total: 101 }).mockRejectedValueOnce(error) }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1")]), recordExperienceObservations: vi.fn() }, delivery: { listSessions: vi.fn().mockResolvedValueOnce({ sessions: firstPage, total: 101 }).mockRejectedValueOnce(error) }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
     expect(result.status).toBe(502);
     expect(record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: expect.any(String), request: null, response: null, details: expect.objectContaining({ failureMode: "oauth_failure" }) }));
   });
