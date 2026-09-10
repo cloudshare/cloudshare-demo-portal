@@ -128,6 +128,20 @@ describe("Sales diagnostics handler", () => {
     expect(response).toMatchObject({ status: 200, body: { page: { returned: 500, hasMore: false, nextOffset: null } } });
   });
 
+  it("F: source-filtered and aggregate Sales pages mark the 5000 boundary incomplete while ordinary pages remain complete", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    for (let index = 0; index < 5001; index += 1) {
+      await diagnostics.append({ source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", correlationId: "corr-cap", message: String(index), occurredAt: new Date(2026, 8, 4, 0, 0, index % 60) });
+    }
+    const deps = { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } };
+    const source = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { source: "sales-records", offset: "5000", limit: "1" } });
+    const aggregate = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { correlationId: "corr-cap", offset: "5000", limit: "1" } });
+    for (const response of [source, aggregate]) expect(response).toMatchObject({ status: 200, body: { page: { complete: false, incompleteReason: "sales_diagnostic_offset_cap", hasMore: false, nextOffset: null } } });
+    const ordinary = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { source: "sales-records", offset: "0", limit: "1" } });
+    expect(ordinary).toMatchObject({ status: 200, body: { page: { complete: true, hasMore: true, nextOffset: 1 } } });
+    await expect(handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { source: "sales-records", offset: "5001" } })).resolves.toMatchObject({ status: 400 });
+  });
+
   it("returns only the exact enrollment and parent offering evidence in timestamp order", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     const add = (input: Parameters<typeof diagnostics.append>[0]) => diagnostics.append(input);

@@ -42,7 +42,13 @@ export async function handleGetSalesDiagnosticLog(
   const causalTrialQuery = Boolean(request.query.subjectId && (request.query.subjectType === "sales_trial_enrollment" || request.query.subjectType === "sales_trial_offering"));
   if (requestedSource && !causalTrialQuery) {
     const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
-    return { ...response, body: projectDiagnosticPage(response.body) };
+    const projected = projectDiagnosticPage(response.body);
+    if (requestedOffset >= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) {
+      const body = projected.body as Record<string, unknown>;
+      const page = body.page as Record<string, unknown>;
+      return { ...projected, body: { ...body, page: { ...page, hasMore: false, nextOffset: null, complete: false, incompleteReason: "sales_diagnostic_offset_cap", continuation: null } } };
+    }
+    return projected;
   }
 
   if (causalTrialQuery) {
@@ -142,7 +148,10 @@ function projectDiagnosticPage(value: Record<string, unknown>): Record<string, u
   const page = value.page && typeof value.page === "object" ? value.page as Record<string, unknown> : {};
   const offset = typeof page.offset === "number" ? page.offset : 0;
   const hasMore = page.hasMore === true;
-  const capped = offset >= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET && hasMore;
+  // At the hard offset boundary a full-looking page can still be the last
+  // page returned by the bounded source scan; it is not proof that older
+  // evidence does not exist. Mark any non-empty boundary page incomplete.
+  const capped = offset >= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET && (hasMore || (Array.isArray(page.entries) && page.entries.length > 0) || (typeof page.returned === "number" && page.returned > 0));
   return { ...value, entries, page: { ...page, hasMore: capped ? false : hasMore, nextOffset: capped ? null : (typeof page.nextOffset === "number" ? page.nextOffset : null), complete: capped ? false : page.complete !== false, ...(capped ? { incompleteReason: "sales_diagnostic_offset_cap", continuation: null } : {}) } };
 }
 
