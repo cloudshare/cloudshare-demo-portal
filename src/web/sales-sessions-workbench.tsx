@@ -41,8 +41,9 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
   const search = route.queueSearch ?? "";
   useEffect(() => setSearchDraft(search), [search]);
   useEffect(() => {
-    if (refreshFocusRequested.current && document.activeElement === document.body && refreshButtonRef.current) {
-      refreshButtonRef.current.focus();
+    if (refreshFocusRequested.current) {
+      if (document.activeElement === document.body && refreshButtonRef.current) refreshButtonRef.current.focus();
+      refreshFocusRequested.current = false;
     }
   }, [refreshFeedback, refreshing, queueReload]);
   useEffect(() => {
@@ -140,7 +141,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
         <h2 className={styles.title}>Sessions</h2>
         <p className={styles.description}>Triage the Customer&apos;s scheduled and live Sales Experiences. Certalis operation, CloudShare Experience, and Participant Environment remain separate.</p>
       </div>
-      <button type="button" style={primaryButtonStyle} className={styles.provisionButton} onClick={() => onNavigate({ tab: "sessions", sessionView: "provision" })}>Provision a Session</button><button ref={refreshButtonRef} type="button" className={styles.pageButton} onClick={() => void refreshCloudShare()} disabled={refreshing} aria-busy={refreshing}>{refreshing ? "Refreshing…" : "Refresh CloudShare status"}</button>
+      <button type="button" style={primaryButtonStyle} className={styles.provisionButton} onClick={() => onNavigate({ tab: "sessions", sessionView: "provision" })}>Provision a Session</button><button ref={refreshButtonRef} type="button" className={styles.pageButton} onClick={() => { if (!refreshing) void refreshCloudShare(); }} aria-disabled={refreshing} aria-busy={refreshing}>{refreshing ? "Refreshing…" : "Refresh CloudShare status"}</button>
     </header>
 
     <section className={styles.commandRail} aria-label="Session queue controls">
