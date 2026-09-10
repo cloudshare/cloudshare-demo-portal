@@ -70,7 +70,7 @@ export async function handleGetSalesDiagnosticLog(
   })));
   const entries = sourceEntries.flat()
     .slice()
-    .sort((left: Record<string, unknown>, right: Record<string, unknown>) => String(right.occurredAt).localeCompare(String(left.occurredAt)) || String(right.id).localeCompare(String(left.id)));
+    .sort(compareWorkflowDiagnostics);
   const pageEntries = entries.slice(requestedOffset, requestedOffset + requestedLimit);
   const candidateNextOffset = requestedOffset + pageEntries.length;
   const undisclosed = entries.length > candidateNextOffset;
@@ -154,6 +154,20 @@ function projectDiagnosticPage(value: Record<string, unknown>): Record<string, u
   const capped = offset >= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET && (hasMore || (Array.isArray(page.entries) && page.entries.length > 0) || (typeof page.returned === "number" && page.returned > 0));
   return { ...value, entries, page: { ...page, hasMore: capped ? false : hasMore, nextOffset: capped ? null : (typeof page.nextOffset === "number" ? page.nextOffset : null), complete: capped ? false : page.complete !== false, ...(capped ? { incompleteReason: "sales_diagnostic_offset_cap", continuation: null } : {}) } };
 }
+
+function compareWorkflowDiagnostics(left: Record<string, unknown>, right: Record<string, unknown>): number {
+  const leftSequence = workflowSequence(left);
+  const rightSequence = workflowSequence(right);
+  if (leftSequence !== undefined && rightSequence !== undefined && leftSequence !== rightSequence) return leftSequence - rightSequence;
+  if (leftSequence !== undefined && rightSequence === undefined) return -1;
+  if (leftSequence === undefined && rightSequence !== undefined) return 1;
+  const leftExchange = exchangeId(left);
+  const rightExchange = exchangeId(right);
+  if (leftExchange && rightExchange && leftExchange !== rightExchange) return leftExchange.localeCompare(rightExchange);
+  return String(right.occurredAt).localeCompare(String(left.occurredAt)) || String(right.id).localeCompare(String(left.id));
+}
+function workflowSequence(value: Record<string, unknown>): number | undefined { const details = value.details as Record<string, unknown> | null | undefined; return typeof details?.attemptStartSequence === "number" ? details.attemptStartSequence : undefined; }
+function exchangeId(value: Record<string, unknown>): string | undefined { const details = value.details as Record<string, unknown> | null | undefined; return typeof details?.exchangeId === "string" ? details.exchangeId : undefined; }
 
 function isSalesDiagnosticSource(value: string): value is SalesDiagnosticSource {
   return (SALES_DIAGNOSTIC_SOURCES as readonly string[]).includes(value);

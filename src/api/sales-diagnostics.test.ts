@@ -5,6 +5,13 @@ import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enroll
 
 describe("Sales diagnostics handler", () => {
   const enrollmentRepo = (offeringId = "offering-1"): Pick<SalesTrialEnrollmentRepository, "findById"> & { findById: NonNullable<SalesTrialEnrollmentRepository["findById"]> } => ({ findById: vi.fn().mockResolvedValue({ salesTrialOfferingId: offeringId }) });
+  it("orders same-millisecond workflow rows by start sequence and exchange ID, with legacy timestamp/ID fallback", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository(); const at = new Date("2026-09-10T00:00:00.000Z");
+    for (const [id, sequence, exchangeId] of [["row-z", 2, "exchange-b"], ["row-a", 1, "exchange-z"]] as const) await diagnostics.append({ id, source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", occurredAt: at, details: { attemptStartSequence: sequence, exchangeId }, message: id });
+    await diagnostics.append({ id: "legacy", source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", occurredAt: at, message: "legacy" });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-records", limit: "3" } });
+    expect((response.body as { entries: Array<{ id: string }> }).entries.map((entry) => entry.id)).toEqual(["row-a", "row-z", "legacy"]);
+  });
   it("keeps the authenticated Customer scope while allowing an owned Item source", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
 
