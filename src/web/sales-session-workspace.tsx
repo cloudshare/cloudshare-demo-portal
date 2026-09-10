@@ -23,7 +23,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   const [verification, setVerification] = useState<string | null>(null);
   const [verificationCorrelationId, setVerificationCorrelationId] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [automaticRefresh, setAutomaticRefresh] = useState<string | null>(null);
+  const [automaticRefresh, setAutomaticRefresh] = useState<string | null>(null);\n  const [refreshOutcome, setRefreshOutcome] = useState<"idle" | "pending" | "success" | "failure">("idle");
   const [refreshBusy, setRefreshBusy] = useState(false);
   const requestInFlight = useRef(false);
   const shellExpiry = useContext(SalesWorkspaceExpiryContext);
@@ -41,7 +41,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   }, [handleSessionExpired, sessionId]);
   useEffect(() => {
     if (!workspace || workspace.summary.experience.freshness === "fresh" || requestInFlight.current) return;
-    let live = true; requestInFlight.current = true; setRefreshBusy(true); setAutomaticRefresh("Checking the latest CloudShare status…");
+    let live = true; requestInFlight.current = true; setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Checking the latest CloudShare status…");
     const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });
     void request(`/api/sales/enablement-sessions/refresh?mode=automatic&targetId=${encodeURIComponent(sessionId)}&limit=1`, { method: "POST" }).then(async (response) => {
       const body = await response.json() as { error?: string; correlationId?: string };
@@ -49,14 +49,14 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
       const reread = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace`, { cache: "no-store" });
       const next = await reread.json() as SalesSessionWorkspaceResponse & { error?: string };
       if (!reread.ok) throw new Error(next.error ?? "The refreshed Sales Session could not be read.");
-      if (live) { setWorkspace(next); setAutomaticRefresh("CloudShare status refreshed."); }
-    }).catch((cause) => { if (live) setAutomaticRefresh(cause instanceof Error ? cause.message : "Automatic refresh failed. Retry or open Sales support."); }).finally(() => { requestInFlight.current = false; setRefreshBusy(false); });
+      if (live) { setWorkspace(next); setRefreshOutcome("success"); setAutomaticRefresh("CloudShare status refreshed."); }
+    }).catch((cause) => { if (live) setRefreshOutcome("failure"); setAutomaticRefresh(cause instanceof Error ? cause.message : "Automatic refresh failed. Retry or open Sales support."); }).finally(() => { requestInFlight.current = false; setRefreshBusy(false); });
     return () => { live = false; };
   }, [handleSessionExpired, sessionId, workspace]);
   useEffect(() => { areaHeading.current?.focus(); }, [area, workspace?.summary.id]);
   const activity = useMemo(() => workspace ? groupSalesSessionActivity(workspace.activity) : [], [workspace]);  const retryAutomaticRefresh = async () => {
     if (requestInFlight.current) return;
-    requestInFlight.current = true; setRefreshBusy(true); setAutomaticRefresh("Retrying CloudShare status…");
+    requestInFlight.current = true; setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Retrying CloudShare status…");
     const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });
     try {
       const response = await request(`/api/sales/enablement-sessions/refresh?mode=automatic&targetId=${encodeURIComponent(sessionId)}&limit=1`, { method: "POST" });
@@ -66,8 +66,8 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
       const reread = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace`, { cache: "no-store" });
       const next = await reread.json() as SalesSessionWorkspaceResponse & { error?: string };
       if (!reread.ok) throw new Error(next.error ?? "The refreshed Sales Session could not be read.");
-      setWorkspace(next); setAutomaticRefresh("CloudShare status refreshed.");
-    } catch (cause) { setAutomaticRefresh(cause instanceof Error ? cause.message : "Automatic refresh failed. Retry or open Sales support."); }
+      setWorkspace(next); setRefreshOutcome("success"); setAutomaticRefresh("CloudShare status refreshed.");
+    } catch (cause) { setRefreshOutcome("failure"); setAutomaticRefresh(cause instanceof Error ? cause.message : "Automatic refresh failed. Retry or open Sales support."); }
     finally { requestInFlight.current = false; setRefreshBusy(false); }
   };
   if (sessionExpired) return <main aria-live="polite"><p>Your session has expired. Sign in again to continue.</p></main>;
@@ -79,7 +79,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   return <section aria-label="Sales Session workspace" className={styles.workspace}>
     <header className={styles.summary}>
       <div className={styles.summaryTopline}><div className={styles.contextTrail}><a aria-label="Back to Sessions" href={queueHref}><span aria-hidden="true">← </span>Sessions</a><span aria-hidden="true"> / </span><span>{queueIsHistory ? "History" : "Session"}</span><span aria-hidden="true"> / </span><span aria-current="page">{workspace.summary.sessionName}</span></div><span>Revision {workspace.summary.revision}</span></div>
-      <div className={styles.summaryTitle}><div><p className={styles.eyebrow}>Sales Enablement Session</p><h1>{workspace.summary.sessionName}</h1></div><span className={styles.statusBadge} style={statusBadgeStyle(operationPresentation(workspace.summary.operation.value).tone)}>{operationPresentation(workspace.summary.operation.value).label}</span><button type="button" className={styles.areaTab} onClick={() => void verifyNow()} disabled={verifying || refreshBusy}>{verifying ? "Verifying…" : "Verify now"}</button></div>{automaticRefresh ? <p aria-live="polite">{automaticRefresh} {automaticRefresh.includes("failed") ? <><button type="button" onClick={() => void retryAutomaticRefresh()}>Retry</button>{verificationCorrelationId ? <a href={`/sales?tab=support&correlationId=${encodeURIComponent(verificationCorrelationId)}`}>Open Sales support</a> : null}</> : null}</p> : null}{verification ? <div role="status"><p>{verification}</p>{verificationCorrelationId ? <a href={`/sales?tab=support&correlationId=${encodeURIComponent(verificationCorrelationId)}`}>Open Sales support</a> : null}</div> : null}
+      <div className={styles.summaryTitle}><div><p className={styles.eyebrow}>Sales Enablement Session</p><h1>{workspace.summary.sessionName}</h1></div><span className={styles.statusBadge} style={statusBadgeStyle(operationPresentation(workspace.summary.operation.value).tone)}>{operationPresentation(workspace.summary.operation.value).label}</span><button type="button" className={styles.areaTab} onClick={() => void verifyNow()} disabled={verifying || refreshBusy}>{verifying ? "Verifying…" : "Verify now"}</button></div>{automaticRefresh ? <p aria-live="polite">{automaticRefresh} {refreshOutcome === "failure" ? <><button type="button" onClick={() => void retryAutomaticRefresh()}>Retry</button>{verificationCorrelationId ? <a href={`/sales?tab=support&correlationId=${encodeURIComponent(verificationCorrelationId)}`}>Open Sales support</a> : null}</> : null}</p> : null}{verification ? <div role="status"><p>{verification}</p>{verificationCorrelationId ? <a href={`/sales?tab=support&correlationId=${encodeURIComponent(verificationCorrelationId)}`}>Open Sales support</a> : null}</div> : null}
       <dl className={styles.summaryMetrics}>
         <SummaryMetric label="Time window"><time dateTime={workspace.summary.start}>{workspace.summary.start}</time><span> · {workspace.summary.timeZone}</span><time dateTime={workspace.summary.end}>{workspace.summary.end}</time></SummaryMetric>
         <SummaryMetric label="Certalis operation"><strong>{operationPresentation(workspace.summary.operation.value).label}</strong><span>{workspace.summary.operation.value === "needs_attention" ? workspace.summary.operation.reason : "Recorded by Certalis."}</span></SummaryMetric>
