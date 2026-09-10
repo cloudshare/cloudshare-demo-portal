@@ -21,7 +21,9 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   const [error, setError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [verification, setVerification] = useState<string | null>(null);
-  const [verificationCorrelationId, setVerificationCorrelationId] = useState<string | null>(null);\n  const [refreshCorrelationId, setRefreshCorrelationId] = useState<string | null>(null);\n  const attemptedRefresh = useRef<string | null>(null);
+  const [verificationCorrelationId, setVerificationCorrelationId] = useState<string | null>(null);
+  const [refreshCorrelationId, setRefreshCorrelationId] = useState<string | null>(null);
+  const attemptedRefresh = useRef<string | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [automaticRefresh, setAutomaticRefresh] = useState<string | null>(null);
   const [refreshOutcome, setRefreshOutcome] = useState<"idle" | "pending" | "success" | "failure">("idle");
@@ -41,7 +43,10 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
     return () => { live = false; };
   }, [handleSessionExpired, sessionId]);
   useEffect(() => {
-    if (!workspace || workspace.summary.experience.freshness === "fresh" || requestInFlight.current) return;\n    const snapshot = `${workspace.summary.id}:${workspace.summary.experience.source}:${workspace.summary.experience.freshness}:${workspace.summary.experience.observedAt ?? ""}`;\n    if (attemptedRefresh.current === snapshot) return;\n    attemptedRefresh.current = snapshot;
+    if (!workspace || workspace.summary.experience.freshness === "fresh" || requestInFlight.current) return;
+    const snapshot = `${workspace.summary.id}:${workspace.summary.experience.source}:${workspace.summary.experience.freshness}:${workspace.summary.experience.observedAt ?? ""}`;
+    if (attemptedRefresh.current === snapshot) return;
+    attemptedRefresh.current = snapshot;
     let live = true; requestInFlight.current = true; setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Checking the latest CloudShare status…");
     const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });
     void request(`/api/sales/enablement-sessions/refresh?mode=automatic&targetId=${encodeURIComponent(sessionId)}&limit=1`, { method: "POST" }).then(async (response) => {
