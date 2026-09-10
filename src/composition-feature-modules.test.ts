@@ -10,6 +10,7 @@ import {
 import type { CloudShareClient, CloudShareRequestObservation, V4TokenAcquisitionEvent } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
+import { createCloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 
 const CONNECTION: CloudShareConnectionRecord = {
   customerId: "customer-a", apiId: "api-id", apiKey: "api-key", webhookSecret: "webhook-secret",
@@ -74,14 +75,16 @@ describe("composition feature modules", () => {
     const { factory, record, integrations } = createObservedFactory();
     const customRequest = vi.fn().mockRejectedValue(new Error("custom observation unavailable"));
 
+    const allocator = createCloudShareWorkflowSequenceAllocator();
     factory.forConnection(CONNECTION, {
       scope: "workflow",
       workflow: {
         actor: { type: "candidate", id: "candidate-1" }, subject: { type: "exam_attempt", id: "attempt-1" },
-        correlationId: "workflow-correlation", source: "runtime",
+        correlationId: "workflow-correlation", source: "runtime", sequenceAllocator: allocator,
       },
       onRequest: customRequest,
     });
+    expect(integrations[0].attemptStartAllocator).toBe(allocator);
     await integrations[0].observer.onAcquisition(OAUTH_EVENT);
     await integrations[0].observer.onRequest(REQUEST_EVENT);
 

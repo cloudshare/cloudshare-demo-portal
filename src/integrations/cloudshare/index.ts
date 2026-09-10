@@ -123,6 +123,7 @@ export function createCloudShareIntegration(
     trace: opts.trace,
     observer: opts.observer,
     attemptStartAllocator: opts.attemptStartAllocator,
+    attemptStartAllocator: opts.attemptStartAllocator,
   });
 }
 
