@@ -534,7 +534,9 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
   function transportContext(cause: unknown): Record<string, unknown> {
     if (cause instanceof HttpTransportError) {
+      const timedOut = cause.cause instanceof Error && ((cause.cause as Error & { code?: string }).code === "ETIMEDOUT" || /timed out/i.test(cause.cause.message));
       return {
+        failureMode: timedOut ? "provider_timeout" : "provider_transport",
         cause: cause.cause instanceof Error ? { name: cause.cause.name, message: cause.cause.message } : String(cause.cause),
         ...(cause.network ? { network: cause.network } : {}),
         ...(cause.tls ? { tls: cause.tls } : {}),
