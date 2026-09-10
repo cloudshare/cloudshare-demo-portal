@@ -62,8 +62,9 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     const failureEvidence = projectCloudShareFailureEvidence(error);
     const request = failureEvidence ? failureEvidence.request : exchanges.at(-1)?.request ?? undefined;
     const response = failureEvidence ? failureEvidence.response : exchanges.at(-1)?.response ?? undefined;
-    await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "warn", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare Sales Session refresh failed.", correlationId, request, response, details: { integrationSurface: "cloudshare.v4.sales", exchanges, failureMode: typeof structured?.failureMode === "string" ? structured.failureMode : error instanceof Error ? error.name : "provider_failure" } });
-    const localCorrelationFailure = failureMode(error) === "duplicate_local_provider_id";
+    const mode = typeof structured?.failureMode === "string" ? structured.failureMode : error instanceof Error && /timeout/i.test(error.message) ? "provider_timeout" : "provider_transport";
+    await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "warn", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare Sales Session refresh failed.", correlationId, request, response, details: { integrationSurface: mode === "duplicate_local_provider_id" ? "certalis.persistence" : "cloudshare.v4.sales", exchanges, failureMode: mode } });
+    const localCorrelationFailure = mode === "duplicate_local_provider_id";
     return { status: localCorrelationFailure ? 500 : 502, body: { error: localCorrelationFailure ? "Certalis could not correlate the rendered Sales Sessions. Review Support Diagnostics." : "CloudShare Sales Session refresh failed. Retry or open Support Diagnostics.", durable: true, correlationId } };
   }
 }

@@ -73,7 +73,7 @@ describe("Sales Session reconciliation", () => {
     const result = await handleReconcileSalesSession({ sessions: { findById: vi.fn().mockResolvedValue(activeSession), recordExperienceObservations }, connections: connection, deliveryFactory: { forConnection: () => ({ readSession: vi.fn().mockResolvedValue({ id: "other-1", status: "inProgress", request: { method: "GET", path: "/sales/remote-1" }, response: { status: 200 } }) }) }, diagnostics }, request);
     expect(result.status).toBe(502);
     expect(recordExperienceObservations).not.toHaveBeenCalled();
-    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "sales_read" }) }));
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "sales_identity_contract" }), request: expect.objectContaining({ path: "/sales/remote-1" }), response: expect.objectContaining({ status: 200 }) }));
   });
 
   it.each([
