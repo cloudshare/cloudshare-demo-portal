@@ -5,12 +5,22 @@ import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enroll
 
 describe("Sales diagnostics handler", () => {
   const enrollmentRepo = (offeringId = "offering-1"): Pick<SalesTrialEnrollmentRepository, "findById"> & { findById: NonNullable<SalesTrialEnrollmentRepository["findById"]> } => ({ findById: vi.fn().mockResolvedValue({ salesTrialOfferingId: offeringId }) });
+  it("orders complete workflow groups by newest anchor and places contributing semantics between exchanges", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const add = (correlationId: string, id: string, occurredAt: string, details: Record<string, unknown>) => diagnostics.append({ source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", correlationId, id, occurredAt: new Date(occurredAt), details, message: id } as never);
+    await add("workflow-a", "a-1", "2026-09-10T00:00:01.000Z", { exchangeId: "a-ex-1", attemptStartSequence: 1 });
+    await add("workflow-a", "a-sem", "2026-09-10T00:00:02.000Z", { contributingExchangeIds: ["a-ex-1"] });
+    await add("workflow-a", "a-2", "2026-09-10T00:00:03.000Z", { exchangeId: "a-ex-2", attemptStartSequence: 2 });
+    await add("workflow-b", "b-1", "2026-09-10T00:00:00.000Z", { exchangeId: "b-ex-1", attemptStartSequence: 1 });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-records", limit: "10" } });
+    expect((response.body as { entries: Array<{ id: string; message: string }> }).entries.map((entry) => entry.message)).toEqual(["a-1", "a-sem", "a-2", "b-1"]);
+  });
   it("orders same-millisecond workflow rows by start sequence and exchange ID, with legacy timestamp/ID fallback", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository(); const at = new Date("2026-09-10T00:00:00.000Z");
     for (const [id, sequence, exchangeId] of [["row-z", 2, "exchange-b"], ["row-a", 1, "exchange-z"]] as const) await diagnostics.append({ id, source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", occurredAt: at, details: { attemptStartSequence: sequence, exchangeId }, message: id } as never);
     await diagnostics.append({ id: "legacy", source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", occurredAt: at, message: "legacy" } as never);
     const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { limit: "3" } });
-    expect((response.body as { entries: Array<{ id: string }> }).entries.map((entry) => entry.id)).toEqual(["diag-2", "diag-1", "diag-3"]);
+    expect((response.body as { entries: Array<{ id: string }> }).entries.map((entry) => entry.id)).toEqual(["diag-1", "diag-2", "diag-3"]);
   });
   it("keeps the authenticated Customer scope while allowing an owned Item source", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
@@ -145,7 +155,7 @@ describe("Sales diagnostics handler", () => {
     const aggregate = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { correlationId: "corr-cap", offset: "4999", limit: "2" } });
     for (const response of [source, aggregate]) expect(response).toMatchObject({ status: 200, body: { page: { complete: false, incompleteReason: "sales_diagnostic_offset_cap", hasMore: false, nextOffset: null } } });
     const ordinary = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { source: "sales-records", offset: "0", limit: "1" } });
-    expect(ordinary).toMatchObject({ status: 200, body: { page: { complete: true, hasMore: true, nextOffset: 1 } } });
+    expect(ordinary).toMatchObject({ status: 200, body: { page: { complete: false, hasMore: true, nextOffset: 1 } } });
     await expect(handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { source: "sales-records", offset: "5001" } })).resolves.toMatchObject({ status: 400 });
   });
 

@@ -12,13 +12,19 @@ subject and explicit `details.contributingExchangeIds` when exchanges are
 known. The Support API must not infer relationships from timestamps, provider
 IDs, surfaces, or protected body equality.
 
-Ordering is based on request attempt start. `details.attemptStartSequence` is a
-workflow-wide allocator shared by every client in that workflow, with the
-stable exchange ID as tie-breaker; `details.completedAt` and `details.durationMs` remain
-separate so concurrent calls are not presented as causal. Historical rows that
-only have completion-allocated ordering are labelled legacy and are not
-rewritten. Bounded pages return `hasMore`, `nextOffset`, `complete`, and a
-continuation hint when another page exists.
+Ordering first groups rows by correlation. Groups are anchored by their newest
+`occurredAt` (descending), then stable group key; sequence values are never
+compared across workflows. Within a group, transport exchanges sort by
+`attemptStartSequence`; a semantic row with contributing exchanges follows the
+latest contributing sequence (before the next transport), unmapped semantic
+outcomes follow all sequenced exchanges, and legacy rows use occurred-at plus
+record-ID fallback. Stable exchange ID/time/ID tie-breakers make same-ms pages
+repeatable. Each selected source is scanned through the bounded 5,501-row probe
+before global ordering, including correlation-filtered investigations; a
+truncated scan returns `complete: false` without an unreachable continuation.
+Historical rows that only have completion-allocated ordering are labelled
+legacy and are not rewritten. Bounded pages return `hasMore`, `nextOffset`,
+`complete`, and a continuation hint when another page exists.
 
 OAuth evidence is metadata-only: surface, status or bounded failure mode,
 duration, ordering, and workflow/exchange identity. Credentials, Authorization
