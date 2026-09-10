@@ -43,48 +43,45 @@ describe("Sales diagnostics HTTP isolation", () => {
     expect(itemDiagnostics.status).toBe(200);
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(1, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-records", limit: "101", offset: "0" },
+      query: { operation: "account.created", source: "sales-records", limit: "500", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(2, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-items", limit: "101", offset: "0" },
+      query: { operation: "account.created", source: "sales-items", limit: "500", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(3, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-demo-sessions", limit: "101", offset: "0" },
+      query: { operation: "account.created", source: "sales-demo-sessions", limit: "500", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(4, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-session-reconciliation", limit: "101", offset: "0" },
+      query: { operation: "account.created", source: "sales-session-reconciliation", limit: "500", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(5, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-session-participants", limit: "101", offset: "0" },
+      query: { operation: "account.created", source: "sales-session-participants", limit: "500", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(6, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-project-members", limit: "101", offset: "0" },
+      query: { operation: "account.created", source: "sales-project-members", limit: "500", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(7, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-participant-launch", limit: "101", offset: "0" },
+      query: { operation: "account.created", source: "sales-participant-launch", limit: "500", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(8, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-trial-offerings", limit: "101", offset: "0" },
+      query: { operation: "account.created", source: "sales-trial-offerings", limit: "500", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(9, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-trial-enrollment", limit: "101", offset: "0" },
+      query: { operation: "account.created", source: "sales-trial-enrollment", limit: "500", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(10, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "cloudshare-integration", limit: "101", offset: "0" },
+      query: { operation: "account.created", source: "cloudshare-integration", limit: "500", offset: "0" },
     });
-    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), {
-      customerId: "customer-certalis",
-      query: { source: "sales-items", operation: "item.resource_read" },
-    });
+    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ customerId: "customer-certalis", query: expect.objectContaining({ source: "sales-items", operation: "item.resource_read", limit: "500", offset: "0" }) }));
     await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?customerId=customer-other"));
     expect(mockHandleGetDiagnosticLog).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ customerId: "customer-certalis" }));
   });
@@ -107,7 +104,7 @@ describe("Sales diagnostics HTTP isolation", () => {
     expect(body.entries[0].request.body).toEqual({ sponsoredLinkRequest: true });
     expect(body.entries[0].response.body).toEqual({ loginUrl: "https://cloudshare.example.test/private-provider-url", passphrase: "provider-passphrase" });
     expect(body.entries[0]).toMatchObject({ correlationId: "corr-launch-1", outcome: "success", response: { status: 200, body: { loginUrl: "https://cloudshare.example.test/private-provider-url" } } });
-    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), { customerId: "customer-certalis", query: { source: "sales-participant-launch", correlationId: "corr-launch-1", subjectId: "participant-1" } });
+    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ customerId: "customer-certalis", query: expect.objectContaining({ source: "sales-participant-launch", correlationId: "corr-launch-1", subjectId: "participant-1", limit: "500", offset: "0" }) }));
   });
 
   it("retrieves Customer-scoped Sales Trial extension correlations through the Sales diagnostics source", async () => {
