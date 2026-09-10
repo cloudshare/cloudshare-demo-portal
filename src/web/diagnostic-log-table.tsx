@@ -398,7 +398,7 @@ export function DiagnosticLogTable({
                       </button>
                       <div style={{ minWidth: OCCURRED_TIMESTAMP_MIN_WIDTH }}>
                         <div style={{ whiteSpace: "nowrap" }}>{entry.occurredAt}</div>
-                        {(() => { const d = entry.details ?? {}; const kind = d.evidenceKind === "semantic" ? "Semantic" : d.evidenceKind === "legacy" ? "Legacy" : d.evidenceKind === "transport" ? "Transport" : null; return kind ? <div style={MUTED_TEXT_STYLE}>{kind} evidence{d.exchangeId ? ` · exchange ${String(d.exchangeId)}` : ""}{d.attemptStartSequence ? ` · start #${String(d.attemptStartSequence)}` : ""}{d.durationMs !== undefined ? ` · ${String(d.durationMs)}ms` : ""}</div> : null; })()}
+                        {(() => { const d = entry.details ?? {}; const kind = d.evidenceKind === "semantic" ? "Semantic" : d.evidenceKind === "transport" ? "Transport" : "Legacy"; return <div style={MUTED_TEXT_STYLE}>{kind} evidence{d.exchangeId ? ` · exchange ${String(d.exchangeId)}` : ""}{d.attemptStartSequence ? ` · start #${String(d.attemptStartSequence)}` : ""}{d.completedAt ? ` · completed ${String(d.completedAt)}` : ""}{d.durationMs !== undefined ? ` · ${String(d.durationMs)}ms` : ""}</div>; })()}
                         <div style={MUTED_TEXT_STYLE}>{isExpanded ? "Evidence expanded" : "Expand for evidence"}</div>
                       </div>
                     </div>
