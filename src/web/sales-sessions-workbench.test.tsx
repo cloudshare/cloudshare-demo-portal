@@ -152,7 +152,7 @@ describe("Sales Sessions workbench", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Queue temporarily unavailable");
     expect(screen.getByRole("link", { name: "Acme evaluation" })).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Open Sales support" }));
-    expect(onNavigate).toHaveBeenCalledWith({ tab: "support" });
+    expect(onNavigate).toHaveBeenCalledWith({ tab: "support", supportCorrelationId: undefined });
     await user.click(screen.getByRole("button", { name: "Retry queue" }));
     await waitFor(() => expect(queueReads).toBe(3));
   });

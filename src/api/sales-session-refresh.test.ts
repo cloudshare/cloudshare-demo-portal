@@ -8,10 +8,12 @@ describe("Sales Session refresh handler", () => {
   it("refreshes only the exact rendered target ids and isolates Customers", async () => {
     const record = vi.fn();
     const listSessions = vi.fn().mockResolvedValue({ sessions: [{ id: "sales-1", status: "inProgress" }], total: 1 });
-    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1"), session("local-other", "sales-other")]), recordExperienceObservation: record }, delivery: { listSessions }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
+    const listForRefresh = vi.fn().mockResolvedValue([session("local-1", "sales-1")]);
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn(), listForRefresh, recordExperienceObservation: record }, delivery: { listSessions }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
     expect(result.status).toBe(200);
     expect(record).toHaveBeenCalledWith("customer-1", "local-1", expect.objectContaining({ experienceStatus: "inProgress" }));
     expect(record).not.toHaveBeenCalledWith("customer-1", "local-other", expect.anything());
+    expect(listForRefresh).toHaveBeenCalledWith("customer-1", { targetIds: ["local-1"], offset: 0, limit: 25 });
     expect(listSessions).toHaveBeenCalledWith(expect.objectContaining({ field: 'id=in("sales-1")' }));
   });
 
