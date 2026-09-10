@@ -11,6 +11,7 @@ export function createPrismaSalesDemoSessionRepository(prisma: PrismaClient): Sa
       }
     },
     async list(customerId) { return (await prisma.salesDemoSession.findMany({ where: { customerId }, orderBy: { createdAt: "desc" } })).map(toDomain); },
+    async listForRefresh(customerId, input) { return (await prisma.salesDemoSession.findMany({ where: { customerId, id: { in: input.targetIds } }, orderBy: { createdAt: "desc" }, skip: input.offset, take: input.limit })).map(toDomain); },
     async listByAccount(customerId, accountId) { return (await prisma.salesDemoSession.findMany({ where: { customerId, opportunity: { accountId } }, orderBy: { createdAt: "desc" } })).map(toDomain); },
     async findById(customerId, id) { const row = await prisma.salesDemoSession.findFirst({ where: { customerId, id } }); return row ? toDomain(row) : null; },
     async discardReservation(reservation) {
