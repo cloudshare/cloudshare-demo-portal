@@ -42,7 +42,18 @@ describe("Sales Sessions workbench", () => {
     const user = userEvent.setup(); let resolveRefresh!: (value: Response) => void; let calls = 0;
     vi.spyOn(window, "fetch").mockImplementation(async (input) => { const path = String(input); if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] }); if (path.includes("/refresh")) { calls += 1; if (calls === 1) return new Promise<Response>((resolve) => { resolveRefresh = resolve; }); return json({ correlationId: "retry-ok", progress: { message: "Sales Session status refreshed." } }); } return json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, experience: { ...row.experience, freshness: "fresh" } }] }); });
     render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={vi.fn()} />); await screen.findByRole("link", { name: "Acme evaluation" });
-    const button = screen.getByRole("button", { name: "Refresh CloudShare status" }); await user.click(button); expect(screen.getAllByRole("status")[0].textContent).toContain("Refreshing"); expect(document.activeElement).toBe(button); resolveRefresh(json({ error: "temporary", correlationId: "retry-1" }, 503)); await screen.findByText("temporary", { exact: false }); await user.click(screen.getByRole("button", { name: "Retry refresh" })); await waitFor(() => expect(calls).toBe(2)); await screen.findByText("Sales Session status refreshed.", { exact: false });
+    const button = screen.getByRole("button", { name: "Refresh CloudShare status" }); await user.click(button); expect(screen.getAllByRole("status")[0].textContent).toContain("Refreshing"); expect(document.activeElement).toBe(button); resolveRefresh(json({ error: "temporary", correlationId: "retry-1" }, 503)); await screen.findByText("temporary", { exact: false }); expect(document.activeElement).toBe(button); await user.click(screen.getByRole("button", { name: "Retry refresh" })); await waitFor(() => expect(calls).toBe(2)); await screen.findByText("Sales Session status refreshed.", { exact: false });
+    expect(document.activeElement).toBe(button);
+  });
+
+  it.each(["cloudshare_v4_sales_list", "cloudshare_v4_get_sales"] as const)("renders %s as observed rather than estimated", async (source) => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
+      ? json({ accounts: [], opportunities: [] })
+      : json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, experience: { value: "inProgress", source, freshness: "fresh", observedAt: "2026-07-23T09:01:00.000Z" } }] }));
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={vi.fn()} />);
+    await screen.findByRole("link", { name: "Acme evaluation" });
+    expect(screen.getByText("Observed from CloudShare · 2026-07-23T09:01:00.000Z")).toBeTruthy();
+    expect(screen.queryByText(/Estimated from the Session schedule/)).toBeNull();
   });
 
   it("reports manual refresh progress and preserves rows on a correlated failure", async () => {
