@@ -74,7 +74,7 @@ export async function handleGetSalesDiagnosticLog(
   const pageEntries = entries.slice(requestedOffset, requestedOffset + requestedLimit);
   const candidateNextOffset = requestedOffset + pageEntries.length;
   const undisclosed = entries.length > candidateNextOffset;
-  const bounded = requestedOffset >= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET || (undisclosed && candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET);
+  const bounded = requestedOffset + requestedLimit > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET || (undisclosed && candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET);
 
   return {
     status: 200,
