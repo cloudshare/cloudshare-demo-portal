@@ -203,6 +203,7 @@ async function readSourceEntries(input: {
 }): Promise<{ readonly entries: readonly Record<string, unknown>[]; readonly truncated: boolean }> {
   const entries: Record<string, unknown>[] = [];
   let offset = 0;
+  let lastPageHasMore = false;
   while (entries.length < input.requiredEntries) {
     const limit = Math.min(SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT, input.requiredEntries - entries.length);
     const response = await handleGetDiagnosticLog(input.deps, {
@@ -211,10 +212,11 @@ async function readSourceEntries(input: {
     });
     const body = response.body as DiagnosticPageBody;
     entries.push(...body.entries);
+    lastPageHasMore = body.page.hasMore;
     if (!body.page.hasMore || body.page.nextOffset === null) break;
     offset = body.page.nextOffset;
   }
-  return { entries, truncated: entries.length >= input.requiredEntries };
+  return { entries, truncated: entries.length >= input.requiredEntries && lastPageHasMore };
 }
 
 function parseLimit(value: string | undefined): number {

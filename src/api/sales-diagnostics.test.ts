@@ -15,6 +15,13 @@ describe("Sales diagnostics handler", () => {
     const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-records", limit: "10" } });
     expect((response.body as { entries: Array<{ id: string; message: string }> }).entries.map((entry) => entry.message)).toEqual(["a-1", "a-sem", "a-2", "b-1"]);
   });
+  it("preserves the earliest exchange when a correlation spans more than one source page", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    for (let index = 0; index < 601; index += 1) await diagnostics.append({ source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", correlationId: "corr-long", message: String(index), occurredAt: new Date(Date.UTC(2026, 8, 10, 0, 0, index)), details: { exchangeId: `exchange-${index}`, attemptStartSequence: index + 1 } } as never);
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { correlationId: "corr-long", limit: "500" } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries[0]?.message).toBe("0");
+    expect((response.body as { page: { hasMore: boolean; nextOffset: number | null } }).page).toMatchObject({ hasMore: true, nextOffset: 500 });
+  });
   it("orders same-millisecond workflow rows by start sequence and exchange ID, with legacy timestamp/ID fallback", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository(); const at = new Date("2026-09-10T00:00:00.000Z");
     for (const [id, sequence, exchangeId] of [["row-z", 2, "exchange-b"], ["row-a", 1, "exchange-z"]] as const) await diagnostics.append({ id, source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", occurredAt: at, details: { attemptStartSequence: sequence, exchangeId }, message: id } as never);
