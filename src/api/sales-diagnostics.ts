@@ -44,11 +44,11 @@ export async function handleGetSalesDiagnosticLog(
     const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
     const projected = projectDiagnosticPage(response.body);
     if (requestedOffset >= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) {
-      const body = projected.body as Record<string, unknown>;
+      const body = projected as Record<string, unknown>;
       const page = body.page as Record<string, unknown>;
-      return { ...projected, body: { ...body, page: { ...page, hasMore: false, nextOffset: null, complete: false, incompleteReason: "sales_diagnostic_offset_cap", continuation: null } } };
+      return { status: response.status, body: { ...body, page: { ...page, hasMore: false, nextOffset: null, complete: false, incompleteReason: "sales_diagnostic_offset_cap", continuation: null } } };
     }
-    return projected;
+    return { status: response.status, body: projected };
   }
 
   if (causalTrialQuery) {
