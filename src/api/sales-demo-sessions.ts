@@ -179,7 +179,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     const itemValidationFailure = error instanceof SalesItemProvisioningValidationError;
     const itemReadFailure = error instanceof SalesItemProvisioningReadError;
     const preWriteAuthFailure = isPreWriteAuthFailure(error);
-    const ambiguousCreate = !preWriteAuthFailure && createDispatched && !validationFailure && isOutcomeAmbiguousCreateFailure(error);
+    const ambiguousCreate = !preWriteAuthFailure && createDispatched && !isDefiniteCreateFailure(error) && isOutcomeAmbiguousCreateFailure(error);
     if (ambiguousCreate) {
       await Promise.allSettled([
         deps.sessions.updateOperationalState?.(request.customerId, id, { operationalStatus: "needs_attention", attentionReason: `cloudshare_v4_post_sales_ambiguous: ${AMBIGUOUS_CREATE_REASON}` }),
