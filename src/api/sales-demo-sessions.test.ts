@@ -85,6 +85,18 @@ describe("Sales Enablement Session API handler", () => {
     expect(cleanupFailure?.request).toBeUndefined();
     expect(cleanupFailure?.response).toBeUndefined();
   });
+  it("clears a claimed reservation after an untyped pre-dispatch failure", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-untyped-preflight", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-untyped-preflight", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const stored: SalesDemoSession[] = [];
+    const sessions = { save: vi.fn(async (value: SalesDemoSession) => { stored.push(value); }), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]), findById: vi.fn(async () => stored[0] ?? null), discardReservation: vi.fn(async () => { stored.length = 0; return true; }) };
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn() }) }, itemProvisioningValidatorFactory: { forConnection: vi.fn(() => { throw new Error("unexpected preflight failure"); }) }, projectMembers, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, newId: () => "untyped-preflight-session" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-untyped-preflight", itemId: "item-untyped-preflight", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+
+    expect(result).toMatchObject({ status: 502, body: { needsAttention: false } });
+    expect(sessions.discardReservation).toHaveBeenCalledOnce();
+    expect(stored).toEqual([]);
+  });
   it("retains a definite provider rejection when post-dispatch reservation cleanup cannot be confirmed", async () => {
     const records = createInMemorySalesRecordRepository();
     await records.saveOpportunity({ id: "opp-cleanup-evidence", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });

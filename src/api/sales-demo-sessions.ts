@@ -131,9 +131,9 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     }
   }
   const workflowScope = certificationCloudShareWorkflow({ actor: request.actor, customerId: request.customerId, subject: { type: "sales_demo_session", id }, correlationId, source: "sales-demo-sessions", externalIds: { opportunityId: opportunity.id, projectId: item.project.id } });
-  const delivery = deps.deliveryFactory?.forConnection(connection, workflowScope) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, workflowScope));
   let createDispatched = false;
   try {
+    const delivery = deps.deliveryFactory?.forConnection(connection, workflowScope) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, workflowScope));
     const validator = deps.itemProvisioningValidator ?? deps.itemProvisioningValidatorFactory?.forConnection(connection, workflowScope);
     const resourceReads = validator ? await validator.revalidate(item) : [];
     await recordResourceReads(deps, request, correlationId, item.id, item.project.id, resourceReads, "success");
@@ -197,7 +197,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     // proven OAuth failure as pre-dispatch so its local reservation is cleared;
     // other failures remain gated by the delivery-entry marker.
     const definiteCreateFailure = createDispatched && isDefiniteCreateFailure(error);
-    const provenPreDispatchFailure = preWriteAuthFailure || definiteCreateFailure || (!createDispatched && (validationFailure || memberSelectionFailure || memberReadFailure || itemValidationFailure || itemReadFailure));
+    const provenPreDispatchFailure = preWriteAuthFailure || definiteCreateFailure || !createDispatched;
     if (provenPreDispatchFailure) {
       // A claimed reservation is only safe to retry after discard *and*
       // readback have both been confirmed. Missing either capability is an
