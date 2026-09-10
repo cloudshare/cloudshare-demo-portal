@@ -213,7 +213,8 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
         const reason = cleanupAfterProviderAttempt
           ? "Certalis could not confirm the Sales Enablement reservation was discarded after CloudShare rejected the create request. Do not retry creation; review support diagnostics."
           : "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
-        const details = { integrationSurface: cleanupAfterProviderAttempt || preWriteCooldownFailure ? "cloudshare.v4.sales" : "portal.sales_demo_sessions", failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: cleanupAfterProviderAttempt, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
+        const cleanupIntegrationSurface = cleanupAfterProviderAttempt ? "cloudshare.v4.sales" : itemReadFailure ? "cloudshare.v3.sales_item_resources" : memberReadFailure ? "cloudshare.v3.project_members_gui" : preWriteCooldownFailure ? "cloudshare.v4.sales" : "portal.sales_demo_sessions";
+        const details = { integrationSurface: cleanupIntegrationSurface, failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: cleanupAfterProviderAttempt, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
         await Promise.allSettled([
           evidence(deps, request, correlationId, reservation, "failure", reason, cleanupAfterProviderAttempt ? cloudShareEvidence(error) : undefined, details),
           deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: reservation.id, outcome: "failure", correlationId, details, error: reason }),
