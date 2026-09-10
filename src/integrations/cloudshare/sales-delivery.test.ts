@@ -34,6 +34,19 @@ describe("CloudShare Sales Delivery", () => {
     expect(result.sessions).toEqual([{ id: "sales-1", status: "inProgress" }]);
     expect(requestV4Detailed).toHaveBeenCalledWith(expect.objectContaining({ path: "/sales", query: { field: "status=in(inProgress)", offset: "0", limit: "25" } }));
   });
+  it.each([
+    { name: "malformed response", data: { count: 1, items: [{ id: "sales-1", status: "unknown" }] } },
+    { name: "partial response", data: { count: 1 } },
+  ])("rejects a $name while retaining provider exchange evidence", async ({ data }) => {
+    const requestV4Detailed = vi.fn().mockResolvedValue({ data, request: { method: "GET", path: "/sales", query: { offset: "0", limit: "25" } }, response: { status: 200, body: data } });
+    await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).listSessions({ offset: 0, limit: 25 })).rejects.toThrow();
+    expect(requestV4Detailed).toHaveBeenCalledWith(expect.objectContaining({ path: "/sales" }));
+  });
+  it("preserves timeout/transport errors from the bounded list boundary", async () => {
+    const error = Object.assign(new Error("request timeout"), { context: { failureMode: "provider_timeout", request: { method: "GET", path: "/sales" }, response: null } });
+    const requestV4Detailed = vi.fn().mockRejectedValue(error);
+    await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).listSessions({ offset: 0, limit: 25 })).rejects.toMatchObject({ context: expect.objectContaining({ failureMode: "provider_timeout" }) });
+  });
   it("reads and deduplicates the documented Sales Pros recovery contacts", async () => {
     const requestV4Detailed = vi.fn().mockResolvedValue({ data: { count: 3, salesPros: [{ name: "Main <Owner>", email: "main@example.test", type: "mainSalesPro" }, { name: "Additional", email: "extra@example.test", type: "salesPro" }, { name: "Duplicate", email: "MAIN@example.test", type: "salesPro" }] }, request: { method: "GET", path: "/sales/sales-1/salespros" }, response: { status: 200 } });
     const result = await createCloudShareSalesDelivery({ requestV4Detailed } as never).listSalesPros("sales-1");

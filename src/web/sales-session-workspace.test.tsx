@@ -42,6 +42,7 @@ describe("Sales Session workspace", () => {
     await screen.findByRole("heading", { name: "Acme enablement" });
     await user.click(screen.getByRole("button", { name: "Verify now" }));
     expect((await screen.findByRole("status")).textContent).toContain("incomplete verification observation");
+    expect(screen.getByRole("link", { name: "Open Sales support" }).getAttribute("href")).toContain("correlationId=verify-bad");
     expect(screen.getAllByText("Correlated").length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "Verify now" }));
     expect((await screen.findByRole("status")).textContent).toContain("CloudShare unavailable");
