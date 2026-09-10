@@ -53,7 +53,7 @@ describe("Sales Session workspace", () => {
     await screen.findByRole("heading", { name: "Acme enablement" });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(posts).toBe(1);
-    expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();\n    await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));\n    await new Promise((resolve) => setTimeout(resolve, 20));\n    expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();
   });
 
   it("keeps automatic-refresh and Verify support correlations independent", async () => {
