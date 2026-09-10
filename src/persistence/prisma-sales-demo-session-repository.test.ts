@@ -27,4 +27,13 @@ describe("Prisma Sales Enablement Session repository", () => {
     const repository = createPrismaSalesDemoSessionRepository({ salesDemoSession: { updateMany } } as never);
     await expect(repository.updateOperationalState!("customer-a", "session-1", { operationalStatus: "active" })).rejects.toThrow("Sales Enablement Session was not found for this Customer");
   });
+  it("uses one transaction and rolls back all observations when a later row fails", async () => {
+    const rows = new Map([["session-1", "notStarted"], ["session-2", "notStarted"]]);
+    const updateMany = vi.fn().mockImplementation(async ({ where, data }: { where: { id: string }; data: { experienceStatus: string } }) => { if (where.id === "session-2") throw new Error("mid-batch failure"); rows.set(where.id, data.experienceStatus); return { count: 1 }; });
+    const transaction = vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<void>) => { const before = new Map(rows); try { await callback({ salesDemoSession: { updateMany } }); } catch (error) { rows.clear(); for (const [key, value] of before) rows.set(key, value); throw error; } });
+    const repository = createPrismaSalesDemoSessionRepository({ salesDemoSession: { updateMany }, $transaction: transaction } as never);
+    await expect(repository.recordExperienceObservations!("customer-a", [{ id: "session-1", experienceStatus: "inProgress", experienceStatusObservedAt: new Date() }, { id: "session-2", experienceStatus: "ended", experienceStatusObservedAt: new Date() }])).rejects.toThrow("mid-batch failure");
+    expect([...rows.values()]).toEqual(["notStarted", "notStarted"]);
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
 });
