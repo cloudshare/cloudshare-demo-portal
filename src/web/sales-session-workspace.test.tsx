@@ -13,6 +13,35 @@ const data = { summary: { id: "session-1", sessionName: "Acme enablement", revis
 describe("Sales Session workspace", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+  it("refreshes an estimated workspace, exposes failure support, and retries with a local reread", async () => {
+    const user = userEvent.setup();
+    let releaseFailure!: () => void;
+    const pending = new Promise<void>((resolve) => { releaseFailure = resolve; });
+    let automaticPosts = 0;
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "estimated" } } };
+    const fresh = { ...data, summary: { ...data.summary, experience: { value: "inProgress", source: "cloudshare_v4_sales_list", freshness: "fresh", observedAt: "2026-07-24T09:01:00.000Z" } } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/workspace")) return new Response(JSON.stringify(automaticPosts > 1 ? fresh : stale), { status: 200 });
+      if (init?.method === "POST") {
+        automaticPosts += 1;
+        if (automaticPosts === 1) { await pending; return new Response(JSON.stringify({ error: "CloudShare unavailable", correlationId: "refresh-fail" }), { status: 503 }); }
+        return new Response(JSON.stringify({ correlationId: "refresh-ok", rows: [{ id: "session-1", status: "inProgress" }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    expect(screen.getByRole("button", { name: "Verify now" })).toBeDisabled();
+    releaseFailure();
+    await screen.findByText("CloudShare unavailable");
+    expect(screen.getByRole("link", { name: "Open Sales support" }).getAttribute("href")).toContain("refresh-fail");
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("CloudShare status refreshed.");
+    expect(automaticPosts).toBe(2);
+    expect(screen.getByRole("button", { name: "Verify now" })).toBeEnabled();
+  });
+
   it("verifies one Experience, shows durable progress, and preserves the operation dimension", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
