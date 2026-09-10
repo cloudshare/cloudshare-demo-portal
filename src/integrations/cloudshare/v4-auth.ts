@@ -227,6 +227,8 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
       await opts.onAcquisition({ ...event, ...(timing?.attemptStartSequence === undefined ? {} : { attemptStartSequence: timing.attemptStartSequence, completedAt: event.completedAt ?? new Date(now()).toISOString() }) });
     } catch {
       // Diagnostics must not break CloudShare authentication.
+    } finally {
+      if (event.exchangeCorrelationId) acquisitionTiming.delete(event.exchangeCorrelationId);
     }
   }
 }

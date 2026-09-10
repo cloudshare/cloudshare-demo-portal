@@ -139,7 +139,11 @@ function projectDiagnosticPage(value: Record<string, unknown>): Record<string, u
   const entries = Array.isArray(value.entries)
     ? value.entries.map((entry) => salesBearerSafeProjection(entry))
     : value.entries;
-  return { ...value, entries };
+  const page = value.page && typeof value.page === "object" ? value.page as Record<string, unknown> : {};
+  const offset = typeof page.offset === "number" ? page.offset : 0;
+  const hasMore = page.hasMore === true;
+  const capped = offset >= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET && hasMore;
+  return { ...value, entries, page: { ...page, hasMore: capped ? false : hasMore, nextOffset: capped ? null : (typeof page.nextOffset === "number" ? page.nextOffset : null), complete: capped ? false : page.complete !== false, ...(capped ? { incompleteReason: "sales_diagnostic_offset_cap", continuation: null } : {}) } };
 }
 
 function isSalesDiagnosticSource(value: string): value is SalesDiagnosticSource {

@@ -13,7 +13,8 @@ known. The Support API must not infer relationships from timestamps, provider
 IDs, surfaces, or protected body equality.
 
 Ordering is based on request attempt start. `details.attemptStartSequence` is a
-per-client tie-breaker; `details.completedAt` and `details.durationMs` remain
+workflow-wide allocator shared by every client in that workflow, with the
+stable exchange ID as tie-breaker; `details.completedAt` and `details.durationMs` remain
 separate so concurrent calls are not presented as causal. Historical rows that
 only have completion-allocated ordering are labelled legacy and are not
 rewritten. Bounded pages return `hasMore`, `nextOffset`, `complete`, and a
