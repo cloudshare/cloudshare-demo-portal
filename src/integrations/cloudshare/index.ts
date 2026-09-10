@@ -140,6 +140,7 @@ export function createCloudShareIntegrationForConnection(
     endpoints: opts.endpoints,
     trace: opts.trace,
     observer: opts.observer,
+    attemptStartAllocator: opts.attemptStartAllocator,
     customerId: opts.connection.customerId,
     v3: {
       apiId: opts.connection.apiId,

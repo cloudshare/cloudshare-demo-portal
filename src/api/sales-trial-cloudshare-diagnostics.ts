@@ -125,7 +125,7 @@ export function createSalesTrialCloudShareObserver(input: {
   readonly onRequest: (event: CloudShareRequestObservation) => Promise<void>;
   readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void>;
 } {
-  let sequence = 0;
+  let completionSequence = 0;
   const sequenceAllocator = input.sequenceAllocator ?? createCloudShareWorkflowSequenceAllocator();
 
   function resolveSubject(): DiagnosticSubject {
@@ -142,7 +142,7 @@ export function createSalesTrialCloudShareObserver(input: {
       }
       const result = event.result;
       const failure = event.error;
-      sequence = sequenceAllocator.next();
+      completionSequence += 1;
       await input.diagnostics.record({
         occurredAt: new Date(event.occurredAt),
         source: input.source,
@@ -165,7 +165,7 @@ export function createSalesTrialCloudShareObserver(input: {
           exchangeId: event.exchangeId,
           attemptStartSequence: event.attemptStartSequence,
           completedAt: event.completedAt,
-          sequence,
+          sequence: completionSequence,
           durationMs: event.durationMs,
           integrationSurface:
             result?.integrationSurface ??
@@ -186,7 +186,7 @@ export function createSalesTrialCloudShareObserver(input: {
       if (!input.diagnostics) {
         return;
       }
-      sequence = sequenceAllocator.next();
+      completionSequence += 1;
       await input.diagnostics.record({
         occurredAt: new Date(event.occurredAt),
         source: input.source,
@@ -209,7 +209,7 @@ export function createSalesTrialCloudShareObserver(input: {
           exchangeId: event.exchangeCorrelationId,
           attemptStartSequence: event.attemptStartSequence,
           completedAt: event.completedAt,
-          sequence,
+          sequence: completionSequence,
           durationMs: event.durationMs,
           integrationSurface: event.integrationSurface,
           ...(event.status !== undefined ? { status: event.status } : {}),
