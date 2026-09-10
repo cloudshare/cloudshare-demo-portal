@@ -58,6 +58,9 @@ interface DiagnosticLogPageResponse {
   readonly returned: number;
   readonly hasMore: boolean;
   readonly nextOffset: number | null;
+  readonly complete?: boolean;
+  readonly incompleteReason?: string;
+  readonly continuation?: string | null;
 }
 
 const EMPTY_AUDIT_FILTERS: AuditTrailFilters = {
@@ -242,7 +245,7 @@ export function AdminSupportFeature(props: {
         </div>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "0.9rem" }}><button {...extensionHydrationProps} onClick={applyDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>{loading ? "Loading..." : "Apply Filters"}</button><button {...extensionHydrationProps} onClick={clearDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>Clear Filters</button><button {...extensionHydrationProps} onClick={() => void loadDiagnostics()} disabled={loading} style={{ padding: "0.4rem 1rem" }}>Refresh Page</button></div>
       </div>
-      {diagnosticPage ? <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center", marginBottom: "0.75rem" }}><div style={{ color: colors.textSecondary }}>Showing {diagnosticPage.returned} entries starting at row {diagnosticPage.offset + 1}.</div><div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}><button {...extensionHydrationProps} onClick={() => void loadDiagnostics(Math.max(diagnosticPage.offset - DIAGNOSTIC_PAGE_LIMIT, 0))} disabled={loading || diagnosticPage.offset === 0} style={{ padding: "0.4rem 1rem" }}>Previous</button><button {...extensionHydrationProps} onClick={() => diagnosticPage.nextOffset !== null && void loadDiagnostics(diagnosticPage.nextOffset)} disabled={loading || !diagnosticPage.hasMore} style={{ padding: "0.4rem 1rem" }}>Next</button></div></div> : null}
+      {diagnosticPage ? <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center", marginBottom: "0.75rem" }}><div style={{ color: diagnosticPage.complete === false ? colors.danger : colors.textSecondary }}>Showing {diagnosticPage.returned} entries starting at row {diagnosticPage.offset + 1}.{diagnosticPage.complete === false ? ` Incomplete bounded investigation${diagnosticPage.incompleteReason ? ` (${diagnosticPage.incompleteReason})` : ""}.${diagnosticPage.continuation ? ` Continue with ${diagnosticPage.continuation}.` : ""}` : ""}</div><div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}><button {...extensionHydrationProps} onClick={() => void loadDiagnostics(Math.max(diagnosticPage.offset - DIAGNOSTIC_PAGE_LIMIT, 0))} disabled={loading || diagnosticPage.offset === 0} style={{ padding: "0.4rem 1rem" }}>Previous</button><button {...extensionHydrationProps} onClick={() => diagnosticPage.nextOffset !== null && void loadDiagnostics(diagnosticPage.nextOffset)} disabled={loading || !diagnosticPage.hasMore} style={{ padding: "0.4rem 1rem" }}>Next</button></div></div> : null}
       {diagnosticFilters.examAttemptId ? <DiagnosticFilterBanner label="exam attempt ID" value={diagnosticFilters.examAttemptId} /> : null}
       {!diagnosticFilters.examAttemptId && diagnosticFilters.correlationId ? <DiagnosticFilterBanner label="correlation ID" value={diagnosticFilters.correlationId} /> : null}
       {diagnosticFilters.subjectType === "sales_trial_enrollment" && diagnosticFilters.subjectId ? <DiagnosticFilterBanner>{renderInvestigationScope("enrollment", diagnosticFilters.subjectId, diagnosticFilters.source)}</DiagnosticFilterBanner> : null}
