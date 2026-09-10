@@ -213,7 +213,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
   return {
     async listSessions(input) {
       const query = { ...(input.field ? { field: input.field } : {}), offset: String(input.offset), limit: String(input.limit) };
-      const { data, evidence } = await detailed({ method: "GET", path: "/sales", query, schema: salesExperienceListSchema });
+      const { data, evidence } = await detailed({ method: "GET", path: "/sales", query, timeoutMs: 10000, schema: salesExperienceListSchema });
       return { sessions: data.items.map(({ id, status }) => ({ id, status })), total: data.count, ...evidence };
     },
     async createSession(input) {
@@ -222,7 +222,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       return { salesExperienceId: data.id, ...evidence };
     },
     async readSession(salesExperienceId) {
-      const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceReadSchema });
+      const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, timeoutMs: 10000, schema: salesExperienceReadSchema });
       return { id: data.id, status: data.status, end: data.end ?? null, ...evidence };
     },
     async readParticipantInvitationCapability(salesExperienceId) {

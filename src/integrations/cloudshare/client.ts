@@ -41,6 +41,7 @@ export interface V4RequestSpec<T> {
   /** Opt in only for documented v4 operations whose successful response has no body. */
   readonly allowEmptyResponse?: boolean;
   readonly schema: ZodType<T, ZodType["_def"], unknown>;
+  readonly timeoutMs?: number;
 }
 
 export interface V3RequestSpec<T> {
@@ -767,6 +768,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         url,
         headers,
         body,
+        ...(spec.timeoutMs ? { timeoutMs: spec.timeoutMs } : {}),
       },
       spec.schema,
       spec.allowEmptyResponse,
