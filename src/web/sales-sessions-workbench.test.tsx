@@ -22,6 +22,23 @@ const row = {
 describe("Sales Sessions workbench", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+  it("automatically refreshes stale rendered rows, rereads fresh state, and retries a failed refresh", async () => {
+    const user = userEvent.setup(); let queueReads = 0; let refreshCalls = 0;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] });
+      if (path.includes("/refresh")) { refreshCalls += 1; if (refreshCalls === 1) return json({ error: "CloudShare unavailable", correlationId: "auto-1" }, 503); return json({ correlationId: "auto-2", progress: { message: "Sales Session status refreshed." } }); }
+      queueReads += 1; return json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, experience: queueReads > 1 ? { ...row.experience, source: "cloudshare_v4_sales_list", freshness: "fresh" } : row.experience }] });
+    });
+    const onNavigate = vi.fn(); render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={onNavigate} />);
+    await screen.findByRole("link", { name: "Acme evaluation" });
+    await screen.findByText("CloudShare unavailable", { exact: false });
+    expect(screen.getByRole("link", { name: "Acme evaluation" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Retry refresh" }));
+    await waitFor(() => expect(refreshCalls).toBe(2));
+    await waitFor(() => expect(queueReads).toBeGreaterThan(1));
+  });
+
   it("reports manual refresh progress and preserves rows on a correlated failure", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
