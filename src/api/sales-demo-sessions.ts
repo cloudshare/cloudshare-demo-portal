@@ -179,7 +179,9 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     const itemValidationFailure = error instanceof SalesItemProvisioningValidationError;
     const itemReadFailure = error instanceof SalesItemProvisioningReadError;
     const preWriteAuthFailure = isPreWriteAuthFailure(error);
-    const ambiguousCreate = !preWriteAuthFailure && createDispatched && !isDefiniteCreateFailure(error) && isOutcomeAmbiguousCreateFailure(error);
+    const preWriteCooldownFailure = isActiveRateLimitCooldown(error);
+    const preWriteProviderFailure = preWriteAuthFailure || preWriteCooldownFailure;
+    const ambiguousCreate = !preWriteProviderFailure && createDispatched && !isDefiniteCreateFailure(error) && isOutcomeAmbiguousCreateFailure(error);
     if (ambiguousCreate) {
       await Promise.allSettled([
         deps.sessions.updateOperationalState?.(request.customerId, id, { operationalStatus: "needs_attention", attentionReason: `cloudshare_v4_post_sales_ambiguous: ${AMBIGUOUS_CREATE_REASON}` }),
@@ -197,18 +199,18 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     // proven OAuth failure as pre-dispatch so its local reservation is cleared;
     // other failures remain gated by the delivery-entry marker.
     const definiteCreateFailure = createDispatched && isDefiniteCreateFailure(error);
-    const provenPreDispatchFailure = preWriteAuthFailure || definiteCreateFailure || !createDispatched;
+    const provenPreDispatchFailure = preWriteProviderFailure || definiteCreateFailure || !createDispatched;
     if (provenPreDispatchFailure) {
       // A claimed reservation is only safe to retry after discard *and*
       // readback have both been confirmed. Missing either capability is an
       // unknown cleanup state, not proof that no reservation remains.
       const reservationCleared = !reservationClaimed || (Boolean(deps.sessions.discardReservation && deps.sessions.findById) && await clearReservedBeforeDispatch(deps.sessions, reservation));
       if (!reservationCleared) {
-        const cleanupAfterProviderAttempt = definiteCreateFailure && !preWriteAuthFailure;
+        const cleanupAfterProviderAttempt = definiteCreateFailure && !preWriteProviderFailure;
         const reason = cleanupAfterProviderAttempt
           ? "Certalis could not confirm the Sales Enablement reservation was discarded after CloudShare rejected the create request. Do not retry creation; review support diagnostics."
           : "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
-        const details = { integrationSurface: cleanupAfterProviderAttempt ? "cloudshare.v4.sales" : "portal.sales_demo_sessions", failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: cleanupAfterProviderAttempt, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
+        const details = { integrationSurface: cleanupAfterProviderAttempt || preWriteCooldownFailure ? "cloudshare.v4.sales" : "portal.sales_demo_sessions", failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: cleanupAfterProviderAttempt, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
         await Promise.allSettled([
           evidence(deps, request, correlationId, reservation, "failure", reason, cleanupAfterProviderAttempt ? cloudShareEvidence(error) : undefined, details),
           deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: reservation.id, outcome: "failure", correlationId, details, error: reason }),
@@ -219,18 +221,18 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     if (itemValidationFailure || itemReadFailure) {
       await recordResourceReads(deps, request, correlationId, item.id, item.project.id, error.completedReads, "failure");
     }
-    const causeEvidence = cloudShareEvidence(itemReadFailure || memberReadFailure ? error.cause : error);
+    const causeEvidence = preWriteCooldownFailure ? undefined : cloudShareEvidence(itemReadFailure || memberReadFailure ? error.cause : error);
     if (memberSelectionFailure) await recordProjectMemberRead(deps, request, correlationId, item.id, item.project.id, error.read, "failure");
     const oauthMetadata = preWriteAuthFailure ? oauthFailureMetadata(error) : undefined;
     const rateLimitFailure = isCloudShareRateLimitError(error);
     const integrationSurface = preWriteAuthFailure ? "cloudshare.v4.oauth.token" : memberSelectionFailure || memberReadFailure ? "cloudshare.v3.project_members_gui" : itemValidationFailure || itemReadFailure ? "cloudshare.v3.sales_item_resources" : "cloudshare.v4.sales";
-    const failureMode = preWriteAuthFailure ? "cloudshare_auth_pre_write" : memberReadFailure ? "project_member_read" : memberSelectionFailure ? "selected_sales_pro_inactive" : validationFailure ? "main_sales_pro_validation" : itemValidationFailure ? "item_resource_drift" : itemReadFailure ? "item_resource_read" : "cloudshare_create";
+    const failureMode = preWriteAuthFailure ? "cloudshare_auth_pre_write" : preWriteCooldownFailure ? "cloudshare_cooldown_pre_write" : memberReadFailure ? "project_member_read" : memberSelectionFailure ? "selected_sales_pro_inactive" : validationFailure ? "main_sales_pro_validation" : itemValidationFailure ? "item_resource_drift" : itemReadFailure ? "item_resource_read" : "cloudshare_create";
     await Promise.allSettled([
-    evidence(deps, request, correlationId, { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: "unprovisioned", externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: parsed.data.salesProEmail, salesProDisplayName: "unresolved", registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants", createdAt: new Date() }, "failure", memberReadFailure ? "CloudShare could not read active Project members for the selected Sales Pro" : memberSelectionFailure ? "Selected Sales Pro is not active in this CloudShare Project" : validationFailure ? "CloudShare main Sales Pro validation failed" : itemValidationFailure ? "Catalogue Item is stale against CloudShare resources" : itemReadFailure ? "CloudShare could not fully revalidate this Catalogue Item" : preWriteAuthFailure ? "CloudShare authentication failed before the Sales Experience create request. Retry is safe." : "CloudShare Sales Experience creation failed", causeEvidence, { integrationSurface, failureMode, ...(preWriteAuthFailure ? { retry: "safe", cloudShareAttempted: false, ...oauthMetadata } : {}), error: error instanceof Error ? error.message : String(error) }),
+    evidence(deps, request, correlationId, { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: "unprovisioned", externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: parsed.data.salesProEmail, salesProDisplayName: "unresolved", registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants", createdAt: new Date() }, "failure", memberReadFailure ? "CloudShare could not read active Project members for the selected Sales Pro" : memberSelectionFailure ? "Selected Sales Pro is not active in this CloudShare Project" : validationFailure ? "CloudShare main Sales Pro validation failed" : itemValidationFailure ? "Catalogue Item is stale against CloudShare resources" : itemReadFailure ? "CloudShare could not fully revalidate this Catalogue Item" : preWriteProviderFailure ? "CloudShare rejected the operation before the Sales Experience create request. Retry is safe." : "CloudShare Sales Experience creation failed", causeEvidence, { integrationSurface, failureMode, ...(preWriteProviderFailure ? { retry: "safe", cloudShareAttempted: false, ...oauthMetadata } : {}), error: error instanceof Error ? error.message : String(error) }),
       deps.audit?.write({ id: randomUUID(), occurredAt: (deps.now ?? (() => new Date()))(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "failure", correlationId, details: { externalId, opportunityId: opportunity.id, itemId: item.id, failureMode, integrationSurface }, error: error instanceof Error ? error.message : "Unknown CloudShare failure" }),
     ]);
     const errorMessage = memberReadFailure ? "CloudShare could not retrieve active Project members. Review support diagnostics before retrying." : memberSelectionFailure ? "The selected Sales Pro is no longer an active Project member. Select a current Sales Pro and try again." : validationFailure ? "CloudShare rejected the selected Sales Pro. Review support diagnostics." : itemValidationFailure ? "This Item no longer matches its CloudShare resources. Refresh the Item before provisioning." : itemReadFailure ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying." : rateLimitFailure ? "CloudShare throttled the Sales Enablement Session request. Retry after the provider cooldown." : preWriteAuthFailure ? "CloudShare authentication failed before creation. Retry the Sales Enablement Session." : "CloudShare could not create the Sales Experience. Review support diagnostics.";
-    return response(rateLimitFailure ? 429 : memberSelectionFailure || validationFailure || itemValidationFailure || isDefiniteCreateFailure(error) ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, ...(rateLimitFailure && typeof error.retryAfterSeconds === "number" && Number.isFinite(error.retryAfterSeconds) ? { retryAfterSeconds: error.retryAfterSeconds } : {}), ...(preWriteAuthFailure || rateLimitFailure ? { creationOutcome: safeCreationOutcome(errorMessage, preWriteAuthFailure ? "certalis_pre_dispatch" : "cloudshare_v4_definite_rejection") } : {}) });
+    return response(rateLimitFailure ? 429 : memberSelectionFailure || validationFailure || itemValidationFailure || isDefiniteCreateFailure(error) ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, ...(rateLimitFailure && typeof error.retryAfterSeconds === "number" && Number.isFinite(error.retryAfterSeconds) ? { retryAfterSeconds: error.retryAfterSeconds } : {}), ...(preWriteProviderFailure || rateLimitFailure ? { creationOutcome: safeCreationOutcome(errorMessage, preWriteProviderFailure ? "certalis_pre_dispatch" : "cloudshare_v4_definite_rejection") } : {}) });
   }
 }
 
@@ -350,6 +352,9 @@ function isDefiniteCreateFailure(error: unknown): boolean {
   if (!isCloudShareErrorAcrossBoundaries(error) || error.name !== "CloudShareRequestError") return false;
   const status = (error as { status?: unknown }).status;
   return typeof status === "number" && status >= 400 && status < 500;
+}
+function isActiveRateLimitCooldown(error: unknown): boolean {
+  return isCloudShareRateLimitError(error) && error.context?.cooldownActive === true;
 }
 async function evidence(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, session: SalesDemoSession, outcome: "success" | "failure", message: string, cloudshare: { request: unknown; response: unknown } | undefined, details: Record<string, unknown>) {
   await deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, externalId: session.externalId, opportunityId: session.opportunityId, itemId: session.itemId }, request: cloudshare?.request as Record<string, unknown> | undefined, response: cloudshare?.response as Record<string, unknown> | undefined, details });

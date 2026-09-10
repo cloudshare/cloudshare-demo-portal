@@ -109,6 +109,20 @@ describe("Sales Enablement Session API handler", () => {
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ method: "POST", path: "/sales" }), response: expect.objectContaining({ status: 422, body: { error: "invalid Sales payload" } }), details: expect.objectContaining({ failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: true }) }));
     expect(JSON.stringify(result.body)).not.toContain("server-only");
   });
+  it("keeps an active Sales cooldown pre-dispatch when reservation cleanup cannot be confirmed", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-active-cooldown", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-active-cooldown", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const cooldown = new CloudShareRateLimitError("CloudShare cooldown is active", 429, "rate_limit", { method: "POST", path: "/sales", cooldownActive: true, retryAfterSeconds: 30, responseStatus: 429, responseBody: { previous: "provider-response" } });
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions: { save: vi.fn().mockResolvedValue(undefined), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(cooldown) }) }, projectMembers, diagnostics, audit: { write: vi.fn() }, newId: () => "active-cooldown-session" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-active-cooldown", itemId: "item-active-cooldown", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+
+    const failure = diagnostics.record.mock.calls.map(([entry]) => entry).find((entry) => entry.operation === "sales.demo_session.created" && entry.outcome === "failure");
+    expect(result).toMatchObject({ status: 503, body: { needsAttention: true, creationOutcome: { source: "reservation_cleanup_unconfirmed" } } });
+    expect(failure).toMatchObject({ details: expect.objectContaining({ integrationSurface: "cloudshare.v4.sales", cloudShareAttempted: false }) });
+    expect(failure?.request).toBeUndefined();
+    expect(failure?.response).toBeUndefined();
+  });
   it("returns 429 with safe retry metadata when OAuth acquisition is throttled before POST sales", async () => {
     const records = createInMemorySalesRecordRepository();
     await records.saveOpportunity({ id: "opp-oauth-rate-limit", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
