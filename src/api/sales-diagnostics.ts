@@ -43,7 +43,7 @@ export async function handleGetSalesDiagnosticLog(
   if (requestedSource && !causalTrialQuery) {
     const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
     const projected = projectDiagnosticPage(response.body);
-    if (requestedOffset >= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) {
+    if (requestedOffset + requestedLimit > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) {
       const body = projected as Record<string, unknown>;
       const page = body.page as Record<string, unknown>;
       return { status: response.status, body: { ...body, page: { ...page, hasMore: false, nextOffset: null, complete: false, incompleteReason: "sales_diagnostic_offset_cap", continuation: null } } };
