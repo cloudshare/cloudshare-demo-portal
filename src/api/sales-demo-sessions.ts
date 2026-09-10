@@ -13,7 +13,7 @@ import { DEFAULT_SALES_SESSION_NAME_TEMPLATE, renderSalesSessionName } from "@/d
 import type { SalesSessionConfigurationRepository } from "@/domain/sales-session-configuration";
 import type { SalesTimezoneCacheRepository } from "@/domain/sales-timezones";
 import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
-import { CloudShareAuthError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError, isCloudShareErrorAcrossBoundaries, isCloudShareRateLimitError } from "@/integrations/cloudshare/errors";
+import { CloudShareAuthError, CloudShareRateLimitError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError, isCloudShareErrorAcrossBoundaries, isCloudShareRateLimitError } from "@/integrations/cloudshare/errors";
 import { SalesItemProvisioningReadError, SalesItemProvisioningValidationError, type SalesItemProvisioningValidator } from "@/integrations/cloudshare/sales-item-provisioning";
 import { createCloudShareProjectMemberSource, type CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
@@ -224,7 +224,8 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     const causeEvidence = preWriteCooldownFailure ? undefined : cloudShareEvidence(itemReadFailure || memberReadFailure ? error.cause : error);
     if (memberSelectionFailure) await recordProjectMemberRead(deps, request, correlationId, item.id, item.project.id, error.read, "failure");
     const oauthMetadata = preWriteAuthFailure ? oauthFailureMetadata(error) : undefined;
-    const rateLimitFailure = isCloudShareRateLimitError(error);
+    const rateLimitError = cloudShareRateLimitError(error);
+    const rateLimitFailure = Boolean(rateLimitError);
     const integrationSurface = preWriteAuthFailure ? "cloudshare.v4.oauth.token" : memberSelectionFailure || memberReadFailure ? "cloudshare.v3.project_members_gui" : itemValidationFailure || itemReadFailure ? "cloudshare.v3.sales_item_resources" : "cloudshare.v4.sales";
     const failureMode = preWriteAuthFailure ? "cloudshare_auth_pre_write" : preWriteCooldownFailure ? "cloudshare_cooldown_pre_write" : memberReadFailure ? "project_member_read" : memberSelectionFailure ? "selected_sales_pro_inactive" : validationFailure ? "main_sales_pro_validation" : itemValidationFailure ? "item_resource_drift" : itemReadFailure ? "item_resource_read" : "cloudshare_create";
     await Promise.allSettled([
@@ -232,7 +233,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       deps.audit?.write({ id: randomUUID(), occurredAt: (deps.now ?? (() => new Date()))(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "failure", correlationId, details: { externalId, opportunityId: opportunity.id, itemId: item.id, failureMode, integrationSurface }, error: error instanceof Error ? error.message : "Unknown CloudShare failure" }),
     ]);
     const errorMessage = memberReadFailure ? "CloudShare could not retrieve active Project members. Review support diagnostics before retrying." : memberSelectionFailure ? "The selected Sales Pro is no longer an active Project member. Select a current Sales Pro and try again." : validationFailure ? "CloudShare rejected the selected Sales Pro. Review support diagnostics." : itemValidationFailure ? "This Item no longer matches its CloudShare resources. Refresh the Item before provisioning." : itemReadFailure ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying." : rateLimitFailure ? "CloudShare throttled the Sales Enablement Session request. Retry after the provider cooldown." : preWriteAuthFailure ? "CloudShare authentication failed before creation. Retry the Sales Enablement Session." : "CloudShare could not create the Sales Experience. Review support diagnostics.";
-    return response(rateLimitFailure ? 429 : memberSelectionFailure || validationFailure || itemValidationFailure || isDefiniteCreateFailure(error) ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, ...(rateLimitFailure && typeof error.retryAfterSeconds === "number" && Number.isFinite(error.retryAfterSeconds) ? { retryAfterSeconds: error.retryAfterSeconds } : {}), ...(preWriteProviderFailure || rateLimitFailure ? { creationOutcome: safeCreationOutcome(errorMessage, preWriteProviderFailure ? "certalis_pre_dispatch" : "cloudshare_v4_definite_rejection") } : {}) });
+    return response(rateLimitFailure ? 429 : memberSelectionFailure || validationFailure || itemValidationFailure || isDefiniteCreateFailure(error) ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, ...(rateLimitError && typeof rateLimitError.retryAfterSeconds === "number" && Number.isFinite(rateLimitError.retryAfterSeconds) ? { retryAfterSeconds: rateLimitError.retryAfterSeconds } : {}), ...(preWriteProviderFailure || rateLimitFailure ? { creationOutcome: safeCreationOutcome(errorMessage, preWriteProviderFailure ? "certalis_pre_dispatch" : "cloudshare_v4_definite_rejection") } : {}) });
   }
 }
 
@@ -354,7 +355,11 @@ function isDefiniteCreateFailure(error: unknown): boolean {
   return typeof status === "number" && status >= 400 && status < 500;
 }
 function isActiveRateLimitCooldown(error: unknown): boolean {
-  return isCloudShareRateLimitError(error) && error.context?.cooldownActive === true;
+  return cloudShareRateLimitError(error)?.context?.cooldownActive === true;
+}
+function cloudShareRateLimitError(error: unknown): CloudShareRateLimitError | undefined {
+  if (error instanceof SalesItemProvisioningReadError || error instanceof SalesProjectMemberReadError) return cloudShareRateLimitError(error.cause);
+  return isCloudShareRateLimitError(error) ? error : undefined;
 }
 async function evidence(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, session: SalesDemoSession, outcome: "success" | "failure", message: string, cloudshare: { request: unknown; response: unknown } | undefined, details: Record<string, unknown>) {
   await deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, externalId: session.externalId, opportunityId: session.opportunityId, itemId: session.itemId }, request: cloudshare?.request as Record<string, unknown> | undefined, response: cloudshare?.response as Record<string, unknown> | undefined, details });

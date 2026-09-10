@@ -123,6 +123,18 @@ describe("Sales Enablement Session API handler", () => {
     expect(failure?.request).toBeUndefined();
     expect(failure?.response).toBeUndefined();
   });
+  it("unwraps an active cooldown from an Item preflight read failure", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-wrapped-cooldown", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-wrapped-cooldown", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const stored: SalesDemoSession[] = [];
+    const sessions = { save: vi.fn(async (value: SalesDemoSession) => { stored.push(value); }), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]), findById: vi.fn(async () => stored[0] ?? null), discardReservation: vi.fn(async () => { stored.length = 0; return true; }) };
+    const cooldown = new CloudShareRateLimitError("CloudShare cooldown is active", 429, "rate_limit", { method: "GET", path: "/v3/items", cooldownActive: true, retryAfterSeconds: 20 });
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn() }) }, itemProvisioningValidator: { revalidate: vi.fn().mockRejectedValue(new SalesItemProvisioningReadError("Item read failed", [], cooldown)) }, projectMembers, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, newId: () => "wrapped-cooldown-session" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-wrapped-cooldown", itemId: "item-wrapped-cooldown", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+
+    expect(result).toMatchObject({ status: 429, body: { needsAttention: false, retryAfterSeconds: 20, creationOutcome: { source: "certalis_pre_dispatch", retry: "safe" } } });
+    expect(sessions.discardReservation).toHaveBeenCalledOnce();
+  });
   it("returns 429 with safe retry metadata when OAuth acquisition is throttled before POST sales", async () => {
     const records = createInMemorySalesRecordRepository();
     await records.saveOpportunity({ id: "opp-oauth-rate-limit", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
