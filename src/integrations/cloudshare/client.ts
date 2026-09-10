@@ -10,6 +10,7 @@ import {
 import { HttpTransportError, type HttpClient, type HttpRequest } from "./http";
 import { buildV3AuthorizationHeader, signV3Request } from "./signing";
 import type { V4TokenProvider } from "./v4-auth";
+import type { CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -150,6 +151,7 @@ export interface CloudShareClientOptions {
   /** Shared per-process/customer cooldown store. */
   readonly cooldownStore?: CloudShareRateLimitCooldownStore;
   readonly observer: CloudShareRequestObserver;
+  readonly attemptStartAllocator?: CloudShareWorkflowSequenceAllocator;
 }
 
 interface CloudShareRateLimitCooldown {
@@ -564,7 +566,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       const attemptStartedAtMs = getNowMs();
       const attemptOccurredAt = new Date(attemptStartedAtMs).toISOString();
       const exchangeId = randomUUID();
-      const startSequence = ++attemptStartSequence;
+      const startSequence = opts.attemptStartAllocator?.next() ?? ++attemptStartSequence;
       const observeAttemptFailure = async (error: unknown): Promise<void> => {
         await notifyRequest({
           exchangeId,
@@ -839,7 +841,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       const attemptStartedAtMs = getNowMs();
       const attemptOccurredAt = new Date(attemptStartedAtMs).toISOString();
       const exchangeId = randomUUID();
-      const startSequence = ++attemptStartSequence;
+      const startSequence = opts.attemptStartAllocator?.next() ?? ++attemptStartSequence;
       const observeTextFailure = async (error: unknown): Promise<void> => {
         await notifyRequest({ exchangeId, attemptStartSequence: startSequence, completedAt: new Date(getNowMs()).toISOString(), occurredAt: attemptOccurredAt, outcome: "failure", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), error: { name: error instanceof Error ? error.name : "Error", message: error instanceof Error ? error.message : String(error), context: error instanceof CloudShareRequestError || error instanceof CloudShareResponseError || error instanceof CloudShareTransportError || error instanceof CloudShareRateLimitError ? error.context : undefined } });
       };

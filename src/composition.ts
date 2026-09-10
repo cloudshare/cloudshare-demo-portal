@@ -162,6 +162,7 @@ export function createCloudShareClientFactory(input: {
           onRequest: workflowObserver ? composeCloudShareObservers(workflowObserver.onRequest, options.onRequest) : composeCanonicalObserver(options.onRequest, defaultObserver.onRequest),
           onAcquisition: workflowObserver ? composeCloudShareObservers(workflowObserver.onAcquisition, options.onAcquisition) : composeCanonicalObserver(options.onAcquisition, defaultObserver.onAcquisition),
         },
+        ...(workflowObserver && options.scope === "workflow" && options.workflow.sequenceAllocator ? { attemptStartAllocator: options.workflow.sequenceAllocator } : {}),
         connection: {
           customerId: connection.customerId,
           apiId: connection.apiId,

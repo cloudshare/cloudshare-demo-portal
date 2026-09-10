@@ -88,6 +88,7 @@ export interface CloudShareIntegrationOptions {
   readonly endpoints?: CloudShareEndpoints;
   readonly trace?: Parameters<typeof createCloudShareClient>[0]["trace"];
   readonly observer: CloudShareObservationPort;
+  readonly attemptStartAllocator?: import("@/ports/cloudshare-observation").CloudShareWorkflowSequenceAllocator;
 }
 
 /**
@@ -110,6 +111,7 @@ export function createCloudShareIntegration(
     clientId: opts.v4.clientId,
     clientSecret: opts.v4.clientSecret,
     onAcquisition: opts.observer.onAcquisition,
+    attemptStartAllocator: opts.attemptStartAllocator,
   });
 
   return createCloudShareClient({
@@ -120,6 +122,7 @@ export function createCloudShareIntegration(
     v3: opts.v3,
     trace: opts.trace,
     observer: opts.observer,
+    attemptStartAllocator: opts.attemptStartAllocator,
   });
 }
 
