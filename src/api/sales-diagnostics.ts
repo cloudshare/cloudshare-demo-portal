@@ -19,7 +19,7 @@ type SalesTrialEnrollmentReader = Pick<SalesTrialEnrollmentRepository, "findById
 type SalesTrialEnrollmentDependency = SalesTrialEnrollmentReader | SalesTrialEnrollmentRepository;
 type DiagnosticPageBody = {
   readonly entries: readonly Record<string, unknown>[];
-  readonly page: { readonly hasMore: boolean; readonly nextOffset: number | null };
+  readonly page: { readonly hasMore: boolean; readonly nextOffset: number | null; readonly complete?: boolean; readonly continuation?: string | null };
 };
 
 /**
@@ -50,7 +50,7 @@ export async function handleGetSalesDiagnosticLog(
     const pageEntries = subjectEntries.slice(requestedOffset, requestedOffset + requestedLimit);
     const candidateNextOffset = requestedOffset + pageEntries.length;
     const hasMore = subjectEntries.length > candidateNextOffset && candidateNextOffset <= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
-    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore, nextOffset: hasMore ? candidateNextOffset : null } } };
+    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore, nextOffset: hasMore ? candidateNextOffset : null, complete: !hasMore, continuation: hasMore ? `offset=${candidateNextOffset}` : null } } };
   }
 
   const requiredEntriesPerSource = requestedOffset + requestedLimit + 1;
@@ -63,7 +63,7 @@ export async function handleGetSalesDiagnosticLog(
   })));
   const entries = sourceEntries.flat()
     .slice()
-    .sort((left: Record<string, unknown>, right: Record<string, unknown>) => String(right.occurredAt).localeCompare(String(left.occurredAt)));
+    .sort((left: Record<string, unknown>, right: Record<string, unknown>) => String(right.occurredAt).localeCompare(String(left.occurredAt)) || String(right.id).localeCompare(String(left.id)));
   const pageEntries = entries.slice(requestedOffset, requestedOffset + requestedLimit);
   const candidateNextOffset = requestedOffset + pageEntries.length;
   const hasMore = entries.length > candidateNextOffset && candidateNextOffset <= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
@@ -78,6 +78,8 @@ export async function handleGetSalesDiagnosticLog(
         returned: pageEntries.length,
         hasMore,
         nextOffset: hasMore ? candidateNextOffset : null,
+        complete: !hasMore || candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET,
+        continuation: hasMore ? `offset=${candidateNextOffset}` : null,
       },
     },
   };

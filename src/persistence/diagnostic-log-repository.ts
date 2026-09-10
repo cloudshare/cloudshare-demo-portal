@@ -112,7 +112,7 @@ export function createInMemoryDiagnosticLogRepository(): DiagnosticLogRepository
       const offset = boundDiagnosticOffset(query.offset);
       return entries
         .filter((entry) => matchesQuery(entry, query))
-        .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
+        .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime() || b.id.localeCompare(a.id))
         .slice(offset)
         .slice(0, limit);
     },
@@ -246,7 +246,7 @@ export function createPrismaDiagnosticLogRepository(
       if (!needsExactPostFilter) {
         const rows = (await prisma.diagnosticLogEntry.findMany({
           where,
-          orderBy: { occurredAt: "desc" },
+          orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
           skip: offset,
           take: limit,
         })) as DiagnosticLogRow[];
@@ -261,7 +261,7 @@ export function createPrismaDiagnosticLogRepository(
       while (matched.length < targetMatchCount) {
         const rows = (await prisma.diagnosticLogEntry.findMany({
           where,
-          orderBy: { occurredAt: "desc" },
+          orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
           skip: scanOffset,
           take: PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE,
         })) as DiagnosticLogRow[];
