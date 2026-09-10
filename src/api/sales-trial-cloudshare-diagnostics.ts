@@ -135,6 +135,7 @@ export function createSalesTrialCloudShareObserver(input: {
   return {
     scope: "custom_observer",
     correlationId: input.correlationId,
+    sequenceAllocator,
     onRequest: async (event) => {
       if (!input.diagnostics) {
         return;
@@ -194,8 +195,7 @@ export function createSalesTrialCloudShareObserver(input: {
         customerId: input.customerId,
         actor: input.actor,
         subject: resolveSubject(),
-    correlationId: input.correlationId,
-    sequenceAllocator,
+        correlationId: input.correlationId,
         candidateEmail: input.candidateEmail ?? null,
         externalIds: input.externalIds,
         message:
