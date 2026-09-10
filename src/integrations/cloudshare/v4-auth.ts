@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CloudShareAuthError, CloudShareRateLimitError } from "./errors";
-import type { HttpClient } from "./http";
+import { randomUUID } from "node:crypto";
+import { HttpTransportError, type HttpClient } from "./http";
 
 /**
  * CloudShare v4 (Accelerate) OAuth. Acquires a Bearer JWT via the
@@ -23,6 +24,7 @@ export interface V4TokenProvider {
 }
 
 export interface V4TokenAcquisitionEvent {
+  readonly exchangeCorrelationId?: string;
   readonly occurredAt: string;
   readonly outcome: "success" | "failure";
   readonly status?: number;
@@ -65,6 +67,8 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
 
   async function acquire(): Promise<CachedToken> {
     const startedAtMs = now();
+    const exchangeCorrelationId = randomUUID();
+    const acquisitionMetadata = (event: Pick<V4TokenAcquisitionEvent, "durationMs" | "status" | "failureMode" | "causeClassification">) => ({ acquisition: { exchangeCorrelationId, durationMs: event.durationMs, ...(event.status === undefined ? {} : { status: event.status }), ...(event.failureMode ? { failureMode: event.failureMode } : {}), ...(event.causeClassification ? { causeClassification: event.causeClassification } : {}) } });
     const body = new URLSearchParams({
       grant_type: "client_credentials",
       client_id: opts.clientId,
@@ -80,13 +84,16 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         body,
       });
     } catch (cause) {
+      const durationMs = Math.max(0, now() - startedAtMs);
+      const causeClassification = classifyTransportCause(cause);
       await notifyAcquisition({
+        exchangeCorrelationId,
         occurredAt: new Date(startedAtMs).toISOString(),
         outcome: "failure",
-        durationMs: Math.max(0, now() - startedAtMs),
+        durationMs,
         integrationSurface: "cloudshare.v4.oauth.token",
         failureMode: "transport_failure",
-        causeClassification: classifyTransportCause(cause),
+        causeClassification,
       });
       throw new CloudShareAuthError("v4 token request failed to send", {
         method: "POST",
@@ -95,15 +102,19 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
         requestBody: body,
         cause: cause instanceof Error ? cause.message : String(cause),
+        ...(cause instanceof HttpTransportError && cause.network ? { network: cause.network } : {}),
+        ...acquisitionMetadata({ durationMs, failureMode: "transport_failure", causeClassification }),
       });
     }
 
     if (response.status !== 200) {
+      const durationMs = Math.max(0, now() - startedAtMs);
       await notifyAcquisition({
+        exchangeCorrelationId,
         occurredAt: new Date(startedAtMs).toISOString(),
         outcome: "failure",
         status: response.status,
-        durationMs: Math.max(0, now() - startedAtMs),
+        durationMs,
         integrationSurface: "cloudshare.v4.oauth.token",
         failureMode: "http_failure",
       });
@@ -125,6 +136,8 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
             responseStatus: response.status,
             ...(rateLimitHeaders ? { responseHeaders: rateLimitHeaders, rateLimitHeaders } : {}),
             responseBody: response.body,
+            ...(response.network ? { network: response.network } : {}),
+            ...acquisitionMetadata({ durationMs, status: response.status, failureMode: "http_failure" }),
             ...(retryAfterSeconds !== undefined
               ? { retryAfterSeconds }
               : {}),
@@ -140,6 +153,8 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         status: response.status,
         responseHeaders: response.headers,
         responseBody: response.body,
+        ...(response.network ? { network: response.network } : {}),
+        ...acquisitionMetadata({ durationMs, status: response.status, failureMode: "http_failure" }),
       });
     }
 
@@ -147,30 +162,36 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
     try {
       json = JSON.parse(response.body);
     } catch {
-      await notifyAcquisition({ occurredAt: new Date(startedAtMs).toISOString(), outcome: "failure", status: response.status, durationMs: Math.max(0, now() - startedAtMs), integrationSurface: "cloudshare.v4.oauth.token", failureMode: "unexpected_response", causeClassification: "invalid_json" });
+      const durationMs = Math.max(0, now() - startedAtMs);
+      await notifyAcquisition({ exchangeCorrelationId, occurredAt: new Date(startedAtMs).toISOString(), outcome: "failure", status: response.status, durationMs, integrationSurface: "cloudshare.v4.oauth.token", failureMode: "unexpected_response", causeClassification: "invalid_json" });
       throw new CloudShareAuthError("v4 token response was not valid JSON", {
         method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
         requestHeaders: { "content-type": "application/x-www-form-urlencoded" }, requestBody: body,
         status: response.status, responseHeaders: response.headers, responseBody: response.body,
+        ...acquisitionMetadata({ durationMs, status: response.status, failureMode: "unexpected_response", causeClassification: "invalid_json" }),
       });
     }
 
     const parsed = tokenResponseSchema.safeParse(json);
     if (!parsed.success) {
-      await notifyAcquisition({ occurredAt: new Date(startedAtMs).toISOString(), outcome: "failure", status: response.status, durationMs: Math.max(0, now() - startedAtMs), integrationSurface: "cloudshare.v4.oauth.token", failureMode: "unexpected_response", causeClassification: "invalid_schema" });
+      const durationMs = Math.max(0, now() - startedAtMs);
+      await notifyAcquisition({ exchangeCorrelationId, occurredAt: new Date(startedAtMs).toISOString(), outcome: "failure", status: response.status, durationMs, integrationSurface: "cloudshare.v4.oauth.token", failureMode: "unexpected_response", causeClassification: "invalid_schema" });
       throw new CloudShareAuthError("v4 token response did not match the expected schema", {
         method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
         requestHeaders: { "content-type": "application/x-www-form-urlencoded" }, requestBody: body,
         status: response.status, responseHeaders: response.headers, responseBody: response.body,
         issues: parsed.error.issues.map((i) => i.message),
+        ...acquisitionMetadata({ durationMs, status: response.status, failureMode: "unexpected_response", causeClassification: "invalid_schema" }),
       });
     }
 
+    const durationMs = Math.max(0, now() - startedAtMs);
     await notifyAcquisition({
+      exchangeCorrelationId,
       occurredAt: new Date(startedAtMs).toISOString(),
       outcome: "success",
       status: response.status,
-      durationMs: Math.max(0, now() - startedAtMs),
+      durationMs,
       integrationSurface: "cloudshare.v4.oauth.token",
     });
 
