@@ -24,7 +24,7 @@ export function createPrismaSalesDemoSessionRepository(prisma: PrismaClient): Sa
       if (updated.count !== 1) throw new Error("Sales Enablement Session was not found for this Customer");
     },
     async recordExperienceObservations(customerId, observations) {
-      await prisma.$transaction(async (tx) => { for (const observation of observations) { const updated = await tx.salesDemoSession.updateMany({ where: { customerId, id: observation.id }, data: { experienceStatus: observation.experienceStatus, experienceStatusObservedAt: observation.experienceStatusObservedAt, experienceStatusSource: observation.experienceStatusSource } }); if (updated.count !== 1) throw new Error("Sales Enablement Session was not found for this Customer"); } });
+      await prisma.$transaction(async (tx) => { for (const observation of observations) { const updated = await tx.salesDemoSession.updateMany({ where: { customerId, id: observation.id, OR: [{ experienceStatusObservedAt: null }, { experienceStatusObservedAt: { lt: observation.experienceStatusObservedAt } }] }, data: { experienceStatus: observation.experienceStatus, experienceStatusObservedAt: observation.experienceStatusObservedAt, experienceStatusSource: observation.experienceStatusSource } }); if (updated.count !== 1) { const exists = await tx.salesDemoSession.count({ where: { customerId, id: observation.id } }); if (exists !== 1) throw new Error("Sales Enablement Session was not found for this Customer"); } } });
     },
     async updateDisplayName(id, sessionName) { await prisma.salesDemoSession.update({ where: { id }, data: { sessionName } }); },
   };
