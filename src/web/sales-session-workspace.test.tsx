@@ -56,6 +56,27 @@ describe("Sales Session workspace", () => {
     expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();
   });
 
+  it("keeps automatic-refresh and Verify support correlations independent", async () => {
+    const user = userEvent.setup(); let posts = 0;
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).includes("/workspace")) return new Response(JSON.stringify(stale), { status: 200 });
+      if (String(input).includes("/verify")) return new Response(JSON.stringify({ correlationId: "verify-independent", experienceStatus: "inProgress", observedAt: "2026-07-24T09:01:00.000Z", freshness: "fresh", source: "cloudshare_v4_get_sales" }), { status: 200 });
+      if (init?.method === "POST") { posts += 1; return new Response(JSON.stringify({ error: "refresh unavailable", correlationId: "refresh-independent" }), { status: 503 }); }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await screen.findByRole("button", { name: "Retry" });
+    expect(screen.getByRole("link", { name: "Open Sales support" }).getAttribute("href")).toContain("refresh-independent");
+    await user.click(screen.getByRole("button", { name: "Verify now" }));
+    await screen.findByText(/Verified from CloudShare/);
+    const supportLinks = screen.getAllByRole("link", { name: "Open Sales support" }).map((link) => link.getAttribute("href"));
+    expect(supportLinks).toContain("/sales?tab=support&correlationId=refresh-independent");
+    expect(supportLinks).toContain("/sales?tab=support&correlationId=verify-independent");
+    expect(posts).toBe(1);
+  });
+
   it("verifies one Experience, shows durable progress, and preserves the operation dimension", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
