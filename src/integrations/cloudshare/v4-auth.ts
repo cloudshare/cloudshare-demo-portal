@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CloudShareAuthError, CloudShareRateLimitError } from "./errors";
 import { randomUUID } from "node:crypto";
-import type { HttpClient } from "./http";
+import { HttpTransportError, type HttpClient } from "./http";
 
 /**
  * CloudShare v4 (Accelerate) OAuth. Acquires a Bearer JWT via the
@@ -102,6 +102,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
         requestBody: body,
         cause: cause instanceof Error ? cause.message : String(cause),
+        ...(cause instanceof HttpTransportError && cause.network ? { network: cause.network } : {}),
         ...acquisitionMetadata({ durationMs, failureMode: "transport_failure", causeClassification }),
       });
     }
@@ -135,6 +136,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
             responseStatus: response.status,
             ...(rateLimitHeaders ? { responseHeaders: rateLimitHeaders, rateLimitHeaders } : {}),
             responseBody: response.body,
+            ...(response.network ? { network: response.network } : {}),
             ...acquisitionMetadata({ durationMs, status: response.status, failureMode: "http_failure" }),
             ...(retryAfterSeconds !== undefined
               ? { retryAfterSeconds }
@@ -151,6 +153,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         status: response.status,
         responseHeaders: response.headers,
         responseBody: response.body,
+        ...(response.network ? { network: response.network } : {}),
         ...acquisitionMetadata({ durationMs, status: response.status, failureMode: "http_failure" }),
       });
     }

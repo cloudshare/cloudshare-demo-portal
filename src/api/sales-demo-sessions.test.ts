@@ -27,15 +27,17 @@ describe("Sales Enablement Session API handler", () => {
     const item = { id: "item-real", customerId: "customer-real", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
     const diagnostics = { record: vi.fn().mockResolvedValue(undefined) }; const stored: SalesDemoSession[] = [];
     const sessions = { save: vi.fn(async (value) => { stored.push(value); }), updateOperationalState: vi.fn(async (_customerId: string, id: string, state: Partial<SalesDemoSession>) => { const index = stored.findIndex((value) => value.id === id); if (index >= 0) stored[index] = { ...stored[index]!, ...state }; }), listByOpportunity: vi.fn().mockResolvedValue([]), findById: vi.fn(async () => stored[0] ?? null), discardReservation: vi.fn(async () => { stored.length = 0; return true; }) };
-    let httpCalls = 0; let clock = 15360; const http: HttpClient = { send: vi.fn(async () => { httpCalls += 1; clock += 25; return { status: 504, body: "provider-secret" }; }) };
+    let httpCalls = 0; let clock = 15360; const http: HttpClient = { send: vi.fn(async () => { httpCalls += 1; clock += 25; return { status: 504, body: "provider-secret", network: { transport: "tls", remoteFamily: "IPv4", remotePort: 443, remoteAddress: "provider-private-address" } }; }) };
     const forConnection = vi.fn((connection, options) => { const workflow = createCloudShareWorkflowObserver({ diagnostics, customerId: connection.customerId, ...options.workflow }); const tokenProvider = createV4TokenProvider({ http, baseUrl: "https://api.test/v4", clientId: "private", clientSecret: "secret", now: () => clock, onAcquisition: workflow.onAcquisition }); return createCloudShareSalesDelivery(createCloudShareClient({ http, endpoints: { v4BaseUrl: "https://api.test/v4", v3BaseUrl: "https://api.test/v3" }, tokenProvider, v3: { apiId: "id", apiKey: "key" }, observer: workflow })); });
     const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-real" }) }, deliveryFactory: { forConnection }, projectMembers, itemProvisioningValidator: { revalidate: vi.fn().mockResolvedValue([]) }, diagnostics, audit: { write: vi.fn() }, newId: () => "session-real" }, { customerId: "customer-real", actor: admin, body: { opportunityId: "opp-real", itemId: "item-real", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
-    const child = diagnostics.record.mock.calls.map(([entry]) => entry).find((entry) => entry.operation === "cloudshare.oauth.token");
+    const entries = diagnostics.record.mock.calls.map(([entry]) => entry); const child = entries.find((entry) => entry.operation === "cloudshare.oauth.token"); const parent = entries.find((entry) => entry.operation === "sales.demo_session.created");
     expect(result).toMatchObject({ status: 503, body: { needsAttention: false, creationOutcome: { retry: "safe" } } }); expect(httpCalls).toBe(1); expect(sessions.discardReservation).toHaveBeenCalled();
     expect(forConnection).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ scope: "workflow" })); const parentCorrelationId = result.body?.correlationId;
     expect(child).toMatchObject({ customerId: "customer-real", subject: { type: "sales_demo_session", id: "session-real" }, correlationId: parentCorrelationId, details: { parentCorrelationId, exchangeCorrelationId: expect.any(String), status: 504, durationMs: expect.any(Number), sequence: 1 } });
     expect(child.details.exchangeCorrelationId).not.toBe(parentCorrelationId);
     expect(child.details.durationMs).toBeGreaterThanOrEqual(0);
+    expect(parent).toMatchObject({ details: expect.objectContaining({ oauthTransport: { transport: "tls", remoteFamily: "IPv4", remotePort: 443 } }) });
+    expect(JSON.stringify(parent)).not.toContain("provider-private-address");
     expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("provider-secret"); expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("private");
   });
   it("keeps a failed OAuth attempt separate from a successful retry through the real client and observer", async () => {
@@ -93,6 +95,18 @@ describe("Sales Enablement Session API handler", () => {
     const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(rateLimit) }) }, projectMembers, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, newId: () => "oauth-rate-limit-session" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-oauth-rate-limit", itemId: "item-oauth-rate-limit", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
 
     expect(result).toMatchObject({ status: 429, body: { needsAttention: false, creationOutcome: { source: "certalis_pre_dispatch", retry: "safe" } } });
+    expect(sessions.discardReservation).toHaveBeenCalledOnce();
+  });
+  it("returns 429 with safe retry metadata when CloudShare throttles POST sales", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-sales-rate-limit", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-sales-rate-limit", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const stored: SalesDemoSession[] = [];
+    const sessions = { save: vi.fn(async (value: SalesDemoSession) => { stored.push(value); }), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]), findById: vi.fn(async () => stored[0] ?? null), discardReservation: vi.fn(async () => { stored.length = 0; return true; }) };
+    const rateLimit = new CloudShareRateLimitError("Sales create was throttled", 429, "rate_limit", { method: "POST", path: "/sales", responseStatus: 429, retryAfterSeconds: 30 });
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(rateLimit) }) }, projectMembers, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, newId: () => "sales-rate-limit-session" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-sales-rate-limit", itemId: "item-sales-rate-limit", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+
+    expect(result).toMatchObject({ status: 429, body: { needsAttention: false, creationOutcome: { source: "cloudshare_v4_definite_rejection", retry: "safe" } } });
     expect(sessions.discardReservation).toHaveBeenCalledOnce();
   });
   it("fails closed when the Customer has no verified CloudShare timezone catalogue", async () => {
