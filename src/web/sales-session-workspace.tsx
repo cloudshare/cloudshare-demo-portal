@@ -55,7 +55,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
       const reread = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace`, { cache: "no-store" });
       const next = await reread.json() as SalesSessionWorkspaceResponse & { error?: string };
       if (!reread.ok) throw new Error(next.error ?? "The refreshed Sales Session could not be read.");
-      if (live) { setWorkspace(next); setRefreshOutcome("success"); setAutomaticRefresh("CloudShare status refreshed."); }
+      if (live) { setWorkspace(next); if (next.summary.experience.freshness !== "fresh") { setRefreshOutcome("failure"); setAutomaticRefresh("CloudShare returned no fresh observation. Retry or open Sales support."); } else { setRefreshOutcome("success"); setAutomaticRefresh("CloudShare status refreshed."); } }
     }).catch((cause) => { if (live) setRefreshOutcome("failure"); setAutomaticRefresh(cause instanceof Error ? cause.message : "Automatic refresh failed. Retry or open Sales support."); }).finally(() => { requestInFlight.current = false; setRefreshBusy(false); });
     return () => { live = false; };
   }, [handleSessionExpired, sessionId, workspace]);
