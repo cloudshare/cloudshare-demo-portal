@@ -18,7 +18,7 @@ describe("Sales Session workspace", () => {
     let releaseFailure!: () => void;
     const pending = new Promise<void>((resolve) => { releaseFailure = resolve; });
     let automaticPosts = 0;
-    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "estimated" } } };
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
     const fresh = { ...data, summary: { ...data.summary, experience: { value: "inProgress", source: "cloudshare_v4_sales_list", freshness: "fresh", observedAt: "2026-07-24T09:01:00.000Z" } } };
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
