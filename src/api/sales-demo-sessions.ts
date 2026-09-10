@@ -228,7 +228,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     }
     const causeEvidence = preWriteCooldownFailure ? undefined : cloudShareEvidence(itemReadFailure || memberReadFailure ? error.cause : error);
     if (memberSelectionFailure) await recordProjectMemberRead(deps, request, correlationId, id, item.id, item.project.id, error.read, "failure");
-    const oauthMetadata = preWriteAuthFailure ? oauthFailureMetadata(error) : undefined;
+    const oauthMetadata = preWriteAuthFailure ? oauthFailureMetadata(error) : {};
     const integrationSurface = preWriteAuthFailure ? "cloudshare.v4.oauth.token" : memberSelectionFailure || memberReadFailure ? "cloudshare.v3.project_members_gui" : itemValidationFailure || itemReadFailure ? "cloudshare.v3.sales_item_resources" : "cloudshare.v4.sales";
     const failureMode = preWriteAuthFailure ? "cloudshare_auth_pre_write" : preWriteCooldownFailure ? "cloudshare_cooldown_pre_write" : memberReadFailure ? "project_member_read" : memberSelectionFailure ? "selected_sales_pro_inactive" : validationFailure ? "main_sales_pro_validation" : itemValidationFailure ? "item_resource_drift" : itemReadFailure ? "item_resource_read" : "cloudshare_create";
     await Promise.allSettled([
