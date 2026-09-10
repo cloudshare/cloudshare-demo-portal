@@ -41,6 +41,21 @@ describe("Sales Session workspace", () => {
     expect((screen.getByRole("button", { name: "Verify now" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("does not loop when an automatic refresh returns the same predicted snapshot", async () => {
+    let posts = 0;
+    const predicted = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).includes("/workspace")) return new Response(JSON.stringify(predicted), { status: 200 });
+      if (init?.method === "POST") { posts += 1; return new Response(JSON.stringify({ rows: [], total: 0, progress: { state: "complete" } }), { status: 200 }); }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(posts).toBe(1);
+    expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();
+  });
+
   it("verifies one Experience, shows durable progress, and preserves the operation dimension", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
