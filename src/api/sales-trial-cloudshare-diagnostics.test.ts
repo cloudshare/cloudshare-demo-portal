@@ -27,8 +27,7 @@ describe("createSalesTrialCloudShareObserver", () => {
       customerId: "customer-1", correlationId: "correlation-1",
       details: expect.objectContaining({ failureMode, ...(causeClassification ? { causeClassification } : {}) }),
     }));
-    expect(entry).not.toHaveProperty("request");
-    expect(entry).not.toHaveProperty("response");
+    expect(entry).toMatchObject({ request: null, response: null });
     expect(JSON.stringify(record.mock.calls)).not.toContain("client_secret");
     expect(JSON.stringify(record.mock.calls)).not.toContain("access_token");
   });
