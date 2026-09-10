@@ -20,7 +20,7 @@ export interface OperationalSalesSession {
   readonly revision: number;
   readonly createdAt: string;
   readonly operation: { readonly dimension: "certalis_operation"; readonly value: CertalisSalesSessionOperation; readonly source: "certalis_persistence"; readonly reason?: string; readonly retry: "in_progress" | "not_applicable" | "unsafe_requires_support" };
-  readonly experience: { readonly dimension: "cloudshare_sales_experience"; readonly value: CloudShareSalesExperienceStatus; readonly source: "cloudshare_v4_get_sales" | "schedule_prediction"; readonly freshness: "fresh" | "predicted"; readonly observedAt?: string };
+  readonly experience: { readonly dimension: "cloudshare_sales_experience"; readonly value: CloudShareSalesExperienceStatus; readonly source: "cloudshare_v4_sales_list" | "cloudshare_v4_get_sales" | "schedule_prediction"; readonly freshness: "fresh" | "predicted"; readonly observedAt?: string };
   /** Verification is a safe read only for a persisted, active provider correlation. */
   readonly verificationEligible: boolean;
 }

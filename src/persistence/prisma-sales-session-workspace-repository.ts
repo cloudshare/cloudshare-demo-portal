@@ -31,6 +31,7 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         attentionReason: session.attentionReason,
         experienceStatus: session.experienceStatus === "notStarted" || session.experienceStatus === "inProgress" || session.experienceStatus === "ended" ? session.experienceStatus : null,
         experienceStatusObservedAt: session.experienceStatusObservedAt,
+        experienceStatusSource: session.experienceStatusSource === "cloudshare_v4_sales_list" || session.experienceStatusSource === "cloudshare_v4_get_sales" ? session.experienceStatusSource : null,
       }, new Date());
       const activity = await prisma.diagnosticLogEntry.findMany({
         where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 100,
