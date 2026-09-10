@@ -9,7 +9,7 @@ import { CloudShareResponseError } from "./errors";
  * the Sales response body. */
 export interface SalesDeliveryRequestEvidence extends CloudShareRequestDiagnostics {}
 export interface SalesDeliveryResponseEvidence extends CloudShareResponseDiagnostics {}
-export interface SalesDeliveryEvidence { readonly request: SalesDeliveryRequestEvidence; readonly response: SalesDeliveryResponseEvidence; }
+export interface SalesDeliveryEvidence { readonly request: SalesDeliveryRequestEvidence; readonly response: SalesDeliveryResponseEvidence; readonly exchangeId?: string; }
 export interface CreateSalesDemoSessionInput {
   readonly name: string;
   readonly type: SalesExperienceType;
@@ -208,7 +208,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     const result = client.requestV4Detailed
       ? await client.requestV4Detailed(spec)
       : await client.requestV4(spec).then((data) => ({ data, request: { method: spec.method, path: spec.path, ...(spec.body === undefined ? {} : { body: spec.body }) }, response: { status: 200, body: data } } as CloudShareDetailedResult<T>));
-    return { data: spec.schema.parse(result.data), evidence: { request: result.request, response: result.response } };
+    return { data: spec.schema.parse(result.data), evidence: { request: result.request, response: result.response, ...(result.exchangeId ? { exchangeId: result.exchangeId } : {}) } };
   }
   return {
     async listSessions(input) {

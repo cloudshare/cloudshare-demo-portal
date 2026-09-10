@@ -136,14 +136,14 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     const delivery = deps.deliveryFactory?.forConnection(connection, workflowScope) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, workflowScope));
     const validator = deps.itemProvisioningValidator ?? deps.itemProvisioningValidatorFactory?.forConnection(connection, workflowScope);
     const resourceReads = validator ? await validator.revalidate(item) : [];
-    await recordResourceReads(deps, request, correlationId, item.id, item.project.id, resourceReads, "success");
+    await recordResourceReads(deps, request, correlationId, id, item.id, item.project.id, resourceReads, "success");
     // Re-read immediately before POST /sales. This deliberately accepts the
     // narrow race after this check; a cached or Item-stored member is never used.
     const projectMembers = deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection, workflowScope) ?? createCloudShareProjectMemberSource((deps.cloudshare ?? missingClientFactory).forConnection(connection, workflowScope));
     let memberRead: Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>;
     try { memberRead = await projectMembers.listActiveProjectMembers(item.project.id); }
     catch (error) { throw new SalesProjectMemberReadError(error); }
-    await recordProjectMemberRead(deps, request, correlationId, item.id, item.project.id, memberRead, "success");
+    await recordProjectMemberRead(deps, request, correlationId, id, item.id, item.project.id, memberRead, "success");
     const selectedSalesPro = memberRead.members.find((member) => member.email.toLowerCase() === parsed.data.salesProEmail.toLowerCase());
     if (!selectedSalesPro) throw new SalesProjectMemberSelectionError("The selected Sales Pro is no longer an active member of this Item's CloudShare Project.", memberRead);
     createDispatched = true;
@@ -224,10 +224,10 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       }
     }
     if (itemValidationFailure || itemReadFailure) {
-      await recordResourceReads(deps, request, correlationId, item.id, item.project.id, error.completedReads, "failure");
+      await recordResourceReads(deps, request, correlationId, id, item.id, item.project.id, error.completedReads, "failure");
     }
     const causeEvidence = preWriteCooldownFailure ? undefined : cloudShareEvidence(itemReadFailure || memberReadFailure ? error.cause : error);
-    if (memberSelectionFailure) await recordProjectMemberRead(deps, request, correlationId, item.id, item.project.id, error.read, "failure");
+    if (memberSelectionFailure) await recordProjectMemberRead(deps, request, correlationId, id, item.id, item.project.id, error.read, "failure");
     const oauthMetadata = preWriteAuthFailure ? oauthFailureMetadata(error) : undefined;
     const integrationSurface = preWriteAuthFailure ? "cloudshare.v4.oauth.token" : memberSelectionFailure || memberReadFailure ? "cloudshare.v3.project_members_gui" : itemValidationFailure || itemReadFailure ? "cloudshare.v3.sales_item_resources" : "cloudshare.v4.sales";
     const failureMode = preWriteAuthFailure ? "cloudshare_auth_pre_write" : preWriteCooldownFailure ? "cloudshare_cooldown_pre_write" : memberReadFailure ? "project_member_read" : memberSelectionFailure ? "selected_sales_pro_inactive" : validationFailure ? "main_sales_pro_validation" : itemValidationFailure ? "item_resource_drift" : itemReadFailure ? "item_resource_read" : "cloudshare_create";
@@ -373,8 +373,8 @@ function isCloudShareAuthorizationFailure(error: unknown): boolean {
 async function evidence(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, session: SalesDemoSession, outcome: "success" | "failure", message: string, cloudshare: { request: unknown; response: unknown } | undefined, details: Record<string, unknown>) {
   await deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, externalId: session.externalId, opportunityId: session.opportunityId, itemId: session.itemId }, request: cloudshare?.request as Record<string, unknown> | undefined, response: cloudshare?.response as Record<string, unknown> | undefined, details });
 }
-async function recordResourceReads(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, itemId: string, projectId: string, reads: readonly { request: Record<string, unknown>; response: Record<string, unknown>; integrationSurface: string }[], outcome: "success" | "failure") {
-  await Promise.allSettled(reads.map((read) => deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.enablement_session.item_resources.revalidated", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, correlationId, message: outcome === "success" ? "Catalogue Item resource revalidated before Sales Enablement Session provisioning" : "Catalogue Item revalidation found stale CloudShare resources", request: read.request, response: read.response, details: { integrationSurface: read.integrationSurface }, externalIds: { itemId, projectId } })));
+async function recordResourceReads(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, sessionId: string, itemId: string, projectId: string, reads: readonly { request: Record<string, unknown>; response: Record<string, unknown>; integrationSurface: string; exchangeId?: string }[], outcome: "success" | "failure") {
+  await Promise.allSettled(reads.map((read) => deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.enablement_session.item_resources.revalidated", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: sessionId }, correlationId, message: outcome === "success" ? "Catalogue Item resource revalidated before Sales Enablement Session provisioning" : "Catalogue Item revalidation found stale CloudShare resources", request: read.request, response: read.response, details: { integrationSurface: read.integrationSurface, evidenceKind: "semantic", ...(read.exchangeId ? { contributingExchangeIds: [read.exchangeId] } : {}) }, externalIds: { itemId, projectId } })));
 }
 class SalesProjectMemberSelectionError extends Error {
   constructor(message: string, readonly read: Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>) { super(message); this.name = "SalesProjectMemberSelectionError"; }
@@ -382,8 +382,8 @@ class SalesProjectMemberSelectionError extends Error {
 class SalesProjectMemberReadError extends Error {
   constructor(readonly cause: unknown) { super("CloudShare could not read active Project members before provisioning."); this.name = "SalesProjectMemberReadError"; }
 }
-async function recordProjectMemberRead(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, itemId: string, projectId: string, read: Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>, outcome: "success" | "failure") {
+async function recordProjectMemberRead(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, sessionId: string, itemId: string, projectId: string, read: Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>, outcome: "success" | "failure") {
   // Observability outages must not turn a validated, yet-to-be-created remote
   // Experience into a retry hazard. The primary creation audit still follows.
-  await Promise.allSettled([deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.enablement_session.project_members.revalidated", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, correlationId, message: outcome === "success" ? "Active Project members revalidated before Sales Enablement Session provisioning" : "Selected Sales Pro was not active in the revalidated Project members", request: read.request as unknown as Record<string, unknown>, response: read.response as unknown as Record<string, unknown>, details: { integrationSurface: read.integrationSurface, cached: false, memberCount: read.members.length }, externalIds: { itemId, projectId } })]);
+  await Promise.allSettled([deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.enablement_session.project_members.revalidated", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: sessionId }, correlationId, message: outcome === "success" ? "Active Project members revalidated before Sales Enablement Session provisioning" : "Selected Sales Pro was not active in the revalidated Project members", request: read.request as unknown as Record<string, unknown>, response: read.response as unknown as Record<string, unknown>, details: { integrationSurface: read.integrationSurface, cached: false, memberCount: read.members.length, evidenceKind: "semantic", ...(read.exchangeId ? { contributingExchangeIds: [read.exchangeId] } : {}) }, externalIds: { itemId, projectId } })]);
 }

@@ -82,6 +82,8 @@ export interface CloudShareResponseDiagnostics {
 }
 
 export interface CloudShareDetailedResult<T> {
+  /** Identity of the physical exchange that produced this result. */
+  readonly exchangeId?: string;
   readonly data: T;
   readonly host: string;
   readonly integrationSurface: string;
@@ -717,6 +719,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       clearCooldown();
       const requestQuery = sanitizeQuery(extractQuery(request.url));
       const result = {
+        exchangeId,
         data: parsed.data,
         host: requestInfo.host,
         integrationSurface: requestInfo.integrationSurface,
@@ -931,6 +934,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       clearCooldown();
       const requestQuery = sanitizeQuery(extractQuery(request.url));
       const result = {
+        exchangeId,
         data: response.body,
         host: requestInfo.host,
         integrationSurface: requestInfo.integrationSurface,
