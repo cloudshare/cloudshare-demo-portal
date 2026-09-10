@@ -29,6 +29,7 @@ export interface SalesDemoSession {
   /** Last documented v4 GET /sales observation. Never inferred from a roster. */
   readonly experienceStatus?: CloudShareSalesExperienceStatus | null;
   readonly experienceStatusObservedAt?: Date | null;
+  readonly experienceStatusSource?: "cloudshare_v4_sales_list" | "cloudshare_v4_get_sales" | null;
   readonly createdAt: Date;
 }
 
@@ -48,7 +49,7 @@ export interface SalesDemoSessionRepository {
    * longer matches, so a concurrent request can never be removed. */
   discardReservation?(reservation: Pick<SalesDemoSession, "id" | "customerId" | "opportunityId" | "revision" | "cloudShareSalesExperienceId" | "operationalStatus">): Promise<boolean>;
   updateOperationalState?(customerId: string, id: string, state: { cloudShareSalesExperienceId?: string; salesProEmail?: string; salesProDisplayName?: string; operationalStatus: "active" | "needs_attention"; attentionReason?: string | null; experienceStatus?: CloudShareSalesExperienceStatus | null; experienceStatusObservedAt?: Date | null }): Promise<void>;
-  recordExperienceObservations?(customerId: string, observations: readonly { readonly id: string; readonly experienceStatus: CloudShareSalesExperienceStatus; readonly experienceStatusObservedAt: Date }[]): Promise<void>;
+  recordExperienceObservations?(customerId: string, observations: readonly { readonly id: string; readonly experienceStatus: CloudShareSalesExperienceStatus; readonly experienceStatusObservedAt: Date; readonly experienceStatusSource?: "cloudshare_v4_sales_list" | "cloudshare_v4_get_sales" }[]): Promise<void>;
   recordExperienceObservation?(customerId: string, id: string, observation: { readonly experienceStatus: CloudShareSalesExperienceStatus; readonly experienceStatusObservedAt: Date }): Promise<void>;
   updateDisplayName?(id: string, sessionName: string): Promise<void>;
 }

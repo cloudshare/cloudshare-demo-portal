@@ -24,7 +24,7 @@ export function createPrismaSalesDemoSessionRepository(prisma: PrismaClient): Sa
       if (updated.count !== 1) throw new Error("Sales Enablement Session was not found for this Customer");
     },
     async recordExperienceObservations(customerId, observations) {
-      await prisma.$transaction(async (tx) => { for (const observation of observations) { const updated = await tx.salesDemoSession.updateMany({ where: { customerId, id: observation.id }, data: { experienceStatus: observation.experienceStatus, experienceStatusObservedAt: observation.experienceStatusObservedAt } }); if (updated.count !== 1) throw new Error("Sales Enablement Session was not found for this Customer"); } });
+      await prisma.$transaction(async (tx) => { for (const observation of observations) { const updated = await tx.salesDemoSession.updateMany({ where: { customerId, id: observation.id }, data: { experienceStatus: observation.experienceStatus, experienceStatusObservedAt: observation.experienceStatusObservedAt, experienceStatusSource: observation.experienceStatusSource } }); if (updated.count !== 1) throw new Error("Sales Enablement Session was not found for this Customer"); } });
     },
     async updateDisplayName(id, sessionName) { await prisma.salesDemoSession.update({ where: { id }, data: { sessionName } }); },
   };
@@ -37,5 +37,5 @@ function isSalesSessionRevisionConflict(error: unknown): boolean {
 }
 
 function toDomain(row: { id: string; customerId: string; opportunityId: string; itemId: string; cloudShareSalesExperienceId: string; externalId: string; type: string; start: string; end: string; timeZone: string; salesProEmail: string; salesProDisplayName: string; registrationType: string; sendInvitations: string; sessionName: string; revision: number; operationalStatus: string; attentionReason: string | null; experienceStatus?: string | null; experienceStatusObservedAt?: Date | null; createdAt: Date }): SalesDemoSession {
-  return { ...row, type: row.type as SalesDemoSession["type"], operationalStatus: row.operationalStatus as NonNullable<SalesDemoSession["operationalStatus"]>, experienceStatus: row.experienceStatus === "notStarted" || row.experienceStatus === "inProgress" || row.experienceStatus === "ended" ? row.experienceStatus : null, registrationType: "registeredParticipantsOnly", sendInvitations: row.sendInvitations === "salesProsAndParticipants" ? "salesProsAndParticipants" : "dontSend" };
+  return { ...row, type: row.type as SalesDemoSession["type"], operationalStatus: row.operationalStatus as NonNullable<SalesDemoSession["operationalStatus"]>, experienceStatus: row.experienceStatus === "notStarted" || row.experienceStatus === "inProgress" || row.experienceStatus === "ended" ? row.experienceStatus : null, experienceStatusSource: row.experienceStatusSource === "cloudshare_v4_sales_list" || row.experienceStatusSource === "cloudshare_v4_get_sales" ? row.experienceStatusSource : null, registrationType: "registeredParticipantsOnly", sendInvitations: row.sendInvitations === "salesProsAndParticipants" ? "salesProsAndParticipants" : "dontSend" };
 }
