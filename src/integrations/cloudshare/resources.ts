@@ -189,6 +189,7 @@ export interface CloudShareSalesItemResourceSource {
 
 export interface CloudShareDetailedResourceRead<T> {
   readonly data: T;
+  readonly exchangeId?: string;
   readonly request: Record<string, unknown>;
   readonly response: Record<string, unknown>;
   readonly integrationSurface: string;
@@ -208,7 +209,8 @@ export class CloudShareSalesResourceReadError extends Error {
 export function createCloudShareSalesItemResourceSource(client: CloudShareClient): CloudShareSalesItemResourceSource {
   async function read<T>(path: string, schema: z.ZodType<T, z.ZodType["_def"], unknown>, integrationSurface: string): Promise<CloudShareDetailedResourceRead<T>> {
     const detailed = await requestV3WithDiagnostics(client, { method: "GET", path, schema });
-    return { data: detailed.data, request: toDiagnosticExchange(detailed).request, response: toDiagnosticExchange(detailed).response, integrationSurface };
+    const exchange = toDiagnosticExchange(detailed);
+    return { data: detailed.data, ...(exchange.exchangeId ? { exchangeId: exchange.exchangeId } : {}), request: exchange.request, response: exchange.response, integrationSurface };
   }
   return {
     readProjects: () => read("/projects", projectListSchema, "cloudshare.v3.projects"),
@@ -270,6 +272,7 @@ const blueprintListSchema = z.array(blueprintSummarySchema);
 const policyListSchema = z.array(policySummarySchema);
 
 export interface CloudShareResourceReadSuccess {
+  readonly exchangeId?: string;
   readonly operation: string;
   readonly integrationSurface: string;
   readonly path: string;
@@ -295,11 +298,13 @@ export interface CloudShareResourceListerOptions {
 
 function toDiagnosticExchange(
   detailed: {
+    readonly exchangeId?: string;
     readonly request: CloudShareRequestDiagnostics;
     readonly response: CloudShareResponseDiagnostics;
   },
-): { request: Record<string, unknown>; response: Record<string, unknown> } {
+): { request: Record<string, unknown>; response: Record<string, unknown>; exchangeId?: string } {
   return {
+    ...(detailed.exchangeId ? { exchangeId: detailed.exchangeId } : {}),
     request: {
       method: detailed.request.method,
       path: detailed.request.path,

@@ -159,8 +159,8 @@ export function createCloudShareClientFactory(input: {
           // authoritative workflow exists. Keep the mandatory Customer
           // fallback for unscoped calls, but never persist the same exchange
           // once as a workflow row and again as an unrelated default row.
-          onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest ?? defaultObserver.onRequest),
-          onAcquisition: composeCloudShareObservers(options.onAcquisition, workflowObserver?.onAcquisition ?? defaultObserver.onAcquisition),
+          onRequest: composeCloudShareObservers(workflowObserver?.onRequest, options.onRequest, workflowObserver || options.onRequest ? undefined : defaultObserver.onRequest),
+          onAcquisition: composeCloudShareObservers(workflowObserver?.onAcquisition, options.onAcquisition, workflowObserver || options.onAcquisition ? undefined : defaultObserver.onAcquisition),
         },
         connection: {
           customerId: connection.customerId,
