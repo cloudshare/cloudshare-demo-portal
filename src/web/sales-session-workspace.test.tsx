@@ -57,6 +57,7 @@ describe("Sales Session workspace", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Open Sales support" }).getAttribute("href")).toBe("/sales?tab=support");
   });
 
   it("keeps automatic-refresh and Verify support correlations independent", async () => {
