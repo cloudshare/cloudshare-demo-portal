@@ -78,7 +78,7 @@ describe("createV4TokenProvider", () => {
   it("B: retry acquisitions receive distinct exchange IDs and monotonic workflow-start sequences", async () => {
     const { http } = stubHttp([{ status: 503, body: "busy" }, tokenResponse("jwt-retry")]);
     const events: V4TokenAcquisitionEvent[] = [];
-    const provider = createV4TokenProvider({ ...baseOpts, http, attemptStartAllocator: createCloudShareWorkflowSequenceAllocator(), onAcquisition: (event) => events.push(event) });
+    const provider = createV4TokenProvider({ ...baseOpts, http, attemptStartAllocator: createCloudShareWorkflowSequenceAllocator(), onAcquisition: (event) => { events.push(event); } });
     await expect(provider.getToken()).rejects.toBeInstanceOf(CloudShareAuthError);
     await expect(provider.getToken()).resolves.toBe("jwt-retry");
     expect(events).toHaveLength(2);
@@ -92,7 +92,7 @@ describe("createV4TokenProvider", () => {
     const http: HttpClient = { send: vi.fn(() => new Promise<HttpResponse>((resolve) => deferred.push(resolve))) };
     let nowMs = 1_000_000;
     const events: Array<Record<string, unknown>> = [];
-    const provider = createV4TokenProvider({ ...baseOpts, http, now: () => nowMs, attemptStartAllocator: createCloudShareWorkflowSequenceAllocator(), onAcquisition: (event) => events.push(event as unknown as Record<string, unknown>) });
+    const provider = createV4TokenProvider({ ...baseOpts, http, now: () => nowMs, attemptStartAllocator: createCloudShareWorkflowSequenceAllocator(), onAcquisition: (event) => { events.push(event as unknown as Record<string, unknown>); } });
     const first = provider.getToken();
     nowMs += 25;
     const second = provider.getToken();
