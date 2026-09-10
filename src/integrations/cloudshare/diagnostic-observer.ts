@@ -26,6 +26,8 @@ export function createCloudShareDiagnosticObserver(input: {
       response: event.result?.response as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.response : projectFailureResponse(event.error?.context)) ?? null,
       details: {
         exchangeId: event.exchangeId,
+        attemptStartSequence: event.attemptStartSequence,
+        completedAt: event.completedAt,
         ...(input.correlationId ? { sequence: ++sequence } : {}),
         durationMs: event.durationMs,
         integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,
@@ -92,6 +94,8 @@ export function createCloudShareWorkflowObserver(input: {
         response: event.result?.response as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.response : projectFailureResponse(event.error?.context)) ?? null,
         details: {
           exchangeId: event.exchangeId,
+          attemptStartSequence: event.attemptStartSequence,
+          completedAt: event.completedAt,
           sequence, durationMs: event.durationMs,
           integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,
           ...(event.result ? { host: event.result.host } : {}),

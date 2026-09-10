@@ -87,7 +87,8 @@ describe("composition feature modules", () => {
 
     expect(customRequest).toHaveBeenCalledOnce();
     expect(record.mock.calls.map(([entry]) => entry)).toEqual([
-      expect.objectContaining({ customerId: "customer-a", subject: { type: "exam_attempt", id: "attempt-1" }, correlationId: "workflow-correlation" }),
+      expect.objectContaining({ customerId: "customer-a", subject: { type: "exam_attempt", id: "attempt-1" }, correlationId: "workflow-correlation", operation: "cloudshare.oauth.token" }),
+      expect.objectContaining({ customerId: "customer-a", subject: { type: "exam_attempt", id: "attempt-1" }, correlationId: "workflow-correlation", operation: "cloudshare.request" }),
     ]);
   });
 

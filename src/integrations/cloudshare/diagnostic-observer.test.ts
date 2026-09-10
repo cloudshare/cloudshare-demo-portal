@@ -43,7 +43,7 @@ describe("createCloudShareDiagnosticObserver", () => {
     });
     await observer.onRequest({
       exchangeId: "exchange-1", occurredAt: "2026-09-03T12:00:00.000Z", outcome: "success", durationMs: 2,
-      result: { request: { method: "GET" }, response: { status: 200, body: { sentinel: "body" } }, integrationSurface: "cloudshare.v4.projects", host: "example.test" },
+      result: { data: null, request: { method: "GET", path: "/projects" }, response: { status: 200, body: { sentinel: "body" } }, integrationSurface: "cloudshare.v4.projects", host: "example.test" },
     });
     expect(record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ exchangeId: "exchange-1" }) }));
   });

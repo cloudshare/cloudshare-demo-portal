@@ -91,8 +91,11 @@ export interface CloudShareDetailedResult<T> {
 
 export interface CloudShareRequestObservation {
   /** Stable identity for this one attempted HTTP exchange; retries mint a new value. */
-  readonly exchangeId: string;
+  readonly exchangeId?: string;
   readonly occurredAt: string;
+  /** Request start order within this client; completion order is independent. */
+  readonly attemptStartSequence?: number;
+  readonly completedAt?: string;
   readonly outcome: "success" | "failure";
   readonly durationMs: number;
   readonly result?: CloudShareDetailedResult<unknown>;
@@ -344,6 +347,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const random = opts.random ?? Math.random;
   const cooldownStore = opts.cooldownStore ?? globalCooldownStore;
+  let attemptStartSequence = 0;
 
   function trace(
     level: "info" | "warn",
@@ -558,9 +562,12 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       const attemptStartedAtMs = getNowMs();
       const attemptOccurredAt = new Date(attemptStartedAtMs).toISOString();
       const exchangeId = randomUUID();
+      const startSequence = ++attemptStartSequence;
       const observeAttemptFailure = async (error: unknown): Promise<void> => {
         await notifyRequest({
           exchangeId,
+          attemptStartSequence: startSequence,
+          completedAt: new Date(getNowMs()).toISOString(),
           occurredAt: attemptOccurredAt,
           outcome: "failure",
           durationMs: Math.max(0, getNowMs() - attemptStartedAtMs),
@@ -734,7 +741,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           ...(response.tls ? { tls: response.tls } : {}),
         },
       };
-      await notifyRequest({ exchangeId, occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
+      await notifyRequest({ exchangeId, attemptStartSequence: startSequence, completedAt: new Date(getNowMs()).toISOString(), occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
       return result;
     }
   }
@@ -829,8 +836,9 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       const attemptStartedAtMs = getNowMs();
       const attemptOccurredAt = new Date(attemptStartedAtMs).toISOString();
       const exchangeId = randomUUID();
+      const startSequence = ++attemptStartSequence;
       const observeTextFailure = async (error: unknown): Promise<void> => {
-        await notifyRequest({ exchangeId, occurredAt: attemptOccurredAt, outcome: "failure", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), error: { name: error instanceof Error ? error.name : "Error", message: error instanceof Error ? error.message : String(error), context: error instanceof CloudShareRequestError || error instanceof CloudShareResponseError || error instanceof CloudShareTransportError || error instanceof CloudShareRateLimitError ? error.context : undefined } });
+        await notifyRequest({ exchangeId, attemptStartSequence: startSequence, completedAt: new Date(getNowMs()).toISOString(), occurredAt: attemptOccurredAt, outcome: "failure", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), error: { name: error instanceof Error ? error.name : "Error", message: error instanceof Error ? error.message : String(error), context: error instanceof CloudShareRequestError || error instanceof CloudShareResponseError || error instanceof CloudShareTransportError || error instanceof CloudShareRateLimitError ? error.context : undefined } });
       };
       if (attempt === 0) {
         throwIfCooldownActive(request, requestInfo);
@@ -944,7 +952,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           ...(response.tls ? { tls: response.tls } : {}),
         },
       };
-      await notifyRequest({ exchangeId, occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
+      await notifyRequest({ exchangeId, attemptStartSequence: startSequence, completedAt: new Date(getNowMs()).toISOString(), occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
       return result;
     }
   }
