@@ -267,11 +267,21 @@ function safeOauthTransport(value: unknown): Record<string, string | number | bo
   return Object.keys(result).length ? result : undefined;
 }
 function isMainSalesProValidationFailure(error: unknown): boolean {
+  // Provider wording cannot make an explicit server failure definite. Once
+  // POST /sales has returned 5xx, its creation outcome remains ambiguous even
+  // when the response happens to mention Sales Pro validation.
+  if (isCloudShareServerResponseFailure(error)) return false;
   if (!(error instanceof Error)) return false;
   if (!("context" in error)) return /main.?sales.?pro|sales.?pro/i.test(error.message);
   const context = (error as { context?: Record<string, unknown> }).context;
   const response = String(context?.responseBody ?? "");
   return /main.?sales.?pro|sales.?pro/i.test(response);
+}
+function isCloudShareServerResponseFailure(error: unknown): boolean {
+  if (error instanceof CloudShareRequestError) return error.status >= 500;
+  if (!isCloudShareErrorAcrossBoundaries(error) || error.name !== "CloudShareRequestError") return false;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" && status >= 500;
 }
 async function rejected(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, status: number, error: string, reason: string, externalIds: Record<string, string> = {}) {
   const correlationId = randomUUID(); const now = (deps.now ?? (() => new Date()))(); const subjectId = externalIds.opportunityId ?? externalIds.itemId ?? "unprovisioned";

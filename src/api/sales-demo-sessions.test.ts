@@ -122,6 +122,7 @@ describe("Sales Enablement Session API handler", () => {
   it.each([
     ["transport failure", () => new CloudShareTransportError("POST /sales timed out without a response", { method: "POST", path: "/sales", requestBody: { externalId: "server-only" } })],
     ["HTTP 503 response", () => new CloudShareRequestError("POST /sales returned 503", 503, { method: "POST", path: "/sales", requestBody: { externalId: "server-only" }, responseStatus: 503, responseBody: { error: "unavailable" } })],
+    ["HTTP 503 plain-text response mentioning Sales Pro validation", () => new CloudShareRequestError("POST /sales returned 503", 503, { method: "POST", path: "/sales", requestBody: { externalId: "server-only" }, responseStatus: 503, responseBody: "Main Sales Pro validation service unavailable" })],
   ])("blocks a duplicate attempt after an outcome-ambiguous CloudShare POST %s", async (_failure, createFailure) => {
     const records = createInMemorySalesRecordRepository(); await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
     const item = { id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
