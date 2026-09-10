@@ -1,16 +1,121 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionWorkspace } from "./sales-session-workspace";
 
-const router = vi.hoisted(() => ({ replace: vi.fn() }));
+const router = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
-const data = { summary: { id: "session-1", sessionName: "Acme enablement", revision: 3, start: "2026-07-24T09:00:00.000Z", end: "2026-07-24T10:00:00.000Z", timeZone: "Europe/London", operation: { value: "correlated", source: "certalis_persistence" }, experience: { value: "notStarted", source: "schedule_prediction", freshness: "estimated" } }, participants: [{ id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", environment: { value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" } }], activity: [{ occurredAt: "2026-07-23T09:00:00.000Z", kind: "session_provision", summary: "Sales Session provision completed.", outcome: "success", actor: { type: "admin" }, subject: { type: "sales_demo_session", id: "session-1" }, correlationId: "corr-1" }], details: { accountName: "Acme", opportunityName: "Evaluation", itemName: "Enablement item", invitationMode: "Sales Pros and participants" } };
+const data = { summary: { id: "session-1", sessionName: "Acme enablement", revision: 3, start: "2026-07-24T09:00:00.000Z", end: "2026-07-24T10:00:00.000Z", timeZone: "Europe/London", operation: { value: "correlated", source: "certalis_persistence" }, experience: { value: "notStarted", source: "cloudshare_v4_get_sales", freshness: "fresh", observedAt: "2026-07-24T08:59:00.000Z" } }, participants: [{ id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", environment: { value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" } }], activity: [{ occurredAt: "2026-07-23T09:00:00.000Z", kind: "session_provision", summary: "Sales Session provision completed.", outcome: "success", actor: { type: "admin" }, subject: { type: "sales_demo_session", id: "session-1" }, correlationId: "corr-1" }], details: { accountName: "Acme", opportunityName: "Evaluation", itemName: "Enablement item", invitationMode: "Sales Pros and participants" } };
 
 describe("Sales Session workspace", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it("refreshes an estimated workspace, exposes failure support, and retries with a local reread", async () => {
+    const user = userEvent.setup();
+    let releaseFailure!: () => void;
+    const pending = new Promise<void>((resolve) => { releaseFailure = resolve; });
+    let automaticPosts = 0;
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    const fresh = { ...data, summary: { ...data.summary, experience: { value: "inProgress", source: "cloudshare_v4_sales_list", freshness: "fresh", observedAt: "2026-07-24T09:01:00.000Z" } } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/workspace")) return new Response(JSON.stringify(automaticPosts > 1 ? fresh : stale), { status: 200 });
+      if (init?.method === "POST") {
+        automaticPosts += 1;
+        if (automaticPosts === 1) { await pending; return new Response(JSON.stringify({ error: "CloudShare unavailable", correlationId: "refresh-fail" }), { status: 503 }); }
+        return new Response(JSON.stringify({ correlationId: "refresh-ok", rows: [{ id: "session-1", status: "inProgress" }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    releaseFailure();
+    await screen.findByText("CloudShare unavailable");
+    expect(screen.getByRole("link", { name: "Open Sales support" }).getAttribute("href")).toContain("refresh-fail");
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("CloudShare status refreshed.");
+    expect(automaticPosts).toBe(2);
+    expect((screen.getByRole("button", { name: "Verify now" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("does not loop when an automatic refresh returns the same predicted snapshot", async () => {
+    let posts = 0;
+    const predicted = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).includes("/workspace")) return new Response(JSON.stringify(predicted), { status: 200 });
+      if (init?.method === "POST") { posts += 1; return new Response(JSON.stringify({ rows: [], total: 0, progress: { state: "complete" } }), { status: 200 }); }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(posts).toBe(1);
+    expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Open Sales support" }).getAttribute("href")).toBe("/sales?tab=support");
+  });
+
+  it("keeps automatic-refresh and Verify support correlations independent", async () => {
+    const user = userEvent.setup(); let posts = 0;
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).includes("/workspace")) return new Response(JSON.stringify(stale), { status: 200 });
+      if (String(input).includes("/verify")) return new Response(JSON.stringify({ correlationId: "verify-independent", experienceStatus: "inProgress", observedAt: "2026-07-24T09:01:00.000Z", freshness: "fresh", source: "cloudshare_v4_get_sales" }), { status: 200 });
+      if (init?.method === "POST") { posts += 1; return new Response(JSON.stringify({ error: "refresh unavailable", correlationId: "refresh-independent" }), { status: 503 }); }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await screen.findByRole("button", { name: "Retry" });
+    expect(screen.getByRole("link", { name: "Open Sales support" }).getAttribute("href")).toContain("refresh-independent");
+    await user.click(screen.getByRole("button", { name: "Verify now" }));
+    await screen.findByText(/Verified from CloudShare/);
+    const supportLinks = screen.getAllByRole("link", { name: "Open Sales support" }).map((link) => link.getAttribute("href"));
+    expect(supportLinks).toContain("/sales?tab=support&correlationId=refresh-independent");
+    expect(supportLinks).toContain("/sales?tab=support&correlationId=verify-independent");
+    expect(posts).toBe(1);
+  });
+
+  it("verifies one Experience, shows durable progress, and preserves the operation dimension", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).includes("/workspace")) return new Response(JSON.stringify(data), { status: 200 });
+      expect(init?.method).toBe("POST");
+      return new Response(JSON.stringify({ correlationId: "verify-1", experienceStatus: "inProgress", observedAt: "2026-07-24T09:01:00.000Z", freshness: "fresh", source: "cloudshare_v4_get_sales" }), { status: 200 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await user.click(screen.getByRole("button", { name: "Verify now" }));
+    expect((await screen.findByRole("status")).textContent).toContain("Verified from CloudShare: inProgress");
+    expect(screen.getAllByText("Correlated").length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/verify"), expect.objectContaining({ method: "POST" }));
+  });
+
+  it("keeps the summary safe after invalid or failed verification", async () => {
+    const user = userEvent.setup();
+    let verifyCalls = 0;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/workspace")) return new Response(JSON.stringify(data), { status: 200 });
+      verifyCalls += 1;
+      return verifyCalls === 1
+        ? new Response(JSON.stringify({ correlationId: "verify-bad", experienceStatus: "unknown", freshness: "fresh", source: "wrong" }), { status: 200 })
+        : new Response(JSON.stringify({ error: "CloudShare unavailable", correlationId: "verify-fail" }), { status: 503 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await user.click(screen.getByRole("button", { name: "Verify now" }));
+    expect((await screen.findByRole("status")).textContent).toContain("incomplete verification observation");
+    expect(screen.getByRole("link", { name: "Open Sales support" }).getAttribute("href")).toContain("correlationId=verify-bad");
+    expect(screen.getAllByText("Correlated").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "Verify now" }));
+    expect((await screen.findByRole("status")).textContent).toContain("CloudShare unavailable");
+    expect(screen.getAllByText("Correlated").length).toBeGreaterThan(0);
+  });
 
   it("opens Participants by default, routes local areas, and links correlation to authorized Support", async () => {
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));

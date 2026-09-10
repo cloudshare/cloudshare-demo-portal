@@ -17,6 +17,7 @@ export interface HttpRequest {
   readonly headers?: Record<string, string>;
   /** Serialised request body, if any. */
   readonly body?: string;
+  readonly timeoutMs?: number;
 }
 
 export interface HttpResponse {
@@ -135,6 +136,7 @@ export function createFetchHttpClient(): HttpClient {
           readNetwork(req.socket),
           readTls(req.socket),
         )));
+        if (request.timeoutMs && request.timeoutMs > 0) req.setTimeout(request.timeoutMs, () => { const error = new Error(`HTTP request timed out after ${request.timeoutMs}ms`); (error as Error & { code?: string }).code = "ETIMEDOUT"; req.destroy(error); });
 
         if (request.body) {
           req.write(request.body);

@@ -41,6 +41,7 @@ export interface V4RequestSpec<T> {
   /** Opt in only for documented v4 operations whose successful response has no body. */
   readonly allowEmptyResponse?: boolean;
   readonly schema: ZodType<T, ZodType["_def"], unknown>;
+  readonly timeoutMs?: number;
 }
 
 export interface V3RequestSpec<T> {
@@ -533,7 +534,9 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
   function transportContext(cause: unknown): Record<string, unknown> {
     if (cause instanceof HttpTransportError) {
+      const timedOut = cause.cause instanceof Error && ((cause.cause as Error & { code?: string }).code === "ETIMEDOUT" || /timed out/i.test(cause.cause.message));
       return {
+        failureMode: timedOut ? "provider_timeout" : "provider_transport",
         cause: cause.cause instanceof Error ? { name: cause.cause.name, message: cause.cause.message } : String(cause.cause),
         ...(cause.network ? { network: cause.network } : {}),
         ...(cause.tls ? { tls: cause.tls } : {}),
@@ -767,6 +770,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         url,
         headers,
         body,
+        ...(spec.timeoutMs ? { timeoutMs: spec.timeoutMs } : {}),
       },
       spec.schema,
       spec.allowEmptyResponse,

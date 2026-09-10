@@ -204,6 +204,7 @@ model SalesDemoSession {
   attentionReason             String?
   experienceStatus            String?
   experienceStatusObservedAt  DateTime?
+  experienceStatusSource      String?
   createdAt                   DateTime
   customer                    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   opportunity                 SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)

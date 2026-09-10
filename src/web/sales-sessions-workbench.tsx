@@ -28,12 +28,24 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
   const [recordOptions, setRecordOptions] = useState<SalesRecordOptions>({});
   const [optionsError, setOptionsError] = useState<string | null>(null);
   const [queueReload, setQueueReload] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshFeedback, setRefreshFeedback] = useState<string | null>(null);
+  const [refreshCorrelationId, setRefreshCorrelationId] = useState<string | null>(null);
   const selectedRef = useRef<HTMLAnchorElement | null>(null);
+  const refreshButtonRef = useRef<HTMLButtonElement | null>(null);
+  const refreshFocusRequested = useRef(false);
+  const automaticRefreshKey = useRef<string | null>(null);
   const view = route.queueView ?? "active";
   const sort = route.queueSort ?? "start_desc";
   const offset = route.queueOffset ?? 0;
   const search = route.queueSearch ?? "";
   useEffect(() => setSearchDraft(search), [search]);
+  useEffect(() => {
+    if (refreshFocusRequested.current) {
+      if (document.activeElement === document.body && refreshButtonRef.current) refreshButtonRef.current.focus();
+      refreshFocusRequested.current = false;
+    }
+  }, [refreshFeedback, refreshing, queueReload]);
   useEffect(() => {
     let live = true;
     const params = new URLSearchParams({ accountPage: "1", accountPageSize: "50", page: "1", pageSize: "50" });
@@ -67,6 +79,27 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
     void load(); return () => { live = false; };
   }, [offset, queueReload, route.accountId, route.opportunityId, route.sessionId, search, sort, view]);
   useEffect(() => {
+    const rows = result?.response.rows;
+    if (!result || loading || !Array.isArray(rows) || !rows.some((row) => row.experience.freshness !== "fresh")) return;
+    const requestIdentity = result.request;
+    const key = JSON.stringify({ ...requestIdentity, ids: rows.map((row) => row.id) });
+    if (automaticRefreshKey.current === key) return;
+    automaticRefreshKey.current = key;
+    setRefreshFeedback("Refreshing visible Sales Session status from CloudShare…");
+    let live = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const refreshParams = new URLSearchParams({ mode: "automatic", offset: String(offset), limit: "25" });
+        rows.forEach((row) => refreshParams.append("targetId", row.id));
+        const response = await fetchRef.current(`/api/sales/enablement-sessions/refresh?${refreshParams}`, { method: "POST" });
+        const body = await response.json() as { progress?: { message?: string }; correlationId?: string; error?: string };
+        if (live && response.ok) { setRefreshCorrelationId(body.correlationId ?? null); setRefreshFeedback(body.progress?.message ?? "Sales Session status refreshed from CloudShare."); setQueueReload((value) => value + 1); }
+        else if (live) { setRefreshCorrelationId(body.correlationId ?? null); setRefreshFeedback(`${body.error ?? "CloudShare refresh failed."} Retry or open Sales support.`); }
+      } catch { if (live) { setRefreshCorrelationId(null); setRefreshFeedback("CloudShare refresh failed. Retry or open Sales support."); } }
+    }, 250);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [loading, offset, result, view]);
+  useEffect(() => {
     if (result?.response.target?.state === "available" && selectedRef.current) {
       selectedRef.current.focus({ preventScroll: true });
       selectedRef.current.scrollIntoView({ block: "nearest" });
@@ -92,6 +125,12 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
     window.history.replaceState(window.history.state, "", queueHref);
   };
   const data = result?.response ?? null;
+  const refreshCloudShare = async () => {
+    refreshFocusRequested.current = true;
+    setRefreshing(true); setRefreshFeedback("Refreshing Sales Session status from CloudShare…");
+    let responseCorrelation = false;
+    try { const refreshParams = new URLSearchParams({ mode: "manual", offset: String(offset), limit: "25" }); rows.forEach((row) => refreshParams.append("targetId", row.id)); const response = await fetchRef.current(`/api/sales/enablement-sessions/refresh?${refreshParams}`, { method: "POST" }); const body = await response.json() as { error?: string; progress?: { message?: string }; correlationId?: string }; responseCorrelation = typeof body.correlationId === "string"; setRefreshCorrelationId(body.correlationId ?? null); if (!response.ok) throw new Error(body.error ?? "CloudShare refresh failed."); setRefreshFeedback(body.progress?.message ?? "Sales Session status refreshed."); setQueueReload((value) => value + 1); } catch (cause) { if (!responseCorrelation) setRefreshCorrelationId(null); setRefreshFeedback(cause instanceof Error ? `${cause.message} Retry or open Sales support.` : "CloudShare refresh failed. Retry or open Sales support."); } finally { setRefreshing(false); }
+  };
   const displayedRequest = result?.request;
   const rows = data?.rows ?? [];
   const range = data ? `${data.total ? data.offset + 1 : 0}–${Math.min(data.offset + rows.length, data.total)} of ${data.total}` : null;
@@ -102,7 +141,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
         <h2 className={styles.title}>Sessions</h2>
         <p className={styles.description}>Triage the Customer&apos;s scheduled and live Sales Experiences. Certalis operation, CloudShare Experience, and Participant Environment remain separate.</p>
       </div>
-      <button type="button" style={primaryButtonStyle} className={styles.provisionButton} onClick={() => onNavigate({ tab: "sessions", sessionView: "provision" })}>Provision a Session</button>
+      <button type="button" style={primaryButtonStyle} className={styles.provisionButton} onClick={() => onNavigate({ tab: "sessions", sessionView: "provision" })}>Provision a Session</button><button ref={refreshButtonRef} type="button" className={styles.pageButton} onClick={() => { if (!refreshing) void refreshCloudShare(); }} aria-disabled={refreshing} aria-busy={refreshing}>{refreshing ? "Refreshing…" : "Refresh CloudShare status"}</button>
     </header>
 
     <section className={styles.commandRail} aria-label="Session queue controls">
@@ -118,7 +157,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
     </section>
 
     {creationNotice ? <div role="alert" className={`${styles.feedback} ${styles.feedbackError}`}><p>{creationNotice.message} <strong>Do not retry creation.</strong></p>{creationNotice.correlationId ? <button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support", correlationId: creationNotice.correlationId })}>Open support diagnostics ({creationNotice.correlationId})</button> : null}</div> : null}
-    {error ? <div role="alert" className={`${styles.feedback} ${styles.feedbackError}`}><p>{error} The last successfully loaded queue remains visible.</p><div className={styles.failureActions}><button type="button" className={styles.pageButton} onClick={() => setQueueReload((value) => value + 1)}>Retry queue</button><button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support" })}>Open Sales support</button></div></div> : null}
+    {refreshFeedback ? <div role="status" className={styles.feedback}><p>{refreshFeedback}</p>{refreshFeedback.includes("Retry") ? <div className={styles.failureActions}><button type="button" className={styles.pageButton} onClick={() => void refreshCloudShare()}>Retry refresh</button><button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support", correlationId: refreshCorrelationId })}>Open Sales support</button></div> : null}</div> : null}{error ? <div role="alert" className={`${styles.feedback} ${styles.feedbackError}`}><p>{error} The last successfully loaded queue remains visible.</p><div className={styles.failureActions}><button type="button" className={styles.pageButton} onClick={() => setQueueReload((value) => value + 1)}>Retry queue</button><button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support", correlationId: null })}>Open Sales support</button></div></div> : null}
     {data?.target && data.target.state !== "available" ? <p role="status" className={styles.feedback}>{data.target.message}</p> : null}
     {optionsError ? <p role="alert" className={`${styles.feedback} ${styles.feedbackError}`}>{optionsError}</p> : null}
 
@@ -133,7 +172,7 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
             <td><span className={styles.primaryLine}>{row.accountName}</span><span className={styles.secondaryLine}>{row.opportunityName}</span></td>
             <td><span className={styles.timeLine}><span className={styles.timeLabel}>Start</span><time dateTime={row.start}>{row.start}</time></span><span className={styles.timeLine}><span className={styles.timeLabel}>End</span><time dateTime={row.end}>{row.end}</time></span><span className={styles.secondaryLine}>CloudShare time zone: {row.timeZone}</span></td>
             <td><StatusDimension label="Certalis operation" value={row.operation.value} detail={row.operation.source === "certalis_persistence" ? "Recorded by Certalis persistence." : `Certalis source: ${formatStatus(row.operation.source)}.`} /></td>
-            <td><StatusDimension label="CloudShare Experience" value={row.experience.value} detail={row.experience.source === "cloudshare_v4_get_sales" ? `Observed from CloudShare · ${formatStatus(row.experience.freshness)}${row.experience.observedAt ? ` · ${row.experience.observedAt}` : ""}` : "Estimated from the Session schedule — not recently confirmed with CloudShare."} /></td>
+            <td><StatusDimension label="CloudShare Experience" value={row.experience.value} detail={row.experience.source === "cloudshare_v4_sales_list" || row.experience.source === "cloudshare_v4_get_sales" ? `Observed from CloudShare${row.experience.observedAt ? ` · ${row.experience.observedAt}` : ""}` : "Estimated from the Session schedule — not recently confirmed with CloudShare."} /></td>
             <td>{row.participantEnvironment ? <StatusDimension label="Participant Environment" {...participantEnvironmentPresentation(row.participantEnvironment)} neutral /> : <span className={styles.noAttention}>No Participant Environment observation available</span>}</td>
             <td>{row.attention ? <div className={styles.attention}><span className={styles.attentionEntity}>{row.attention.entity}</span><span>{row.attention.dimension.replaceAll("_", " ")} — {row.attention.reason}</span></div> : <span className={styles.noAttention}>No attention required</span>}</td>
           </tr>)}</tbody>

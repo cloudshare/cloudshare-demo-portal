@@ -44,6 +44,8 @@ export interface V4TokenProviderOptions {
   readonly now?: () => number;
   /** Refresh this many ms before the real expiry. Defaults to 30s. */
   readonly safetyMarginMs?: number;
+  /** Bound token acquisition so cold/expired authentication cannot outlive reads. */
+  readonly timeoutMs?: number;
   readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
 }
 
@@ -82,6 +84,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         url: `${opts.baseUrl}/oauth/token`,
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body,
+        timeoutMs: opts.timeoutMs ?? 10_000,
       });
     } catch (cause) {
       const durationMs = Math.max(0, now() - startedAtMs);

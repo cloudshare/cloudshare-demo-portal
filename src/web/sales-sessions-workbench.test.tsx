@@ -22,6 +22,76 @@ const row = {
 describe("Sales Sessions workbench", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+  it("automatically refreshes stale rendered rows, rereads fresh state, and retries a failed refresh", async () => {
+    const user = userEvent.setup(); let queueReads = 0; let refreshCalls = 0;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] });
+      if (path.includes("/refresh")) { refreshCalls += 1; if (refreshCalls === 1) return json({ error: "CloudShare unavailable", correlationId: "auto-1" }, 503); return json({ correlationId: "auto-2", progress: { message: "Sales Session status refreshed." } }); }
+      queueReads += 1; return json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, experience: queueReads > 1 ? { ...row.experience, source: "cloudshare_v4_sales_list", freshness: "fresh" } : row.experience }] });
+    });
+    const onNavigate = vi.fn(); render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={onNavigate} />);
+    await screen.findByRole("link", { name: "Acme evaluation" });
+    await screen.findByText("CloudShare unavailable", { exact: false });
+    expect(screen.getByRole("link", { name: "Acme evaluation" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Retry refresh" }));
+    await waitFor(() => expect(refreshCalls).toBe(2));
+    await waitFor(() => expect(queueReads).toBeGreaterThan(1));
+  });
+  it("announces pending manual refresh without moving focus and succeeds on Retry's second request", async () => {
+    const user = userEvent.setup(); let resolveRefresh!: (value: Response) => void; let calls = 0;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => { const path = String(input); if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] }); if (path.includes("/refresh")) { calls += 1; if (calls === 1) return new Promise<Response>((resolve) => { resolveRefresh = resolve; }); return json({ correlationId: "retry-ok", progress: { message: "Sales Session status refreshed." } }); } return json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, experience: { ...row.experience, freshness: "fresh" } }] }); });
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={vi.fn()} />); await screen.findByRole("link", { name: "Acme evaluation" });
+    const button = screen.getByRole("button", { name: "Refresh CloudShare status" }); await user.click(button); expect(screen.getAllByRole("status")[0].textContent).toContain("Refreshing"); expect(document.activeElement).toBe(button); resolveRefresh(json({ error: "temporary", correlationId: "retry-1" }, 503)); await screen.findByText("temporary", { exact: false }); expect(document.activeElement).toBe(button); await user.click(screen.getByRole("button", { name: "Retry refresh" })); await waitFor(() => expect(calls).toBe(2)); await screen.findByText("Sales Session status refreshed.", { exact: false });
+    expect(document.activeElement).toBe(button);
+  });
+
+  it("does not steal focus after the user moves away during a pending manual refresh", async () => {
+    const user = userEvent.setup(); let resolveRefresh!: (value: Response) => void;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] });
+      if (path.includes("/refresh")) return new Promise<Response>((resolve) => { resolveRefresh = resolve; });
+      return json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, experience: { ...row.experience, freshness: "fresh" } }] });
+    });
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={vi.fn()} />);
+    await screen.findByRole("link", { name: "Acme evaluation" });
+    const refresh = screen.getByRole("button", { name: "Refresh CloudShare status" });
+    const other = screen.getByRole("button", { name: "Provision a Session" });
+    await user.click(refresh); await user.click(other); expect(document.activeElement).toBe(other);
+    resolveRefresh(json({ error: "temporary", correlationId: "manual-1" }, 503));
+    await screen.findByText("temporary", { exact: false });
+    expect(document.activeElement).toBe(other);
+  });
+
+  it.each(["cloudshare_v4_sales_list", "cloudshare_v4_get_sales"] as const)("renders %s as observed rather than estimated", async (source) => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
+      ? json({ accounts: [], opportunities: [] })
+      : json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, experience: { value: "inProgress", source, freshness: "fresh", observedAt: "2026-07-23T09:01:00.000Z" } }] }));
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={vi.fn()} />);
+    await screen.findByRole("link", { name: "Acme evaluation" });
+    expect(screen.getByText("Observed from CloudShare · 2026-07-23T09:01:00.000Z")).toBeTruthy();
+    expect(screen.queryByText(/Estimated from the Session schedule/)).toBeNull();
+  });
+
+  it("reports manual refresh progress and preserves rows on a correlated failure", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !path.includes("/refresh")) return json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, experience: { ...row.experience, freshness: "fresh" } }] });
+      return json({ error: "CloudShare unavailable", correlationId: "refresh-1" }, 503);
+    });
+    const onNavigate = vi.fn();
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={onNavigate} />);
+    await screen.findByRole("link", { name: "Acme evaluation" });
+    await user.click(screen.getByRole("button", { name: "Refresh CloudShare status" }));
+    expect((await screen.findByText("CloudShare unavailable", { exact: false })).textContent).toContain("CloudShare unavailable");
+    expect(screen.getByRole("link", { name: "Acme evaluation" })).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Open Sales support" }));
+    expect(onNavigate).toHaveBeenCalledWith({ tab: "support", correlationId: "refresh-1" });
+  });
+
   it("operates every route-backed queue control without provider reads", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
@@ -152,7 +222,7 @@ describe("Sales Sessions workbench", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Queue temporarily unavailable");
     expect(screen.getByRole("link", { name: "Acme evaluation" })).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Open Sales support" }));
-    expect(onNavigate).toHaveBeenCalledWith({ tab: "support" });
+    expect(onNavigate).toHaveBeenCalledWith({ tab: "support", correlationId: null });
     await user.click(screen.getByRole("button", { name: "Retry queue" }));
     await waitFor(() => expect(queueReads).toBe(3));
   });

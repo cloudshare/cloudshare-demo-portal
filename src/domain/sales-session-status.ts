@@ -12,6 +12,7 @@ export type SalesSessionStatusInput = {
   readonly timeZone: string;
   readonly experienceStatus?: CloudShareSalesExperienceStatus | null;
   readonly experienceStatusObservedAt?: Date | null;
+  readonly experienceStatusSource?: string | null;
 };
 
 export function projectSalesSessionStatus(session: SalesSessionStatusInput, now: Date) {
@@ -20,7 +21,8 @@ export function projectSalesSessionStatus(session: SalesSessionStatusInput, now:
     : session.operationalStatus === "provisioning"
       ? { dimension: "certalis_operation" as const, value: "provisioning" as const, source: "certalis_persistence" as const, retry: "in_progress" as const }
       : { dimension: "certalis_operation" as const, value: "correlated" as const, source: "certalis_persistence" as const, retry: "not_applicable" as const };
-  if (session.experienceStatus && session.experienceStatusObservedAt && now.getTime() - session.experienceStatusObservedAt.getTime() <= SALES_EXPERIENCE_OBSERVATION_FRESHNESS_MS) return { operation, experience: { dimension: "cloudshare_sales_experience" as const, value: session.experienceStatus, source: "cloudshare_v4_get_sales" as const, freshness: "fresh" as const, observedAt: session.experienceStatusObservedAt.toISOString() } };
+  const observationSource: "cloudshare_v4_sales_list" | "cloudshare_v4_get_sales" | null = session.experienceStatusSource === "cloudshare_v4_sales_list" || session.experienceStatusSource === "cloudshare_v4_get_sales" ? session.experienceStatusSource : session.experienceStatus && session.experienceStatusObservedAt ? "cloudshare_v4_get_sales" : null;
+  if (session.experienceStatus && session.experienceStatusObservedAt && observationSource && now.getTime() - session.experienceStatusObservedAt.getTime() <= SALES_EXPERIENCE_OBSERVATION_FRESHNESS_MS) return { operation, experience: { dimension: "cloudshare_sales_experience" as const, value: session.experienceStatus, source: observationSource, freshness: "fresh" as const, observedAt: session.experienceStatusObservedAt.toISOString() } };
   const start = cloudShareWallClockToInstant(session.start, session.timeZone);
   const end = cloudShareWallClockToInstant(session.end, session.timeZone);
   const value: CloudShareSalesExperienceStatus = !start || !end || start > now ? "notStarted" : end <= now ? "ended" : "inProgress";
