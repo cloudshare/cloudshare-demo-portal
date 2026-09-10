@@ -37,7 +37,7 @@ describe("Sales Sessions workbench", () => {
     expect((await screen.findByText("CloudShare unavailable", { exact: false })).textContent).toContain("CloudShare unavailable");
     expect(screen.getByRole("link", { name: "Acme evaluation" })).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Open Sales support" }));
-    expect(onNavigate).toHaveBeenCalledWith({ tab: "support", supportCorrelationId: "refresh-1" });
+    expect(onNavigate).toHaveBeenCalledWith({ tab: "support", correlationId: "refresh-1" });
   });
 
   it("operates every route-backed queue control without provider reads", async () => {
@@ -170,7 +170,7 @@ describe("Sales Sessions workbench", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Queue temporarily unavailable");
     expect(screen.getByRole("link", { name: "Acme evaluation" })).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Open Sales support" }));
-    expect(onNavigate).toHaveBeenCalledWith({ tab: "support", supportCorrelationId: undefined });
+    expect(onNavigate).toHaveBeenCalledWith({ tab: "support", correlationId: null });
     await user.click(screen.getByRole("button", { name: "Retry queue" }));
     await waitFor(() => expect(queueReads).toBe(3));
   });

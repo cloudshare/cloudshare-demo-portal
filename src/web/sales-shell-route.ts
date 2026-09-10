@@ -49,7 +49,6 @@ export interface SalesNavigationIntent {
   readonly accountId?: string | null;
   readonly opportunityId?: string | null;
   readonly correlationId?: string | null;
-  readonly supportCorrelationId?: string | null;
   readonly source?: string | null;
   readonly subjectId?: string | null;
   readonly subjectType?: string | null;
@@ -98,7 +97,7 @@ export function buildSalesWorkspaceHref(route: SalesNavigationIntent): string {
       if (route.queueOffset && route.queueOffset > 0) params.set("offset", String(route.queueOffset));
     }
   }
-  if (route.tab === "support") { if (route.correlationId) params.set("correlationId", route.correlationId); else if (route.supportCorrelationId) params.set("correlationId", route.supportCorrelationId); if (route.source) params.set("source", route.source); if (route.subjectType) params.set("subjectType", route.subjectType); if (route.subjectId) params.set("subjectId", route.subjectId); }
+  if (route.tab === "support") { if (route.correlationId) params.set("correlationId", route.correlationId); if (route.source) params.set("source", route.source); if (route.subjectType) params.set("subjectType", route.subjectType); if (route.subjectId) params.set("subjectId", route.subjectId); }
   return `/sales?${params.toString()}`;
 }
 
