@@ -5,9 +5,9 @@ import { randomUUID } from "node:crypto";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
-export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick<SalesDemoSessionRepository, "list" | "listForRefresh" | "recordExperienceObservation">; readonly delivery: Pick<SalesDelivery, "listSessions">; readonly diagnostics?: DiagnosticRecorder }, input: { readonly customerId: string; readonly mode: "automatic" | "manual"; readonly offset: number; readonly limit: number; readonly targetIds?: readonly string[] }) {
+export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick<SalesDemoSessionRepository, "list" | "listForRefresh" | "recordExperienceObservations" | "recordExperienceObservation">; readonly delivery: Pick<SalesDelivery, "listSessions">; readonly diagnostics?: DiagnosticRecorder }, input: { readonly customerId: string; readonly mode: "automatic" | "manual"; readonly offset: number; readonly limit: number; readonly targetIds?: readonly string[] }) {
   if (!Number.isInteger(input.offset) || input.offset < 0 || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100 || (input.targetIds && (input.targetIds.length > 50 || input.targetIds.some((id) => typeof id !== "string" || id.length < 1 || id.length > 100)))) return { status: 400, body: { error: "Invalid bounded refresh pagination." } };
-  if (!deps.sessions.list || !deps.sessions.recordExperienceObservation) return { status: 503, body: { error: "Sales Session refresh is unavailable." } };
+  if (!deps.sessions.list || (!deps.sessions.recordExperienceObservations && !deps.sessions.recordExperienceObservation)) return { status: 503, body: { error: "Sales Session refresh is unavailable." } };
   const correlationId = randomUUID();
   const exchanges: Array<{ readonly request?: Record<string, unknown>; readonly response?: Record<string, unknown> }> = [];
   try {
@@ -40,7 +40,8 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     }).filter((row): row is { id: string; status: CloudShareSalesExperienceStatus } => row !== null);
     if (rows.length < stale.size) { await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "warn", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare did not return every targeted Sales Session.", correlationId, request: exchanges.at(-1)?.request, response: exchanges.at(-1)?.response, details: { integrationSurface: "cloudshare.v4.sales", failureMode: "incomplete_target_coverage", exchanges } }); return { status: 502, body: { error: "CloudShare did not return every targeted Sales Session. Retry or open Support Diagnostics.", durable: true, correlationId } }; }
     try {
-      await Promise.all(rows.map((row) => deps.sessions.recordExperienceObservation!(input.customerId, row.id, { experienceStatus: row.status, experienceStatusObservedAt: new Date() })));
+      if (deps.sessions.recordExperienceObservations) await deps.sessions.recordExperienceObservations(input.customerId, rows.map((row) => ({ id: row.id, experienceStatus: row.status, experienceStatusObservedAt: new Date() })));
+      else for (const row of rows) await deps.sessions.recordExperienceObservation!(input.customerId, row.id, { experienceStatus: row.status, experienceStatusObservedAt: new Date() });
     } catch (error) {
       await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "error", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare observations were read, but Certalis could not persist them.", correlationId, request: exchanges.at(-1)?.request, response: exchanges.at(-1)?.response, details: { integrationSurface: "certalis.persistence", failureMode: "local_observation_persistence", error: error instanceof Error ? error.message : String(error), exchanges } });
       return { status: 500, body: { error: "CloudShare was read, but Certalis could not persist the observations. Retry or open Support Diagnostics.", durable: true, correlationId } };

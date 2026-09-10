@@ -5,7 +5,6 @@ import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleRefreshSalesSessions } from "@/api/sales-session-refresh";
 import { createPrismaSalesDemoSessionRepository } from "@/persistence/prisma-sales-demo-session-repository";
-import { createPrismaSalesSessionQueueRepository } from "@/persistence/prisma-sales-session-queue-repository";
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 
 export async function POST(request: Request) {
@@ -21,9 +20,8 @@ export async function POST(request: Request) {
   const limit = rawLimit === null ? 25 : Number(rawLimit);
   const targetIds = query.getAll("targetId");
   const sessionRepository = createPrismaSalesDemoSessionRepository(services.prisma);
-  const queueRepository = createPrismaSalesSessionQueueRepository(services.prisma);
   const result = await handleRefreshSalesSessions({
-    sessions: { list: sessionRepository.list!, listForRefresh: async (customerId, input) => (await queueRepository.read({ customerId, view: "history", sort: "start_desc", offset: input.offset, limit: input.limit, now: new Date() })).rows.filter((row) => input.targetIds.includes(row.id)), recordExperienceObservation: sessionRepository.recordExperienceObservation! },
+    sessions: { list: sessionRepository.list!, listForRefresh: sessionRepository.listForRefresh!, recordExperienceObservations: sessionRepository.recordExperienceObservations! },
     delivery: createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })),
     diagnostics: services.diagnosticRecorder,
   }, { customerId: session.customerId, mode: query.get("mode") === "automatic" ? "automatic" : "manual", offset, limit, ...(targetIds.length ? { targetIds } : {}) });
