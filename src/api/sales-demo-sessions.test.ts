@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { handleCreateSalesDemoSession as createSalesDemoSession, type SalesDemoSessionDeps, type SalesDemoSessionRequest } from "./sales-demo-sessions";
 import { SalesDemoSessionRevisionConflictError, type SalesDemoSession } from "@/domain/sales-demo-session";
 import { createInMemorySalesRecordRepository } from "@/domain/sales-records";
-import { CloudShareAuthError, CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare/errors";
+import { CloudShareAuthError, CloudShareRateLimitError, CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare/errors";
 import { SalesItemProvisioningReadError } from "@/integrations/cloudshare/sales-item-provisioning";
 import { createCloudShareClient } from "@/integrations/cloudshare/client";
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
@@ -70,6 +70,30 @@ describe("Sales Enablement Session API handler", () => {
     }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-capability", itemId: "item-capability", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
     expect(result).toMatchObject({ status: 503, body: { needsAttention: true, creationOutcome: { source: "reservation_cleanup_unconfirmed", retry: "unsafe_requires_support" } } });
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "reservation_cleanup_unconfirmed", retry: "unsafe_requires_support" }) }));
+  });
+  it("retains a definite provider rejection when post-dispatch reservation cleanup cannot be confirmed", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-cleanup-evidence", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-cleanup-evidence", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const providerError = new CloudShareRequestError("CloudShare rejected the Sales payload", 422, { method: "POST", path: "/sales", requestBody: { externalId: "server-only" }, responseStatus: 422, responseBody: { error: "invalid Sales payload" } });
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions: { save: vi.fn().mockResolvedValue(undefined), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(providerError) }) }, projectMembers, diagnostics, audit: { write: vi.fn() }, newId: () => "cleanup-evidence-session" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-cleanup-evidence", itemId: "item-cleanup-evidence", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+
+    expect(result).toMatchObject({ status: 503, body: { needsAttention: true, creationOutcome: { source: "reservation_cleanup_unconfirmed", retry: "unsafe_requires_support" } } });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ method: "POST", path: "/sales" }), response: expect.objectContaining({ status: 422, body: { error: "invalid Sales payload" } }), details: expect.objectContaining({ failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: true }) }));
+    expect(JSON.stringify(result.body)).not.toContain("server-only");
+  });
+  it("returns 429 with safe retry metadata when OAuth acquisition is throttled before POST sales", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-oauth-rate-limit", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-oauth-rate-limit", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const stored: SalesDemoSession[] = [];
+    const sessions = { save: vi.fn(async (value: SalesDemoSession) => { stored.push(value); }), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]), findById: vi.fn(async () => stored[0] ?? null), discardReservation: vi.fn(async () => { stored.length = 0; return true; }) };
+    const rateLimit = new CloudShareRateLimitError("OAuth token endpoint was throttled", 429, "rate_limit", { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token", retryAfterSeconds: 30, acquisition: { status: 429, durationMs: 25, failureMode: "http_failure" } });
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(rateLimit) }) }, projectMembers, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, newId: () => "oauth-rate-limit-session" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-oauth-rate-limit", itemId: "item-oauth-rate-limit", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+
+    expect(result).toMatchObject({ status: 429, body: { needsAttention: false, creationOutcome: { source: "certalis_pre_dispatch", retry: "safe" } } });
+    expect(sessions.discardReservation).toHaveBeenCalledOnce();
   });
   it("fails closed when the Customer has no verified CloudShare timezone catalogue", async () => {
     const delivery = { createSession: vi.fn() };

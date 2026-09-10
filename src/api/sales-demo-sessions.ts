@@ -13,7 +13,7 @@ import { DEFAULT_SALES_SESSION_NAME_TEMPLATE, renderSalesSessionName } from "@/d
 import type { SalesSessionConfigurationRepository } from "@/domain/sales-session-configuration";
 import type { SalesTimezoneCacheRepository } from "@/domain/sales-timezones";
 import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
-import { CloudShareAuthError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError, isCloudShareErrorAcrossBoundaries } from "@/integrations/cloudshare/errors";
+import { CloudShareAuthError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError, isCloudShareErrorAcrossBoundaries, isCloudShareRateLimitError } from "@/integrations/cloudshare/errors";
 import { SalesItemProvisioningReadError, SalesItemProvisioningValidationError, type SalesItemProvisioningValidator } from "@/integrations/cloudshare/sales-item-provisioning";
 import { createCloudShareProjectMemberSource, type CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
@@ -204,10 +204,13 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       // unknown cleanup state, not proof that no reservation remains.
       const reservationCleared = !reservationClaimed || (Boolean(deps.sessions.discardReservation && deps.sessions.findById) && await clearReservedBeforeDispatch(deps.sessions, reservation));
       if (!reservationCleared) {
-        const reason = "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
-        const details = { integrationSurface: "portal.sales_demo_sessions", failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: false, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
+        const cleanupAfterProviderAttempt = definiteCreateFailure;
+        const reason = cleanupAfterProviderAttempt
+          ? "Certalis could not confirm the Sales Enablement reservation was discarded after CloudShare rejected the create request. Do not retry creation; review support diagnostics."
+          : "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
+        const details = { integrationSurface: cleanupAfterProviderAttempt ? "cloudshare.v4.sales" : "portal.sales_demo_sessions", failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: cleanupAfterProviderAttempt, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
         await Promise.allSettled([
-          evidence(deps, request, correlationId, reservation, "failure", reason, undefined, details),
+          evidence(deps, request, correlationId, reservation, "failure", reason, cleanupAfterProviderAttempt ? cloudShareEvidence(error) : undefined, details),
           deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: reservation.id, outcome: "failure", correlationId, details, error: reason }),
         ]);
         return response(503, { error: reason, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("reservation_cleanup_unconfirmed", reason, reservation.id) });
@@ -226,7 +229,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       deps.audit?.write({ id: randomUUID(), occurredAt: (deps.now ?? (() => new Date()))(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "failure", correlationId, details: { externalId, opportunityId: opportunity.id, itemId: item.id, failureMode, integrationSurface }, error: error instanceof Error ? error.message : "Unknown CloudShare failure" }),
     ]);
     const errorMessage = memberReadFailure ? "CloudShare could not retrieve active Project members. Review support diagnostics before retrying." : memberSelectionFailure ? "The selected Sales Pro is no longer an active Project member. Select a current Sales Pro and try again." : validationFailure ? "CloudShare rejected the selected Sales Pro. Review support diagnostics." : itemValidationFailure ? "This Item no longer matches its CloudShare resources. Refresh the Item before provisioning." : itemReadFailure ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying." : preWriteAuthFailure ? "CloudShare authentication failed before creation. Retry the Sales Enablement Session." : "CloudShare could not create the Sales Experience. Review support diagnostics.";
-    return response(memberSelectionFailure || validationFailure || itemValidationFailure || isDefiniteCreateFailure(error) ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, ...(preWriteAuthFailure ? { creationOutcome: safeCreationOutcome(errorMessage) } : {}) });
+    return response(preWriteAuthFailure && isCloudShareRateLimitError(error) ? 429 : memberSelectionFailure || validationFailure || itemValidationFailure || isDefiniteCreateFailure(error) ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, ...(preWriteAuthFailure ? { creationOutcome: safeCreationOutcome(errorMessage) } : {}) });
   }
 }
 
