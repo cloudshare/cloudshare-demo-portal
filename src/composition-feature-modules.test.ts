@@ -86,10 +86,9 @@ describe("composition feature modules", () => {
     await integrations[0].observer.onRequest(REQUEST_EVENT);
 
     expect(customRequest).toHaveBeenCalledOnce();
-    expect(record.mock.calls.map(([entry]) => entry)).toEqual(expect.arrayContaining([
+    expect(record.mock.calls.map(([entry]) => entry)).toEqual([
       expect.objectContaining({ customerId: "customer-a", subject: { type: "exam_attempt", id: "attempt-1" }, correlationId: "workflow-correlation" }),
-      expect.objectContaining({ customerId: "customer-a", subject: { type: "customer", id: "customer-a" }, correlationId: "mandatory-customer-correlation-1" }),
-    ]));
+    ]);
   });
 
   it("requires one explicit scope and composes Customer-only and custom-observer scopes fail-open", async () => {

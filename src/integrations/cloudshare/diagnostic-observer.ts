@@ -25,6 +25,7 @@ export function createCloudShareDiagnosticObserver(input: {
       request: event.result?.request as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.request : projectFailureRequest(event.error?.context)) ?? null,
       response: event.result?.response as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.response : projectFailureResponse(event.error?.context)) ?? null,
       details: {
+        exchangeId: event.exchangeId,
         ...(input.correlationId ? { sequence: ++sequence } : {}),
         durationMs: event.durationMs,
         integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,
@@ -42,6 +43,7 @@ export function createCloudShareDiagnosticObserver(input: {
     request: null,
     response: null,
     details: {
+      exchangeId: event.exchangeCorrelationId,
       ...(input.correlationId ? { sequence: ++sequence } : {}),
       ...(event.exchangeCorrelationId ? { exchangeCorrelationId: event.exchangeCorrelationId } : {}),
       durationMs: event.durationMs,
@@ -89,6 +91,7 @@ export function createCloudShareWorkflowObserver(input: {
         request: event.result?.request as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.request : projectFailureRequest(event.error?.context)) ?? null,
         response: event.result?.response as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.response : projectFailureResponse(event.error?.context)) ?? null,
         details: {
+          exchangeId: event.exchangeId,
           sequence, durationMs: event.durationMs,
           integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,
           ...(event.result ? { host: event.result.host } : {}),
@@ -108,6 +111,7 @@ export function createCloudShareWorkflowObserver(input: {
         message: event.outcome === "failure" ? "CloudShare OAuth exchange failed." : "CloudShare OAuth exchange completed.",
         request: null, response: null,
         details: {
+          exchangeId: exchangeCorrelationId,
           sequence, durationMs: event.durationMs, integrationSurface: event.integrationSurface,
           parentCorrelationId: input.correlationId, exchangeCorrelationId,
           ...(event.status !== undefined ? { status: event.status } : {}),

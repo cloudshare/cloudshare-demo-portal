@@ -34,6 +34,20 @@ describe("createCloudShareDiagnosticObserver", () => {
     ]);
   });
 
+  it("retains the transport attempt identity on every captured row", async () => {
+    const record = vi.fn();
+    const observer = createCloudShareWorkflowObserver({
+      diagnostics: { record } as never, customerId: "customer-1",
+      actor: { type: "system", id: "cloudshare" }, subject: { type: "customer", id: "customer-1" },
+      correlationId: "workflow-1", source: "sales-records",
+    });
+    await observer.onRequest({
+      exchangeId: "exchange-1", occurredAt: "2026-09-03T12:00:00.000Z", outcome: "success", durationMs: 2,
+      result: { request: { method: "GET" }, response: { status: 200, body: { sentinel: "body" } }, integrationSurface: "cloudshare.v4.projects", host: "example.test" },
+    });
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ exchangeId: "exchange-1" }) }));
+  });
+
   it("records OAuth failure metadata without credentials or raw causes", () => {
     const { record, observer } = makeObserver();
     observer.onAcquisition({

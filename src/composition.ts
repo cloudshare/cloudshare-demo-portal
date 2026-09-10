@@ -155,8 +155,12 @@ export function createCloudShareClientFactory(input: {
         mode: input.mode,
         trace: input.trace,
         observer: {
-          onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest, defaultObserver.onRequest),
-          onAcquisition: composeCloudShareObservers(options.onAcquisition, workflowObserver?.onAcquisition, defaultObserver.onAcquisition),
+          // A workflow observer is the canonical transport capture when an
+          // authoritative workflow exists. Keep the mandatory Customer
+          // fallback for unscoped calls, but never persist the same exchange
+          // once as a workflow row and again as an unrelated default row.
+          onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest ?? defaultObserver.onRequest),
+          onAcquisition: composeCloudShareObservers(options.onAcquisition, workflowObserver?.onAcquisition ?? defaultObserver.onAcquisition),
         },
         connection: {
           customerId: connection.customerId,

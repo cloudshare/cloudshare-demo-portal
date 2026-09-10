@@ -10,6 +10,7 @@ import {
 import { HttpTransportError, type HttpClient, type HttpRequest } from "./http";
 import { buildV3AuthorizationHeader, signV3Request } from "./signing";
 import type { V4TokenProvider } from "./v4-auth";
+import { randomUUID } from "node:crypto";
 
 /**
  * The CloudShare adapter seam. Every other layer talks to CloudShare only
@@ -89,6 +90,8 @@ export interface CloudShareDetailedResult<T> {
 }
 
 export interface CloudShareRequestObservation {
+  /** Stable identity for this one attempted HTTP exchange; retries mint a new value. */
+  readonly exchangeId: string;
   readonly occurredAt: string;
   readonly outcome: "success" | "failure";
   readonly durationMs: number;
@@ -554,8 +557,10 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     for (let attempt = 0; ; attempt += 1) {
       const attemptStartedAtMs = getNowMs();
       const attemptOccurredAt = new Date(attemptStartedAtMs).toISOString();
+      const exchangeId = randomUUID();
       const observeAttemptFailure = async (error: unknown): Promise<void> => {
         await notifyRequest({
+          exchangeId,
           occurredAt: attemptOccurredAt,
           outcome: "failure",
           durationMs: Math.max(0, getNowMs() - attemptStartedAtMs),
@@ -729,7 +734,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           ...(response.tls ? { tls: response.tls } : {}),
         },
       };
-      await notifyRequest({ occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
+      await notifyRequest({ exchangeId, occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
       return result;
     }
   }
@@ -823,8 +828,9 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     for (let attempt = 0; ; attempt += 1) {
       const attemptStartedAtMs = getNowMs();
       const attemptOccurredAt = new Date(attemptStartedAtMs).toISOString();
+      const exchangeId = randomUUID();
       const observeTextFailure = async (error: unknown): Promise<void> => {
-        await notifyRequest({ occurredAt: attemptOccurredAt, outcome: "failure", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), error: { name: error instanceof Error ? error.name : "Error", message: error instanceof Error ? error.message : String(error), context: error instanceof CloudShareRequestError || error instanceof CloudShareResponseError || error instanceof CloudShareTransportError || error instanceof CloudShareRateLimitError ? error.context : undefined } });
+        await notifyRequest({ exchangeId, occurredAt: attemptOccurredAt, outcome: "failure", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), error: { name: error instanceof Error ? error.name : "Error", message: error instanceof Error ? error.message : String(error), context: error instanceof CloudShareRequestError || error instanceof CloudShareResponseError || error instanceof CloudShareTransportError || error instanceof CloudShareRateLimitError ? error.context : undefined } });
       };
       if (attempt === 0) {
         throwIfCooldownActive(request, requestInfo);
@@ -938,7 +944,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           ...(response.tls ? { tls: response.tls } : {}),
         },
       };
-      await notifyRequest({ occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
+      await notifyRequest({ exchangeId, occurredAt: attemptOccurredAt, outcome: "success", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), result });
       return result;
     }
   }
