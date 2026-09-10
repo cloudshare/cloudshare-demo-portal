@@ -46,6 +46,24 @@ describe("Sales Sessions workbench", () => {
     expect(document.activeElement).toBe(button);
   });
 
+  it("does not steal focus after the user moves away during a pending manual refresh", async () => {
+    const user = userEvent.setup(); let resolveRefresh!: (value: Response) => void;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] });
+      if (path.includes("/refresh")) return new Promise<Response>((resolve) => { resolveRefresh = resolve; });
+      return json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, experience: { ...row.experience, freshness: "fresh" } }] });
+    });
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={vi.fn()} />);
+    await screen.findByRole("link", { name: "Acme evaluation" });
+    const refresh = screen.getByRole("button", { name: "Refresh CloudShare status" });
+    const other = screen.getByRole("button", { name: "Provision a Session" });
+    await user.click(refresh); await user.click(other); expect(document.activeElement).toBe(other);
+    resolveRefresh(json({ error: "temporary", correlationId: "manual-1" }, 503));
+    await screen.findByText("temporary", { exact: false });
+    expect(document.activeElement).toBe(other);
+  });
+
   it.each(["cloudshare_v4_sales_list", "cloudshare_v4_get_sales"] as const)("renders %s as observed rather than estimated", async (source) => {
     vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
       ? json({ accounts: [], opportunities: [] })
