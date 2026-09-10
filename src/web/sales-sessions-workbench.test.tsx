@@ -22,6 +22,24 @@ const row = {
 describe("Sales Sessions workbench", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+  it("reports manual refresh progress and preserves rows on a correlated failure", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !path.includes("/refresh")) return json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, experience: { ...row.experience, freshness: "fresh" } }] });
+      return json({ error: "CloudShare unavailable", correlationId: "refresh-1" }, 503);
+    });
+    const onNavigate = vi.fn();
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={onNavigate} />);
+    await screen.findByRole("link", { name: "Acme evaluation" });
+    await user.click(screen.getByRole("button", { name: "Refresh CloudShare status" }));
+    expect((await screen.findByText("CloudShare unavailable", { exact: false })).textContent).toContain("CloudShare unavailable");
+    expect(screen.getByRole("link", { name: "Acme evaluation" })).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Open Sales support" }));
+    expect(onNavigate).toHaveBeenCalledWith({ tab: "support", supportCorrelationId: "refresh-1" });
+  });
+
   it("operates every route-backed queue control without provider reads", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => {

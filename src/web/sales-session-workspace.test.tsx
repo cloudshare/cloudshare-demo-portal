@@ -1,16 +1,52 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionWorkspace } from "./sales-session-workspace";
 
-const router = vi.hoisted(() => ({ replace: vi.fn() }));
+const router = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 const data = { summary: { id: "session-1", sessionName: "Acme enablement", revision: 3, start: "2026-07-24T09:00:00.000Z", end: "2026-07-24T10:00:00.000Z", timeZone: "Europe/London", operation: { value: "correlated", source: "certalis_persistence" }, experience: { value: "notStarted", source: "schedule_prediction", freshness: "estimated" } }, participants: [{ id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", environment: { value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" } }], activity: [{ occurredAt: "2026-07-23T09:00:00.000Z", kind: "session_provision", summary: "Sales Session provision completed.", outcome: "success", actor: { type: "admin" }, subject: { type: "sales_demo_session", id: "session-1" }, correlationId: "corr-1" }], details: { accountName: "Acme", opportunityName: "Evaluation", itemName: "Enablement item", invitationMode: "Sales Pros and participants" } };
 
 describe("Sales Session workspace", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it("verifies one Experience, shows durable progress, and preserves the operation dimension", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).includes("/workspace")) return new Response(JSON.stringify(data), { status: 200 });
+      expect(init?.method).toBe("POST");
+      return new Response(JSON.stringify({ correlationId: "verify-1", experienceStatus: "inProgress", observedAt: "2026-07-24T09:01:00.000Z", freshness: "fresh", source: "cloudshare_v4_get_sales" }), { status: 200 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await user.click(screen.getByRole("button", { name: "Verify now" }));
+    expect((await screen.findByRole("status")).textContent).toContain("Verified from CloudShare: inProgress");
+    expect(screen.getAllByText("Correlated").length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/verify"), expect.objectContaining({ method: "POST" }));
+  });
+
+  it("keeps the summary safe after invalid or failed verification", async () => {
+    const user = userEvent.setup();
+    let verifyCalls = 0;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/workspace")) return new Response(JSON.stringify(data), { status: 200 });
+      verifyCalls += 1;
+      return verifyCalls === 1
+        ? new Response(JSON.stringify({ correlationId: "verify-bad", experienceStatus: "unknown", freshness: "fresh", source: "wrong" }), { status: 200 })
+        : new Response(JSON.stringify({ error: "CloudShare unavailable", correlationId: "verify-fail" }), { status: 503 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await user.click(screen.getByRole("button", { name: "Verify now" }));
+    expect((await screen.findByRole("status")).textContent).toContain("incomplete verification observation");
+    expect(screen.getAllByText("Correlated").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "Verify now" }));
+    expect((await screen.findByRole("status")).textContent).toContain("CloudShare unavailable");
+    expect(screen.getAllByText("Correlated").length).toBeGreaterThan(0);
+  });
 
   it("opens Participants by default, routes local areas, and links correlation to authorized Support", async () => {
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
