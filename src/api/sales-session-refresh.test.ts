@@ -19,13 +19,20 @@ describe("Sales Session refresh handler", () => {
     expect(result.status).toBe(200);
     expect(record).toHaveBeenCalledWith("customer-1", [expect.objectContaining({ id: "local-1", experienceStatus: "inProgress" })]);
     expect(record).not.toHaveBeenCalledWith("customer-1", "local-other", expect.anything());
-    expect(listForRefresh).toHaveBeenCalledWith("customer-1", { targetIds: ["local-1"], offset: 0, limit: 25 });
+    expect(listForRefresh).toHaveBeenCalledWith("customer-1", { targetIds: ["local-1"], limit: 25 });
     expect(listSessions).toHaveBeenCalledWith(expect.objectContaining({ field: 'id=in("sales-1")' }));
   });
 
   it("fails closed on duplicate provider rows without persisting either row", async () => {
     const persist = vi.fn();
     const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1")]), recordExperienceObservations: persist }, delivery: { listSessions: vi.fn().mockResolvedValue({ sessions: [{ id: "sales-1", status: "inProgress" }, { id: "sales-1", status: "ended" }], total: 2 }) } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
+    expect(result.status).toBe(502);
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when two local rows claim the same provider Experience", async () => {
+    const persist = vi.fn();
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1"), session("local-2", "sales-1")]), recordExperienceObservations: persist }, delivery: { listSessions: vi.fn() } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1", "local-2"] });
     expect(result.status).toBe(502);
     expect(persist).not.toHaveBeenCalled();
   });

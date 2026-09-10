@@ -12,7 +12,7 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
   const exchanges: Array<{ readonly request?: Record<string, unknown>; readonly response?: Record<string, unknown> }> = [];
   try {
     let local;
-    try { local = deps.sessions.listForRefresh ? await deps.sessions.listForRefresh(input.customerId, { targetIds: input.targetIds ?? [], offset: input.offset, limit: input.limit }) : await deps.sessions.list!(input.customerId); }
+    try { local = deps.sessions.listForRefresh ? await deps.sessions.listForRefresh(input.customerId, { targetIds: input.targetIds ?? [], limit: input.limit }) : await deps.sessions.list!(input.customerId); }
     catch (error) {
       await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "error", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "Certalis could not read the targeted Sales Sessions.", correlationId, details: { integrationSurface: "certalis.persistence", failureMode: "local_observation_read", error: error instanceof Error ? error.message : String(error) } });
       return { status: 500, body: { error: "Certalis could not read the targeted Sales Sessions. Retry or open Support Diagnostics.", durable: true, correlationId } };
@@ -21,7 +21,9 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     // bounded provider page, then target only the locally rendered Customer rows.
     const requestedIds = new Set(input.targetIds ?? []);
     const renderedLocal = local.filter((session) => requestedIds.has(session.id));
-    const rendered = new Set(renderedLocal.map((session) => session.cloudShareSalesExperienceId));
+    const providerOwners = new Map<string, typeof renderedLocal[number]>();
+    for (const session of renderedLocal) { if (providerOwners.has(session.cloudShareSalesExperienceId)) throw new Error("Duplicate local Sales Session provider ID."); providerOwners.set(session.cloudShareSalesExperienceId, session); }
+    const rendered = new Set(providerOwners.keys());
     const stale = input.mode === "automatic" ? new Set(renderedLocal.filter((session) => !session.experienceStatusObservedAt || Date.now() - session.experienceStatusObservedAt.getTime() > 300000).map((session) => session.cloudShareSalesExperienceId)) : rendered;
     if (stale.size === 0) return { status: 200, body: { rows: [], total: 0, progress: { state: "complete", message: "No rendered Sales Sessions need a CloudShare refresh." } } };
     const providerRows: { id: string; status: "notStarted" | "inProgress" | "ended" }[] = [];
@@ -40,7 +42,7 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
       if (result.sessions.length < 100) break;
     }
     const rows = providerRows.filter((row) => stale.has(row.id)).map((row) => {
-      const match = rendered.has(row.id) ? local.find((session) => session.cloudShareSalesExperienceId === row.id) : undefined;
+      const match = rendered.has(row.id) ? providerOwners.get(row.id) : undefined;
       return match ? { id: match.id, status: row.status } : null;
     }).filter((row): row is { id: string; status: CloudShareSalesExperienceStatus } => row !== null);
     if (rows.length < stale.size) { await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "warn", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare did not return every targeted Sales Session.", correlationId, request: exchanges.at(-1)?.request, response: exchanges.at(-1)?.response, details: { integrationSurface: "cloudshare.v4.sales", failureMode: "incomplete_target_coverage", exchanges } }); return { status: 502, body: { error: "CloudShare did not return every targeted Sales Session. Retry or open Support Diagnostics.", durable: true, correlationId } }; }
@@ -51,7 +53,7 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
       return { status: 500, body: { error: "CloudShare was read, but Certalis could not persist the observations. Retry or open Support Diagnostics.", durable: true, correlationId } };
     }
     await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "success", level: "info", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare Sales Session status refreshed.", correlationId, request: exchanges.at(-1)?.request, response: exchanges.at(-1)?.response, details: { mode: input.mode, targetCount: stale.size, observedCount: rows.length, integrationSurface: "cloudshare.v4.sales", exchanges } });
-    return { status: 200, body: { rows: rows.map(({ id, status }) => ({ id, status })), total: rows.length, progress: { state: "complete", message: "Sales Session status refreshed." }, observation: { source: "cloudshare_v4_sales_list", freshness: "fresh", correlation: correlationId } } };
+    return { status: 200, body: { rows: rows.map(({ id, status }) => ({ id, status })), total: rows.length, progress: { state: "complete", message: "Sales Session status refreshed." }, observation: { source: "cloudshare_v4_sales_list", freshness: "fresh" }, correlationId } };
   } catch (error) {
     const structured = error instanceof Error && "context" in error ? (error as Error & { context?: Record<string, unknown> }).context : undefined;
     const failureEvidence = projectCloudShareFailureEvidence(error);

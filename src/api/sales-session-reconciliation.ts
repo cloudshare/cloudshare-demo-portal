@@ -10,8 +10,8 @@ import { projectCloudShareFailureContext, projectCloudShareFailureEvidence } fro
 
 export interface SalesSessionVerifyResponse { readonly correlationId: string; readonly experienceStatus: "notStarted" | "inProgress" | "ended"; readonly observedAt: string; readonly freshness: "fresh"; readonly source: "cloudshare_v4_get_sales"; }
 
-export async function handleReconcileSalesSession(deps: { sessions: Pick<SalesDemoSessionRepository, "findById" | "recordExperienceObservation">; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): Pick<SalesDelivery, "readSession"> }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write"> }, request: { customerId: string; sessionId: string; actor: DiagnosticActor }) {
-  if (!deps.sessions.findById || !deps.sessions.recordExperienceObservation) return { status: 503, body: { error: "Sales reconciliation is unavailable." } };
+export async function handleReconcileSalesSession(deps: { sessions: Pick<SalesDemoSessionRepository, "findById" | "recordExperienceObservations">; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): Pick<SalesDelivery, "readSession"> }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write"> }, request: { customerId: string; sessionId: string; actor: DiagnosticActor }) {
+  if (!deps.sessions.findById || !deps.sessions.recordExperienceObservations) return { status: 503, body: { error: "Sales reconciliation is unavailable." } };
   const [session, connection] = await Promise.all([deps.sessions.findById(request.customerId, request.sessionId), deps.connections.findByCustomerId(request.customerId)]);
   if (!session || !connection) return { status: 404, body: { error: "Sales Session or CloudShare Connection was not found." } };
   if (!isSalesSessionVerificationEligible(session)) return { status: 409, body: { error: "Only active Sales Sessions with a provisioned CloudShare Experience can be reconciled." } };
@@ -20,10 +20,11 @@ export async function handleReconcileSalesSession(deps: { sessions: Pick<SalesDe
   try {
     const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare as NonNullable<typeof deps.cloudshare>).forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" }));
     const read = await delivery.readSession(session.cloudShareSalesExperienceId);
+    if (read.id !== session.cloudShareSalesExperienceId) throw new Error("CloudShare returned a different Sales Experience ID.");
     if (read.status !== "notStarted" && read.status !== "inProgress" && read.status !== "ended") throw salesStatusContractError(read);
     remote = read;
     const observedAt = new Date();
-    await deps.sessions.recordExperienceObservation(request.customerId, session.id, { experienceStatus: read.status, experienceStatusObservedAt: observedAt });
+    await deps.sessions.recordExperienceObservations(request.customerId, [{ id: session.id, experienceStatus: read.status, experienceStatusObservedAt: observedAt }]);
     await Promise.allSettled([
       deps.diagnostics?.record({ source: "sales-session-reconciliation", operation: "sales.demo_session.reconciled", outcome: "success", level: "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId }, message: "Sales Session reconciled with CloudShare", correlationId, request: remote.request as unknown as Record<string, unknown>, response: remote.response as unknown as Record<string, unknown>, details: { integrationSurface: "cloudshare.v4.sales", remoteStatus: remote.status } }),
       deps.audit?.write({ id: randomUUID(), occurredAt: new Date(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.reconciled", subjectType: "sales_demo_session", subjectId: session.id, outcome: "success", correlationId, details: { integrationSurface: "cloudshare.v4.sales", remoteStatus: remote.status, cloudShareSalesExperienceId: session.cloudShareSalesExperienceId } }),

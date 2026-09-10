@@ -37,7 +37,7 @@ export interface SalesDemoSessionRepository {
   /** Optional during the #347 create-only compatibility period. #356's
    * operational read module requires this capability explicitly. */
   list?(customerId: string): Promise<readonly SalesDemoSession[]>;
-  listForRefresh?(customerId: string, input: { readonly targetIds: readonly string[]; readonly offset: number; readonly limit: number }): Promise<readonly SalesDemoSession[]>;
+  listForRefresh?(customerId: string, input: { readonly targetIds: readonly string[]; readonly limit: number }): Promise<readonly SalesDemoSession[]>;
   /** Uses the persisted Opportunity relation so Account-filtered history does
    * not expand into a Customer-wide Session scan plus per-row lookups. */
   listByAccount?(customerId: string, accountId: string): Promise<readonly SalesDemoSession[]>;
