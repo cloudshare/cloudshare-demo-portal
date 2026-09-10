@@ -22,11 +22,12 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     // bounded provider page, then target only the locally rendered Customer rows.
     const requestedIds = new Set(input.targetIds ?? []);
     const renderedLocal = local.filter((session) => requestedIds.has(session.id));
+    const validLocal = renderedLocal.filter((session) => /^(?!pending:|unprovisioned$)[A-Za-z0-9][A-Za-z0-9_-]{2,}$/.test(session.cloudShareSalesExperienceId));
     const providerOwners = new Map<string, typeof renderedLocal[number]>();
-    for (const session of renderedLocal) { if (providerOwners.has(session.cloudShareSalesExperienceId)) throw Object.assign(new Error("Duplicate local Sales Session provider ID."), { context: { failureMode: "duplicate_local_provider_id" } }); providerOwners.set(session.cloudShareSalesExperienceId, session); }
+    for (const session of validLocal) { if (providerOwners.has(session.cloudShareSalesExperienceId)) throw Object.assign(new Error("Duplicate local Sales Session provider ID."), { context: { failureMode: "duplicate_local_provider_id" } }); providerOwners.set(session.cloudShareSalesExperienceId, session); }
     const rendered = new Set(providerOwners.keys());
     const now = (deps.now ?? (() => new Date()))();
-    const stale = input.mode === "automatic" ? new Set(renderedLocal.filter((session) => !session.experienceStatusObservedAt || now.getTime() - session.experienceStatusObservedAt.getTime() > 300000).map((session) => session.cloudShareSalesExperienceId)) : rendered;
+    const stale = input.mode === "automatic" ? new Set(validLocal.filter((session) => !session.experienceStatusObservedAt || now.getTime() - session.experienceStatusObservedAt.getTime() > 300000).map((session) => session.cloudShareSalesExperienceId)) : rendered;
     if (stale.size === 0) return { status: 200, body: { rows: [], total: 0, progress: { state: "complete", message: "No rendered Sales Sessions need a CloudShare refresh." } } };
     const providerRows: { id: string; status: "notStarted" | "inProgress" | "ended" }[] = [];
     const seenProviderIds = new Set<string>();
@@ -62,6 +63,7 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
     const request = failureEvidence ? failureEvidence.request : exchanges.at(-1)?.request ?? undefined;
     const response = failureEvidence ? failureEvidence.response : exchanges.at(-1)?.response ?? undefined;
     await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "warn", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "CloudShare Sales Session refresh failed.", correlationId, request, response, details: { integrationSurface: "cloudshare.v4.sales", exchanges, failureMode: typeof structured?.failureMode === "string" ? structured.failureMode : error instanceof Error ? error.name : "provider_failure" } });
-    return { status: 502, body: { error: "CloudShare Sales Session refresh failed. Retry or open Support Diagnostics.", durable: true, correlationId } };
+    const localCorrelationFailure = failureMode(error) === "duplicate_local_provider_id";
+    return { status: localCorrelationFailure ? 500 : 502, body: { error: localCorrelationFailure ? "Certalis could not correlate the rendered Sales Sessions. Review Support Diagnostics." : "CloudShare Sales Session refresh failed. Retry or open Support Diagnostics.", durable: true, correlationId } };
   }
 }

@@ -33,8 +33,14 @@ describe("Sales Session refresh handler", () => {
   it("fails closed when two local rows claim the same provider Experience", async () => {
     const persist = vi.fn();
     const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("local-1", "sales-1"), session("local-2", "sales-1")]), recordExperienceObservations: persist }, delivery: { listSessions: vi.fn() } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1", "local-2"] });
-    expect(result.status).toBe(502);
+    expect(result.status).toBe(500);
     expect(persist).not.toHaveBeenCalled();
+  });
+  it("skips pending and unprovisioned rows while refreshing valid targets", async () => {
+    const provider = vi.fn().mockResolvedValue({ sessions: [{ id: "sales-1", status: "inProgress" }], total: 1 });
+    const persist = vi.fn();
+    const result = await handleRefreshSalesSessions({ sessions: { list: vi.fn().mockResolvedValue([session("valid", "sales-1"), session("pending", "pending:abc"), session("empty", "")]), recordExperienceObservations: persist }, delivery: { listSessions: provider } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["valid", "pending", "empty"] });
+    expect(result.status).toBe(200); expect(provider).toHaveBeenCalledTimes(1); expect(provider.mock.calls[0][0].field).toContain("sales-1"); expect(JSON.stringify(provider.mock.calls[0][0])).not.toContain("pending");
   });
 
   it("rejects unbounded pagination before contacting CloudShare", async () => {
