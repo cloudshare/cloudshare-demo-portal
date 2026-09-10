@@ -1,6 +1,7 @@
 import type { ZodType } from "zod";
 import { projectProtectedRequestHeaders as sanitizeHeaders } from "@/observability/protected-request-headers";
 import {
+  CloudShareError,
   CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
@@ -568,6 +569,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       const exchangeId = randomUUID();
       const startSequence = opts.attemptStartAllocator?.next() ?? ++attemptStartSequence;
       const observeAttemptFailure = async (error: unknown): Promise<void> => {
+        attachExchangeId(error, exchangeId);
         await notifyRequest({
           exchangeId,
           attemptStartSequence: startSequence,
@@ -843,6 +845,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       const exchangeId = randomUUID();
       const startSequence = opts.attemptStartAllocator?.next() ?? ++attemptStartSequence;
       const observeTextFailure = async (error: unknown): Promise<void> => {
+        attachExchangeId(error, exchangeId);
         await notifyRequest({ exchangeId, attemptStartSequence: startSequence, completedAt: new Date(getNowMs()).toISOString(), occurredAt: attemptOccurredAt, outcome: "failure", durationMs: Math.max(0, getNowMs() - attemptStartedAtMs), error: { name: error instanceof Error ? error.name : "Error", message: error instanceof Error ? error.message : String(error), context: error instanceof CloudShareRequestError || error instanceof CloudShareResponseError || error instanceof CloudShareTransportError || error instanceof CloudShareRateLimitError ? error.context : undefined } });
       };
       if (attempt === 0) {
@@ -1001,6 +1004,12 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       return performV3TextDetailed(spec);
     },
   };
+}
+
+function attachExchangeId(error: unknown, exchangeId: string): void {
+  if (error instanceof CloudShareError && error.context) {
+    (error.context as Record<string, unknown>).exchangeId = exchangeId;
+  }
 }
 
 function extractQuery(urlText: string): Record<string, string> | undefined {
