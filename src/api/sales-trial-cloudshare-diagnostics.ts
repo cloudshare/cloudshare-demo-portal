@@ -8,7 +8,7 @@ import type {
   CloudShareRequestObservation,
   V4TokenAcquisitionEvent,
 } from "@/integrations/cloudshare";
-import type { CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
+import { createCloudShareWorkflowSequenceAllocator, type CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 type RequestFailure = NonNullable<CloudShareRequestObservation["error"]>;
@@ -121,10 +121,12 @@ export function createSalesTrialCloudShareObserver(input: {
 }): {
   readonly scope: "custom_observer";
   readonly correlationId: string;
+  readonly sequenceAllocator: CloudShareWorkflowSequenceAllocator;
   readonly onRequest: (event: CloudShareRequestObservation) => Promise<void>;
   readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void>;
 } {
   let sequence = 0;
+  const sequenceAllocator = input.sequenceAllocator ?? createCloudShareWorkflowSequenceAllocator();
 
   function resolveSubject(): DiagnosticSubject {
     return typeof input.subject === "function" ? input.subject() : input.subject;
@@ -139,7 +141,7 @@ export function createSalesTrialCloudShareObserver(input: {
       }
       const result = event.result;
       const failure = event.error;
-      sequence = input.sequenceAllocator ? input.sequenceAllocator.next() : sequence + 1;
+      sequence = sequenceAllocator.next();
       await input.diagnostics.record({
         occurredAt: new Date(event.occurredAt),
         source: input.source,
@@ -183,7 +185,7 @@ export function createSalesTrialCloudShareObserver(input: {
       if (!input.diagnostics) {
         return;
       }
-      sequence = input.sequenceAllocator ? input.sequenceAllocator.next() : sequence + 1;
+      sequence = sequenceAllocator.next();
       await input.diagnostics.record({
         occurredAt: new Date(event.occurredAt),
         source: input.source,
@@ -192,7 +194,8 @@ export function createSalesTrialCloudShareObserver(input: {
         customerId: input.customerId,
         actor: input.actor,
         subject: resolveSubject(),
-        correlationId: input.correlationId,
+    correlationId: input.correlationId,
+    sequenceAllocator,
         candidateEmail: input.candidateEmail ?? null,
         externalIds: input.externalIds,
         message:

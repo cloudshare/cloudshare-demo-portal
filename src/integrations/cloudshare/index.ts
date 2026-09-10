@@ -8,6 +8,7 @@ import { createFetchHttpClient } from "./http";
 import { createFixtureHttpClient } from "./fixtures";
 import { bundledFixtures } from "./fixtures/index";
 import { createV4TokenProvider, type V4TokenAcquisitionEvent } from "./v4-auth";
+import { createCloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 
 export type { CloudShareRequestObservation, CloudShareRequestObserver } from "./client";
 export type { V4TokenAcquisitionEvent } from "./v4-auth";
@@ -100,6 +101,7 @@ export function createCloudShareIntegration(
   opts: CloudShareIntegrationOptions,
 ): CloudShareClient {
   const endpoints = opts.endpoints ?? CLOUDSHARE_DEFAULT_ENDPOINTS;
+  const attemptStartAllocator = opts.attemptStartAllocator ?? createCloudShareWorkflowSequenceAllocator();
   const http =
     opts.mode === "fixture"
       ? createFixtureHttpClient(bundledFixtures)
@@ -111,7 +113,7 @@ export function createCloudShareIntegration(
     clientId: opts.v4.clientId,
     clientSecret: opts.v4.clientSecret,
     onAcquisition: opts.observer.onAcquisition,
-    attemptStartAllocator: opts.attemptStartAllocator,
+    attemptStartAllocator,
   });
 
   return createCloudShareClient({
@@ -123,6 +125,7 @@ export function createCloudShareIntegration(
     trace: opts.trace,
     observer: opts.observer,
     attemptStartAllocator: opts.attemptStartAllocator,
+    attemptStartAllocator,
   });
 }
 
