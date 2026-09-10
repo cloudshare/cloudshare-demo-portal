@@ -53,4 +53,26 @@ describe("Prisma Sales Enablement Session repository discardReservation", () => 
     await expect(repository.discardReservation!(reservation)).resolves.toBe(true);
     await expect(prisma.salesDemoSession.findUnique({ where: { id: sessionId } })).resolves.toBeNull();
   });
+
+  it("atomically rolls back a failed batch and preserves only strictly newer observations", async () => {
+    const suffix = randomUUID();
+    const customerId = `sales-observation-customer-${suffix}`;
+    const accountId = `sales-observation-account-${suffix}`;
+    const opportunityId = `sales-observation-opportunity-${suffix}`;
+    const itemId = `sales-observation-item-${suffix}`;
+    const sessionId = `sales-observation-session-${suffix}`;
+    createdCustomerIds.add(customerId);
+    const now = new Date("2026-09-10T12:00:00.000Z");
+    await prisma.customer.create({ data: { id: customerId, slug: customerId, name: "Observation Customer" } });
+    await prisma.salesAccount.create({ data: { id: accountId, customerId, name: "Account", kind: "prospect", createdAt: now, updatedAt: now } });
+    await prisma.salesOpportunity.create({ data: { id: opportunityId, customerId, accountId, name: "Opportunity", status: "open", createdAt: now, updatedAt: now } });
+    await prisma.item.create({ data: { id: itemId, customerId, name: "Item", description: "", projectId: "project", projectName: "Project", blueprintsJson: "[]", policyId: "policy", policyName: "Policy", regionsJson: "[]", defaultDurationMinutes: 60, status: "active", createdAt: now, updatedAt: now } });
+    await prisma.salesDemoSession.create({ data: { id: sessionId, customerId, opportunityId, itemId, cloudShareSalesExperienceId: `sales-${suffix}`, externalId: `external-${suffix}`, type: "demo", start: "2026-09-10T09:00", end: "2026-09-10T10:00", timeZone: "UTC", salesProEmail: "admin@test", salesProDisplayName: "Admin", registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", createdAt: now, experienceStatus: "notStarted", experienceStatusObservedAt: now, experienceStatusSource: "seed" } });
+    const repository = createPrismaSalesDemoSessionRepository(prisma);
+    await expect(repository.recordExperienceObservations!(customerId, [{ id: sessionId, experienceStatus: "inProgress", experienceStatusObservedAt: new Date(now.getTime() + 1000), experienceStatusSource: "cloudshare_v4_sales_list" }, { id: "missing-session", experienceStatus: "ended", experienceStatusObservedAt: new Date(now.getTime() + 2000), experienceStatusSource: "cloudshare_v4_get_sales" }])).rejects.toThrow("Sales Enablement Session was not found");
+    await expect(prisma.salesDemoSession.findUnique({ where: { id: sessionId } })).resolves.toMatchObject({ experienceStatus: "notStarted", experienceStatusSource: "seed" });
+    await repository.recordExperienceObservations!(customerId, [{ id: sessionId, experienceStatus: "inProgress", experienceStatusObservedAt: new Date(now.getTime() + 1000), experienceStatusSource: "cloudshare_v4_sales_list" }]);
+    await repository.recordExperienceObservations!(customerId, [{ id: sessionId, experienceStatus: "ended", experienceStatusObservedAt: new Date(now.getTime() - 1000), experienceStatusSource: "cloudshare_v4_get_sales" }, { id: sessionId, experienceStatus: "ended", experienceStatusObservedAt: new Date(now.getTime() + 1000), experienceStatusSource: "cloudshare_v4_get_sales" }]);
+    await expect(prisma.salesDemoSession.findUnique({ where: { id: sessionId } })).resolves.toMatchObject({ experienceStatus: "inProgress", experienceStatusSource: "cloudshare_v4_sales_list" });
+  });
 });
