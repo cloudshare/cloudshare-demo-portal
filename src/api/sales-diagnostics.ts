@@ -40,17 +40,6 @@ export async function handleGetSalesDiagnosticLog(
   }
 
   const causalTrialQuery = Boolean(request.query.subjectId && (request.query.subjectType === "sales_trial_enrollment" || request.query.subjectType === "sales_trial_offering"));
-  if (requestedSource && !causalTrialQuery) {
-    const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
-    const projected = projectDiagnosticPage(response.body);
-    if (requestedOffset + requestedLimit > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) {
-      const body = projected as Record<string, unknown>;
-      const page = body.page as Record<string, unknown>;
-      return { status: response.status, body: { ...body, page: { ...page, hasMore: false, nextOffset: null, complete: false, incompleteReason: "sales_diagnostic_offset_cap", continuation: null } } };
-    }
-    return { status: response.status, body: projected };
-  }
-
   if (causalTrialQuery) {
     const subjectEntries = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId!.trim(), requestedOffset, requestedLimit);
     const pageEntries = subjectEntries.slice(requestedOffset, requestedOffset + requestedLimit);
@@ -60,17 +49,30 @@ export async function handleGetSalesDiagnosticLog(
     return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore: hasMore && !bounded, nextOffset: hasMore && !bounded ? candidateNextOffset : null, complete: !bounded && !hasMore, incompleteReason: bounded ? "sales_diagnostic_offset_cap" : undefined, continuation: hasMore ? `offset=${candidateNextOffset}` : null } } };
   }
 
-  const requiredEntriesPerSource = requestedOffset + requestedLimit + 1;
-  const sourceEntries = await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({
+  if (requestedSource && !request.query.correlationId) {
+    const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
+    const projected = projectDiagnosticPage(response.body);
+    if (requestedOffset + requestedLimit > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) {
+      const body = projected as Record<string, unknown>; const page = body.page as Record<string, unknown>;
+      return { status: response.status, body: { ...body, page: { ...page, hasMore: false, nextOffset: null, complete: false, incompleteReason: "sales_diagnostic_offset_cap", continuation: null } } };
+    }
+    return { status: response.status, body: projected };
+  }
+
+  const requiredEntriesPerSource = request.query.correlationId
+    ? SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1
+    : requestedOffset + requestedLimit + 1;
+  const sources = requestedSource ? [requestedSource as SalesDiagnosticSource] : SALES_DIAGNOSTIC_SOURCES;
+  const sourceEntries = await Promise.all(sources.map((source) => readSourceEntries({
     deps,
     customerId: request.customerId,
     query: request.query,
     source,
     requiredEntries: requiredEntriesPerSource,
   })));
-  const entries = sourceEntries.flat()
-    .slice()
-    .sort(compareWorkflowDiagnostics);
+  const entries = request.query.correlationId
+    ? orderWorkflowDiagnostics(sourceEntries.flat())
+    : sourceEntries.flat().slice().sort(compareWorkflowDiagnostics);
   const pageEntries = entries.slice(requestedOffset, requestedOffset + requestedLimit);
   const candidateNextOffset = requestedOffset + pageEntries.length;
   const undisclosed = entries.length > candidateNextOffset;
@@ -155,6 +157,36 @@ function projectDiagnosticPage(value: Record<string, unknown>): Record<string, u
   return { ...value, entries, page: { ...page, hasMore: capped ? false : hasMore, nextOffset: capped ? null : (typeof page.nextOffset === "number" ? page.nextOffset : null), complete: capped ? false : page.complete !== false, ...(capped ? { incompleteReason: "sales_diagnostic_offset_cap", continuation: null } : {}) } };
 }
 
+function orderWorkflowDiagnostics(entries: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const entry of entries) {
+    const key = typeof entry.correlationId === "string" && entry.correlationId ? `workflow:${entry.correlationId}` : `legacy:${entry.id}`;
+    const group = groups.get(key) ?? []; group.push(entry); groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => compareGroupAnchor(a, b)).flatMap((group) => group.sort(compareWithinWorkflow));
+}
+function compareGroupAnchor(left: readonly Record<string, unknown>[], right: readonly Record<string, unknown>[]): number {
+  const l = left.reduce((best, e) => Math.min(best, Date.parse(String(e.occurredAt))), Number.POSITIVE_INFINITY);
+  const r = right.reduce((best, e) => Math.min(best, Date.parse(String(e.occurredAt))), Number.POSITIVE_INFINITY);
+  return l - r || String(left[0]?.correlationId ?? left[0]?.id).localeCompare(String(right[0]?.correlationId ?? right[0]?.id));
+}
+function compareWithinWorkflow(left: Record<string, unknown>, right: Record<string, unknown>): number {
+  const ld = left.details as Record<string, unknown> | null | undefined;
+  const rd = right.details as Record<string, unknown> | null | undefined;
+  const ls = workflowSequence(left); const rs = workflowSequence(right);
+  const le = exchangeId(left); const re = exchangeId(right);
+  const lSemantic = Array.isArray(ld?.contributingExchangeIds);
+  const rSemantic = Array.isArray(rd?.contributingExchangeIds);
+  if (lSemantic !== rSemantic) {
+    const ids = (lSemantic ? ld?.contributingExchangeIds : rd?.contributingExchangeIds) as unknown[];
+    const exchange = lSemantic ? re : le;
+    if (typeof exchange === "string" && ids.includes(exchange)) return lSemantic ? 1 : -1;
+  }
+  if (ls !== undefined && rs !== undefined && ls !== rs) return ls - rs;
+  if (ls !== undefined && rs === undefined) return -1;
+  if (ls === undefined && rs !== undefined) return 1;
+  return (le ?? "").localeCompare(re ?? "") || String(left.occurredAt).localeCompare(String(right.occurredAt)) || String(left.id).localeCompare(String(right.id));
+}
 function compareWorkflowDiagnostics(left: Record<string, unknown>, right: Record<string, unknown>): number {
   const leftSequence = workflowSequence(left);
   const rightSequence = workflowSequence(right);
