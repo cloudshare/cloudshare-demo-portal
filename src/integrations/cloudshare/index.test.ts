@@ -12,7 +12,7 @@ describe("composeCloudShareObservers", () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to the default recorder only when the canonical workflow recorder rejects", async () => {
+  it("D: Trial request and OAuth canonical rows preserve identity/timing/evidenceKind and rejection falls back exactly once", async () => {
     const canonical = vi.fn().mockRejectedValue(new Error("unavailable"));
     const fallback = vi.fn();
     await composeCanonicalObserver(canonical, fallback)({ operation: "request" });

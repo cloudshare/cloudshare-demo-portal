@@ -97,7 +97,7 @@ describe("Sales Enablement Session API handler", () => {
     expect(sessions.discardReservation).toHaveBeenCalledOnce();
     expect(stored).toEqual([]);
   });
-  it("retains a definite provider rejection when post-dispatch reservation cleanup cannot be confirmed", async () => {
+  it("E: post-dispatch Sales semantic failures link contributing exchange IDs while DefiniteNoCall has none and never replays", async () => {
     const records = createInMemorySalesRecordRepository();
     await records.saveOpportunity({ id: "opp-cleanup-evidence", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
     const item = { id: "item-cleanup-evidence", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };

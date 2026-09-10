@@ -39,7 +39,7 @@ describe("AdminSupportFeature", () => {
     );
   });
 
-  it("resets Diagnostics pagination to page zero when applying filters", async () => {
+  it("G: Support preserves filter reset pagination navigation while warning on bounded incomplete results", async () => {
     const user = userEvent.setup();
     const fetchAdmin = vi.fn<AdminAuthenticatedRequest>()
       .mockResolvedValueOnce(json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: true, nextOffset: 50 } }))

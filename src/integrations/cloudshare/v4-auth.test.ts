@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createV4TokenAcquisitionNoopObserver, createV4TokenProvider } from "./v4-auth";
+import { createV4TokenAcquisitionNoopObserver, createV4TokenProvider, type V4TokenAcquisitionEvent } from "./v4-auth";
 import { createCloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 import { CloudShareAuthError, CloudShareRateLimitError } from "./errors";
 import type { HttpClient, HttpResponse } from "./http";
@@ -64,7 +64,7 @@ describe("createV4TokenProvider", () => {
     expect(JSON.stringify(onAcquisition.mock.calls)).not.toContain("jwt-abc");
   });
 
-  it("caches the token and does not re-request before the expiry margin", async () => {
+  it("C: token cache hit emits no acquisition and does not re-request before the expiry margin", async () => {
     const { http, calls } = stubHttp([tokenResponse("jwt-1"), tokenResponse("jwt-2")]);
     let nowMs = 1_000_000;
     const provider = createV4TokenProvider({ ...baseOpts, http, now: () => nowMs, onAcquisition: createV4TokenAcquisitionNoopObserver() });
@@ -73,6 +73,18 @@ describe("createV4TokenProvider", () => {
     nowMs += 100_000; // 100s later, well within 300s validity
     expect(await provider.getToken()).toBe("jwt-1");
     expect(calls()).toBe(1);
+  });
+
+  it("B: retry acquisitions receive distinct exchange IDs and monotonic workflow-start sequences", async () => {
+    const { http } = stubHttp([{ status: 503, body: "busy" }, tokenResponse("jwt-retry")]);
+    const events: V4TokenAcquisitionEvent[] = [];
+    const provider = createV4TokenProvider({ ...baseOpts, http, attemptStartAllocator: createCloudShareWorkflowSequenceAllocator(), onAcquisition: (event) => events.push(event) });
+    await expect(provider.getToken()).rejects.toBeInstanceOf(CloudShareAuthError);
+    await expect(provider.getToken()).resolves.toBe("jwt-retry");
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.exchangeCorrelationId)).toEqual([expect.any(String), expect.any(String)]);
+    expect(events[0].exchangeCorrelationId).not.toBe(events[1].exchangeCorrelationId);
+    expect(events.map((event) => event.attemptStartSequence)).toEqual([1, 2]);
   });
 
   it("keeps concurrent out-of-order acquisitions attributed to their own start sequence and timing", async () => {
