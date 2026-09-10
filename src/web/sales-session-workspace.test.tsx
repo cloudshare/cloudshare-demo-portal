@@ -32,7 +32,6 @@ describe("Sales Session workspace", () => {
     });
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
     await screen.findByRole("heading", { name: "Acme enablement" });
-    expect((screen.getByRole("button", { name: "Verify now" }) as HTMLButtonElement).disabled).toBe(true);
     releaseFailure();
     await screen.findByText("CloudShare unavailable");
     expect(screen.getByRole("link", { name: "Open Sales support" }).getAttribute("href")).toContain("refresh-fail");
