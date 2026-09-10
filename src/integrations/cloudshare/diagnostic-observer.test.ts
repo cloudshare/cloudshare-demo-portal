@@ -29,7 +29,7 @@ describe("createCloudShareDiagnosticObserver", () => {
     observer.onAcquisition({ occurredAt: "2026-09-03T12:00:00.000Z", outcome: "success", durationMs: 1, integrationSurface: "cloudshare.v4.oauth.token" });
     observer.onRequest({ occurredAt: "2026-09-03T12:00:01.000Z", outcome: "success", durationMs: 1, result: { request: {}, response: {}, integrationSurface: "cloudshare.v4.projects", host: "example.test" } } as never);
     expect(record.mock.calls.map(([entry]) => entry)).toEqual([
-      expect.objectContaining({ subject: { type: "customer", id: "customer-1" }, correlationId: "customer-thread", details: expect.objectContaining({ sequence: 1 }) }),
+      expect.objectContaining({ subject: { type: "customer", id: "customer-1" }, correlationId: "customer-thread", details: expect.objectContaining({ sequence: 1, evidenceKind: "transport" }) }),
       expect.objectContaining({ subject: { type: "customer", id: "customer-1" }, correlationId: "customer-thread", details: expect.objectContaining({ sequence: 2 }) }),
     ]);
   });

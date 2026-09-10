@@ -134,8 +134,8 @@ describe("Sales diagnostics handler", () => {
       await diagnostics.append({ source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", correlationId: "corr-cap", message: String(index), occurredAt: new Date(2026, 8, 4, 0, 0, index % 60) });
     }
     const deps = { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } };
-    const source = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { source: "sales-records", offset: "5000", limit: "1" } });
-    const aggregate = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { correlationId: "corr-cap", offset: "5000", limit: "1" } });
+    const source = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { source: "sales-records", offset: "4999", limit: "2" } });
+    const aggregate = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { correlationId: "corr-cap", offset: "4999", limit: "2" } });
     for (const response of [source, aggregate]) expect(response).toMatchObject({ status: 200, body: { page: { complete: false, incompleteReason: "sales_diagnostic_offset_cap", hasMore: false, nextOffset: null } } });
     const ordinary = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { source: "sales-records", offset: "0", limit: "1" } });
     expect(ordinary).toMatchObject({ status: 200, body: { page: { complete: true, hasMore: true, nextOffset: 1 } } });

@@ -25,6 +25,7 @@ export function createCloudShareDiagnosticObserver(input: {
       request: event.result?.request as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.request : projectFailureRequest(event.error?.context)) ?? null,
       response: event.result?.response as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.response : projectFailureResponse(event.error?.context)) ?? null,
       details: {
+        evidenceKind: "transport",
         exchangeId: event.exchangeId,
         attemptStartSequence: event.attemptStartSequence,
         completedAt: event.completedAt,
