@@ -38,6 +38,14 @@ describe("createV4TokenProvider", () => {
     expect(req.url).toBe("https://use.cloudshare.com/api/v4/oauth/token");
     expect(req.body).toContain("grant_type=client_credentials");
     expect(req.body).toContain("client_id=client-1");
+    expect(req.timeoutMs).toBe(10_000);
+  });
+
+  it("allows the authenticated token exchange timeout to be configured", async () => {
+    const { http } = stubHttp([tokenResponse("jwt-abc")]);
+    const send = vi.spyOn(http, "send");
+    await createV4TokenProvider({ ...baseOpts, http, timeoutMs: 125, onAcquisition: createV4TokenAcquisitionNoopObserver() }).getToken();
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ method: "POST", timeoutMs: 125 }));
   });
 
   it("emits metadata-only acquisition evidence", async () => {
