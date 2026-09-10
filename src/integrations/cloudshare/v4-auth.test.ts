@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createV4TokenAcquisitionNoopObserver, createV4TokenProvider } from "./v4-auth";
+import { createCloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 import { CloudShareAuthError, CloudShareRateLimitError } from "./errors";
 import type { HttpClient, HttpResponse } from "./http";
 
@@ -72,6 +73,29 @@ describe("createV4TokenProvider", () => {
     nowMs += 100_000; // 100s later, well within 300s validity
     expect(await provider.getToken()).toBe("jwt-1");
     expect(calls()).toBe(1);
+  });
+
+  it("keeps concurrent out-of-order acquisitions attributed to their own start sequence and timing", async () => {
+    const deferred: Array<(response: HttpResponse) => void> = [];
+    const http: HttpClient = { send: vi.fn(() => new Promise<HttpResponse>((resolve) => deferred.push(resolve))) };
+    let nowMs = 1_000_000;
+    const events: Array<Record<string, unknown>> = [];
+    const provider = createV4TokenProvider({ ...baseOpts, http, now: () => nowMs, attemptStartAllocator: createCloudShareWorkflowSequenceAllocator(), onAcquisition: (event) => events.push(event as unknown as Record<string, unknown>) });
+    const first = provider.getToken();
+    nowMs += 25;
+    const second = provider.getToken();
+    expect(deferred).toHaveLength(2);
+    nowMs += 75;
+    deferred[1](tokenResponse("jwt-2"));
+    await second;
+    nowMs += 50;
+    deferred[0](tokenResponse("jwt-1"));
+    await first;
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.attemptStartSequence).sort()).toEqual([1, 2]);
+    expect(events.find((event) => event.attemptStartSequence === 1)).toMatchObject({ occurredAt: "1970-01-01T00:16:40.000Z", completedAt: "1970-01-01T00:16:40.150Z", durationMs: 150 });
+    expect(events.find((event) => event.attemptStartSequence === 2)).toMatchObject({ occurredAt: "1970-01-01T00:16:40.025Z", completedAt: "1970-01-01T00:16:40.100Z", durationMs: 75 });
+    expect(new Set(events.map((event) => event.exchangeCorrelationId)).size).toBe(2);
   });
 
   it("refreshes aggressively once inside the safety margin before 300s expiry", async () => {
