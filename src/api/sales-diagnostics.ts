@@ -49,8 +49,9 @@ export async function handleGetSalesDiagnosticLog(
     const subjectEntries = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId!.trim(), requestedOffset, requestedLimit);
     const pageEntries = subjectEntries.slice(requestedOffset, requestedOffset + requestedLimit);
     const candidateNextOffset = requestedOffset + pageEntries.length;
-    const hasMore = subjectEntries.length > candidateNextOffset && candidateNextOffset <= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
-    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore, nextOffset: hasMore ? candidateNextOffset : null, complete: !hasMore, continuation: hasMore ? `offset=${candidateNextOffset}` : null } } };
+    const hasMore = subjectEntries.length > candidateNextOffset;
+    const bounded = hasMore && candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
+    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore: hasMore && !bounded, nextOffset: hasMore && !bounded ? candidateNextOffset : null, complete: !bounded && !hasMore, incompleteReason: bounded ? "sales_diagnostic_offset_cap" : undefined, continuation: hasMore ? `offset=${candidateNextOffset}` : null } } };
   }
 
   const requiredEntriesPerSource = requestedOffset + requestedLimit + 1;
@@ -66,7 +67,8 @@ export async function handleGetSalesDiagnosticLog(
     .sort((left: Record<string, unknown>, right: Record<string, unknown>) => String(right.occurredAt).localeCompare(String(left.occurredAt)) || String(right.id).localeCompare(String(left.id)));
   const pageEntries = entries.slice(requestedOffset, requestedOffset + requestedLimit);
   const candidateNextOffset = requestedOffset + pageEntries.length;
-  const hasMore = entries.length > candidateNextOffset && candidateNextOffset <= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
+  const undisclosed = entries.length > candidateNextOffset;
+  const bounded = undisclosed && candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
 
   return {
     status: 200,
@@ -76,10 +78,11 @@ export async function handleGetSalesDiagnosticLog(
         limit: requestedLimit,
         offset: requestedOffset,
         returned: pageEntries.length,
-        hasMore,
-        nextOffset: hasMore ? candidateNextOffset : null,
-        complete: !hasMore || candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET,
-        continuation: hasMore ? `offset=${candidateNextOffset}` : null,
+        hasMore: undisclosed && !bounded,
+        nextOffset: undisclosed && !bounded ? candidateNextOffset : null,
+        complete: !bounded && !undisclosed,
+        incompleteReason: bounded ? "sales_diagnostic_offset_cap" : undefined,
+        continuation: undisclosed ? `offset=${candidateNextOffset}` : null,
       },
     },
   };
