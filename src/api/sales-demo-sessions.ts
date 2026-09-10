@@ -230,7 +230,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       deps.audit?.write({ id: randomUUID(), occurredAt: (deps.now ?? (() => new Date()))(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "failure", correlationId, details: { externalId, opportunityId: opportunity.id, itemId: item.id, failureMode, integrationSurface }, error: error instanceof Error ? error.message : "Unknown CloudShare failure" }),
     ]);
     const errorMessage = memberReadFailure ? "CloudShare could not retrieve active Project members. Review support diagnostics before retrying." : memberSelectionFailure ? "The selected Sales Pro is no longer an active Project member. Select a current Sales Pro and try again." : validationFailure ? "CloudShare rejected the selected Sales Pro. Review support diagnostics." : itemValidationFailure ? "This Item no longer matches its CloudShare resources. Refresh the Item before provisioning." : itemReadFailure ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying." : rateLimitFailure ? "CloudShare throttled the Sales Enablement Session request. Retry after the provider cooldown." : preWriteAuthFailure ? "CloudShare authentication failed before creation. Retry the Sales Enablement Session." : "CloudShare could not create the Sales Experience. Review support diagnostics.";
-    return response(rateLimitFailure ? 429 : memberSelectionFailure || validationFailure || itemValidationFailure || isDefiniteCreateFailure(error) ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, ...(preWriteAuthFailure || rateLimitFailure ? { creationOutcome: safeCreationOutcome(errorMessage, preWriteAuthFailure ? "certalis_pre_dispatch" : "cloudshare_v4_definite_rejection") } : {}) });
+    return response(rateLimitFailure ? 429 : memberSelectionFailure || validationFailure || itemValidationFailure || isDefiniteCreateFailure(error) ? 422 : preWriteAuthFailure ? 503 : 502, { error: errorMessage, correlationId, needsAttention: false, ...(rateLimitFailure && typeof error.retryAfterSeconds === "number" && Number.isFinite(error.retryAfterSeconds) ? { retryAfterSeconds: error.retryAfterSeconds } : {}), ...(preWriteAuthFailure || rateLimitFailure ? { creationOutcome: safeCreationOutcome(errorMessage, preWriteAuthFailure ? "certalis_pre_dispatch" : "cloudshare_v4_definite_rejection") } : {}) });
   }
 }
 
@@ -345,6 +345,7 @@ async function clearReservedBeforeDispatch(sessions: SalesDemoSessionRepository,
   }
 }
 function isDefiniteCreateFailure(error: unknown): boolean {
+  if (isCloudShareRateLimitError(error)) return error.status >= 400 && error.status < 500;
   if (error instanceof CloudShareRequestError) return error.status >= 400 && error.status < 500;
   if (!isCloudShareErrorAcrossBoundaries(error) || error.name !== "CloudShareRequestError") return false;
   const status = (error as { status?: unknown }).status;
