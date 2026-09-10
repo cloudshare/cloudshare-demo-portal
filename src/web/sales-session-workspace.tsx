@@ -23,7 +23,8 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   const [verification, setVerification] = useState<string | null>(null);
   const [verificationCorrelationId, setVerificationCorrelationId] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [automaticRefresh, setAutomaticRefresh] = useState<string | null>(null);\n  const [refreshBusy, setRefreshBusy] = useState(false);
+  const [automaticRefresh, setAutomaticRefresh] = useState<string | null>(null);
+  const [refreshBusy, setRefreshBusy] = useState(false);
   const requestInFlight = useRef(false);
   const shellExpiry = useContext(SalesWorkspaceExpiryContext);
   const areaHeading = useRef<HTMLHeadingElement>(null);
