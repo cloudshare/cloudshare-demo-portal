@@ -73,7 +73,8 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate, onSe
   useEffect(() => {
     const rows = result?.response.rows;
     if (!result || loading || !Array.isArray(rows) || !rows.some((row) => row.experience.freshness !== "fresh")) return;
-    const key = `${view}:${offset}:${rows.map((row) => row.id).join(",")}`;
+    const requestIdentity = result.request;
+    const key = JSON.stringify({ ...requestIdentity, ids: rows.map((row) => row.id) });
     if (automaticRefreshKey.current === key) return;
     automaticRefreshKey.current = key;
     setRefreshFeedback("Refreshing visible Sales Session status from CloudShare…");

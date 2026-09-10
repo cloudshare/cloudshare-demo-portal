@@ -24,6 +24,6 @@ export async function POST(request: Request) {
     sessions: { list: sessionRepository.list!, listForRefresh: sessionRepository.listForRefresh!, recordExperienceObservations: sessionRepository.recordExperienceObservations! },
     delivery: createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })),
     diagnostics: services.diagnosticRecorder,
-  }, { customerId: session.customerId, mode: query.get("mode") === "automatic" ? "automatic" : "manual", offset, limit, ...(targetIds.length ? { targetIds } : {}) });
+  }, { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, mode: query.get("mode") === "automatic" ? "automatic" : "manual", offset, limit, ...(targetIds.length ? { targetIds } : {}) });
   return NextResponse.json(result.body, { status: result.status });
 }
