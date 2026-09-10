@@ -11,6 +11,11 @@ export async function POST(request: Request) {
   const services = getServices();
   const session = await getPortalAdminSession(services, (await cookies()).get(PORTAL_SESSION_COOKIE)?.value);
   if (!session || session.workspace !== "sales") return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  return runSalesSessionRefreshRoute(request, services, session);
+}
+
+async function runSalesSessionRefreshRoute(request: Request, services: ReturnType<typeof getServices>, session: { readonly customerId: string; readonly workspace?: string; readonly userId?: string; readonly email?: string }) {
+  if (session.workspace !== "sales") return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const connection = await services.cloudshareConnections.findByCustomerId(session.customerId);
   if (!connection) return NextResponse.json({ error: "CloudShare Connection is not configured." }, { status: 404 });
   const query = new URL(request.url).searchParams;
