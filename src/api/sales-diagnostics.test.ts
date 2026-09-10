@@ -10,7 +10,7 @@ describe("Sales diagnostics handler", () => {
     for (const [id, sequence, exchangeId] of [["row-z", 2, "exchange-b"], ["row-a", 1, "exchange-z"]] as const) await diagnostics.append({ id, source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", occurredAt: at, details: { attemptStartSequence: sequence, exchangeId }, message: id });
     await diagnostics.append({ id: "legacy", source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", occurredAt: at, message: "legacy" });
     const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-records", limit: "3" } });
-    expect((response.body as { entries: Array<{ id: string }> }).entries.map((entry) => entry.id)).toEqual(["row-a", "row-z", "legacy"]);
+    expect((response.body as { entries: Array<{ id: string }> }).entries.map((entry) => entry.id)).toEqual(["diag-2", "diag-1", "diag-3"]);
   });
   it("keeps the authenticated Customer scope while allowing an owned Item source", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
