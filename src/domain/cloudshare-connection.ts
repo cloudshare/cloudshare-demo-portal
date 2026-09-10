@@ -3,7 +3,7 @@ import type {
   CloudShareRequestObservation,
   V4TokenAcquisitionEvent,
 } from "@/integrations/cloudshare";
-import type { CloudShareWorkflowObservationContext } from "@/ports/cloudshare-observation";
+import type { CloudShareWorkflowObservationContext, CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 import { CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE } from "./cloudshare-rate-limit-message";
 import {
   CloudShareError,
@@ -53,7 +53,7 @@ type CloudShareClientObservationCallbacks = {
 export type CloudShareClientObservationOptions = CloudShareClientObservationCallbacks & (
   | { readonly scope: "workflow"; readonly workflow: CloudShareWorkflowObservationContext }
   | { readonly scope: "customer_default"; readonly reason: "catalogue_resource_read" | "connection_check" | "unanchored_support_read" }
-  | { readonly scope: "custom_observer"; readonly correlationId: string }
+  | { readonly scope: "custom_observer"; readonly correlationId: string; readonly sequenceAllocator?: CloudShareWorkflowSequenceAllocator }
 );
 
 export interface CloudShareClientFactory {

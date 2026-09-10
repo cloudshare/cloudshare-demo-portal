@@ -8,6 +8,7 @@ import type {
   CloudShareRequestObservation,
   V4TokenAcquisitionEvent,
 } from "@/integrations/cloudshare";
+import type { CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 type RequestFailure = NonNullable<CloudShareRequestObservation["error"]>;
@@ -116,6 +117,7 @@ export function createSalesTrialCloudShareObserver(input: {
   readonly source: "sales-trial-enrollment" | "sales-trial-offerings";
   readonly externalIds?: Record<string, string>;
   readonly candidateEmail?: string | null;
+  readonly sequenceAllocator?: CloudShareWorkflowSequenceAllocator;
 }): {
   readonly scope: "custom_observer";
   readonly correlationId: string;
@@ -137,7 +139,7 @@ export function createSalesTrialCloudShareObserver(input: {
       }
       const result = event.result;
       const failure = event.error;
-      sequence += 1;
+      sequence = input.sequenceAllocator ? input.sequenceAllocator.next() : sequence + 1;
       await input.diagnostics.record({
         occurredAt: new Date(event.occurredAt),
         source: input.source,
@@ -181,7 +183,7 @@ export function createSalesTrialCloudShareObserver(input: {
       if (!input.diagnostics) {
         return;
       }
-      sequence += 1;
+      sequence = input.sequenceAllocator ? input.sequenceAllocator.next() : sequence + 1;
       await input.diagnostics.record({
         occurredAt: new Date(event.occurredAt),
         source: input.source,
