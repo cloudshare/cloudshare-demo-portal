@@ -197,6 +197,8 @@ export function createSalesTrialCloudShareObserver(input: {
           event.outcome === "success"
             ? "CloudShare OAuth token acquired."
             : "CloudShare OAuth token acquisition failed.",
+        request: null,
+        response: null,
         details: {
           evidenceKind: "transport",
           exchangeId: event.exchangeCorrelationId,
