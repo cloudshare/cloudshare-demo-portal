@@ -11,7 +11,12 @@ export async function handleRefreshSalesSessions(deps: { readonly sessions: Pick
   const correlationId = randomUUID();
   const exchanges: Array<{ readonly request?: Record<string, unknown>; readonly response?: Record<string, unknown> }> = [];
   try {
-    const local = deps.sessions.listForRefresh ? await deps.sessions.listForRefresh(input.customerId, { targetIds: input.targetIds ?? [], offset: input.offset, limit: input.limit }) : await deps.sessions.list!(input.customerId);
+    let local;
+    try { local = deps.sessions.listForRefresh ? await deps.sessions.listForRefresh(input.customerId, { targetIds: input.targetIds ?? [], offset: input.offset, limit: input.limit }) : await deps.sessions.list!(input.customerId); }
+    catch (error) {
+      await deps.diagnostics?.record({ source: "sales-session-refresh", operation: "sales.demo_session.refresh", outcome: "failure", level: "error", customerId: input.customerId, subject: { type: "sales_demo_session", id: "queue" }, message: "Certalis could not read the targeted Sales Sessions.", correlationId, details: { integrationSurface: "certalis.persistence", failureMode: "local_observation_read", error: error instanceof Error ? error.message : String(error) } });
+      return { status: 500, body: { error: "Certalis could not read the targeted Sales Sessions. Retry or open Support Diagnostics.", durable: true, correlationId } };
+    }
     // Provider pagination is independent from Certalis queue pagination. Read one
     // bounded provider page, then target only the locally rendered Customer rows.
     const requestedIds = new Set(input.targetIds ?? []);

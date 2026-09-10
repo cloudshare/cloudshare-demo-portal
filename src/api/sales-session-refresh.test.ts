@@ -5,6 +5,12 @@ import { CloudShareAuthError } from "@/integrations/cloudshare/errors";
 const session = (id: string, experience: string, observedAt?: Date) => ({ id, customerId: "customer-1", opportunityId: "opp-1", itemId: "item-1", cloudShareSalesExperienceId: experience, externalId: id, type: "demo" as const, start: "2026-09-08T09:00", end: "2026-09-08T10:00", timeZone: "UTC", salesProEmail: "owner@example.test", salesProDisplayName: "Owner", registrationType: "registeredParticipantsOnly" as const, sendInvitations: "dontSend" as const, createdAt: new Date("2026-09-08T08:00Z"), experienceStatusObservedAt: observedAt });
 
 describe("Sales Session refresh handler", () => {
+  it("classifies local target reads separately from provider failures", async () => {
+    const record = vi.fn();
+    const result = await handleRefreshSalesSessions({ sessions: { listForRefresh: vi.fn().mockRejectedValue(new Error("database unavailable")), list: vi.fn(), recordExperienceObservation: vi.fn() }, delivery: { listSessions: vi.fn() }, diagnostics: { record } }, { customerId: "customer-1", mode: "manual", offset: 0, limit: 25, targetIds: ["local-1"] });
+    expect(result).toMatchObject({ status: 500, body: { correlationId: expect.any(String) } });
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ integrationSurface: "certalis.persistence", failureMode: "local_observation_read" }) }));
+  });
   it("refreshes only the exact rendered target ids and isolates Customers", async () => {
     const record = vi.fn();
     const listSessions = vi.fn().mockResolvedValue({ sessions: [{ id: "sales-1", status: "inProgress" }], total: 1 });
