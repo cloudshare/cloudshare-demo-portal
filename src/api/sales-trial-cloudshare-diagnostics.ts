@@ -156,6 +156,10 @@ export function createSalesTrialCloudShareObserver(input: {
         request: projectRequest(result, failure),
         response: projectResponse(result, failure),
         details: {
+          evidenceKind: "transport",
+          exchangeId: event.exchangeId,
+          attemptStartSequence: event.attemptStartSequence,
+          completedAt: event.completedAt,
           sequence,
           durationMs: event.durationMs,
           integrationSurface:
@@ -194,6 +198,10 @@ export function createSalesTrialCloudShareObserver(input: {
             ? "CloudShare OAuth token acquired."
             : "CloudShare OAuth token acquisition failed.",
         details: {
+          evidenceKind: "transport",
+          exchangeId: event.exchangeCorrelationId,
+          attemptStartSequence: sequence,
+          completedAt: new Date().toISOString(),
           sequence,
           durationMs: event.durationMs,
           integrationSurface: event.integrationSurface,

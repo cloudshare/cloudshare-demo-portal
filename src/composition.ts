@@ -13,7 +13,7 @@ import {
   type PortalSessionStore,
 } from "@/auth";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
-import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers, type CloudShareClient, type CloudShareMode } from "@/integrations/cloudshare";
+import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers, composeCanonicalObserver, type CloudShareClient, type CloudShareMode } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import {
   createCloudShareEnvironmentSimulator,
@@ -159,8 +159,8 @@ export function createCloudShareClientFactory(input: {
           // authoritative workflow exists. Keep the mandatory Customer
           // fallback for unscoped calls, but never persist the same exchange
           // once as a workflow row and again as an unrelated default row.
-          onRequest: composeCloudShareObservers(workflowObserver?.onRequest, options.onRequest, workflowObserver || options.onRequest ? undefined : defaultObserver.onRequest),
-          onAcquisition: composeCloudShareObservers(workflowObserver?.onAcquisition, options.onAcquisition, workflowObserver || options.onAcquisition ? undefined : defaultObserver.onAcquisition),
+          onRequest: workflowObserver ? composeCloudShareObservers(workflowObserver.onRequest, options.onRequest) : composeCanonicalObserver(options.onRequest, defaultObserver.onRequest),
+          onAcquisition: workflowObserver ? composeCloudShareObservers(workflowObserver.onAcquisition, options.onAcquisition) : composeCanonicalObserver(options.onAcquisition, defaultObserver.onAcquisition),
         },
         connection: {
           customerId: connection.customerId,

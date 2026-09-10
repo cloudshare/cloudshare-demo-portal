@@ -55,6 +55,15 @@ export function composeCloudShareObservers<TRequest>(
   };
 }
 
+/** Canonical observer with fail-safe Customer fallback. The fallback runs
+ * only when the canonical callback rejects, so successful calls remain one row. */
+export function composeCanonicalObserver<TRequest>(primary: ((event: TRequest) => Promise<void> | void) | undefined, fallback: ((event: TRequest) => Promise<void> | void) | undefined): (event: TRequest) => Promise<void> {
+  return async (event) => {
+    try { if (primary) await primary(event); else if (fallback) await fallback(event); }
+    catch { try { await fallback?.(event); } catch { /* diagnostics are fail-open */ } }
+  };
+}
+
 /** Well-known CloudShare API roots; overridable for staging or a recording proxy. */
 export const CLOUDSHARE_DEFAULT_ENDPOINTS: CloudShareEndpoints = {
   v4BaseUrl: "https://api.accelerate.cloudshare.com/v4",
