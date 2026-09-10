@@ -36,4 +36,10 @@ describe("Prisma Sales Enablement Session repository", () => {
     expect([...rows.values()]).toEqual(["notStarted", "notStarted"]);
     expect(transaction).toHaveBeenCalledTimes(1);
   });
+  it("does not replace an equal-timestamp observation, making ties deterministic", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 }); const count = vi.fn().mockResolvedValue(1);
+    const repository = createPrismaSalesDemoSessionRepository({ salesDemoSession: { updateMany, count }, $transaction: async (callback: (tx: unknown) => Promise<void>) => callback({ salesDemoSession: { updateMany, count } }) } as never);
+    const at = new Date("2026-07-19T18:00:00Z"); await repository.recordExperienceObservations!("customer-a", [{ id: "session-1", experienceStatus: "ended", experienceStatusObservedAt: at }]);
+    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ OR: [{ experienceStatusObservedAt: null }, { experienceStatusObservedAt: { lt: at } }] }) }));
+  });
 });
