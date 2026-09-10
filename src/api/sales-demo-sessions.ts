@@ -246,8 +246,11 @@ function toDeliveryInput(input: SessionBody, item: { name: string; project: { id
 function opaqueCloudShareId(value: string): string { return value.replaceAll("-", ""); }
 function isChronological(input: SessionBody): boolean { return input.end > input.start; }
 const missingClientFactory: Pick<CloudShareClientFactory, "forConnection"> = { forConnection() { throw new Error("Sales Delivery is not configured."); } };
-function cloudShareEvidence(error: unknown): { request: Record<string, unknown> | null; response: Record<string, unknown> | null } | undefined {
-  return projectCloudShareFailureEvidence(error);
+function cloudShareEvidence(error: unknown): { request: Record<string, unknown> | null; response: Record<string, unknown> | null; exchangeId?: string } | undefined {
+  const evidence = projectCloudShareFailureEvidence(error);
+  if (!evidence) return undefined;
+  const context = cloudShareErrorContext(error);
+  return { ...evidence, ...(typeof context?.exchangeId === "string" ? { exchangeId: context.exchangeId } : {}) };
 }
 function cloudShareErrorContext(error: unknown): Record<string, unknown> | undefined {
   return error instanceof Error && "context" in error && error.context && typeof error.context === "object" ? error.context as Record<string, unknown> : undefined;
