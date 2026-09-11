@@ -44,6 +44,9 @@
 .successDot, .failureDot, .warningDot { width: .65rem; height: .65rem; margin-top: .55rem; border-radius: 999px; }
 .successDot { background: #18794e; }.failureDot { background: #b42318; }.warningDot { background: #b54708; }
 .timelineBody { min-width: 0; padding: .8rem; border: 1px solid #e5edf3; border-radius: 8px; background: #fff; }
+.stepList { display: grid; gap: .35rem; margin: .6rem 0; padding-left: 1.2rem; color: #405267; font-size: .82rem; }
+.stepList li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: .5rem; align-items: baseline; }
+.stepList time { color: #52606d; overflow-wrap: anywhere; }
 .timelineTitle { justify-content: space-between; }.timelineMeta { flex-wrap: wrap; margin: .45rem 0; color: #52606d; font-size: .82rem; }
 .successBadge { background: #e6f6ed; color: #146c43; }.failureBadge { background: #feeceb; color: #9f1c14; }
 .timelineBody a { color: #0d5f59; font-size: .875rem; font-weight: 650; }

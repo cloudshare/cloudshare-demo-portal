@@ -19,12 +19,13 @@ export type SafeSalesSessionActivity = {
   readonly occurredAt: string;
   readonly kind: "session_provision" | "session_reconciliation" | "participants_registered" | "participants_invited" | "participants_reconciled" | "participant_environment_observed" | "participant_reconciled" | "participant_properties_ensured" | "participant_correlation_backfilled" | "unknown";
   readonly summary: string;
-  readonly outcome: "success" | "failure";
+  readonly outcome: "success" | "failure" | "incomplete";
   readonly actor: { readonly type: "admin" | "candidate" | "system" | "unknown" } | null;
   readonly subject: { readonly type: "sales_demo_session"; readonly id: string };
   readonly correlationId?: string;
 };
-export type SafeSalesSessionActivityGroup = { readonly workflowId: string; readonly summary: string; readonly outcome: "success" | "failure" | "mixed" | "incomplete"; readonly actor: string; readonly subject: string; readonly firstAt: string; readonly lastAt: string; readonly count: number; readonly correlationId?: string; readonly diagnosticRecords: readonly { readonly correlationId: string; readonly occurredAt: string }[] };
+export type SafeSalesSessionActivityStep = { readonly label: string; readonly outcome: "success" | "failure" | "incomplete"; readonly occurredAt: string };
+export type SafeSalesSessionActivityGroup = { readonly workflowId: string; readonly summary: string; readonly outcome: "success" | "failure" | "mixed" | "incomplete"; readonly actor: string; readonly subject: string; readonly firstAt: string; readonly lastAt: string; readonly count: number; readonly correlationId?: string; readonly steps: readonly SafeSalesSessionActivityStep[]; readonly diagnosticRecords: readonly { readonly correlationId: string; readonly occurredAt: string }[] };
 
 /** Groups complete workflow anchors in the read model, not in the browser. */
 export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSessionActivity[]): readonly SafeSalesSessionActivityGroup[] {
@@ -49,7 +50,7 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
     const key = `${entry.correlationId ? correlationKind : businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}:${entry.activityId ?? `index:${index}`}`}\u0000${entry.subject.type}`;
     const current = groups.get(key);
     const record = entry.correlationId ? [{ correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : [];
-    if (!current) { const incomplete = Boolean(entry.correlationId && !terminalKinds.has(entry.kind)); groups.set(key, { entries: [entry], group: { workflowId: key, summary: incomplete ? incompleteSummary() : entry.summary, outcome: incomplete ? "incomplete" : entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, ...(entry.correlationId ? { correlationId: entry.correlationId } : {}), diagnosticRecords: record } }); continue; }
+    if (!current) { const incomplete = Boolean(entry.correlationId && !terminalKinds.has(entry.kind)); groups.set(key, { entries: [entry], group: { workflowId: key, summary: incomplete ? incompleteSummary() : entry.summary, outcome: incomplete ? "incomplete" : entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, steps: [{ label: entry.summary, outcome: entry.outcome, occurredAt: entry.occurredAt }], ...(entry.correlationId ? { correlationId: entry.correlationId } : {}), diagnosticRecords: record } }); continue; }
     const nextEntries = [...current.entries, entry];
     const terminals = nextEntries.filter((candidate) => terminalKinds.has(candidate.kind));
     const terminal = terminals.find((candidate) => candidate.outcome === "failure") ?? terminals[terminals.length - 1];
@@ -64,7 +65,7 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
     // row exists, the whole correlated history remains incomplete.
     const outcome = terminalOutcome === "failure" ? "failure" : terminalOutcome === "success" ? (hasFailure ? "mixed" : "success") : "incomplete";
     const authoritative = terminal ?? nextEntries[0];
-    groups.set(key, { entries: nextEntries, group: { ...current.group, summary: terminal ? authoritative.summary : incompleteSummary(), actor: terminal ? safeActivityActor(authoritative.actor?.type) : current.group.actor, outcome, firstAt: nextEntries[0].occurredAt, lastAt: nextEntries[nextEntries.length - 1].occurredAt, count: nextEntries.length, diagnosticRecords: entry.correlationId && !current.group.diagnosticRecords.some((r) => r.correlationId === entry.correlationId) ? [...current.group.diagnosticRecords, ...record] : current.group.diagnosticRecords } });
+    groups.set(key, { entries: nextEntries, group: { ...current.group, summary: terminal ? authoritative.summary : incompleteSummary(), actor: terminal ? safeActivityActor(authoritative.actor?.type) : current.group.actor, outcome, firstAt: nextEntries[0].occurredAt, lastAt: nextEntries[nextEntries.length - 1].occurredAt, count: nextEntries.length, steps: [...current.group.steps, { label: entry.summary, outcome: entry.outcome, occurredAt: entry.occurredAt }], diagnosticRecords: entry.correlationId && !current.group.diagnosticRecords.some((r) => r.correlationId === entry.correlationId) ? [...current.group.diagnosticRecords, ...record] : current.group.diagnosticRecords } });
   }
   return [...groups.values()].map(({ group }) => group).sort((a, b) => b.lastAt.localeCompare(a.lastAt) || b.firstAt.localeCompare(a.firstAt) || a.summary.localeCompare(b.summary));
 }
@@ -74,13 +75,15 @@ function safeActivityActor(value: "admin" | "candidate" | "system" | "unknown" |
 /** Ordinary Session Activity is deliberately a fresh DTO, not a trimmed
  * DiagnosticLogEntry. Unknown operations and actor types fail closed to generic
  * safe copy; raw diagnostic messages and evidence never cross this seam. */
-export function projectSafeSalesSessionActivity(input: { readonly id?: string; readonly occurredAt: Date; readonly operation: string; readonly outcome: string; readonly actorType: string | null; readonly subjectType: string | null; readonly subjectId: string | null; readonly correlationId: string | null }, sessionId: string): SafeSalesSessionActivity | null {
+export function projectSafeSalesSessionActivity(input: { readonly id?: string; readonly occurredAt: Date; readonly operation: string; readonly outcome: string; readonly actorType: string | null; readonly subjectType: string | null; readonly subjectId: string | null; readonly correlationId: string | null; readonly detailsJson?: string | null }, sessionId: string): SafeSalesSessionActivity | null {
   if (input.subjectType !== "sales_demo_session" || input.subjectId !== sessionId || (input.outcome !== "success" && input.outcome !== "failure")) return null;
-  return { ...(input.id ? { activityId: input.id } : {}), occurredAt: input.occurredAt.toISOString(), kind: safeActivityKind(input.operation), summary: activitySummary(input.operation, input.outcome), outcome: input.outcome === "failure" ? "failure" : "success", actor: input.actorType ? { type: safeActorType(input.actorType) } : null, subject: { type: "sales_demo_session", id: sessionId }, ...(input.correlationId ? { correlationId: input.correlationId } : {}) };
+  const ambiguous = input.operation === "sales.demo_session.created.ambiguous";
+  return { ...(input.id ? { activityId: input.id } : {}), occurredAt: input.occurredAt.toISOString(), kind: safeActivityKind(input.operation), summary: ambiguous ? incompleteSummary() : activitySummary(input.operation, input.outcome), outcome: ambiguous ? "incomplete" : input.outcome === "failure" ? "failure" : "success", actor: input.actorType ? { type: safeActorType(input.actorType) } : null, subject: { type: "sales_demo_session", id: sessionId }, ...(input.correlationId ? { correlationId: input.correlationId } : {}) };
 }
 
 function safeActivityKind(operation: string): SafeSalesSessionActivity["kind"] {
   if (operation === "sales.demo_session.created") return "session_provision";
+  if (operation === "sales.demo_session.created.ambiguous") return "session_provision";
   if (operation === "sales.demo_session.reconciled") return "session_reconciliation";
   if (operation === "sales.demo_session.participants.registered") return "participants_registered";
   if (operation === "sales.demo_session.participants.invited") return "participants_invited";
