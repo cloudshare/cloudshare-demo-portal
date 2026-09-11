@@ -132,10 +132,13 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   }
   const workflowScope = certificationCloudShareWorkflow({ actor: request.actor, customerId: request.customerId, subject: { type: "sales_demo_session", id }, correlationId, source: "sales-demo-sessions", externalIds: { opportunityId: opportunity.id, projectId: item.project.id } });
   let createDispatched = false;
+  let completedResourceReads: readonly { readonly exchangeId?: string }[] = [];
+  let completedMemberRead: { readonly exchangeId?: string } | undefined;
   try {
     const delivery = deps.deliveryFactory?.forConnection(connection, workflowScope) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, workflowScope));
     const validator = deps.itemProvisioningValidator ?? deps.itemProvisioningValidatorFactory?.forConnection(connection, workflowScope);
     const resourceReads = validator ? await validator.revalidate(item) : [];
+    completedResourceReads = resourceReads;
     await recordResourceReads(deps, request, correlationId, id, item.id, item.project.id, resourceReads, "success");
     // Re-read immediately before POST /sales. This deliberately accepts the
     // narrow race after this check; a cached or Item-stored member is never used.
@@ -144,6 +147,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     try { memberRead = await projectMembers.listActiveProjectMembers(item.project.id); }
     catch (error) { throw new SalesProjectMemberReadError(error); }
     await recordProjectMemberRead(deps, request, correlationId, id, item.id, item.project.id, memberRead, "success");
+    completedMemberRead = memberRead;
     const selectedSalesPro = memberRead.members.find((member) => member.email.toLowerCase() === parsed.data.salesProEmail.toLowerCase());
     if (!selectedSalesPro) throw new SalesProjectMemberSelectionError("The selected Sales Pro is no longer an active member of this Item's CloudShare Project.", memberRead);
     createDispatched = true;
@@ -226,13 +230,20 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     if (itemValidationFailure || itemReadFailure) {
       await recordResourceReads(deps, request, correlationId, id, item.id, item.project.id, error.completedReads, "failure");
     }
+    const knownExchangeIds = [
+      ...completedResourceReads.map((read) => read.exchangeId),
+      completedMemberRead?.exchangeId,
+      ...(itemValidationFailure || itemReadFailure ? error.completedReads.map((read) => read.exchangeId) : []),
+      ...(memberSelectionFailure ? [error.read.exchangeId] : []),
+      ...(memberReadFailure ? [cloudShareErrorContext(error.cause)?.exchangeId] : []),
+    ].filter((value): value is string => typeof value === "string");
     const causeEvidence = preWriteCooldownFailure ? undefined : cloudShareEvidence(itemReadFailure || memberReadFailure ? error.cause : error);
     if (memberSelectionFailure) await recordProjectMemberRead(deps, request, correlationId, id, item.id, item.project.id, error.read, "failure");
     const oauthMetadata = preWriteAuthFailure ? oauthFailureMetadata(error) : {};
     const integrationSurface = preWriteAuthFailure ? "cloudshare.v4.oauth.token" : memberSelectionFailure || memberReadFailure ? "cloudshare.v3.project_members_gui" : itemValidationFailure || itemReadFailure ? "cloudshare.v3.sales_item_resources" : "cloudshare.v4.sales";
     const failureMode = preWriteAuthFailure ? "cloudshare_auth_pre_write" : preWriteCooldownFailure ? "cloudshare_cooldown_pre_write" : memberReadFailure ? "project_member_read" : memberSelectionFailure ? "selected_sales_pro_inactive" : validationFailure ? "main_sales_pro_validation" : itemValidationFailure ? "item_resource_drift" : itemReadFailure ? "item_resource_read" : "cloudshare_create";
     await Promise.allSettled([
-    evidence(deps, request, correlationId, { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: "unprovisioned", externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: parsed.data.salesProEmail, salesProDisplayName: "unresolved", registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants", createdAt: new Date() }, "failure", memberReadFailure ? "CloudShare could not read active Project members for the selected Sales Pro" : memberSelectionFailure ? "Selected Sales Pro is not active in this CloudShare Project" : validationFailure ? "CloudShare main Sales Pro validation failed" : itemValidationFailure ? "Catalogue Item is stale against CloudShare resources" : itemReadFailure ? "CloudShare could not fully revalidate this Catalogue Item" : preWriteProviderFailure ? "CloudShare rejected the operation before the Sales Experience create request. Retry is safe." : "CloudShare Sales Experience creation failed", causeEvidence, { integrationSurface, failureMode, ...(preWriteProviderFailure ? { retry: "safe", cloudShareAttempted: false, ...oauthMetadata, ...(oauthMetadata.oauthExchangeCorrelationId ? { contributingExchangeIds: [oauthMetadata.oauthExchangeCorrelationId] } : {}) } : {}), error: error instanceof Error ? error.message : String(error) }),
+    evidence(deps, request, correlationId, { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: "unprovisioned", externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: parsed.data.salesProEmail, salesProDisplayName: "unresolved", registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants", createdAt: new Date() }, "failure", memberReadFailure ? "CloudShare could not read active Project members for the selected Sales Pro" : memberSelectionFailure ? "Selected Sales Pro is not active in this CloudShare Project" : validationFailure ? "CloudShare main Sales Pro validation failed" : itemValidationFailure ? "Catalogue Item is stale against CloudShare resources" : itemReadFailure ? "CloudShare could not fully revalidate this Catalogue Item" : preWriteProviderFailure ? "CloudShare rejected the operation before the Sales Experience create request. Retry is safe." : "CloudShare Sales Experience creation failed", causeEvidence, { integrationSurface, failureMode, ...(knownExchangeIds.length ? { contributingExchangeIds: knownExchangeIds } : {}), ...(preWriteProviderFailure ? { retry: "safe", cloudShareAttempted: false, ...oauthMetadata, ...(oauthMetadata.oauthExchangeCorrelationId ? { contributingExchangeIds: [...knownExchangeIds, oauthMetadata.oauthExchangeCorrelationId] } : {}) } : {}), error: error instanceof Error ? error.message : String(error) }),
       deps.audit?.write({ id: randomUUID(), occurredAt: (deps.now ?? (() => new Date()))(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "failure", correlationId, details: { externalId, opportunityId: opportunity.id, itemId: item.id, failureMode, integrationSurface }, error: error instanceof Error ? error.message : "Unknown CloudShare failure" }),
     ]);
     const errorMessage = rateLimitFailure ? "CloudShare throttled the Sales Enablement Session request. Retry after the provider cooldown." : salesAuthorizationFailure ? "CloudShare rejected the configured credentials or permissions for Sales Experience creation. Review the Customer connection and support diagnostics before retrying." : memberReadFailure ? "CloudShare could not retrieve active Project members. Review support diagnostics before retrying." : memberSelectionFailure ? "The selected Sales Pro is no longer an active Project member. Select a current Sales Pro and try again." : validationFailure ? "CloudShare rejected the selected Sales Pro. Review support diagnostics." : itemValidationFailure ? "This Item no longer matches its CloudShare resources. Refresh the Item before provisioning." : itemReadFailure ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying." : preWriteAuthFailure ? "CloudShare authentication failed before creation. Retry the Sales Enablement Session." : "CloudShare could not create the Sales Experience. Review support diagnostics.";

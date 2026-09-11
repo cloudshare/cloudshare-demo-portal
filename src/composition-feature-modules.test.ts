@@ -11,6 +11,7 @@ import type { CloudShareClient, CloudShareRequestObservation, V4TokenAcquisition
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
 import { createCloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 
 const CONNECTION: CloudShareConnectionRecord = {
   customerId: "customer-a", apiId: "api-id", apiKey: "api-key", webhookSecret: "webhook-secret",
@@ -121,6 +122,18 @@ describe("composition feature modules", () => {
     await integrations[1].observer.onAcquisition(OAUTH_EVENT);
     expect(record.mock.calls.map(([entry]) => entry.customerId)).toEqual(["customer-a", "customer-b"]);
     expect(record.mock.calls.map(([entry]) => entry.correlationId)).toEqual(["mandatory-customer-correlation-1", "mandatory-customer-correlation-2"]);
+  });
+
+  it("falls back to the real Customer recorder after a canonical first append rejects", async () => {
+    const append = vi.fn().mockRejectedValueOnce(new Error("canonical write failed")).mockResolvedValue(undefined);
+    const recorder = createDiagnosticRecorder({ repository: { append } as never });
+    const integrations: Parameters<typeof createCloudShareIntegrationForConnection>[0][] = [];
+    const factory = createCloudShareClientFactory({ diagnostics: recorder, mode: "fixture", createIntegration: (input) => { integrations.push(input); return {} as CloudShareClient; }, decorateClient: (client) => client });
+    const canonical = { onRequest: (event: CloudShareRequestObservation) => recorder.recordCanonical!({ source: "sales-trial-enrollment", operation: "sales_trial.cloudshare.request", outcome: event.outcome, customerId: "customer-a", correlationId: "trial-correlation", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, message: "trial exchange", occurredAt: new Date(event.occurredAt) }), onAcquisition: vi.fn() };
+    factory.forConnection(CONNECTION, { scope: "custom_observer", correlationId: "trial-correlation", onRequest: canonical.onRequest, onAcquisition: canonical.onAcquisition });
+    await integrations[0].observer.onRequest(REQUEST_EVENT);
+    expect(append).toHaveBeenCalledTimes(2);
+    expect(append.mock.calls[1][0]).toMatchObject({ customerId: "customer-a", correlationId: expect.any(String) });
   });
 
   it("exposes the approved narrow dependency bundles", () => {

@@ -401,6 +401,7 @@ export async function handlePublishSalesTrialOffering(
     | Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>
     | undefined;
   let completedResourceReads: readonly { readonly exchangeId?: string }[] = [];
+  let completedMemberRead: { readonly exchangeId?: string } | undefined;
   const publishClientOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id });
   try {
     const validator =
@@ -422,6 +423,7 @@ export async function handlePublishSalesTrialOffering(
     const memberSource =
       deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection, publishClientOptions);
     memberRead = await memberSource?.listActiveProjectMembers(item.project.id);
+    completedMemberRead = memberRead;
     if (memberRead) {
       await recordProjectMemberRead(
         deps,
@@ -446,9 +448,9 @@ export async function handlePublishSalesTrialOffering(
       error,
     );
     return publishFailure(deps, request, offering, correlationId, externalId, error, [
-      ...completedResourceReads.map((read) => read.exchangeId),
-      memberRead?.exchangeId,
-    ].filter((id): id is string => Boolean(id)));
+      ...knownTrialExchangeIds(completedResourceReads, memberRead, error),
+      cloudShareErrorContext(error)?.exchangeId,
+    ].filter((id): id is string => typeof id === "string"));
   }
   const selectedSalesPro = memberRead?.members.find(
     (member) => member.email.toLowerCase() === offering.salesProEmail.toLowerCase(),
@@ -482,10 +484,10 @@ export async function handlePublishSalesTrialOffering(
       correlationId,
       message: "Selected Sales Pro was not active in the revalidated Project members",
       details: {
+        evidenceKind: "semantic",
+        ...knownTrialExchangeDetails(completedResourceReads, completedMemberRead),
         integrationSurface: "cloudshare.v3.project_members_gui",
         failureMode: "selected_sales_pro_inactive",
-        evidenceKind: "semantic",
-        ...(contributingExchangeIds.length ? { contributingExchangeIds } : {}),
       },
       externalIds: { offeringId: offering.id, itemId: item.id, projectId: item.project.id },
     });
@@ -674,6 +676,9 @@ export async function handlePublishSalesTrialOffering(
           request: created.request as unknown as Record<string, unknown>,
           response: created.response as unknown as Record<string, unknown>,
           details: {
+            evidenceKind: "semantic",
+            ...knownTrialExchangeDetails(completedResourceReads, completedMemberRead),
+            ...(created.exchangeId ? { contributingExchangeIds: [...knownTrialExchangeIds(completedResourceReads, completedMemberRead), created.exchangeId] } : {}),
             integrationSurface: "cloudshare.v4.sales",
             failureMode: "local_correlation_persistence",
             createdSalesExperienceId: created.salesExperienceId,
@@ -721,7 +726,7 @@ export async function handlePublishSalesTrialOffering(
       },
       request: created.request as unknown as Record<string, unknown>,
       response: created.response as unknown as Record<string, unknown>,
-      details: { integrationSurface: "cloudshare.v4.sales", status: "published" },
+      details: { evidenceKind: "semantic", ...knownTrialExchangeDetails(completedResourceReads, completedMemberRead), ...(created.exchangeId ? { contributingExchangeIds: [...knownTrialExchangeIds(completedResourceReads, completedMemberRead), created.exchangeId] } : {}), integrationSurface: "cloudshare.v4.sales", status: "published" },
     });
     await auditLifecycle(
       deps,
@@ -748,7 +753,10 @@ export async function handlePublishSalesTrialOffering(
         offering.id,
         reservation.updatedAt,
       );
-      return publishFailure(deps, request, offering, correlationId, externalId, error);
+      return publishFailure(deps, request, offering, correlationId, externalId, error, [
+        ...knownTrialExchangeIds(completedResourceReads, completedMemberRead, error),
+        cloudShareErrorContext(error)?.exchangeId,
+      ].filter((id): id is string => typeof id === "string"));
     }
     const needsAttention = {
       ...reservation,
@@ -791,6 +799,9 @@ export async function handlePublishSalesTrialOffering(
       request: cloudShareEvidence(error)?.request,
       response: cloudShareEvidence(error)?.response,
       details: {
+        evidenceKind: "semantic",
+        ...knownTrialExchangeDetails(completedResourceReads, completedMemberRead),
+        ...(cloudShareEvidence(error)?.exchangeId ? { contributingExchangeIds: [...knownTrialExchangeIds(completedResourceReads, completedMemberRead), cloudShareEvidence(error)!.exchangeId] } : {}),
         integrationSurface: "cloudshare.v4.sales",
         failureMode: "cloudshare_create_outcome_ambiguous",
         fallbackPersisted,
@@ -1437,6 +1448,7 @@ function cloudShareEvidence(error: unknown):
   | {
       readonly request: Record<string, unknown> | null;
       readonly response: Record<string, unknown> | null;
+      readonly exchangeId?: string;
     }
   | undefined {
   return projectCloudShareFailureEvidence(error);
@@ -1541,6 +1553,26 @@ async function publishFailure(
     error: errorMessage,
     correlationId,
   });
+}
+
+function knownTrialExchangeIds(
+  reads: readonly { readonly exchangeId?: string }[],
+  memberRead?: { readonly exchangeId?: string },
+  error?: unknown,
+): string[] {
+  const completed = error && (error instanceof SalesItemProvisioningValidationError || error instanceof SalesItemProvisioningReadError)
+    ? error.completedReads.map((read) => read.exchangeId)
+    : [];
+  return [...reads.map((read) => read.exchangeId), memberRead?.exchangeId, ...completed]
+    .filter((id): id is string => typeof id === "string");
+}
+
+function knownTrialExchangeDetails(
+  reads: readonly { readonly exchangeId?: string }[],
+  memberRead?: { readonly exchangeId?: string },
+): Record<string, unknown> {
+  const ids = knownTrialExchangeIds(reads, memberRead);
+  return ids.length ? { contributingExchangeIds: ids } : {};
 }
 
 async function auditLifecycle(

@@ -106,11 +106,12 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
     const subject = entry.subject as Record<string, unknown> | null;
     return subject?.id === subjectId && (subject.type === "sales_trial_offering" || subject.type === "sales_trial_enrollment");
   });
-  if (requestedType === "sales_trial_offering") return { entries: orderWorkflowDiagnostics(direct), truncated: directReads.some((read) => read.truncated) };
+  const causalScanTruncated = (read: { readonly truncated: boolean }) => read.truncated && offset + limit + 1 > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
+  if (requestedType === "sales_trial_offering") return { entries: orderWorkflowDiagnostics(direct), truncated: directReads.some(causalScanTruncated) };
   const enrollmentEntries = direct.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
   const offeringId = enrollment?.salesTrialOfferingId;
-  if (!enrollmentEntries.length && typeof offeringId !== "string") return { entries: orderWorkflowDiagnostics(direct), truncated: directReads.some((read) => read.truncated) };
-  if (typeof offeringId !== "string") return { entries: orderWorkflowDiagnostics(enrollmentEntries), truncated: directReads.some((read) => read.truncated) };
+  if (!enrollmentEntries.length && typeof offeringId !== "string") return { entries: orderWorkflowDiagnostics(direct), truncated: directReads.some(causalScanTruncated) };
+  if (typeof offeringId !== "string") return { entries: orderWorkflowDiagnostics(enrollmentEntries), truncated: directReads.some(causalScanTruncated) };
   const parentSources: SalesDiagnosticSource[] = requestedSource === undefined
     ? ["sales-trial-offerings", "sales-trial-enrollment"]
     : requestedSource === "sales-trial-offerings"
@@ -123,7 +124,7 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
       const subject = entry.subject as Record<string, unknown> | null;
       return subject?.type === "sales_trial_offering" && subject.id === offeringId;
     });
-  return { entries: orderWorkflowDiagnostics([...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()]), truncated: directReads.some((read) => read.truncated) || parentReads.some((read) => read.truncated) };
+  return { entries: orderWorkflowDiagnostics([...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()]), truncated: directReads.some(causalScanTruncated) || parentReads.some(causalScanTruncated) };
 }
 
 /** Entries have already crossed the direction-aware recorder seam. This
