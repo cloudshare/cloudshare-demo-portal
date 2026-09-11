@@ -1812,7 +1812,7 @@ async function recordPrePublishFailureEvidence(
   }
   await deps.diagnostics?.record({
     source: "sales-trial-offerings",
-    operation: "sales.trial_offering.publish",
+    operation: "sales.trial_offering.project_members.revalidated",
     outcome: "failure",
     level: "warn",
     customerId: request.customerId,
@@ -1826,10 +1826,17 @@ async function recordPrePublishFailureEvidence(
       integrationSurface: "cloudshare.v3.project_members_gui",
       evidenceKind: "semantic",
       failureMode: "project_member_read",
-      terminal: true,
       cached: false,
       ...(evidence.exchangeId ? { contributingExchangeIds: [evidence.exchangeId] } : {}),
     },
+    externalIds: { offeringId, itemId, projectId },
+  });
+  await deps.diagnostics?.record({
+    source: "sales-trial-offerings", operation: "sales.trial_offering.publish", outcome: "failure", level: "warn",
+    customerId: request.customerId, actor: request.actor, subject: { type: "sales_trial_offering", id: offeringId }, correlationId,
+    message: "CloudShare could not publish the Sales Trial Offering because active Project members could not be read",
+    request: evidence.request, response: evidence.response,
+    details: { integrationSurface: "cloudshare.v3.project_members_gui", evidenceKind: "semantic", failureMode: "project_member_read", terminal: true, cached: false, ...(evidence.exchangeId ? { contributingExchangeIds: [evidence.exchangeId] } : {}) },
     externalIds: { offeringId, itemId, projectId },
   });
 }

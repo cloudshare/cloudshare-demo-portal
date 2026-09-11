@@ -1884,9 +1884,10 @@ describe("Sales Trial Offering API", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
       id: "offering-1",
     });
-    const entries = await diagnosticRepository.query({ source: "sales-trial-offerings", operation: "sales.trial_offering.publish" });
-    const entry = entries.find((candidate) => candidate.details?.failureMode === "project_member_read");
-    const terminal = entries.find((candidate) => candidate.operation === "sales.trial_offering.publish" && candidate.details?.failureMode === "project_member_read");
+    const entries = await diagnosticRepository.query({ source: "sales-trial-offerings", operation: "sales.trial_offering.project_members.revalidated" });
+    const [entry] = entries;
+    const terminalEntries = (await diagnosticRepository.query({ source: "sales-trial-offerings", operation: "sales.trial_offering.publish" })).filter((candidate) => candidate.details?.failureMode === "project_member_read");
+    const [terminal] = terminalEntries;
 
     expect(result).toMatchObject({
       status: 502,
@@ -1902,11 +1903,11 @@ describe("Sales Trial Offering API", () => {
       details: {
         integrationSurface: "cloudshare.v3.project_members_gui",
         failureMode: "project_member_read",
-        terminal: true,
         cached: false,
         evidenceKind: "semantic",
       },
     });
+    expect(terminalEntries).toHaveLength(1);
     expect(terminal).toMatchObject({ operation: "sales.trial_offering.publish", outcome: "failure", details: { integrationSurface: "cloudshare.v3.project_members_gui", failureMode: "project_member_read", terminal: true, evidenceKind: "semantic", contributingExchangeIds: ["member-read-exchange"] } });
   });
 
