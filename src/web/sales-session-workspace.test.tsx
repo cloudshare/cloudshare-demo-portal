@@ -264,7 +264,7 @@ describe("Sales Session workspace", () => {
   });
 
   it("keeps retained Activity local-only when its status snapshot is stale", async () => {
-    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } }, activityGroups: [{ workflowId: "local", summary: "Local activity", outcome: "success", actor: "Sales admin", subject: "This Sales Session", firstAt: "2026-07-23T09:00:00.000Z", lastAt: "2026-07-23T09:00:00.000Z", count: 1, correlationId: "corr-local", steps: [{ label: "Local activity", outcome: "success", occurredAt: "2026-07-23T09:00:00.000Z" }], diagnosticRecords: [] }] };
     const fetchMock = vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(stale), { status: 200 }));
     render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
     await screen.findByRole("list", { name: "Sales Session activity timeline" });
