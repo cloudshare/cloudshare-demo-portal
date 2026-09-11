@@ -29,6 +29,13 @@ describe("Sales diagnostics handler", () => {
     const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { limit: "3" } });
     expect((response.body as { entries: Array<{ id: string }> }).entries.map((entry) => entry.id)).toEqual(["diag-1", "diag-2", "diag-3"]);
   });
+  it("does not use random exchange IDs to order legacy same-millisecond rows", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository(); const at = new Date("2026-09-10T00:00:00.000Z");
+    await diagnostics.append({ id: "legacy-a", source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", correlationId: "legacy-corr", occurredAt: at, details: { exchangeId: "zz-random" }, message: "a" } as never);
+    await diagnostics.append({ id: "legacy-b", source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", correlationId: "legacy-corr", occurredAt: at, details: { exchangeId: "aa-random" }, message: "b" } as never);
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { correlationId: "legacy-corr", limit: "10" } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["a", "b"]);
+  });
   it("keeps the authenticated Customer scope while allowing an owned Item source", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
 

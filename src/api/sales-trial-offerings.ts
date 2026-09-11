@@ -400,12 +400,14 @@ export async function handlePublishSalesTrialOffering(
   let memberRead:
     | Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>
     | undefined;
+  let completedResourceReads: readonly { readonly exchangeId?: string }[] = [];
   const publishClientOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id });
   try {
     const validator =
       deps.itemProvisioningValidator ??
       deps.itemProvisioningValidatorFactory?.forConnection(connection, publishClientOptions);
     const reads = (await validator?.revalidate(item)) ?? [];
+    completedResourceReads = reads;
     await recordResourceReads(
       deps,
       request,
@@ -443,12 +445,19 @@ export async function handlePublishSalesTrialOffering(
       item.project.id,
       error,
     );
-    return publishFailure(deps, request, offering, correlationId, externalId, error);
+    return publishFailure(deps, request, offering, correlationId, externalId, error, [
+      ...completedResourceReads.map((read) => read.exchangeId),
+      memberRead?.exchangeId,
+    ].filter((id): id is string => Boolean(id)));
   }
   const selectedSalesPro = memberRead?.members.find(
     (member) => member.email.toLowerCase() === offering.salesProEmail.toLowerCase(),
   );
   if (!selectedSalesPro) {
+    const contributingExchangeIds = [
+      ...completedResourceReads.map((read) => read.exchangeId),
+      memberRead?.exchangeId,
+    ].filter((id): id is string => Boolean(id));
     if (memberRead) {
       await recordProjectMemberRead(
         deps,
@@ -462,6 +471,24 @@ export async function handlePublishSalesTrialOffering(
         "Selected Sales Pro was not active in the revalidated Project members",
       );
     }
+    await deps.diagnostics?.record({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.publish",
+      outcome: "failure",
+      level: "warn",
+      customerId: request.customerId,
+      actor: request.actor,
+      subject: { type: "sales_trial_offering", id: offering.id },
+      correlationId,
+      message: "Selected Sales Pro was not active in the revalidated Project members",
+      details: {
+        integrationSurface: "cloudshare.v3.project_members_gui",
+        failureMode: "selected_sales_pro_inactive",
+        evidenceKind: "semantic",
+        ...(contributingExchangeIds.length ? { contributingExchangeIds } : {}),
+      },
+      externalIds: { offeringId: offering.id, itemId: item.id, projectId: item.project.id },
+    });
     await auditLifecycle(
       deps,
       request,
@@ -1439,6 +1466,7 @@ async function publishFailure(
   correlationId: string,
   externalId: string,
   error: unknown,
+  contributingExchangeIds: readonly string[] = [],
 ) {
   const itemValidationFailure = error instanceof SalesItemProvisioningValidationError;
   const itemReadFailure = error instanceof SalesItemProvisioningReadError;
@@ -1483,6 +1511,7 @@ async function publishFailure(
       integrationSurface,
       failureMode,
       error: error instanceof Error ? error.message : String(error),
+      ...(contributingExchangeIds.length ? { contributingExchangeIds } : {}),
     },
   });
   const errorMessage = oauthTokenFailure

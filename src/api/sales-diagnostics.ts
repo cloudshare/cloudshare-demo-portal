@@ -41,11 +41,12 @@ export async function handleGetSalesDiagnosticLog(
 
   const causalTrialQuery = Boolean(request.query.subjectId && (request.query.subjectType === "sales_trial_enrollment" || request.query.subjectType === "sales_trial_offering"));
   if (causalTrialQuery) {
-    const subjectEntries = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId!.trim(), requestedOffset, requestedLimit);
+    const subjectRead = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId!.trim(), requestedOffset, requestedLimit);
+    const subjectEntries = subjectRead.entries;
     const pageEntries = subjectEntries.slice(requestedOffset, requestedOffset + requestedLimit);
     const candidateNextOffset = requestedOffset + pageEntries.length;
     const hasMore = subjectEntries.length > candidateNextOffset;
-    const bounded = requestedOffset + requestedLimit > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET || (hasMore && candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET);
+    const bounded = subjectRead.truncated || requestedOffset + requestedLimit > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET || (hasMore && candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET);
     return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore: hasMore && !bounded, nextOffset: hasMore && !bounded ? candidateNextOffset : null, complete: !bounded && !hasMore, incompleteReason: bounded ? "sales_diagnostic_offset_cap" : undefined, continuation: hasMore && !bounded ? `offset=${candidateNextOffset}` : null } } };
   }
 
@@ -83,7 +84,7 @@ export async function handleGetSalesDiagnosticLog(
   };
 }
 
-async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentDependency }, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
+async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentDependency }, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<{ readonly entries: readonly Record<string, unknown>[]; readonly truncated: boolean }> {
   const requestedType = query.subjectType;
   const enrollmentReader = deps.salesTrialEnrollments as SalesTrialEnrollmentReader | undefined;
   let enrollment = null;
@@ -100,27 +101,29 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
           ? ["sales-trial-offerings"]
           : [])
     : (requestedSource === undefined ? ["sales-trial-enrollment"] : requestedSource === "sales-trial-enrollment" ? ["sales-trial-enrollment"] : []);
-  const direct = (await Promise.all(sources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flatMap((read) => read.entries).filter((entry) => {
+  const directReads = await Promise.all(sources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })));
+  const direct = directReads.flatMap((read) => read.entries).filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
     return subject?.id === subjectId && (subject.type === "sales_trial_offering" || subject.type === "sales_trial_enrollment");
   });
-  if (requestedType === "sales_trial_offering") return orderWorkflowDiagnostics(direct);
+  if (requestedType === "sales_trial_offering") return { entries: orderWorkflowDiagnostics(direct), truncated: directReads.some((read) => read.truncated) };
   const enrollmentEntries = direct.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
   const offeringId = enrollment?.salesTrialOfferingId;
-  if (!enrollmentEntries.length && typeof offeringId !== "string") return orderWorkflowDiagnostics(direct);
-  if (typeof offeringId !== "string") return orderWorkflowDiagnostics(enrollmentEntries);
+  if (!enrollmentEntries.length && typeof offeringId !== "string") return { entries: orderWorkflowDiagnostics(direct), truncated: directReads.some((read) => read.truncated) };
+  if (typeof offeringId !== "string") return { entries: orderWorkflowDiagnostics(enrollmentEntries), truncated: directReads.some((read) => read.truncated) };
   const parentSources: SalesDiagnosticSource[] = requestedSource === undefined
     ? ["sales-trial-offerings", "sales-trial-enrollment"]
     : requestedSource === "sales-trial-offerings"
       ? ["sales-trial-offerings"]
       : [];
-  const parent = parentSources.length
-    ? (await Promise.all(parentSources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: offset + limit + 1 })))).flatMap((read) => read.entries).filter((entry) => {
+  const parentReads = parentSources.length
+    ? await Promise.all(parentSources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: offset + limit + 1 })))
+    : [];
+  const parent = parentReads.flatMap((read) => read.entries).filter((entry) => {
       const subject = entry.subject as Record<string, unknown> | null;
       return subject?.type === "sales_trial_offering" && subject.id === offeringId;
-    })
-    : [];
-  return orderWorkflowDiagnostics([...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()]);
+    });
+  return { entries: orderWorkflowDiagnostics([...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()]), truncated: directReads.some((read) => read.truncated) || parentReads.some((read) => read.truncated) };
 }
 
 /** Entries have already crossed the direction-aware recorder seam. This
@@ -174,7 +177,8 @@ function compareWithinWorkflow(left: Record<string, unknown>, right: Record<stri
   const lp = phase(left, lIds); const rp = phase(right, rIds);
   const lPosition = lp === 0 ? lAnchor : lp === 1 ? lAnchor + 0.5 : Number.POSITIVE_INFINITY;
   const rPosition = rp === 0 ? rAnchor : rp === 1 ? rAnchor + 0.5 : Number.POSITIVE_INFINITY;
-  return lPosition - rPosition || lp - rp || (le ?? "").localeCompare(re ?? "") || String(left.occurredAt).localeCompare(String(right.occurredAt)) || String(left.id).localeCompare(String(right.id));
+  const exchangeTieBreak = ls !== undefined && rs !== undefined ? (le ?? "").localeCompare(re ?? "") : 0;
+  return lPosition - rPosition || lp - rp || exchangeTieBreak || String(left.occurredAt).localeCompare(String(right.occurredAt)) || String(left.id).localeCompare(String(right.id));
 }
 function compareWorkflowDiagnostics(left: Record<string, unknown>, right: Record<string, unknown>): number {
   const leftSequence = workflowSequence(left);
