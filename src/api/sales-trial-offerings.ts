@@ -450,6 +450,7 @@ export async function handlePublishSalesTrialOffering(
     return publishFailure(deps, request, offering, correlationId, externalId, error, [
       ...knownTrialExchangeIds(completedResourceReads, memberRead, error),
       cloudShareErrorContext(error)?.exchangeId,
+      nestedAcquisitionExchangeId(error),
     ].filter((id): id is string => typeof id === "string"));
   }
   const selectedSalesPro = memberRead?.members.find(
@@ -756,6 +757,7 @@ export async function handlePublishSalesTrialOffering(
       return publishFailure(deps, request, offering, correlationId, externalId, error, [
         ...knownTrialExchangeIds(completedResourceReads, completedMemberRead, error),
         cloudShareErrorContext(error)?.exchangeId,
+        nestedAcquisitionExchangeId(error),
       ].filter((id): id is string => typeof id === "string"));
     }
     const needsAttention = {
@@ -1520,6 +1522,7 @@ async function publishFailure(
     request: oauthTokenFailure ? null : evidence?.request,
     response: oauthTokenFailure ? null : evidence?.response,
     details: {
+      evidenceKind: "semantic",
       integrationSurface,
       failureMode,
       error: error instanceof Error ? error.message : String(error),
@@ -1573,6 +1576,14 @@ function knownTrialExchangeDetails(
 ): Record<string, unknown> {
   const ids = knownTrialExchangeIds(reads, memberRead);
   return ids.length ? { contributingExchangeIds: ids } : {};
+}
+
+function nestedAcquisitionExchangeId(error: unknown): string | undefined {
+  const context = cloudShareErrorContext(error);
+  const acquisition = context?.acquisition;
+  return acquisition && typeof acquisition === "object" && !Array.isArray(acquisition) && typeof (acquisition as Record<string, unknown>).exchangeCorrelationId === "string"
+    ? (acquisition as Record<string, string>).exchangeCorrelationId
+    : undefined;
 }
 
 async function auditLifecycle(
@@ -1655,8 +1666,9 @@ async function rejectPublishPreflight(
       externalIds: { offeringId: offering.id, itemId: offering.itemId, externalId },
       request: { method: "POST", path: `/api/sales/trial-offerings/${offering.id}/publish` },
       response: { status },
-      details: {
-        integrationSurface: "portal.sales_trial_offerings",
+        details: {
+          evidenceKind: "semantic",
+          integrationSurface: "portal.sales_trial_offerings",
         failureMode,
         cloudShareAttempted: false,
       },
@@ -1693,6 +1705,7 @@ async function recordResourceReads(
     request: Record<string, unknown>;
     response: Record<string, unknown>;
     integrationSurface: string;
+    exchangeId?: string;
   }[],
   outcome: "success" | "failure",
   message: string,
@@ -1711,7 +1724,7 @@ async function recordResourceReads(
         message,
         request: read.request,
         response: read.response,
-        details: { integrationSurface: read.integrationSurface },
+        details: { integrationSurface: read.integrationSurface, evidenceKind: "semantic", ...(read.exchangeId ? { contributingExchangeIds: [read.exchangeId] } : {}) },
         externalIds: { offeringId, itemId, projectId },
       }),
     ),
@@ -1743,6 +1756,8 @@ async function recordProjectMemberRead(
     response: read.response as unknown as Record<string, unknown>,
     details: {
       integrationSurface: read.integrationSurface,
+      evidenceKind: "semantic",
+      ...(read.exchangeId ? { contributingExchangeIds: [read.exchangeId] } : {}),
       memberCount: read.members.length,
       cached: false,
     },

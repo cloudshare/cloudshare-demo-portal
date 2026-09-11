@@ -151,6 +151,16 @@ export function createCloudShareClientFactory(input: {
       const workflowObserver = options.scope === "workflow"
         ? createCloudShareWorkflowObserver({ diagnostics: input.diagnostics, customerId: connection.customerId, ...options.workflow })
         : undefined;
+      // When a workflow has authoritative identity, its fallback must retain
+      // that same correlation, actor, and subject. Customer-only identity is
+      // reserved for genuinely unscoped calls.
+      const canonicalFallback = workflowObserver
+        ? createCloudShareWorkflowObserver({
+            diagnostics: { ...input.diagnostics, recordCanonical: input.diagnostics.record },
+            customerId: connection.customerId,
+            ...((options as Extract<CloudShareClientObservationOptions, { readonly scope: "workflow" }>).workflow),
+          })
+        : defaultObserver;
       return decorateClient(createIntegration({
         mode: input.mode,
         trace: input.trace,
@@ -159,8 +169,8 @@ export function createCloudShareClientFactory(input: {
           // authoritative workflow exists. Keep the mandatory Customer
           // fallback for unscoped calls, but never persist the same exchange
           // once as a workflow row and again as an unrelated default row.
-          onRequest: workflowObserver ? composeCloudShareObservers(composeCanonicalObserver(workflowObserver.onRequest, defaultObserver.onRequest), options.onRequest) : composeCanonicalObserver(options.onRequest, defaultObserver.onRequest),
-          onAcquisition: workflowObserver ? composeCloudShareObservers(composeCanonicalObserver(workflowObserver.onAcquisition, defaultObserver.onAcquisition), options.onAcquisition) : composeCanonicalObserver(options.onAcquisition, defaultObserver.onAcquisition),
+          onRequest: workflowObserver ? composeCloudShareObservers(composeCanonicalObserver(workflowObserver.onRequest, canonicalFallback.onRequest), options.onRequest) : composeCanonicalObserver(options.onRequest, canonicalFallback.onRequest),
+          onAcquisition: workflowObserver ? composeCloudShareObservers(composeCanonicalObserver(workflowObserver.onAcquisition, canonicalFallback.onAcquisition), options.onAcquisition) : composeCanonicalObserver(options.onAcquisition, canonicalFallback.onAcquisition),
         },
         ...(options.scope === "workflow" && options.workflow.sequenceAllocator ? { attemptStartAllocator: options.workflow.sequenceAllocator } : options.scope === "custom_observer" && options.sequenceAllocator ? { attemptStartAllocator: options.sequenceAllocator } : {}),
         connection: {
