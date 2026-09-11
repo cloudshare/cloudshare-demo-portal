@@ -11,6 +11,20 @@ function json(body: unknown, status = 200): Response {
 }
 
 describe("AdminSupportFeature", () => {
+  it("renders exact Session and Trial Operation labels returned by protected Sales Support", async () => {
+    const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(json({
+      entries: [
+        { id: "session", occurredAt: "2026-09-11T10:00:00.000Z", level: "info", source: "sales-demo-sessions", operation: "cloudshare.request", outcome: "success", customerId: "customer-certalis", actor: { type: "admin" }, subject: { type: "sales_demo_session", id: "session-1" }, message: "Session exchange", correlationId: "corr-session", details: { evidenceKind: "transport", integrationSurface: "cloudshare.v3" } },
+        { id: "trial", occurredAt: "2026-09-11T10:01:00.000Z", level: "info", source: "sales-trial-enrollment", operation: "sales_trial.cloudshare.request", outcome: "success", customerId: "customer-certalis", actor: { type: "admin" }, subject: { type: "sales_trial_enrollment", id: "trial-1" }, message: "Trial exchange", correlationId: "corr-trial", details: { evidenceKind: "transport", integrationSurface: "cloudshare.v3.projects" } },
+      ], page: { limit: 50, offset: 0, returned: 2, hasMore: false, nextOffset: null },
+    }));
+    render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ source: "sales-demo-sessions" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
+    expect(await screen.findByText("cloudshare.v3.projects")).toBeTruthy();
+    expect(screen.getByText("cloudshare.v3")).toBeTruthy();
+    expect(screen.queryByText("sales_trial.cloudshare.request")).toBeNull();
+    expect(fetchAdmin).toHaveBeenCalledWith("/api/sales/diagnostics?source=sales-demo-sessions&limit=50&offset=0");
+  });
+
   it("reloads page zero when applying unchanged deep-linked Support Diagnostics filters", async () => {
     const user = userEvent.setup();
     const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(
