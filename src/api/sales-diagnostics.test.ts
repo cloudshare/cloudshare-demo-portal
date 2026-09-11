@@ -22,12 +22,13 @@ describe("Sales diagnostics handler", () => {
     expect((response.body as { entries: Array<{ message: string }> }).entries[0]?.message).toBe("0");
     expect((response.body as { page: { hasMore: boolean; nextOffset: number | null } }).page).toMatchObject({ hasMore: true, nextOffset: 500 });
   });
-  it("orders same-millisecond workflow rows by start sequence and exchange ID, with legacy timestamp/ID fallback", async () => {
+  it("orders one correlated workflow by attempt sequence, exchange tie, and semantic adjacency", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository(); const at = new Date("2026-09-10T00:00:00.000Z");
-    for (const [id, sequence, exchangeId] of [["row-z", 2, "exchange-b"], ["row-a", 1, "exchange-z"]] as const) await diagnostics.append({ id, source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", occurredAt: at, details: { attemptStartSequence: sequence, exchangeId }, message: id } as never);
-    await diagnostics.append({ id: "legacy", source: "sales-records", operation: "x", outcome: "success", customerId: "customer-certalis", occurredAt: at, message: "legacy" } as never);
-    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { limit: "3" } });
-    expect((response.body as { entries: Array<{ id: string }> }).entries.map((entry) => entry.id)).toEqual(["diag-1", "diag-2", "diag-3"]);
+    await diagnostics.append({ source: "sales-records", operation: "transport", outcome: "success", customerId: "customer-certalis", correlationId: "shared-workflow", occurredAt: at, details: { attemptStartSequence: 2, exchangeId: "exchange-b" }, message: "transport-b" } as never);
+    await diagnostics.append({ source: "sales-records", operation: "semantic", outcome: "failure", customerId: "customer-certalis", correlationId: "shared-workflow", occurredAt: at, details: { contributingExchangeIds: ["exchange-a"] }, message: "semantic-a" } as never);
+    await diagnostics.append({ source: "sales-records", operation: "transport", outcome: "success", customerId: "customer-certalis", correlationId: "shared-workflow", occurredAt: at, details: { attemptStartSequence: 1, exchangeId: "exchange-a" }, message: "transport-a" } as never);
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { correlationId: "shared-workflow", limit: "3" } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["transport-a", "semantic-a", "transport-b"]);
   });
   it("does not use random exchange IDs to order legacy same-millisecond rows", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository(); const at = new Date("2026-09-10T00:00:00.000Z");
@@ -203,6 +204,17 @@ describe("Sales diagnostics handler", () => {
     const empty = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", offset: "10", limit: "1" } });
     expect(empty).toMatchObject({ status: 200, body: { page: { returned: 0, hasMore: false } } });
     await expect(handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", offset: "5001" } })).resolves.toMatchObject({ status: 400 });
+  });
+  it("keeps causal lookahead reachable at 101 rows and the 4900 to 5000 boundary", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    for (let index = 0; index < 5001; index += 1) await diagnostics.append({ source: "sales-trial-enrollment", operation: "x", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, message: String(index), occurredAt: new Date(Date.UTC(2026, 8, 4, 0, 0, index % 60)) } as never);
+    const deps = { diagnostics, salesTrialEnrollments: enrollmentRepo(), logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } };
+    const first = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", subjectType: "sales_trial_enrollment", limit: "100" } });
+    expect(first).toMatchObject({ body: { page: { returned: 100, hasMore: true, nextOffset: 100 } } });
+    const boundary = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", subjectType: "sales_trial_enrollment", offset: "4900", limit: "100" } });
+    expect(boundary).toMatchObject({ body: { page: { returned: 100, hasMore: true, nextOffset: 5000, complete: false } } });
+    const cap = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", subjectType: "sales_trial_enrollment", offset: "5000", limit: "1" } });
+    expect(cap).toMatchObject({ body: { page: { returned: 1, hasMore: false, nextOffset: null, complete: false, incompleteReason: "sales_diagnostic_offset_cap" } } });
   });
 
   it("returns correlated participant reconciliation evidence through the aggregate Sales Support feed", async () => {
