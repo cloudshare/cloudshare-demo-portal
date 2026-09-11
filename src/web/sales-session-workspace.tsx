@@ -104,13 +104,18 @@ export function groupSalesSessionActivity(entries: readonly SafeSalesSessionActi
   const groups = new Map<string, ActivityGroup>();
   for (const entry of entries) {
     const actor = humanActivityActor(entry.actor?.type);
-    const key = `${entry.kind}\u0000${entry.kind === "unknown" ? entry.occurredAt : ""}\u0000${entry.outcome}\u0000${actor}\u0000${entry.subject.type}`;
+    // A correlation is a persisted workflow anchor.  Never merge two
+    // independent operations merely because their safe business kind is the
+    // same.  Uncorrelated legacy rows have no reliable anchor, so retain them
+    // as standalone entries (the timestamp is only a deterministic identity,
+    // not a grouping heuristic).
+    const key = `${entry.kind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}`}\u0000${entry.outcome}\u0000${actor}\u0000${entry.subject.type}`;
     const current = groups.get(key);
     if (!current) { groups.set(key, { summary: entry.summary, outcome: entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, diagnosticRecords: entry.correlationId ? [{ correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : [] }); continue; }
     const diagnosticRecords = entry.correlationId && !current.diagnosticRecords.some((record) => record.correlationId === entry.correlationId) ? [...current.diagnosticRecords, { correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : current.diagnosticRecords;
     groups.set(key, { ...current, firstAt: entry.occurredAt < current.firstAt ? entry.occurredAt : current.firstAt, lastAt: entry.occurredAt > current.lastAt ? entry.occurredAt : current.lastAt, count: current.count + 1, diagnosticRecords });
   }
-  return [...groups.values()].sort((left, right) => right.lastAt.localeCompare(left.lastAt));
+  return [...groups.values()].sort((left, right) => right.lastAt.localeCompare(left.lastAt) || right.firstAt.localeCompare(left.firstAt) || left.summary.localeCompare(right.summary) || left.actor.localeCompare(right.actor));
 }
 
 function SummaryMetric({ label, children }: { readonly label: string; readonly children: React.ReactNode }) { return <div><dt>{label}</dt><dd>{children}</dd></div>; }

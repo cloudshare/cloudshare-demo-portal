@@ -34,7 +34,10 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         experienceStatusSource: session.experienceStatusSource === "cloudshare_v4_sales_list" || session.experienceStatusSource === "cloudshare_v4_get_sales" ? session.experienceStatusSource : null,
       }, new Date());
       const activity = await prisma.diagnosticLogEntry.findMany({
-        where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 100,
+        // Read the complete local history before the UI applies presentation
+        // grouping/limits. A fixed query limit can split one workflow and make
+        // the resulting Activity timeline materially misleading.
+        where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
         select: { occurredAt: true, operation: true, outcome: true, actorType: true, subjectType: true, subjectId: true, correlationId: true },
       });
       return { state: "available", workspace: {
