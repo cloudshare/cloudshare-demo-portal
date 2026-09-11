@@ -32,9 +32,10 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   const areaHeading = useRef<HTMLHeadingElement>(null);
   const handleSessionExpired = useMemo(() => shellExpiry ?? createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { setSessionExpired(true); router.replace(path); } }), [router, shellExpiry]);
   useEffect(() => {
-    lifecycle.current.active = true;
-    lifecycle.current.token += 1;
-    return () => { lifecycle.current.active = false; };
+    const owner = lifecycle.current;
+    owner.active = true;
+    owner.token += 1;
+    return () => { owner.active = false; };
   }, []);
   useEffect(() => {
     const token = ++lifecycle.current.token;
