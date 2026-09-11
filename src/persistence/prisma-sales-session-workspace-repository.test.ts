@@ -81,6 +81,15 @@ describe("Prisma Sales Session workspace repository", () => {
     ]));
   });
 
+  it("reports a truthful workflow presentation limit after complete source grouping", async () => {
+    const rows = Array.from({ length: 101 }, (_, index) => row(`workflow-${index}`, `corr-${index}`, `2026-07-24T09:00:${String(index % 60).padStart(2, "0")}.${String(index).padStart(3, "0")}Z`));
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session()) }, diagnosticLogEntry: { findMany: vi.fn().mockResolvedValue(rows) } } as never);
+    const result = await repository.read("customer-a", "session-1");
+    if (!result || result.state !== "available") throw new Error("expected workspace");
+    expect(result.workspace.activityGroups).toHaveLength(100);
+    expect(result.workspace.activityHistory).toMatchObject({ complete: false, hasMore: true, reason: "workflow_presentation_limit", presentedWorkflowCount: 100, totalWorkflowCount: 101 });
+  });
+
   it("uses persisted ids as the deterministic tie breaker and fails closed across Customers", async () => {
     const findFirst = vi.fn().mockResolvedValue(null);
     const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst }, diagnosticLogEntry: { findMany: vi.fn() } } as never);

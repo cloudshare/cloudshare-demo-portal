@@ -4,7 +4,6 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionWorkspace } from "./sales-session-workspace";
-import { groupSafeSalesSessionActivity, type SafeSalesSessionActivity } from "@/domain/sales-session-workspace";
 
 const router = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
@@ -238,12 +237,17 @@ describe("Sales Session workspace", () => {
         { ...data.activity[0], occurredAt: "2026-07-23T09:04:00.000Z", correlationId: "corr-2" },
       ],
     };
-    const responseBody = { ...repeatedActivity, activityGroups: groupSafeSalesSessionActivity(repeatedActivity.activity as readonly SafeSalesSessionActivity[]) };
+    const responseBody = { ...repeatedActivity, activityGroups: [
+      { workflowId: "workflow-2", summary: "Sales Session provision completed.", outcome: "success", actor: "Sales admin", subject: "This Sales Session", firstAt: "2026-07-23T09:04:00.000Z", lastAt: "2026-07-23T09:04:00.000Z", count: 1, correlationId: "corr-2", steps: [{ label: "Sales Session provision completed.", outcome: "success", occurredAt: "2026-07-23T09:04:00.000Z" }], diagnosticRecords: [{ correlationId: "corr-2", occurredAt: "2026-07-23T09:04:00.000Z" }] },
+      { workflowId: "workflow-1", summary: "Sales Session provision completed.", outcome: "success", actor: "Sales admin", subject: "This Sales Session", firstAt: "2026-07-23T09:00:00.000Z", lastAt: "2026-07-23T09:02:00.000Z", count: 2, correlationId: "corr-1", steps: [{ label: "OAuth token acquired.", outcome: "success", occurredAt: "2026-07-23T09:00:00.000Z" }, { label: "Sales Session provision completed.", outcome: "success", occurredAt: "2026-07-23T09:02:00.000Z" }], diagnosticRecords: [{ correlationId: "corr-1", occurredAt: "2026-07-23T09:00:00.000Z" }] },
+    ] };
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(responseBody), { status: 200 }));
     render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
 
     expect(await screen.findByRole("list", { name: "Sales Session activity timeline" })).not.toBeNull();
     expect(screen.getByText("2 workflow steps")).not.toBeNull();
+    expect(screen.getByText("OAuth token acquired.")).not.toBeNull();
+    expect(screen.getAllByText("Completed").length).toBeGreaterThanOrEqual(3);
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:00:00.000Z");
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:04:00.000Z");
     expect(screen.queryByText(/diagnostic record/)).toBeNull();
