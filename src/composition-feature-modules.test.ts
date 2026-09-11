@@ -13,7 +13,6 @@ import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection"
 import { createCloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createSalesTrialCloudShareObserver } from "@/api/sales-trial-cloudshare-diagnostics";
-import { composeCanonicalObserver } from "@/integrations/cloudshare";
 
 const CONNECTION: CloudShareConnectionRecord = {
   customerId: "customer-a", apiId: "api-id", apiKey: "api-key", webhookSecret: "webhook-secret",
@@ -141,11 +140,13 @@ describe("composition feature modules", () => {
   it("uses the real custom observer and recorder seam for the first canonical append failure", async () => {
     const append = vi.fn().mockRejectedValueOnce(new Error("canonical write failed")).mockResolvedValue(undefined);
     const recorder = createDiagnosticRecorder({ repository: { append } as never });
-    const observer = createSalesTrialCloudShareObserver({ diagnostics: recorder, customerId: "customer-a", source: "sales-trial-enrollment", correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" } });
-    const fallback = async () => recorder.record({ source: "sales-trial-enrollment", operation: "trial.request.fallback", outcome: "success", customerId: "customer-a", correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" }, message: "fallback", occurredAt: new Date("2026-09-03T12:00:01.000Z") });
-    await composeCanonicalObserver(observer.onRequest, fallback)({ ...REQUEST_EVENT, exchangeId: "exchange-real" });
+    const actual = createSalesTrialCloudShareObserver({ diagnostics: recorder, customerId: "customer-a", source: "sales-trial-enrollment", correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" } });
+    const integrations: Parameters<typeof createCloudShareIntegrationForConnection>[0][] = [];
+    const factory = createCloudShareClientFactory({ diagnostics: recorder, mode: "fixture", createIntegration: (input) => { integrations.push(input); return {} as CloudShareClient; }, decorateClient: (client) => client });
+    factory.forConnection(CONNECTION, { ...actual, onRequest: actual.onRequest });
+    await integrations[0].observer.onRequest({ ...REQUEST_EVENT, exchangeId: "exchange-real", attemptStartSequence: 7, completedAt: "2026-09-03T12:00:02.000Z" });
     expect(append).toHaveBeenCalledTimes(2);
-    expect(append.mock.calls[1][0]).toMatchObject({ source: "sales-trial-enrollment", correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" } });
+    expect(append.mock.calls[1][0]).toMatchObject({ source: "sales-trial-enrollment", correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" }, details: { exchangeId: "exchange-real", attemptStartSequence: 7, completedAt: "2026-09-03T12:00:02.000Z", evidenceKind: "transport" } });
   });
 
   it("exposes the approved narrow dependency bundles", () => {

@@ -992,7 +992,8 @@ describe("Sales Trial Offering API", () => {
         details: expect.objectContaining({
           itemId: "item-1",
           failureMode: "local_reservation_persistence",
-          cloudShareAttempted: false,
+          cloudShareAttempted: true,
+          publicationAttempted: false,
         }),
       }),
     );
