@@ -41,7 +41,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
     return () => { live = false; };
   }, [handleSessionExpired, sessionId]);
   useEffect(() => {
-    if (!workspace || workspace.summary.experience.freshness === "fresh" || requestInFlight.current) return;
+    if (area === "activity" || !workspace || workspace.summary.experience.freshness === "fresh" || requestInFlight.current) return;
     const snapshot = `${workspace.summary.id}:${workspace.summary.experience.source}:${workspace.summary.experience.freshness}:${workspace.summary.experience.observedAt ?? ""}`;
     if (attemptedRefresh.current === snapshot) return;
     attemptedRefresh.current = snapshot;
@@ -56,7 +56,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
       if (live) { setWorkspace(next); if (next.summary.experience.freshness !== "fresh") { setRefreshOutcome("failure"); setAutomaticRefresh("CloudShare returned no fresh observation. Retry or open Sales support."); } else { setRefreshOutcome("success"); setAutomaticRefresh("CloudShare status refreshed."); } }
     }).catch((cause) => { if (live) setRefreshOutcome("failure"); setAutomaticRefresh(cause instanceof Error ? cause.message : "Automatic refresh failed. Retry or open Sales support."); }).finally(() => { requestInFlight.current = false; setRefreshBusy(false); });
     return () => { live = false; };
-  }, [handleSessionExpired, sessionId, workspace]);
+  }, [area, handleSessionExpired, sessionId, workspace]);
   useEffect(() => { areaHeading.current?.focus(); }, [area, workspace?.summary.id]);
   const activity = (workspace?.activityGroups ?? []).map((group) => ({ ...group, steps: group.steps ?? [] }));  const retryAutomaticRefresh = async () => {
     if (requestInFlight.current) return;

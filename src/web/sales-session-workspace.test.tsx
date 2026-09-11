@@ -263,6 +263,17 @@ describe("Sales Session workspace", () => {
     expect(screen.getByText(/Activity shows ordinary operational metadata only/)).not.toBeNull();
   });
 
+  it("keeps retained Activity local-only when its status snapshot is stale", async () => {
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    const fetchMock = vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(stale), { status: 200 }));
+    render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("list", { name: "Sales Session activity timeline" });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/workspace");
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("refresh?mode=automatic");
+  });
+
   it("presents retained ambiguity as incomplete beside a later definite failure", async () => {
     const responseBody = { ...data, activityGroups: [
       { workflowId: "ambiguous", summary: "Business outcome and evidence are incomplete.", outcome: "incomplete", actor: "Sales admin", subject: "This Sales Session", firstAt: "2026-07-23T09:00:00.000Z", lastAt: "2026-07-23T09:01:00.000Z", count: 2, correlationId: "corr-ambiguous", steps: [{ label: "OAuth token acquired.", outcome: "success", occurredAt: "2026-07-23T09:00:00.000Z" }, { label: "Business outcome unknown.", outcome: "incomplete", occurredAt: "2026-07-23T09:01:00.000Z" }], diagnosticRecords: [] },
