@@ -60,7 +60,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
     return () => { live = false; };
   }, [handleSessionExpired, sessionId, workspace]);
   useEffect(() => { areaHeading.current?.focus(); }, [area, workspace?.summary.id]);
-  const activity = useMemo(() => workspace ? (workspace.activityGroups ?? groupSalesSessionActivity(workspace.activity)) : [], [workspace]);  const retryAutomaticRefresh = async () => {
+  const activity = useMemo(() => workspace?.activityGroups ?? [], [workspace]);  const retryAutomaticRefresh = async () => {
     if (requestInFlight.current) return;
     requestInFlight.current = true; setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Retrying CloudShare status…");
     const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });

@@ -6,8 +6,8 @@ export interface SalesSessionWorkspaceResponse {
   readonly summary: { readonly id: string; readonly sessionName: string; readonly revision: number; readonly start: string; readonly end: string; readonly timeZone: string; readonly operation: ReturnType<typeof projectSalesSessionStatus>["operation"]; readonly experience: { readonly value: string; readonly source: string; readonly freshness: string; readonly observedAt?: string } };
   readonly participants: readonly { readonly id: string; readonly name: string; readonly email: string; readonly invitationStatus: "sent" | "notSent"; readonly participationStatus: string; readonly environment: SalesParticipantEnvironmentObservation; readonly environmentAttention: SafeSalesParticipantAttention | null }[];
   readonly activity: readonly SafeSalesSessionActivity[];
-  readonly activityGroups?: readonly SafeSalesSessionActivityGroup[];
-  readonly activityHistory?: { readonly complete: boolean; readonly omittedCount: number };
+  readonly activityGroups: readonly SafeSalesSessionActivityGroup[];
+  readonly activityHistory: { readonly complete: boolean; readonly omittedCount: number };
   readonly details: { readonly accountName: string; readonly opportunityName: string; readonly itemName: string; readonly invitationMode: string };
 }
 export type SalesSessionWorkspaceRead = { readonly state: "available"; readonly workspace: SalesSessionWorkspaceResponse } | { readonly state: "stale" };
@@ -27,9 +27,19 @@ export type SafeSalesSessionActivityGroup = { readonly summary: string; readonly
 /** Groups complete workflow anchors in the read model, not in the browser. */
 export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSessionActivity[]): readonly SafeSalesSessionActivityGroup[] {
   const groups = new Map<string, SafeSalesSessionActivityGroup>();
+  const knownByCorrelation = new Map<string, Set<string>>();
+  for (const entry of entries) if (entry.correlationId && entry.kind !== "unknown") {
+    const kinds = knownByCorrelation.get(entry.correlationId) ?? new Set<string>(); kinds.add(entry.kind); knownByCorrelation.set(entry.correlationId, kinds);
+  }
   for (const entry of entries) {
     const actor = safeActivityActor(entry.actor?.type);
-    const key = `${entry.kind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}`}\u0000${entry.subject.type}`;
+    const known = entry.correlationId ? knownByCorrelation.get(entry.correlationId) : undefined;
+    // Transport/OAuth/revalidation rows are intentionally absorbed into the
+    // single known business workflow for that correlation (#431). If the
+    // correlation has multiple business meanings, unknown evidence remains a
+    // controlled incomplete child rather than being assigned ambiguously.
+    const businessKind = entry.kind === "unknown" && known?.size === 1 ? [...known][0] : entry.kind;
+    const key = `${businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}`}\u0000${entry.subject.type}`;
     const current = groups.get(key);
     const record = entry.correlationId ? [{ correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : [];
     if (!current) { groups.set(key, { summary: entry.summary, outcome: entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, diagnosticRecords: record }); continue; }
