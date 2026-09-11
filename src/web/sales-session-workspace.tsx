@@ -34,7 +34,9 @@ function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly s
   const lifecycle = useRef({ active: false, token: 0 });
   const shellExpiry = useContext(SalesWorkspaceExpiryContext);
   const areaHeading = useRef<HTMLHeadingElement>(null);
-  const handleSessionExpired = useMemo(() => shellExpiry ?? createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { if (lifecycle.current.active) { setSessionExpired(true); router.replace(path); } } }), [router, shellExpiry]);
+  const fallbackExpiry = useMemo(() => createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { setSessionExpired(true); router.replace(path); } }), [router]);
+  const authenticatedRequest = (token: number) => createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: () => { if (lifecycle.current.active && lifecycle.current.token === token) (shellExpiry ?? fallbackExpiry)(); } });
+  const handleSessionExpired = () => { if (lifecycle.current.active) (shellExpiry ?? fallbackExpiry)(); };
   useEffect(() => {
     const owner = lifecycle.current;
     owner.active = true;
@@ -44,13 +46,13 @@ function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly s
   useEffect(() => {
     const token = ++lifecycle.current.token;
     requestInFlight.current = false;
-    const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });
+    const request = authenticatedRequest(token);
     void request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace`, { cache: "no-store" }).then(async (response) => {
       const body = await response.json() as SalesSessionWorkspaceResponse & { error?: string };
       if (!response.ok) throw new Error(body.error ?? "The Sales Session could not be loaded.");
       if (lifecycle.current.active && lifecycle.current.token === token) setWorkspace(body);
     }).catch((cause) => { if (lifecycle.current.active && lifecycle.current.token === token) setError(cause instanceof Error ? cause.message : "The Sales Session could not be loaded."); });
-  }, [handleSessionExpired, sessionId]);
+  }, [sessionId]);
   useEffect(() => {
     if (area === "activity" || !workspace || workspace.summary.experience.freshness === "fresh" || requestInFlight.current) return;
     const snapshot = `${workspace.summary.id}:${workspace.summary.experience.source}:${workspace.summary.experience.freshness}:${workspace.summary.experience.observedAt ?? ""}`;
@@ -58,7 +60,7 @@ function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly s
     attemptedRefresh.current = snapshot;
     const token = lifecycle.current.token;
     requestInFlight.current = true; setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Checking the latest CloudShare status…");
-    const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });
+    const request = authenticatedRequest(token);
     void request(`/api/sales/enablement-sessions/refresh?mode=automatic&targetId=${encodeURIComponent(sessionId)}&limit=1`, { method: "POST" }).then(async (response) => {
       const body = await response.json() as { error?: string; correlationId?: string };
       if (!response.ok) { if (body.correlationId && lifecycle.current.active && lifecycle.current.token === token) setRefreshCorrelationId(body.correlationId); throw new Error(body.error ?? "Automatic refresh failed. Retry or open Sales support."); }
@@ -67,13 +69,13 @@ function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly s
       if (!reread.ok) throw new Error(next.error ?? "The refreshed Sales Session could not be read.");
       if (lifecycle.current.active && lifecycle.current.token === token) { setWorkspace(next); if (next.summary.experience.freshness !== "fresh") { setRefreshOutcome("failure"); setAutomaticRefresh("CloudShare returned no fresh observation. Retry or open Sales support."); } else { setRefreshOutcome("success"); setAutomaticRefresh("CloudShare status refreshed."); } }
     }).catch((cause) => { if (lifecycle.current.active && lifecycle.current.token === token) { setRefreshOutcome("failure"); setAutomaticRefresh(cause instanceof Error ? cause.message : "Automatic refresh failed. Retry or open Sales support."); } }).finally(() => { if (lifecycle.current.active && lifecycle.current.token === token) { requestInFlight.current = false; setRefreshBusy(false); } });
-  }, [area, handleSessionExpired, sessionId, workspace]);
+  }, [area, sessionId, workspace]);
   useEffect(() => { areaHeading.current?.focus(); }, [area, workspace?.summary.id]);
   const activity = (workspace?.activityGroups ?? []).map((group) => ({ ...group, steps: group.steps ?? [] }));
   const retryAutomaticRefresh = async () => {
     if (requestInFlight.current) return;
     requestInFlight.current = true; const token = lifecycle.current.token; setRefreshCorrelationId(null); setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Retrying CloudShare status…");
-    const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });
+    const request = authenticatedRequest(token);
     try {
       const response = await request(`/api/sales/enablement-sessions/refresh?mode=automatic&targetId=${encodeURIComponent(sessionId)}&limit=1`, { method: "POST" });
       const body = await response.json() as { error?: string; correlationId?: string };
