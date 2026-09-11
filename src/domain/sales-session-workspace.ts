@@ -7,7 +7,7 @@ export interface SalesSessionWorkspaceResponse {
   readonly participants: readonly { readonly id: string; readonly name: string; readonly email: string; readonly invitationStatus: "sent" | "notSent"; readonly participationStatus: string; readonly environment: SalesParticipantEnvironmentObservation; readonly environmentAttention: SafeSalesParticipantAttention | null }[];
   readonly activity: readonly SafeSalesSessionActivity[];
   readonly activityGroups: readonly SafeSalesSessionActivityGroup[];
-  readonly activityHistory: { readonly complete: boolean; readonly omittedCount: number };
+  readonly activityHistory: { readonly complete: boolean; readonly omittedCount: number; readonly partialGroups?: number; readonly presentedGroupCount?: number; readonly totalGroupCount?: number };
   readonly details: { readonly accountName: string; readonly opportunityName: string; readonly itemName: string; readonly invitationMode: string };
 }
 export type SalesSessionWorkspaceRead = { readonly state: "available"; readonly workspace: SalesSessionWorkspaceResponse } | { readonly state: "stale" };
@@ -22,11 +22,11 @@ export type SafeSalesSessionActivity = {
   readonly subject: { readonly type: "sales_demo_session"; readonly id: string };
   readonly correlationId?: string;
 };
-export type SafeSalesSessionActivityGroup = { readonly summary: string; readonly outcome: "success" | "failure" | "mixed"; readonly actor: string; readonly subject: string; readonly firstAt: string; readonly lastAt: string; readonly count: number; readonly diagnosticRecords: readonly { readonly correlationId: string; readonly occurredAt: string }[] };
+export type SafeSalesSessionActivityGroup = { readonly summary: string; readonly outcome: "success" | "failure" | "mixed" | "incomplete"; readonly actor: string; readonly subject: string; readonly firstAt: string; readonly lastAt: string; readonly count: number; readonly correlationId?: string; readonly diagnosticRecords: readonly { readonly correlationId: string; readonly occurredAt: string }[] };
 
 /** Groups complete workflow anchors in the read model, not in the browser. */
 export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSessionActivity[]): readonly SafeSalesSessionActivityGroup[] {
-  const groups = new Map<string, SafeSalesSessionActivityGroup>();
+  const groups = new Map<string, { entries: SafeSalesSessionActivity[]; group: SafeSalesSessionActivityGroup }>();
   const knownByCorrelation = new Map<string, Set<string>>();
   for (const entry of entries) if (entry.correlationId && entry.kind !== "unknown") {
     const kinds = knownByCorrelation.get(entry.correlationId) ?? new Set<string>(); kinds.add(entry.kind); knownByCorrelation.set(entry.correlationId, kinds);
@@ -44,10 +44,15 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
     const key = `${businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}:${index}`}\u0000${entry.subject.type}`;
     const current = groups.get(key);
     const record = entry.correlationId ? [{ correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : [];
-    if (!current) { groups.set(key, { summary: entry.summary, outcome: entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, diagnosticRecords: record }); continue; }
-    groups.set(key, { ...current, outcome: current.outcome === entry.outcome ? current.outcome : "mixed", firstAt: entry.occurredAt < current.firstAt ? entry.occurredAt : current.firstAt, lastAt: entry.occurredAt > current.lastAt ? entry.occurredAt : current.lastAt, count: current.count + 1, diagnosticRecords: entry.correlationId && !current.diagnosticRecords.some((r) => r.correlationId === entry.correlationId) ? [...current.diagnosticRecords, ...record] : current.diagnosticRecords });
+    if (!current) { groups.set(key, { entries: [entry], group: { summary: entry.summary, outcome: entry.correlationId && entry.kind !== "session_provision" && entry.kind !== "session_reconciliation" ? "incomplete" : entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, ...(entry.correlationId ? { correlationId: entry.correlationId } : {}), diagnosticRecords: record } }); continue; }
+    const nextEntries = [...current.entries, entry];
+    const terminal = nextEntries.find((candidate) => candidate.kind === "session_provision" || candidate.kind === "session_reconciliation");
+    const hasFailure = nextEntries.some((candidate) => candidate.outcome === "failure");
+    const hasSuccess = nextEntries.some((candidate) => candidate.outcome === "success");
+    const outcome = hasFailure && hasSuccess ? "mixed" : hasFailure ? "failure" : terminal ? "success" : "incomplete";
+    groups.set(key, { entries: nextEntries, group: { ...current.group, summary: terminal?.summary ?? current.group.summary, outcome, firstAt: entry.occurredAt < current.group.firstAt ? entry.occurredAt : current.group.firstAt, lastAt: entry.occurredAt > current.group.lastAt ? entry.occurredAt : current.group.lastAt, count: nextEntries.length, diagnosticRecords: entry.correlationId && !current.group.diagnosticRecords.some((r) => r.correlationId === entry.correlationId) ? [...current.group.diagnosticRecords, ...record] : current.group.diagnosticRecords } });
   }
-  return [...groups.values()].sort((a, b) => b.lastAt.localeCompare(a.lastAt) || b.firstAt.localeCompare(a.firstAt) || a.summary.localeCompare(b.summary));
+  return [...groups.values()].map(({ group }) => group).sort((a, b) => b.lastAt.localeCompare(a.lastAt) || b.firstAt.localeCompare(a.firstAt) || a.summary.localeCompare(b.summary));
 }
 function safeActivityActor(value: "admin" | "candidate" | "system" | "unknown" | undefined): string { return value === "admin" ? "Sales admin" : value === "candidate" ? "Candidate" : value === "system" ? "Certalis system" : value === "unknown" ? "Unknown actor" : "Not recorded"; }
 

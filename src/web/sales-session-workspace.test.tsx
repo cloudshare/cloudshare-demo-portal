@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionWorkspace } from "./sales-session-workspace";
+import { groupSafeSalesSessionActivity, type SafeSalesSessionActivity } from "@/domain/sales-session-workspace";
 
 const router = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
@@ -237,7 +238,8 @@ describe("Sales Session workspace", () => {
         { ...data.activity[0], occurredAt: "2026-07-23T09:04:00.000Z", correlationId: "corr-2" },
       ],
     };
-    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(repeatedActivity), { status: 200 }));
+    const responseBody = { ...repeatedActivity, activityGroups: groupSafeSalesSessionActivity(repeatedActivity.activity as readonly SafeSalesSessionActivity[]) };
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(responseBody), { status: 200 }));
     render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
 
     expect(await screen.findByRole("list", { name: "Sales Session activity timeline" })).not.toBeNull();

@@ -40,12 +40,15 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 5501,
         select: { occurredAt: true, operation: true, outcome: true, actorType: true, subjectType: true, subjectId: true, correlationId: true },
       });
+      const projectedActivity = activity.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+      const activityForPresentation = projectedActivity.slice(0, 5500);
+      const activityGroups = groupSafeSalesSessionActivity(activityForPresentation);
       return { state: "available", workspace: {
         summary: { id: session.id, sessionName: session.sessionName || "Sales Enablement Session", revision: session.revision, start: session.start, end: session.end, timeZone: session.timeZone, operation: status.operation, experience: status.experience },
         participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant), environmentAttention: projectSafeSalesParticipantAttention(participant) })),
-        activity: activity.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null),
-        activityGroups: groupSafeSalesSessionActivity(activity.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null)),
-        activityHistory: { complete: activity.length <= 5500, omittedCount: activity.length > 5500 ? 1 : 0 },
+        activity: projectedActivity,
+        activityGroups,
+        activityHistory: { complete: activity.length <= 5500, omittedCount: activity.length > 5500 ? activity.length - 5500 : 0, presentedGroupCount: activityGroups.length, totalGroupCount: activityGroups.length, partialGroups: activity.length > 5500 ? 1 : 0 },
         details: { accountName: session.opportunity.account.name, opportunityName: session.opportunity.name, itemName: session.item.name, invitationMode: session.sendInvitations === "salesProsAndParticipants" ? "Sales Pros and participants" : "No native invitations" },
       } };
     },

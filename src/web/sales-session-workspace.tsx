@@ -13,7 +13,7 @@ import type { SalesSessionVerifyResponse } from "@/api/sales-session-reconciliat
 
 type Area = "participants" | "activity" | "details";
 type DiagnosticRecord = { readonly correlationId: string; readonly occurredAt: string };
-type ActivityGroup = ReturnType<typeof groupReadModelActivity>[number];
+type ActivityGroup = SalesSessionWorkspaceResponse["activityGroups"][number];
 
 export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly sessionId: string; readonly area: Area; readonly queueHref: string }) {
   const router = useRouter();
@@ -60,7 +60,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
     return () => { live = false; };
   }, [handleSessionExpired, sessionId, workspace]);
   useEffect(() => { areaHeading.current?.focus(); }, [area, workspace?.summary.id]);
-  const activity = useMemo(() => workspace ? (workspace.activityGroups?.length ? workspace.activityGroups : groupReadModelActivity(workspace.activity)) : [], [workspace]);  const retryAutomaticRefresh = async () => {
+  const activity = useMemo(() => workspace?.activityGroups ?? [], [workspace]);  const retryAutomaticRefresh = async () => {
     if (requestInFlight.current) return;
     requestInFlight.current = true; setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Retrying CloudShare status…");
     const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });
