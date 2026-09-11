@@ -252,8 +252,8 @@ describe("Sales Session workspace", () => {
     expect(correlationDisclosure?.querySelector('[href*="corr-2"]')?.textContent).toBe("Open diagnostic record from 2026-07-23T09:04:00.000Z");
     expect(correlationDisclosure?.textContent).not.toContain("corr-1");
     expect(correlationDisclosure?.textContent).not.toContain("corr-2");
-    expect(screen.getByText("Actor: Sales admin")).not.toBeNull();
-    expect(screen.getByText("Subject: This Sales Session")).not.toBeNull();
+    expect(screen.getAllByText("Actor: Sales admin")).toHaveLength(2);
+    expect(screen.getAllByText("Subject: This Sales Session")).toHaveLength(2);
     expect(screen.getByText(/Activity shows ordinary operational metadata only/)).not.toBeNull();
   });
 
