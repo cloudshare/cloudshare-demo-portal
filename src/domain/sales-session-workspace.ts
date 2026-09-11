@@ -45,7 +45,8 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
     const businessKind = (!terminalKinds.has(entry.kind) && known?.size === 1) ? [...known][0] : entry.kind;
     // Correlation is the stable workflow anchor. Legacy rows have no anchor;
     // retain each persisted row independently, including same-millisecond rows.
-    const key = `${entry.correlationId ? "correlated" : businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}:${entry.activityId ?? `index:${index}`}`}\u0000${entry.subject.type}`;
+    const correlationKind = known?.size === 1 ? [...known][0] : known?.size === 0 ? "child_only" : businessKind;
+    const key = `${entry.correlationId ? correlationKind : businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}:${entry.activityId ?? `index:${index}`}`}\u0000${entry.subject.type}`;
     const current = groups.get(key);
     const record = entry.correlationId ? [{ correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : [];
     if (!current) { const incomplete = Boolean(entry.correlationId && !terminalKinds.has(entry.kind)); groups.set(key, { entries: [entry], group: { workflowId: key, summary: incomplete ? incompleteSummary() : entry.summary, outcome: incomplete ? "incomplete" : entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, ...(entry.correlationId ? { correlationId: entry.correlationId } : {}), diagnosticRecords: record } }); continue; }

@@ -48,6 +48,8 @@ describe("safe Sales Session Activity projection", () => {
 
   it.each([
     ["terminal failure plus successful child", [activity("unknown", "corr", "failure", "2026-07-24T09:00:00.000Z"), activity("session_provision", "corr", "failure", "2026-07-24T09:00:01.000Z")], "failure"],
+    ["successful child before terminal failure", [activity("session_provision", "corr", "failure", "2026-07-24T09:00:01.000Z"), activity("unknown", "corr", "success", "2026-07-24T09:00:00.000Z")], "failure"],
+    ["terminal failure after successful child", [activity("unknown", "corr", "success", "2026-07-24T09:00:00.000Z"), activity("session_provision", "corr", "failure", "2026-07-24T09:00:01.000Z")], "failure"],
     ["terminal success plus failed child", [activity("unknown", "corr", "failure", "2026-07-24T09:00:00.000Z"), activity("session_provision", "corr", "success", "2026-07-24T09:00:01.000Z")], "mixed"],
     ["child-only correlation", [activity("unknown", "corr", "success", "2026-07-24T09:00:00.000Z")], "incomplete"],
   ] as const)("reports %s truthfully", (_name, entries, outcome) => expect(groupSafeSalesSessionActivity(entries)[0]?.outcome).toBe(outcome));

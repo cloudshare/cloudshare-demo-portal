@@ -21,7 +21,7 @@ const routeParams = (sessionId = "session-1") => ({ params: Promise.resolve({ se
 describe("Sales workspace route authorization and public contract", () => {
   beforeEach(() => {
     state.session = null;
-    state.handler.mockReset().mockResolvedValue({ status: 200, body: { activityGroups: [], activityHistory: { complete: true, omittedCount: 0 } } });
+    state.handler.mockReset().mockResolvedValue({ status: 200, body: { activityGroups: [], activityHistory: { complete: true, hasMore: false } } });
     state.repository.read.mockReset();
     state.services = { prisma: {}, ensurePortalSeeded: vi.fn(), cloudshareConnections: { findByCustomerId: vi.fn() }, cloudshareClientFactory: { forConnection: vi.fn() } };
   });

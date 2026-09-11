@@ -246,8 +246,8 @@ describe("Sales Session workspace", () => {
     expect(screen.getByText("2 workflow steps")).not.toBeNull();
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:00:00.000Z");
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:04:00.000Z");
-    expect(screen.getAllByText("1 diagnostic record")).toHaveLength(2);
-    const supportLinks = screen.getAllByRole("link", { name: "Open Sales support" });
+    expect(screen.queryByText(/diagnostic record/)).toBeNull();
+    const supportLinks = screen.getAllByRole("link", { name: "Open Sales support investigation" });
     expect(supportLinks).toHaveLength(2);
     expect(supportLinks.map((link) => link.getAttribute("href"))).toEqual([
       "/sales?tab=support&correlationId=corr-2",

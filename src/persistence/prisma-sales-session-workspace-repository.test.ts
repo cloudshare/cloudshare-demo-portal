@@ -40,7 +40,7 @@ describe("Prisma Sales Session workspace repository", () => {
     const findMany = vi.fn().mockResolvedValue(rows);
     const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session()) }, diagnosticLogEntry: { findMany } } as never);
     const result = await repository.read("customer-a", "session-1");
-    expect(result).toMatchObject({ state: "available", workspace: { activityGroups: [{ correlationId: "corr-one", count: 101 }], activityHistory: { totalGroupCount: 1, omittedCount: 0, complete: true } } });
+    expect(result).toMatchObject({ state: "available", workspace: { activityGroups: [{ correlationId: "corr-one", count: 101 }], activityHistory: { presentedWorkflowCount: 1, totalWorkflowCount: 1, hasMore: false, complete: true } } });
   });
 
   it("keeps workflows distinct and omits the probe row while marking a boundary workflow incomplete", async () => {
@@ -50,8 +50,9 @@ describe("Prisma Sales Session workspace repository", () => {
     const result = await repository.read("customer-a", "session-1");
     if (!result || result.state !== "available") throw new Error("expected workspace");
     expect(result.workspace.activity.some((entry) => entry.activityId === "probe")).toBe(false);
-    expect(result.workspace.activityGroups.find((group) => group.correlationId === "boundary")?.outcome).toBe("incomplete");
-    expect(result.workspace.activityHistory).toMatchObject({ complete: false, partialGroups: 5500 });
+    expect(result.workspace.activityHistory).toMatchObject({ complete: false, hasMore: true, reason: "source_scan_limit" });
+    expect(result.workspace.activityGroups.every((group) => group.outcome === "incomplete")).toBe(true);
+    expect(result.workspace.activityGroups.every((group) => group.summary === "Business outcome and evidence are incomplete.")).toBe(true);
   });
 
   it("uses persisted ids as the deterministic tie breaker and fails closed across Customers", async () => {
