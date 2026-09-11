@@ -296,6 +296,68 @@ describe("Sales Session workspace", () => {
     expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("refresh?mode=automatic"))).toHaveLength(1);
   });
 
+  it("owns refresh by non-Activity area when leaving and returning to Activity", async () => {
+    let resolvePost!: (value: Response) => void;
+    const post = new Promise<Response>((resolve) => { resolvePost = resolve; });
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    const fresh = { ...data, summary: { ...data.summary, experience: { value: "inProgress", source: "cloudshare_v4_sales_list", freshness: "fresh", observedAt: "2026-07-24T09:01:00.000Z" } } };
+    let workspaceReads = 0;
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("refresh?mode=automatic")) return post;
+      if (url.includes("/workspace")) return new Response(JSON.stringify(workspaceReads++ === 0 ? stale : fresh), { status: 200 });
+      if (init?.method === "POST") return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+      return new Response(JSON.stringify(stale), { status: 200 });
+    });
+    const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Activity" });
+    rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("refresh?mode=automatic")).length).toBe(1));
+    rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
+    expect(screen.getByRole("heading", { name: "Activity" })).not.toBeNull();
+    resolvePost(new Response(JSON.stringify({ correlationId: "refresh-ok" }), { status: 200 }));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/workspace")).length).toBe(2));
+    rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Participants" })).not.toBeNull());
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("refresh?mode=automatic"))).toHaveLength(1);
+  });
+
+  it("keeps a failed owned refresh actionable after returning from Activity", async () => {
+    let rejectPost!: (reason?: unknown) => void;
+    const post = new Promise<Response>((_, reject) => { rejectPost = reject; });
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).includes("refresh?mode=automatic")) return post;
+      if (String(input).includes("/workspace")) return new Response(JSON.stringify(stale), { status: 200 });
+      if (init?.method === "POST") return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+      return new Response(JSON.stringify(stale), { status: 200 });
+    });
+    const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Participants" });
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("refresh?mode=automatic"))).toHaveLength(1));
+    rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
+    rejectPost(new Error("CloudShare unavailable"));
+    await screen.findByText("CloudShare unavailable");
+    rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("refresh?mode=automatic"))).toHaveLength(1);
+  });
+
+  it("clears the refresh owner without updating state after unmount", async () => {
+    let resolvePost!: (value: Response) => void;
+    const post = new Promise<Response>((resolve) => { resolvePost = resolve; });
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).includes("refresh?mode=automatic") ? post : new Response(JSON.stringify(stale), { status: 200 }));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Participants" });
+    await waitFor(() => expect(window.fetch).toHaveBeenCalledTimes(2));
+    rendered.unmount();
+    resolvePost(new Response(JSON.stringify({ correlationId: "refresh-ok" }), { status: 200 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
   it("presents retained ambiguity as incomplete beside a later definite failure", async () => {
     const responseBody = { ...data, activityGroups: [
       { workflowId: "ambiguous", summary: "Business outcome and evidence are incomplete.", outcome: "incomplete", actor: "Sales admin", subject: "This Sales Session", firstAt: "2026-07-23T09:00:00.000Z", lastAt: "2026-07-23T09:01:00.000Z", count: 2, correlationId: "corr-ambiguous", steps: [{ label: "OAuth token acquired.", outcome: "success", occurredAt: "2026-07-23T09:00:00.000Z" }, { label: "Business outcome unknown.", outcome: "incomplete", occurredAt: "2026-07-23T09:01:00.000Z" }], diagnosticRecords: [] },
