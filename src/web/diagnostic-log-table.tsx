@@ -269,8 +269,9 @@ function renderTextValue(value: string | null | undefined, monospace = false): R
 }
 
 /** CloudShare transport rows use the captured integration surface as their
- * operation label. This keeps Session and Trial rows comparable while
- * retaining endpoint/resource specificity supplied by the exchange. */
+ * primary label. The raw operation remains visible as the attempted portal
+ * operation, so Support retains both comparable resource specificity and
+ * correlation terminology. */
 function operationLabel(entry: DiagnosticLogTableEntry): string {
   const surface = readIntegrationSurface(entry.details);
   if ((entry.operation === "cloudshare.request" || entry.operation === "sales_trial.cloudshare.request" || entry.operation === "cloudshare.oauth.token" || entry.operation === "sales_trial.cloudshare.oauth_token") && surface) return surface;
@@ -428,9 +429,9 @@ export function DiagnosticLogTable({
                   <td style={BODY_CELL_STYLE}>{renderTextValue(entry.source)}</td>
                   <td style={{ ...BODY_CELL_STYLE, fontFamily: "monospace" }}>
                     <div style={{ wordBreak: "break-word" }}>{operationLabel(entry)}</div>
-                    {integrationSurface ? (
+                    {operationLabel(entry) !== entry.operation ? (
                       <div style={{ marginTop: "0.2rem", ...MUTED_TEXT_STYLE }}>
-                        Surface: {integrationSurface}
+                        Attempted operation: {entry.operation}
                       </div>
                     ) : null}
                   </td>

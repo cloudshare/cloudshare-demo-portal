@@ -21,7 +21,8 @@ describe("AdminSupportFeature", () => {
     render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{}} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
     expect(await screen.findByText("cloudshare.v3.projects")).toBeTruthy();
     expect(screen.getByText("cloudshare.v3")).toBeTruthy();
-    expect(screen.queryByText("sales_trial.cloudshare.request")).toBeNull();
+    expect(screen.getByText(/Attempted operation: cloudshare.request/)).toBeTruthy();
+    expect(screen.getByText(/Attempted operation: sales_trial.cloudshare.request/)).toBeTruthy();
     expect(fetchAdmin).toHaveBeenCalledWith("/api/sales/diagnostics?limit=50&offset=0");
   });
 

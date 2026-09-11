@@ -20,7 +20,8 @@ describe("DiagnosticLogTable Support hints", () => {
     ]} expandedDiagnosticId={null} onToggleExpanded={() => undefined} />);
     expect(container.textContent).toContain("cloudshare.v3");
     expect(container.textContent).toContain("cloudshare.v3.projects");
-    expect(container.textContent).not.toContain("sales_trial.cloudshare.request");
+    expect(container.textContent).toContain("cloudshare.request");
+    expect(container.textContent).toContain("sales_trial.cloudshare.request");
   });
 
   it("uses the shared surface for Session and Trial OAuth rows and falls back for blank history", () => {
@@ -31,7 +32,7 @@ describe("DiagnosticLogTable Support hints", () => {
     ]} expandedDiagnosticId={null} onToggleExpanded={() => undefined} />);
     expect(container.textContent).toContain("cloudshare.v4.oauth.token");
     expect(container.textContent).toContain("cloudshare.request");
-    expect(container.textContent).not.toContain("sales_trial.cloudshare.oauth_token");
+    expect(container.textContent).toContain("sales_trial.cloudshare.oauth_token");
   });
 
   it("renders explicit transport, semantic, and legacy evidence labels with timing metadata", () => {
