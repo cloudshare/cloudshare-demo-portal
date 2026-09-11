@@ -206,6 +206,7 @@ describe("Sales diagnostics handler", () => {
     await expect(handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", offset: "5001" } })).resolves.toMatchObject({ status: 400 });
   });
   it("keeps causal lookahead reachable at 101 rows and the 4900 to 5000 boundary", async () => {
+    // The same fixture covers ordinary lookahead, the accepted boundary, and cap rejection.
     const diagnostics = createInMemoryDiagnosticLogRepository();
     for (let index = 0; index < 5001; index += 1) await diagnostics.append({ source: "sales-trial-enrollment", operation: "x", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, message: String(index), occurredAt: new Date(Date.UTC(2026, 8, 4, 0, 0, index % 60)) } as never);
     const deps = { diagnostics, salesTrialEnrollments: enrollmentRepo(), logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } };

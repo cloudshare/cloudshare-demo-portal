@@ -11,6 +11,8 @@ const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-items", "sales-demo-se
 const SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET = 5_000;
+/** Causal investigations probe one row beyond the accepted 5,000 offset. */
+const SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND = SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1;
 
 type SalesDiagnosticSource = typeof SALES_DIAGNOSTIC_SOURCES[number];
 type SalesTrialEnrollmentReader = Pick<SalesTrialEnrollmentRepository, "findById"> & {
@@ -106,7 +108,7 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
     const subject = entry.subject as Record<string, unknown> | null;
     return subject?.id === subjectId && (subject.type === "sales_trial_offering" || subject.type === "sales_trial_enrollment");
   });
-  const causalScanTruncated = (read: { readonly truncated: boolean }) => read.truncated && offset + limit + 1 > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
+  const causalScanTruncated = (read: { readonly truncated: boolean }) => read.truncated && offset + limit + 1 >= SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND;
   if (requestedType === "sales_trial_offering") return { entries: orderWorkflowDiagnostics(direct), truncated: directReads.some(causalScanTruncated) };
   const enrollmentEntries = direct.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
   const offeringId = enrollment?.salesTrialOfferingId;

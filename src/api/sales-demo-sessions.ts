@@ -257,6 +257,7 @@ function cloudShareEvidence(error: unknown): { request: Record<string, unknown> 
   const context = cloudShareErrorContext(error);
   return { ...evidence, ...(typeof context?.exchangeId === "string" ? { exchangeId: context.exchangeId } : {}) };
 }
+// All terminal Sales outcomes use this same deduplicated contribution set.
 function contributionIds(...values: unknown[]): string[] { return [...new Set(values.flat(Infinity).filter((value): value is string => typeof value === "string"))]; }
 function contributionDetails(...values: unknown[]): Record<string, unknown> { const ids = contributionIds(...values); return ids.length ? { contributingExchangeIds: ids } : {}; }
 function cloudShareErrorContext(error: unknown): Record<string, unknown> | undefined {
