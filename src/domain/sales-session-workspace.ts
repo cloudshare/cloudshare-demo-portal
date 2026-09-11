@@ -75,9 +75,9 @@ function safeActivityActor(value: "admin" | "candidate" | "system" | "unknown" |
 /** Ordinary Session Activity is deliberately a fresh DTO, not a trimmed
  * DiagnosticLogEntry. Unknown operations and actor types fail closed to generic
  * safe copy; raw diagnostic messages and evidence never cross this seam. */
-export function projectSafeSalesSessionActivity(input: { readonly id?: string; readonly occurredAt: Date; readonly operation: string; readonly outcome: string; readonly actorType: string | null; readonly subjectType: string | null; readonly subjectId: string | null; readonly correlationId: string | null; readonly detailsJson?: string | null }, sessionId: string): SafeSalesSessionActivity | null {
+export function projectSafeSalesSessionActivity(input: { readonly id?: string; readonly occurredAt: Date; readonly operation: string; readonly outcome: string; readonly actorType: string | null; readonly subjectType: string | null; readonly subjectId: string | null; readonly correlationId: string | null; readonly detailsJson?: string | null; readonly sessionCreationAmbiguous?: boolean }, sessionId: string): SafeSalesSessionActivity | null {
   if (input.subjectType !== "sales_demo_session" || input.subjectId !== sessionId || (input.outcome !== "success" && input.outcome !== "failure")) return null;
-  const ambiguous = input.operation === "sales.demo_session.created.ambiguous";
+  const ambiguous = input.operation === "sales.demo_session.created.ambiguous" || (input.operation === "sales.demo_session.created" && input.sessionCreationAmbiguous === true);
   return { ...(input.id ? { activityId: input.id } : {}), occurredAt: input.occurredAt.toISOString(), kind: safeActivityKind(input.operation), summary: ambiguous ? incompleteSummary() : activitySummary(input.operation, input.outcome), outcome: ambiguous ? "incomplete" : input.outcome === "failure" ? "failure" : "success", actor: input.actorType ? { type: safeActorType(input.actorType) } : null, subject: { type: "sales_demo_session", id: sessionId }, ...(input.correlationId ? { correlationId: input.correlationId } : {}) };
 }
 

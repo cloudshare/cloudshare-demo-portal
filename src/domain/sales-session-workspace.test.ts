@@ -65,6 +65,11 @@ describe("safe Sales Session Activity projection", () => {
     expect(groups[0]).toMatchObject({ count: 4, outcome: "incomplete", summary: "Business outcome and evidence are incomplete." });
   });
 
+  it("fails closed for retained legacy ambiguous creation evidence", () => {
+    const entry = projectSafeSalesSessionActivity({ occurredAt: new Date("2026-07-24T09:00:00Z"), operation: "sales.demo_session.created", outcome: "failure", actorType: "admin", subjectType: "sales_demo_session", subjectId: "session-1", correlationId: "ambiguous", sessionCreationAmbiguous: true }, "session-1")!;
+    expect(entry).toMatchObject({ outcome: "incomplete", summary: "Business outcome and evidence are incomplete." });
+  });
+
   it("retains standalone failed legacy activity and never leaks protected-looking inputs", () => {
     const entry = projectSafeSalesSessionActivity({ id: "legacy-1", occurredAt: new Date("2026-07-24T09:00:00Z"), operation: "bearer.token.loginUrl", outcome: "failure", actorType: "system", subjectType: "sales_demo_session", subjectId: "session-1", correlationId: null }, "session-1")!;
     expect(groupSafeSalesSessionActivity([entry])).toMatchObject([{ outcome: "failure", count: 1 }]);
