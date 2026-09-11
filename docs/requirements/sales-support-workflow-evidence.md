@@ -26,10 +26,10 @@ Historical rows that only have completion-allocated ordering are labelled
 legacy and are not rewritten. Bounded pages return `hasMore`, `nextOffset`,
 `complete`, and a continuation hint when another page exists.
 
-OAuth evidence is metadata-only: surface, status or bounded failure mode,
+OAuth evidence is metadata-only in Support: surface, status or bounded failure mode,
 duration, ordering, and workflow/exchange identity. Credentials, Authorization
 values, token bodies, and wrapped OAuth causes are never persisted or rendered.
-Authorized same-Customer Support may inspect protected non-OAuth request/query
+Only authorized same-Customer Support may inspect protected non-OAuth request/query
 and provider-response bodies. Ordinary APIs, Activity, audit, generic logs,
 browser state, candidate surfaces, and another Customer's Support response do
 not receive that evidence. Filters are exact and Customer-scoped; pagination
