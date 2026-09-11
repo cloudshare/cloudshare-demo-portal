@@ -14,6 +14,8 @@ export type SalesSessionWorkspaceRead = { readonly state: "available"; readonly 
 export type SafeSalesParticipantAttention = { readonly reason: string; readonly source: string };
 
 export type SafeSalesSessionActivity = {
+  /** Persisted diagnostic identity used only to keep uncorrelated rows stable. */
+  readonly activityId?: string;
   readonly occurredAt: string;
   readonly kind: "session_provision" | "session_reconciliation" | "participants_registered" | "participants_invited" | "participants_reconciled" | "participant_environment_observed" | "participant_reconciled" | "participant_properties_ensured" | "participant_correlation_backfilled" | "unknown";
   readonly summary: string;
@@ -31,7 +33,8 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
   for (const entry of entries) if (entry.correlationId && entry.kind !== "unknown") {
     const kinds = knownByCorrelation.get(entry.correlationId) ?? new Set<string>(); kinds.add(entry.kind); knownByCorrelation.set(entry.correlationId, kinds);
   }
-  for (const [index, entry] of entries.entries()) {
+  const orderedEntries = [...entries].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || (a.activityId ?? "").localeCompare(b.activityId ?? "") || a.kind.localeCompare(b.kind));
+  for (const [index, entry] of orderedEntries.entries()) {
     const actor = safeActivityActor(entry.actor?.type);
     const known = entry.correlationId ? knownByCorrelation.get(entry.correlationId) : undefined;
     // Transport/OAuth/revalidation rows are intentionally absorbed into the
@@ -41,7 +44,7 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
     const businessKind = entry.kind === "unknown" && known?.size === 1 ? [...known][0] : entry.kind;
     // Correlation is the stable workflow anchor. Legacy rows have no anchor;
     // retain each persisted row independently, including same-millisecond rows.
-    const key = `${businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}:${index}`}\u0000${entry.subject.type}`;
+    const key = `${businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}:${entry.activityId ?? `index:${index}`}`}\u0000${entry.subject.type}`;
     const current = groups.get(key);
     const record = entry.correlationId ? [{ correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : [];
     if (!current) { groups.set(key, { entries: [entry], group: { summary: entry.summary, outcome: entry.correlationId && entry.kind !== "session_provision" && entry.kind !== "session_reconciliation" ? "incomplete" : entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, ...(entry.correlationId ? { correlationId: entry.correlationId } : {}), diagnosticRecords: record } }); continue; }
@@ -54,7 +57,8 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
     // mixed evidence only when the terminal operation itself succeeded.
     const terminalOutcome = terminal?.outcome;
     const outcome = terminalOutcome === "failure" ? "failure" : terminalOutcome === "success" ? (hasFailure ? "mixed" : "success") : hasFailure && hasSuccess ? "mixed" : hasFailure ? "failure" : "incomplete";
-    groups.set(key, { entries: nextEntries, group: { ...current.group, summary: terminal?.summary ?? current.group.summary, outcome, firstAt: entry.occurredAt < current.group.firstAt ? entry.occurredAt : current.group.firstAt, lastAt: entry.occurredAt > current.group.lastAt ? entry.occurredAt : current.group.lastAt, count: nextEntries.length, diagnosticRecords: entry.correlationId && !current.group.diagnosticRecords.some((r) => r.correlationId === entry.correlationId) ? [...current.group.diagnosticRecords, ...record] : current.group.diagnosticRecords } });
+    const authoritative = terminal ?? nextEntries[0];
+    groups.set(key, { entries: nextEntries, group: { ...current.group, summary: authoritative.summary, actor: safeActivityActor(authoritative.actor?.type), outcome, firstAt: nextEntries[0].occurredAt, lastAt: nextEntries[nextEntries.length - 1].occurredAt, count: nextEntries.length, diagnosticRecords: entry.correlationId && !current.group.diagnosticRecords.some((r) => r.correlationId === entry.correlationId) ? [...current.group.diagnosticRecords, ...record] : current.group.diagnosticRecords } });
   }
   return [...groups.values()].map(({ group }) => group).sort((a, b) => b.lastAt.localeCompare(a.lastAt) || b.firstAt.localeCompare(a.firstAt) || a.summary.localeCompare(b.summary));
 }
@@ -63,9 +67,9 @@ function safeActivityActor(value: "admin" | "candidate" | "system" | "unknown" |
 /** Ordinary Session Activity is deliberately a fresh DTO, not a trimmed
  * DiagnosticLogEntry. Unknown operations and actor types fail closed to generic
  * safe copy; raw diagnostic messages and evidence never cross this seam. */
-export function projectSafeSalesSessionActivity(input: { readonly occurredAt: Date; readonly operation: string; readonly outcome: string; readonly actorType: string | null; readonly subjectType: string | null; readonly subjectId: string | null; readonly correlationId: string | null }, sessionId: string): SafeSalesSessionActivity | null {
+export function projectSafeSalesSessionActivity(input: { readonly id?: string; readonly occurredAt: Date; readonly operation: string; readonly outcome: string; readonly actorType: string | null; readonly subjectType: string | null; readonly subjectId: string | null; readonly correlationId: string | null }, sessionId: string): SafeSalesSessionActivity | null {
   if (input.subjectType !== "sales_demo_session" || input.subjectId !== sessionId || (input.outcome !== "success" && input.outcome !== "failure")) return null;
-  return { occurredAt: input.occurredAt.toISOString(), kind: safeActivityKind(input.operation), summary: activitySummary(input.operation, input.outcome), outcome: input.outcome === "failure" ? "failure" : "success", actor: input.actorType ? { type: safeActorType(input.actorType) } : null, subject: { type: "sales_demo_session", id: sessionId }, ...(input.correlationId ? { correlationId: input.correlationId } : {}) };
+  return { ...(input.id ? { activityId: input.id } : {}), occurredAt: input.occurredAt.toISOString(), kind: safeActivityKind(input.operation), summary: activitySummary(input.operation, input.outcome), outcome: input.outcome === "failure" ? "failure" : "success", actor: input.actorType ? { type: safeActorType(input.actorType) } : null, subject: { type: "sales_demo_session", id: sessionId }, ...(input.correlationId ? { correlationId: input.correlationId } : {}) };
 }
 
 function safeActivityKind(operation: string): SafeSalesSessionActivity["kind"] {

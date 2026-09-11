@@ -2,6 +2,42 @@ import { describe, expect, it } from "vitest";
 import { groupSafeSalesSessionActivity, projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity } from "./sales-session-workspace";
 
 describe("safe Sales Session Activity projection", () => {
+  const activity = (kind: string, correlationId: string | null, outcome: "success" | "failure", at: string, id = `${kind}-${at}`) => ({ activityId: id, occurredAt: at, kind: kind as never, summary: `${kind} ${outcome}`, outcome, actor: { type: "system" as const }, subject: { type: "sales_demo_session" as const, id: "session-1" }, ...(correlationId ? { correlationId } : {}) });
+
+  it("collapses minimized creation plus OAuth evidence into one provision workflow", () => {
+    const groups = groupSafeSalesSessionActivity([activity("unknown", "corr", "success", "2026-07-24T09:00:00.000Z"), activity("session_provision", "corr", "success", "2026-07-24T09:00:01.000Z")]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ outcome: "success", count: 2 });
+  });
+
+  it("collapses the complete #431 transport sequence into one provision workflow", () => {
+    const children = Array.from({ length: 12 }, (_, index) => activity(index === 11 ? "session_provision" : "unknown", "corr", "success", `2026-07-24T09:00:${String(index).padStart(2, "0")}.000Z`, `row-${index}`));
+    expect(groupSafeSalesSessionActivity(children)).toHaveLength(1);
+  });
+
+  it("keeps same-kind correlations separate and orders tied timestamps by persisted id", () => {
+    const groups = groupSafeSalesSessionActivity([activity("session_provision", "b", "success", "2026-07-24T09:00:00.000Z", "b-id"), activity("session_provision", "a", "success", "2026-07-24T09:00:00.000Z", "a-id"), activity("session_provision", null, "failure", "2026-07-24T09:00:00.000Z", "legacy-2"), activity("session_provision", null, "success", "2026-07-24T09:00:00.000Z", "legacy-1")]);
+    expect(groups).toHaveLength(4);
+    expect(groups.map((group) => group.correlationId)).toEqual([undefined, "a", "b", undefined]);
+  });
+
+  it("keeps two known business operations distinct and makes an unknown child incomplete", () => {
+    const groups = groupSafeSalesSessionActivity([activity("session_provision", "corr", "success", "2026-07-24T09:00:02.000Z"), activity("session_reconciliation", "corr", "success", "2026-07-24T09:00:03.000Z"), activity("unknown", "corr", "success", "2026-07-24T09:00:04.000Z")]);
+    expect(groups).toHaveLength(3);
+    expect(groups.find((group) => group.count === 1 && group.outcome === "incomplete")).toBeTruthy();
+  });
+
+  it.each([
+    ["terminal failure plus successful child", [activity("unknown", "corr", "failure", "2026-07-24T09:00:00.000Z"), activity("session_provision", "corr", "failure", "2026-07-24T09:00:01.000Z")], "failure"],
+    ["terminal success plus failed child", [activity("unknown", "corr", "failure", "2026-07-24T09:00:00.000Z"), activity("session_provision", "corr", "success", "2026-07-24T09:00:01.000Z")], "mixed"],
+    ["child-only correlation", [activity("unknown", "corr", "success", "2026-07-24T09:00:00.000Z")], "incomplete"],
+  ] as const)("reports %s truthfully", (_name, entries, outcome) => expect(groupSafeSalesSessionActivity(entries)[0]?.outcome).toBe(outcome));
+
+  it("retains standalone failed legacy activity and never leaks protected-looking inputs", () => {
+    const entry = projectSafeSalesSessionActivity({ id: "legacy-1", occurredAt: new Date("2026-07-24T09:00:00Z"), operation: "bearer.token.loginUrl", outcome: "failure", actorType: "system", subjectType: "sales_demo_session", subjectId: "session-1", correlationId: null }, "session-1")!;
+    expect(groupSafeSalesSessionActivity([entry])).toMatchObject([{ outcome: "failure", count: 1 }]);
+    expect(JSON.stringify(entry)).not.toMatch(/bearer|loginUrl|token/i);
+  });
   it("keeps independent correlations and legacy rows separate while marking mixed outcomes", () => {
     const base = { occurredAt: new Date("2026-07-24T09:00:00Z"), operation: "sales.demo_session.created", actorType: "admin", subjectType: "sales_demo_session", subjectId: "session-1" };
     const rows = [
