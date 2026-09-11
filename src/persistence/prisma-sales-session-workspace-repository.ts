@@ -45,8 +45,17 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 5501,
         select: { id: true, occurredAt: true, operation: true, outcome: true, actorType: true, subjectType: true, subjectId: true, correlationId: true },
       });
-      const projectedActivity = activity.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-      const allActivityGroups = groupSafeSalesSessionActivity(projectedActivity);
+      // The final row is a probe, never presentation data.  Keep the probe's
+      // correlation so a displayed group can truthfully be marked incomplete
+      // when its history continues beyond the read boundary.
+      const probe = activity.length > 5500 ? activity[5500] : undefined;
+      const presentedRows = activity.slice(0, 5500);
+      const projectedActivity = presentedRows.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+      const allActivityGroups = groupSafeSalesSessionActivity(projectedActivity).map((group) =>
+        probe?.correlationId && group.correlationId === probe.correlationId
+          ? { ...group, outcome: "incomplete" as const }
+          : group,
+      );
       const activityGroups = allActivityGroups.slice(0, MAX_PRESENTED_ACTIVITY_GROUPS);
       const omittedGroupCount = Math.max(0, allActivityGroups.length - activityGroups.length);
       return { state: "available", workspace: {
