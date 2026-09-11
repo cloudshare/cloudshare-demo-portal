@@ -112,5 +112,3 @@ function humanParticipation(value: string): string { return value === "inProgres
 function humanActivityActor(value: "admin" | "candidate" | "system" | "unknown" | undefined): string { return value === "admin" ? "Sales admin" : value === "candidate" ? "Candidate" : value === "system" ? "Certalis system" : value === "unknown" ? "Unknown actor" : "Not recorded"; }
 function humanEnvironmentSource(value: string): string { if (value === "cloudshare_v3_environment") return "Observed from CloudShare Environment"; if (value === "cloudshare_v4_sales_participant_roster") return "Observed from CloudShare participant roster"; if (value === "not_assigned") return "No CloudShare Environment is assigned"; return "CloudShare Environment state has not been observed"; }
 
-
-
