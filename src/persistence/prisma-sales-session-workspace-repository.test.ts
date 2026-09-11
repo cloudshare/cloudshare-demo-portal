@@ -69,6 +69,18 @@ describe("Prisma Sales Session workspace repository", () => {
     ]));
   });
 
+  it("deterministically scopes a legacy ambiguity to the earliest failed creation correlation", async () => {
+    const rows = [row("later", "corr-duplicate", "2026-07-24T09:01:00.000Z", "sales.demo_session.created", "failure"), row("earlier", "corr-ambiguous", "2026-07-24T09:00:00.000Z", "sales.demo_session.created", "failure")];
+    const findFirst = vi.fn().mockResolvedValue(session({ operationalStatus: "needs_attention", attentionReason: "cloudshare_v4_post_sales_ambiguous: legacy retained reason" }));
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst }, diagnosticLogEntry: { findMany: vi.fn().mockResolvedValue(rows) } } as never);
+    const result = await repository.read("customer-a", "session-1");
+    if (!result || result.state !== "available") throw new Error("expected workspace");
+    expect(result.workspace.activityGroups).toEqual(expect.arrayContaining([
+      expect.objectContaining({ correlationId: "corr-ambiguous", outcome: "incomplete" }),
+      expect.objectContaining({ correlationId: "corr-duplicate", outcome: "failure" }),
+    ]));
+  });
+
   it("uses persisted ids as the deterministic tie breaker and fails closed across Customers", async () => {
     const findFirst = vi.fn().mockResolvedValue(null);
     const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst }, diagnosticLogEntry: { findMany: vi.fn() } } as never);

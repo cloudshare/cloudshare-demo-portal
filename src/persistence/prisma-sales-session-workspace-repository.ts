@@ -50,7 +50,12 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
       const sourceCapped = activity.length > SOURCE_SCAN_LIMIT;
       const probe = sourceCapped ? activity[SOURCE_SCAN_LIMIT] : undefined;
       const presentedRows = activity.slice(0, SOURCE_SCAN_LIMIT);
-      const ambiguousCorrelation = session.operationalStatus === "needs_attention" ? session.attentionReason?.match(/cloudshare_v4_post_sales_ambiguous[\s\S]*?correlationId:([^\s]+)/)?.[1] : undefined;
+      const explicitAmbiguousCorrelation = session.operationalStatus === "needs_attention" ? session.attentionReason?.match(/cloudshare_v4_post_sales_ambiguous[\s\S]*?correlationId:([^\s]+)/)?.[1] : undefined;
+      const legacyAmbiguous = session.operationalStatus === "needs_attention" && session.attentionReason?.includes("cloudshare_v4_post_sales_ambiguous") === true && !explicitAmbiguousCorrelation;
+      const legacyAmbiguousCorrelation = legacyAmbiguous
+        ? [...presentedRows].filter((entry) => entry.operation === "sales.demo_session.created" && entry.outcome === "failure" && entry.correlationId).sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id))[0]?.correlationId ?? undefined
+        : undefined;
+      const ambiguousCorrelation = explicitAmbiguousCorrelation ?? legacyAmbiguousCorrelation;
       const projectedActivity = presentedRows.map((entry) => projectSafeSalesSessionActivity({ ...entry, sessionCreationAmbiguous: Boolean(ambiguousCorrelation && entry.correlationId === ambiguousCorrelation) }, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
       const allActivityGroups = groupSafeSalesSessionActivity(projectedActivity).map((group) =>
         probe ? { ...group, outcome: "incomplete" as const, summary: "Business outcome and evidence are incomplete." } : group,
