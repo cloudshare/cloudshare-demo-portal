@@ -143,7 +143,7 @@ export function createSalesTrialCloudShareObserver(input: {
       const result = event.result;
       const failure = event.error;
       completionSequence += 1;
-      await input.diagnostics.record({
+      await (input.diagnostics.recordCanonical ?? input.diagnostics.record)({
         occurredAt: new Date(event.occurredAt),
         source: input.source,
         operation: "sales_trial.cloudshare.request",
@@ -187,7 +187,7 @@ export function createSalesTrialCloudShareObserver(input: {
         return;
       }
       completionSequence += 1;
-      await input.diagnostics.record({
+      await (input.diagnostics.recordCanonical ?? input.diagnostics.record)({
         occurredAt: new Date(event.occurredAt),
         source: input.source,
         operation: "sales_trial.cloudshare.oauth_token",

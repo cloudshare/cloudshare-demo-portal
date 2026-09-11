@@ -46,7 +46,7 @@ export async function handleGetSalesDiagnosticLog(
     const candidateNextOffset = requestedOffset + pageEntries.length;
     const hasMore = subjectEntries.length > candidateNextOffset;
     const bounded = requestedOffset + requestedLimit > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET || (hasMore && candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET);
-    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore: hasMore && !bounded, nextOffset: hasMore && !bounded ? candidateNextOffset : null, complete: !bounded && !hasMore, incompleteReason: bounded ? "sales_diagnostic_offset_cap" : undefined, continuation: hasMore ? `offset=${candidateNextOffset}` : null } } };
+    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore: hasMore && !bounded, nextOffset: hasMore && !bounded ? candidateNextOffset : null, complete: !bounded && !hasMore, incompleteReason: bounded ? "sales_diagnostic_offset_cap" : undefined, continuation: hasMore && !bounded ? `offset=${candidateNextOffset}` : null } } };
   }
 
   const requiredEntriesPerSource = SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + SALES_DIAGNOSTIC_MAX_PAGE_LIMIT + 1;
