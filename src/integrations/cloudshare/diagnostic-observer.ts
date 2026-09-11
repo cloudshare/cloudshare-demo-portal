@@ -72,6 +72,7 @@ export function createCloudShareWorkflowObserver(input: {
   readonly diagnostics: DiagnosticRecorder;
   readonly customerId: string;
 } & CloudShareWorkflowObservationContext) {
+  const recordCanonical = input.diagnostics.recordCanonical ?? input.diagnostics.record;
   const sequenceAllocator = input.sequenceAllocator ?? createCloudShareWorkflowSequenceAllocator();
   const subject = () => typeof input.subject === "function" ? input.subject() : input.subject;
   const anchor = () => ({
@@ -89,7 +90,7 @@ export function createCloudShareWorkflowObserver(input: {
       const projectedFailure = projectCloudShareFailureContext(event.error?.context);
       const oauthFailure = projectedFailure?.request === null && projectedFailure.response === null;
       const sequence = sequenceAllocator.next();
-      await input.diagnostics.record({
+      await recordCanonical({
         occurredAt: new Date(event.occurredAt), source: input.source,
         operation: "cloudshare.request", outcome: event.outcome,
         ...anchor(),
@@ -113,7 +114,7 @@ export function createCloudShareWorkflowObserver(input: {
     onAcquisition: async (event: V4TokenAcquisitionEvent) => {
       const sequence = sequenceAllocator.next();
       const exchangeCorrelationId = event.exchangeCorrelationId ?? randomUUID();
-      await input.diagnostics.record({
+      await recordCanonical({
         occurredAt: new Date(event.occurredAt), source: input.source,
         operation: "cloudshare.oauth.token", outcome: event.outcome,
         ...anchor(),
@@ -121,6 +122,7 @@ export function createCloudShareWorkflowObserver(input: {
         request: null, response: null,
         details: {
           exchangeId: exchangeCorrelationId,
+          evidenceKind: "transport",
           attemptStartSequence: event.attemptStartSequence,
           completedAt: event.completedAt,
           sequence, durationMs: event.durationMs, integrationSurface: event.integrationSurface,

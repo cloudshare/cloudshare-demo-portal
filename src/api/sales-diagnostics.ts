@@ -45,7 +45,7 @@ export async function handleGetSalesDiagnosticLog(
     const pageEntries = subjectEntries.slice(requestedOffset, requestedOffset + requestedLimit);
     const candidateNextOffset = requestedOffset + pageEntries.length;
     const hasMore = subjectEntries.length > candidateNextOffset;
-    const bounded = hasMore && candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
+    const bounded = requestedOffset + requestedLimit > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET || (hasMore && candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET);
     return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore: hasMore && !bounded, nextOffset: hasMore && !bounded ? candidateNextOffset : null, complete: !bounded && !hasMore, incompleteReason: bounded ? "sales_diagnostic_offset_cap" : undefined, continuation: hasMore ? `offset=${candidateNextOffset}` : null } } };
   }
 
@@ -104,11 +104,11 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
     const subject = entry.subject as Record<string, unknown> | null;
     return subject?.id === subjectId && (subject.type === "sales_trial_offering" || subject.type === "sales_trial_enrollment");
   });
-  if (requestedType === "sales_trial_offering") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  if (requestedType === "sales_trial_offering") return orderWorkflowDiagnostics(direct);
   const enrollmentEntries = direct.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
   const offeringId = enrollment?.salesTrialOfferingId;
-  if (!enrollmentEntries.length && typeof offeringId !== "string") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
-  if (typeof offeringId !== "string") return enrollmentEntries.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  if (!enrollmentEntries.length && typeof offeringId !== "string") return orderWorkflowDiagnostics(direct);
+  if (typeof offeringId !== "string") return orderWorkflowDiagnostics(enrollmentEntries);
   const parentSources: SalesDiagnosticSource[] = requestedSource === undefined
     ? ["sales-trial-offerings", "sales-trial-enrollment"]
     : requestedSource === "sales-trial-offerings"
@@ -120,7 +120,7 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
       return subject?.type === "sales_trial_offering" && subject.id === offeringId;
     })
     : [];
-  return [...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()].sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  return orderWorkflowDiagnostics([...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()]);
 }
 
 /** Entries have already crossed the direction-aware recorder seam. This
