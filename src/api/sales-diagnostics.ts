@@ -101,7 +101,9 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
         ? ["sales-trial-offerings", "sales-trial-enrollment"]
         : requestedSource === "sales-trial-offerings"
           ? ["sales-trial-offerings"]
-          : [])
+          : requestedSource === "sales-trial-enrollment"
+            ? ["sales-trial-enrollment"]
+            : [])
     : (requestedSource === undefined ? ["sales-trial-enrollment"] : requestedSource === "sales-trial-enrollment" ? ["sales-trial-enrollment"] : []);
   const directReads = await Promise.all(sources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND })));
   const direct = directReads.flatMap((read) => read.entries).filter((entry) => {
