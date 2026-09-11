@@ -428,12 +428,21 @@ export function DiagnosticLogTable({
                   </td>
                   <td style={BODY_CELL_STYLE}>{renderTextValue(entry.source)}</td>
                   <td style={{ ...BODY_CELL_STYLE, fontFamily: "monospace" }}>
-                    <div style={{ wordBreak: "break-word" }}>{operationLabel(entry)}</div>
-                    {operationLabel(entry) !== entry.operation ? (
+                    {(() => {
+                      const displayedOperation = operationLabel(entry);
+                      return <>
+                    <div style={{ wordBreak: "break-word" }}>{displayedOperation}</div>
+                    {displayedOperation !== entry.operation ? (
                       <div style={{ marginTop: "0.2rem", ...MUTED_TEXT_STYLE }}>
                         Attempted operation: {entry.operation}
                       </div>
+                    ) : integrationSurface ? (
+                      <div style={{ marginTop: "0.2rem", ...MUTED_TEXT_STYLE }}>
+                        Surface: {integrationSurface}
+                      </div>
                     ) : null}
+                      </>;
+                    })()}
                   </td>
                   <td style={BODY_CELL_STYLE}>
                     <span style={statusBadgeStyle(getOutcomeTone(entry.outcome))}>
