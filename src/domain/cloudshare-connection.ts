@@ -54,7 +54,7 @@ type CloudShareClientObservationCallbacks = {
 export type CloudShareClientObservationOptions = CloudShareClientObservationCallbacks & (
   | { readonly scope: "workflow"; readonly workflow: CloudShareWorkflowObservationContext }
   | { readonly scope: "customer_default"; readonly reason: "catalogue_resource_read" | "connection_check" | "unanchored_support_read" }
-  | { readonly scope: "custom_observer"; readonly correlationId: string; readonly sequenceAllocator?: CloudShareWorkflowSequenceAllocator; readonly actor?: DiagnosticActor; readonly subject?: DiagnosticSubject | (() => DiagnosticSubject); readonly source?: string; readonly externalIds?: Record<string, string> }
+  | { readonly scope: "custom_observer"; readonly correlationId: string; readonly actor: DiagnosticActor; readonly subject: DiagnosticSubject | (() => DiagnosticSubject); readonly sequenceAllocator?: CloudShareWorkflowSequenceAllocator; readonly source?: string; readonly externalIds?: Record<string, string> }
 );
 
 export interface CloudShareClientFactory {

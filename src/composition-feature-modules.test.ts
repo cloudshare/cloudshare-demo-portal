@@ -107,11 +107,11 @@ describe("composition feature modules", () => {
     }));
 
     const customAcquisition = vi.fn().mockRejectedValue(new Error("custom observer unavailable"));
-    factory.forConnection(CONNECTION, { scope: "custom_observer", correlationId: "custom-correlation", onAcquisition: customAcquisition });
+    factory.forConnection(CONNECTION, { scope: "custom_observer", correlationId: "custom-correlation", actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, onAcquisition: customAcquisition });
     await integrations[1].observer.onAcquisition(OAUTH_EVENT);
     expect(customAcquisition).toHaveBeenCalledOnce();
     expect(record).toHaveBeenCalledTimes(2);
-    expect(record).toHaveBeenLastCalledWith(expect.objectContaining({ correlationId: "mandatory-customer-correlation-2" }));
+    expect(record).toHaveBeenLastCalledWith(expect.objectContaining({ correlationId: "custom-correlation", actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" } }));
   });
 
   it("keeps mandatory Customer evidence isolated across connections", async () => {

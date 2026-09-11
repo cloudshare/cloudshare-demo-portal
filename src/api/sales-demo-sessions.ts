@@ -266,7 +266,9 @@ function contributionIds(...values: unknown[]): string[] {
 }
 function contributionDetails(...values: unknown[]): Record<string, unknown> { const ids = contributionIds(...values); return ids.length ? { contributingExchangeIds: ids } : {}; }
 function cloudShareErrorContext(error: unknown): Record<string, unknown> | undefined {
-  return error instanceof Error && "context" in error && error.context && typeof error.context === "object" ? error.context as Record<string, unknown> : undefined;
+  if (!(error instanceof Error)) return undefined;
+  const own = "context" in error && error.context && typeof error.context === "object" ? error.context as Record<string, unknown> : undefined;
+  return own ?? ("cause" in error ? cloudShareErrorContext(error.cause) : undefined);
 }
 function isPreWriteAuthFailure(error: unknown): boolean {
   if (error instanceof SalesItemProvisioningReadError || error instanceof SalesProjectMemberReadError) return isPreWriteAuthFailure(error.cause);

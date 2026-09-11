@@ -571,6 +571,7 @@ export async function handlePublishSalesTrialOffering(
         },
         details: {
           evidenceKind: "semantic",
+          ...knownTrialExchangeDetails(completedResourceReads, completedMemberRead),
           integrationSurface: "portal.sales_trial_offerings",
           failureMode: "local_reservation_persistence",
           cloudShareAttempted: false,
@@ -1424,9 +1425,9 @@ function isOutcomeAmbiguousCreateFailure(error: unknown): boolean {
 }
 
 function cloudShareErrorContext(error: unknown): Record<string, unknown> | undefined {
-  return error instanceof Error && "context" in error
-    ? (error as { context?: Record<string, unknown> }).context
-    : undefined;
+  if (!(error instanceof Error)) return undefined;
+  const own = "context" in error ? (error as { context?: Record<string, unknown> }).context : undefined;
+  return own ?? ("cause" in error ? cloudShareErrorContext((error as { cause?: unknown }).cause) : undefined);
 }
 
 function isCloudShareOAuthTokenFailure(error: unknown): boolean {
