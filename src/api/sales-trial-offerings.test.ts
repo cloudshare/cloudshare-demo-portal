@@ -1878,10 +1878,11 @@ describe("Sales Trial Offering API", () => {
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
       id: "offering-1",
     });
-    const [entry] = await diagnosticRepository.query({
+    const entries = await diagnosticRepository.query({
       source: "sales-trial-offerings",
       operation: "sales.trial_offering.project_members.revalidated",
     });
+    const entry = entries.find((candidate) => candidate.details?.failureMode === "project_member_read");
 
     expect(result).toMatchObject({
       status: 502,
@@ -1898,6 +1899,7 @@ describe("Sales Trial Offering API", () => {
         integrationSurface: "cloudshare.v3.project_members_gui",
         failureMode: "project_member_read",
         cached: false,
+        evidenceKind: "semantic",
       },
     });
   });

@@ -24,9 +24,9 @@ describe("Sales diagnostics handler", () => {
   });
   it("orders one correlated workflow by attempt sequence, exchange tie, and semantic adjacency", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository(); const at = new Date("2026-09-10T00:00:00.000Z");
-    await diagnostics.append({ source: "sales-records", operation: "transport", outcome: "success", customerId: "customer-certalis", correlationId: "shared-workflow", occurredAt: at, details: { attemptStartSequence: 2, exchangeId: "exchange-b" }, message: "transport-b" } as never);
+    await diagnostics.append({ source: "sales-records", operation: "transport", outcome: "success", customerId: "customer-certalis", correlationId: "shared-workflow", occurredAt: at, details: { attemptStartSequence: 7, exchangeId: "exchange-b" }, message: "transport-b" } as never);
     await diagnostics.append({ source: "sales-records", operation: "semantic", outcome: "failure", customerId: "customer-certalis", correlationId: "shared-workflow", occurredAt: at, details: { contributingExchangeIds: ["exchange-a"] }, message: "semantic-a" } as never);
-    await diagnostics.append({ source: "sales-records", operation: "transport", outcome: "success", customerId: "customer-certalis", correlationId: "shared-workflow", occurredAt: at, details: { attemptStartSequence: 1, exchangeId: "exchange-a" }, message: "transport-a" } as never);
+    await diagnostics.append({ source: "sales-records", operation: "transport", outcome: "success", customerId: "customer-certalis", correlationId: "shared-workflow", occurredAt: at, details: { attemptStartSequence: 7, exchangeId: "exchange-a" }, message: "transport-a" } as never);
     const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { correlationId: "shared-workflow", limit: "3" } });
     expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["transport-a", "semantic-a", "transport-b"]);
   });
@@ -208,7 +208,7 @@ describe("Sales diagnostics handler", () => {
   it("keeps causal lookahead reachable at 101 rows and the 4900 to 5000 boundary", async () => {
     // The same fixture covers ordinary lookahead, the accepted boundary, and cap rejection.
     const diagnostics = createInMemoryDiagnosticLogRepository();
-    for (let index = 0; index < 5001; index += 1) await diagnostics.append({ source: "sales-trial-enrollment", operation: "x", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, message: String(index), occurredAt: new Date(Date.UTC(2026, 8, 4, 0, 0, index % 60)) } as never);
+    for (let index = 0; index < 5002; index += 1) await diagnostics.append({ source: "sales-trial-enrollment", operation: "x", outcome: "success", customerId: "customer-certalis", subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, message: String(index), occurredAt: new Date(Date.UTC(2026, 8, 4, 0, 0, index % 60)) } as never);
     const deps = { diagnostics, salesTrialEnrollments: enrollmentRepo(), logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } };
     const first = await handleGetSalesDiagnosticLog(deps, { customerId: "customer-certalis", query: { subjectId: "enrollment-1", subjectType: "sales_trial_enrollment", limit: "100" } });
     expect(first).toMatchObject({ body: { page: { returned: 100, hasMore: true, nextOffset: 100 } } });

@@ -1821,8 +1821,10 @@ async function recordPrePublishFailureEvidence(
     response: evidence.response,
     details: {
       integrationSurface: "cloudshare.v3.project_members_gui",
+      evidenceKind: "semantic",
       failureMode: "project_member_read",
       cached: false,
+      ...(evidence.exchangeId ? { contributingExchangeIds: [evidence.exchangeId] } : {}),
     },
     externalIds: { offeringId, itemId, projectId },
   });
