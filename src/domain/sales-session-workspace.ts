@@ -7,7 +7,7 @@ export interface SalesSessionWorkspaceResponse {
   readonly participants: readonly { readonly id: string; readonly name: string; readonly email: string; readonly invitationStatus: "sent" | "notSent"; readonly participationStatus: string; readonly environment: SalesParticipantEnvironmentObservation; readonly environmentAttention: SafeSalesParticipantAttention | null }[];
   readonly activity: readonly SafeSalesSessionActivity[];
   readonly activityGroups: readonly SafeSalesSessionActivityGroup[];
-  readonly activityHistory: { readonly complete: boolean; readonly omittedCount: number; readonly partialGroups?: number; readonly presentedGroupCount?: number; readonly totalGroupCount?: number };
+  readonly activityHistory: { readonly complete: boolean; readonly hasMore: boolean; readonly reason?: "source_scan_limit" | "workflow_presentation_limit"; readonly presentedWorkflowCount?: number; readonly totalWorkflowCount?: number };
   readonly details: { readonly accountName: string; readonly opportunityName: string; readonly itemName: string; readonly invitationMode: string };
 }
 export type SalesSessionWorkspaceRead = { readonly state: "available"; readonly workspace: SalesSessionWorkspaceResponse } | { readonly state: "stale" };
@@ -45,25 +45,26 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
     const businessKind = (!terminalKinds.has(entry.kind) && known?.size === 1) ? [...known][0] : entry.kind;
     // Correlation is the stable workflow anchor. Legacy rows have no anchor;
     // retain each persisted row independently, including same-millisecond rows.
-    const key = `${businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}:${entry.activityId ?? `index:${index}`}`}\u0000${entry.subject.type}`;
+    const key = `${entry.correlationId ? "correlated" : businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}:${entry.activityId ?? `index:${index}`}`}\u0000${entry.subject.type}`;
     const current = groups.get(key);
     const record = entry.correlationId ? [{ correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : [];
-    if (!current) { groups.set(key, { entries: [entry], group: { workflowId: key, summary: entry.summary, outcome: entry.correlationId && !terminalKinds.has(entry.kind) ? "incomplete" : entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, ...(entry.correlationId ? { correlationId: entry.correlationId } : {}), diagnosticRecords: record } }); continue; }
+    if (!current) { const incomplete = Boolean(entry.correlationId && !terminalKinds.has(entry.kind)); groups.set(key, { entries: [entry], group: { workflowId: key, summary: incomplete ? incompleteSummary() : entry.summary, outcome: incomplete ? "incomplete" : entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, ...(entry.correlationId ? { correlationId: entry.correlationId } : {}), diagnosticRecords: record } }); continue; }
     const nextEntries = [...current.entries, entry];
     const terminals = nextEntries.filter((candidate) => terminalKinds.has(candidate.kind));
-    const terminal = terminals[terminals.length - 1];
+    const terminal = terminals.find((candidate) => candidate.outcome === "failure") ?? terminals[terminals.length - 1];
     const hasFailure = nextEntries.some((candidate) => candidate.outcome === "failure");
     const hasSuccess = nextEntries.some((candidate) => candidate.outcome === "success");
     // The terminal business operation is authoritative for the workflow's
     // final status. Child transport/revalidation failures remain visible as
     // mixed evidence only when the terminal operation itself succeeded.
-    const terminalOutcome = terminals.some((candidate) => candidate.outcome === "failure") ? "failure" : terminal?.outcome;
+    const terminalOutcome = terminal?.outcome;
     const outcome = terminalOutcome === "failure" ? "failure" : terminalOutcome === "success" ? (hasFailure ? "mixed" : "success") : hasFailure && hasSuccess ? "mixed" : hasFailure ? "failure" : "incomplete";
     const authoritative = terminal ?? nextEntries[0];
-    groups.set(key, { entries: nextEntries, group: { ...current.group, summary: authoritative.summary, actor: safeActivityActor(authoritative.actor?.type), outcome, firstAt: nextEntries[0].occurredAt, lastAt: nextEntries[nextEntries.length - 1].occurredAt, count: nextEntries.length, diagnosticRecords: entry.correlationId && !current.group.diagnosticRecords.some((r) => r.correlationId === entry.correlationId) ? [...current.group.diagnosticRecords, ...record] : current.group.diagnosticRecords } });
+    groups.set(key, { entries: nextEntries, group: { ...current.group, summary: terminal ? authoritative.summary : incompleteSummary(), actor: terminal ? safeActivityActor(authoritative.actor?.type) : current.group.actor, outcome, firstAt: nextEntries[0].occurredAt, lastAt: nextEntries[nextEntries.length - 1].occurredAt, count: nextEntries.length, diagnosticRecords: entry.correlationId && !current.group.diagnosticRecords.some((r) => r.correlationId === entry.correlationId) ? [...current.group.diagnosticRecords, ...record] : current.group.diagnosticRecords } });
   }
   return [...groups.values()].map(({ group }) => group).sort((a, b) => b.lastAt.localeCompare(a.lastAt) || b.firstAt.localeCompare(a.firstAt) || a.summary.localeCompare(b.summary));
 }
+function incompleteSummary(): string { return "Business outcome and evidence are incomplete."; }
 function safeActivityActor(value: "admin" | "candidate" | "system" | "unknown" | undefined): string { return value === "admin" ? "Sales admin" : value === "candidate" ? "Candidate" : value === "system" ? "Certalis system" : value === "unknown" ? "Unknown actor" : "Not recorded"; }
 
 /** Ordinary Session Activity is deliberately a fresh DTO, not a trimmed

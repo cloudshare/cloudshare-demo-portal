@@ -8,10 +8,9 @@ export interface SalesSessionWorkspaceRepository {
   read(customerId: string, sessionId: string): Promise<SalesSessionWorkspaceRead | null>;
 }
 
-/** The read probe is 5,501 rows; presentation is capped at 5,500 complete
- * workflow groups, never raw rows. This preserves correlation histories when
- * a workflow spans the probe boundary and reports omission metadata honestly. */
-const MAX_PRESENTED_ACTIVITY_GROUPS = 5500;
+/** The source scan is bounded, then a separate workflow presentation limit is applied. */
+const SOURCE_SCAN_LIMIT = 5500;
+const MAX_PRESENTED_ACTIVITY_GROUPS = 100;
 
 /**
  * The Session workspace's deep local read seam. It joins the persisted Sales
@@ -42,26 +41,31 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         // Read the complete local history before the UI applies presentation
         // grouping/limits. A fixed query limit can split one workflow and make
         // the resulting Activity timeline materially misleading.
-        where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 5501,
+        where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: SOURCE_SCAN_LIMIT + 1,
         select: { id: true, occurredAt: true, operation: true, outcome: true, actorType: true, subjectType: true, subjectId: true, correlationId: true },
       });
       // The final row is a probe, never presentation data.  Keep the probe's
       // correlation so a displayed group can truthfully be marked incomplete
       // when its history continues beyond the read boundary.
-      const probe = activity.length > 5500 ? activity[5500] : undefined;
-      const presentedRows = activity.slice(0, 5500);
+      const sourceCapped = activity.length > SOURCE_SCAN_LIMIT;
+      const probe = sourceCapped ? activity[SOURCE_SCAN_LIMIT] : undefined;
+      const presentedRows = activity.slice(0, SOURCE_SCAN_LIMIT);
       const projectedActivity = presentedRows.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
       const allActivityGroups = groupSafeSalesSessionActivity(projectedActivity).map((group) =>
         probe ? { ...group, outcome: "incomplete" as const } : group,
       );
       const activityGroups = allActivityGroups.slice(0, MAX_PRESENTED_ACTIVITY_GROUPS);
-      const omittedGroupCount = Math.max(0, allActivityGroups.length - activityGroups.length);
+      const presentationCapped = allActivityGroups.length > MAX_PRESENTED_ACTIVITY_GROUPS;
       return { state: "available", workspace: {
         summary: { id: session.id, sessionName: session.sessionName || "Sales Enablement Session", revision: session.revision, start: session.start, end: session.end, timeZone: session.timeZone, operation: status.operation, experience: status.experience },
         participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant), environmentAttention: projectSafeSalesParticipantAttention(participant) })),
         activity: projectedActivity,
         activityGroups,
-        activityHistory: { complete: activity.length <= 5500 && omittedGroupCount === 0, omittedCount: activity.length > 5500 ? activity.length - 5500 : omittedGroupCount, presentedGroupCount: activityGroups.length, totalGroupCount: allActivityGroups.length, partialGroups: activity.length > 5500 ? allActivityGroups.length : 0 },
+        activityHistory: sourceCapped
+          ? { complete: false, hasMore: true, reason: "source_scan_limit", presentedWorkflowCount: activityGroups.length }
+          : presentationCapped
+            ? { complete: false, hasMore: true, reason: "workflow_presentation_limit", presentedWorkflowCount: activityGroups.length, totalWorkflowCount: allActivityGroups.length }
+            : { complete: true, hasMore: false, presentedWorkflowCount: activityGroups.length, totalWorkflowCount: allActivityGroups.length },
         details: { accountName: session.opportunity.account.name, opportunityName: session.opportunity.name, itemName: session.item.name, invitationMode: session.sendInvitations === "salesProsAndParticipants" ? "Sales Pros and participants" : "No native invitations" },
       } };
     },

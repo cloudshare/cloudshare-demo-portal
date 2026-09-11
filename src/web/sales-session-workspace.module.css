@@ -41,7 +41,7 @@
 .previewNote, .activityExplainer { padding: .75rem; border-left: 3px solid #76b7b2; background: #f3fbfa; font-size: .875rem; }
 .timeline { display: grid; gap: .75rem; margin: 1rem 0 0; padding: 0; list-style: none; }
 .timelineItem { display: grid; grid-template-columns: 1rem minmax(0, 1fr); gap: .75rem; }
-.successDot, .failureDot { width: .65rem; height: .65rem; margin-top: .55rem; border-radius: 999px; }
+.successDot, .failureDot, .warningDot { width: .65rem; height: .65rem; margin-top: .55rem; border-radius: 999px; }
 .successDot { background: #18794e; }.failureDot { background: #b42318; }.warningDot { background: #b54708; }
 .timelineBody { min-width: 0; padding: .8rem; border: 1px solid #e5edf3; border-radius: 8px; background: #fff; }
 .timelineTitle { justify-content: space-between; }.timelineMeta { flex-wrap: wrap; margin: .45rem 0; color: #52606d; font-size: .82rem; }
