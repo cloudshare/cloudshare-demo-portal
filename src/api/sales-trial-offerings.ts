@@ -438,6 +438,9 @@ export async function handlePublishSalesTrialOffering(
       );
     }
   } catch (error) {
+    const projectMemberReadFailure =
+      !(error instanceof SalesItemProvisioningValidationError) &&
+      !(error instanceof SalesItemProvisioningReadError);
     await recordPrePublishFailureEvidence(
       deps,
       request,
@@ -451,7 +454,7 @@ export async function handlePublishSalesTrialOffering(
       ...knownTrialExchangeIds(completedResourceReads, memberRead, error),
       cloudShareErrorContext(error)?.exchangeId,
       nestedAcquisitionExchangeId(error),
-    ].filter((id): id is string => typeof id === "string"));
+    ].filter((id): id is string => typeof id === "string"), projectMemberReadFailure ? "project_member_read" : undefined);
   }
   const selectedSalesPro = memberRead?.members.find(
     (member) => member.email.toLowerCase() === offering.salesProEmail.toLowerCase(),
@@ -1485,23 +1488,26 @@ async function publishFailure(
   externalId: string,
   error: unknown,
   contributingExchangeIds: readonly string[] = [],
+  failureModeOverride?: "project_member_read",
 ) {
   const itemValidationFailure = error instanceof SalesItemProvisioningValidationError;
   const itemReadFailure = error instanceof SalesItemProvisioningReadError;
   const oauthTokenFailure = isCloudShareOAuthTokenFailure(error);
   const evidence = cloudShareEvidence(itemReadFailure ? error.cause : error);
-  const integrationSurface = oauthTokenFailure
+  const integrationSurface = failureModeOverride === "project_member_read"
+    ? "cloudshare.v3.project_members_gui"
+    : oauthTokenFailure
     ? "cloudshare.v4.oauth.token"
     : itemValidationFailure || itemReadFailure
       ? "cloudshare.v3.sales_item_resources"
       : "cloudshare.v4.sales";
-  const failureMode = oauthTokenFailure
+  const failureMode = failureModeOverride ?? (oauthTokenFailure
     ? "cloudshare_oauth_token"
     : itemValidationFailure
       ? "item_resource_drift"
       : itemReadFailure
         ? "item_resource_read"
-        : "cloudshare_create";
+        : "cloudshare_create");
   await deps.diagnostics?.record({
     source: "sales-trial-offerings",
     operation: "sales.trial_offering.publish",
@@ -1511,7 +1517,9 @@ async function publishFailure(
     actor: request.actor,
     subject: { type: "sales_trial_offering", id: offering.id },
     correlationId,
-    message: oauthTokenFailure
+    message: failureModeOverride === "project_member_read"
+      ? "CloudShare could not publish the Sales Trial Offering because active Project members could not be read"
+      : oauthTokenFailure
       ? "CloudShare OAuth token request failed before Sales Experience creation"
       : itemValidationFailure
         ? "Catalogue Item is stale against CloudShare resources"
@@ -1529,6 +1537,7 @@ async function publishFailure(
       evidenceKind: "semantic",
       integrationSurface,
       failureMode,
+      ...(failureModeOverride === "project_member_read" ? { terminal: true } : {}),
       error: error instanceof Error ? error.message : String(error),
       ...(contributingExchangeIds.length ? { contributingExchangeIds } : {}),
     },
@@ -1829,14 +1838,6 @@ async function recordPrePublishFailureEvidence(
       cached: false,
       ...(evidence.exchangeId ? { contributingExchangeIds: [evidence.exchangeId] } : {}),
     },
-    externalIds: { offeringId, itemId, projectId },
-  });
-  await deps.diagnostics?.record({
-    source: "sales-trial-offerings", operation: "sales.trial_offering.publish", outcome: "failure", level: "warn",
-    customerId: request.customerId, actor: request.actor, subject: { type: "sales_trial_offering", id: offeringId }, correlationId,
-    message: "CloudShare could not publish the Sales Trial Offering because active Project members could not be read",
-    request: evidence.request, response: evidence.response,
-    details: { integrationSurface: "cloudshare.v3.project_members_gui", evidenceKind: "semantic", failureMode: "project_member_read", terminal: true, cached: false, ...(evidence.exchangeId ? { contributingExchangeIds: [evidence.exchangeId] } : {}) },
     externalIds: { offeringId, itemId, projectId },
   });
 }

@@ -1931,7 +1931,7 @@ describe("Sales Trial Offering API", () => {
     });
     const entries = await diagnosticRepository.query({ source: "sales-trial-offerings", operation: "sales.trial_offering.project_members.revalidated" });
     const [entry] = entries;
-    const terminalEntries = (await diagnosticRepository.query({ source: "sales-trial-offerings", operation: "sales.trial_offering.publish" })).filter((candidate) => candidate.details?.failureMode === "project_member_read");
+    const terminalEntries = await diagnosticRepository.query({ source: "sales-trial-offerings", operation: "sales.trial_offering.publish" });
     const [terminal] = terminalEntries;
 
     expect(result).toMatchObject({
@@ -1953,7 +1953,13 @@ describe("Sales Trial Offering API", () => {
       },
     });
     expect(terminalEntries).toHaveLength(1);
-    expect(terminal).toMatchObject({ operation: "sales.trial_offering.publish", outcome: "failure", details: { integrationSurface: "cloudshare.v3.project_members_gui", failureMode: "project_member_read", terminal: true, evidenceKind: "semantic", contributingExchangeIds: ["member-read-exchange"] } });
+    expect(terminal).toMatchObject({ operation: "sales.trial_offering.publish", outcome: "failure", details: { integrationSurface: "cloudshare.v3.project_members_gui", failureMode: "project_member_read", terminal: true, evidenceKind: "semantic", contributingExchangeIds: ["item-resource-exchange", "member-read-exchange"] } });
+    expect(terminalEntries).not.toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "cloudshare_create",
+      }),
+    }));
   });
 
   it("blocks unpublish when the offering is already in needs_attention and preserves correlated state", async () => {
