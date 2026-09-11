@@ -34,6 +34,7 @@ export async function handleGetSalesDiagnosticLog(
   request: AdminRequest & { readonly customerId: string },
 ): Promise<AdminResponse> {
   const requestedSource = request.query.source?.trim();
+  const normalizedQuery = requestedSource === undefined ? request.query : { ...request.query, source: requestedSource };
   const requestedLimit = parseLimit(request.query.limit);
   const requestedOffset = parseOffset(request.query.offset);
   if (requestedOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) return { status: 400, body: { error: "sales_diagnostic_offset_exceeds_maximum", maxOffset: SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET } };
@@ -43,7 +44,7 @@ export async function handleGetSalesDiagnosticLog(
 
   const causalTrialQuery = Boolean(request.query.subjectId && (request.query.subjectType === "sales_trial_enrollment" || request.query.subjectType === "sales_trial_offering"));
   if (causalTrialQuery) {
-    const subjectRead = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId!.trim(), requestedOffset, requestedLimit);
+    const subjectRead = await readCausalSubjectEntries(deps, request.customerId, normalizedQuery, request.query.subjectId!.trim(), requestedOffset, requestedLimit);
     const subjectEntries = subjectRead.entries;
     const pageEntries = subjectEntries.slice(requestedOffset, requestedOffset + requestedLimit);
     const candidateNextOffset = requestedOffset + pageEntries.length;

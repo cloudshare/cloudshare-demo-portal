@@ -466,6 +466,13 @@ describe("Sales Enablement Session API handler", () => {
     expect(delivery.createSession).not.toHaveBeenCalled();
   });
 
+  it("marks terminal rejected requests as semantic diagnostic evidence", async () => {
+    const diagnostics = { record: vi.fn() };
+    const result = await handleCreateSalesDemoSession({ records: { findOpportunity: vi.fn().mockResolvedValue(null) }, items: { findById: vi.fn() }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn() }, diagnostics, audit: { write: vi.fn() } }, { customerId: "certalis", actor: admin, body: { opportunityId: "missing", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+    expect(result.status).toBe(404);
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ evidenceKind: "semantic", failureMode: "opportunity_not_found" }) }));
+  });
+
   it("blocks provisioning with correlated diagnostics when the fresh Project-member read fails", async () => {
     const records = createInMemorySalesRecordRepository();
     await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
