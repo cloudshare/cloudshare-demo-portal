@@ -39,7 +39,7 @@ describe("AdminSupportFeature", () => {
     );
   });
 
-  it("resets Diagnostics pagination to page zero when applying filters", async () => {
+  it("G: Support preserves filter reset pagination navigation while warning on bounded incomplete results", async () => {
     const user = userEvent.setup();
     const fetchAdmin = vi.fn<AdminAuthenticatedRequest>()
       .mockResolvedValueOnce(json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: true, nextOffset: 50 } }))
@@ -52,6 +52,15 @@ describe("AdminSupportFeature", () => {
     await waitFor(() => expect(fetchAdmin).toHaveBeenLastCalledWith("/api/admin/diagnostics?limit=50&offset=50"));
     await user.click(screen.getByRole("button", { name: "Apply Filters" }));
     await waitFor(() => expect(fetchAdmin).toHaveBeenLastCalledWith("/api/admin/diagnostics?limit=50&offset=0"));
+  });
+
+  it("G: renders a bounded-incomplete warning without an unreachable continuation and disables Next", async () => {
+    const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(json({ entries: [], page: { limit: 50, offset: 5000, returned: 1, total: 5001, hasMore: false, nextOffset: null, complete: false, incompleteReason: "sales_diagnostic_offset_cap", continuation: "refine the filters" } }));
+    render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{}} fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
+    expect(await screen.findByText(/Incomplete bounded investigation/)).toBeTruthy();
+    expect(screen.getByText(/refine the filters/)).toBeTruthy();
+    expect(screen.queryByText(/Continue with offset/)).toBeNull();
+    expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("keeps Support request failures in the existing dismissible danger-banner presentation", async () => {

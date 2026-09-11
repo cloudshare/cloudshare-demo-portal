@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { composeCloudShareObservers } from "./index";
+import { composeCloudShareObservers, composeCanonicalObserver } from "./index";
 
 describe("composeCloudShareObservers", () => {
   it("runs both synchronous observers when either one throws", async () => {
@@ -10,5 +10,13 @@ describe("composeCloudShareObservers", () => {
 
     expect(first).toHaveBeenCalledTimes(1);
     expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it("D: Trial request and OAuth canonical rows preserve identity/timing/evidenceKind and rejection falls back exactly once", async () => {
+    const canonical = vi.fn().mockRejectedValue(new Error("unavailable"));
+    const fallback = vi.fn();
+    await composeCanonicalObserver(canonical, fallback)({ operation: "request" });
+    expect(canonical).toHaveBeenCalledOnce();
+    expect(fallback).toHaveBeenCalledOnce();
   });
 });

@@ -11,6 +11,7 @@ export interface CloudShareProjectMemberRead {
   readonly request: CloudShareRequestDiagnostics;
   readonly response: CloudShareResponseDiagnostics;
   readonly integrationSurface: "cloudshare.v3.project_members_gui";
+  readonly exchangeId?: string;
 }
 
 export interface CloudShareProjectMemberSource {
@@ -46,6 +47,7 @@ export function createCloudShareProjectMemberSource(client: CloudShareClient): C
         request: detailed.request,
         response: detailed.response,
         integrationSurface: "cloudshare.v3.project_members_gui",
+        ...(detailed.exchangeId ? { exchangeId: detailed.exchangeId } : {}),
       };
     },
   };
@@ -54,7 +56,7 @@ export function createCloudShareProjectMemberSource(client: CloudShareClient): C
 async function fallbackDetailed(client: CloudShareClient, projectId: string) {
   const query = { projectUsers: "true", status: "active", loggedIn: "ever", projectId, getRows: "true" };
   const data = await client.requestV3({ method: "GET", path: "/users", query, schema: memberListSchema });
-  return { data, request: { method: "GET" as const, path: "/users", query }, response: { status: 200, body: data } };
+  return { data, request: { method: "GET" as const, path: "/users", query }, response: { status: 200, body: data }, exchangeId: undefined };
 }
 
 function normalizeMemberListPayload(value: unknown): unknown {

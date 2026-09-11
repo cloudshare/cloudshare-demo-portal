@@ -1,4 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import { createCloudShareClientFactory } from "@/composition";
+import type { CloudShareClient, CloudShareRequestObservation, V4RequestSpec, V4TokenAcquisitionEvent } from "@/integrations/cloudshare";
+import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
+import { handleGetSalesDiagnosticLog } from "./sales-diagnostics";
 import { handleReconcileSalesSession } from "./sales-session-reconciliation";
 
 const actor = { type: "admin" as const, id: "a", email: "a@certalis.demo" };
@@ -14,6 +20,111 @@ describe("Sales Session reconciliation", () => {
     expect(recordExperienceObservations).toHaveBeenCalledWith("certalis", [expect.objectContaining({ id: "s1", experienceStatus: "inProgress" })]);
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "success", request: { method: "GET", path: "/sales/remote-1" }, response: { status: 200 } }));
     expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ outcome: "success" }));
+  });
+
+  it("keeps Verify now OAuth, Sales read, and semantic evidence in one Support workflow", async () => {
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    const connectionRecord: CloudShareConnectionRecord = {
+      customerId: "certalis",
+      apiId: "api-id",
+      apiKey: "api-key",
+      webhookSecret: "webhook-secret",
+      webhookPathToken: "webhook-path-token",
+      connectedAt: new Date("2026-09-11T08:00:00.000Z"),
+      verifiedAt: new Date("2026-09-11T08:01:00.000Z"),
+    };
+    const factory = createCloudShareClientFactory({
+      diagnostics,
+      mode: "fixture",
+      newCorrelationId: () => "separate-customer-correlation",
+      decorateClient: (client) => client,
+      createIntegration: (input) => ({
+        requestV4Detailed: async (spec: V4RequestSpec<unknown>) => {
+          const oauthEvent: V4TokenAcquisitionEvent = {
+            exchangeCorrelationId: "oauth-exchange",
+            attemptStartSequence: input.attemptStartAllocator?.next(),
+            occurredAt: "2026-09-11T09:00:00.000Z",
+            completedAt: "2026-09-11T09:00:00.002Z",
+            outcome: "success",
+            status: 200,
+            durationMs: 2,
+            integrationSurface: "cloudshare.v4.oauth.token",
+          };
+          await input.observer.onAcquisition(oauthEvent);
+          const data = { id: "remote-1", status: "ended" as const };
+          const providerResult = {
+            data,
+            exchangeId: "sales-get-exchange",
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.sales",
+            request: { method: spec.method, path: "/sales/remote-1" },
+            response: { status: 200, body: data },
+          };
+          const requestEvent: CloudShareRequestObservation = {
+            exchangeId: providerResult.exchangeId,
+            attemptStartSequence: input.attemptStartAllocator?.next(),
+            occurredAt: "2026-09-11T09:00:00.003Z",
+            completedAt: "2026-09-11T09:00:00.006Z",
+            outcome: "success",
+            durationMs: 3,
+            result: providerResult,
+          };
+          await input.observer.onRequest(requestEvent);
+          return providerResult as never;
+        },
+      } as unknown as CloudShareClient),
+    });
+
+    const result = await handleReconcileSalesSession({
+      sessions: {
+        findById: vi.fn().mockResolvedValue(activeSession),
+        recordExperienceObservations: vi.fn().mockResolvedValue(undefined),
+      },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue(connectionRecord) },
+      cloudshare: factory,
+      diagnostics,
+      audit: { write: vi.fn().mockResolvedValue(undefined) },
+    }, request);
+    const correlationId = (result.body as { correlationId: string }).correlationId;
+    const support = await handleGetSalesDiagnosticLog({
+      diagnostics: diagnosticRepository,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    }, { customerId: "certalis", query: { correlationId, limit: "10" } });
+    const entries = (support.body as { entries: Array<Record<string, unknown>> }).entries;
+
+    expect(result).toMatchObject({ status: 200, body: { correlationId, experienceStatus: "ended" } });
+    expect(entries.map((entry) => entry.operation)).toEqual([
+      "cloudshare.oauth.token",
+      "cloudshare.request",
+      "sales.demo_session.reconciled",
+    ]);
+    expect(entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        operation: "cloudshare.oauth.token",
+        correlationId,
+        actor,
+        subject: { type: "sales_demo_session", id: "s1" },
+        details: expect.objectContaining({ evidenceKind: "transport", exchangeId: "oauth-exchange", attemptStartSequence: 1 }),
+      }),
+      expect.objectContaining({
+        operation: "cloudshare.request",
+        correlationId,
+        actor,
+        subject: { type: "sales_demo_session", id: "s1" },
+        details: expect.objectContaining({ evidenceKind: "transport", exchangeId: "sales-get-exchange", attemptStartSequence: 3 }),
+      }),
+      expect.objectContaining({
+        operation: "sales.demo_session.reconciled",
+        correlationId,
+        actor,
+        subject: { type: "sales_demo_session", id: "s1" },
+        details: expect.objectContaining({
+          evidenceKind: "semantic",
+          contributingExchangeIds: ["oauth-exchange", "sales-get-exchange"],
+        }),
+      }),
+    ]));
   });
 
   it("fails closed and moves the operation to needs-attention for an invalid injected status", async () => {

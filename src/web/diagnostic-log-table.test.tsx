@@ -13,6 +13,18 @@ function Harness(props: { entry: DiagnosticLogTableEntry }) {
 }
 
 describe("DiagnosticLogTable Support hints", () => {
+  it("renders explicit transport, semantic, and legacy evidence labels with timing metadata", () => {
+    const { container } = render(<DiagnosticLogTable entries={[
+      { ...baseEntry, id: "transport", details: { evidenceKind: "transport", exchangeId: "ex-1", attemptStartSequence: 2, completedAt: "2026-09-10T12:00:01Z", durationMs: 12 } },
+      { ...baseEntry, id: "semantic", details: { evidenceKind: "semantic" } },
+      { ...baseEntry, id: "legacy", details: {} },
+    ]} expandedDiagnosticId={null} onToggleExpanded={() => undefined} />);
+    expect(container.textContent).toContain("Transport evidence");
+    expect(container.textContent).toContain("Semantic evidence");
+    expect(container.textContent).toContain("exchange ex-1");
+    expect(container.textContent).toContain("start #2");
+    expect(container.textContent).toContain("12ms");
+  });
   it("expands local Sales persistence remediation without claiming CloudShare failed", async () => {
     const user = userEvent.setup(); render(<Harness entry={baseEntry} />);
     await user.click(screen.getByRole("button", { name: "Expand diagnostic entry diag-local" }));

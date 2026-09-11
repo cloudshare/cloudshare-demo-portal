@@ -13,7 +13,7 @@ import {
   type PortalSessionStore,
 } from "@/auth";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
-import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers, type CloudShareClient, type CloudShareMode } from "@/integrations/cloudshare";
+import { createCloudShareDiagnosticObserver, createCloudShareWorkflowObserver, composeCloudShareObservers, composeCanonicalObserver, type CloudShareClient, type CloudShareMode } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import {
   createCloudShareEnvironmentSimulator,
@@ -151,13 +151,30 @@ export function createCloudShareClientFactory(input: {
       const workflowObserver = options.scope === "workflow"
         ? createCloudShareWorkflowObserver({ diagnostics: input.diagnostics, customerId: connection.customerId, ...options.workflow })
         : undefined;
+      // When a workflow has authoritative identity, its fallback must retain
+      // that same correlation, actor, and subject. Customer-only identity is
+      // reserved for genuinely unscoped calls.
+      const canonicalFallback = workflowObserver
+        ? createCloudShareWorkflowObserver({
+            diagnostics: { ...input.diagnostics, recordCanonical: input.diagnostics.record },
+            customerId: connection.customerId,
+            ...((options as Extract<CloudShareClientObservationOptions, { readonly scope: "workflow" }>).workflow),
+          })
+          : options.scope === "custom_observer"
+          ? createCloudShareWorkflowObserver({ diagnostics: { ...input.diagnostics, recordCanonical: input.diagnostics.record }, customerId: connection.customerId, actor: options.actor, subject: options.subject, correlationId: options.correlationId, source: options.source ?? "cloudshare-integration", externalIds: options.externalIds, candidateEmail: options.candidateEmail })
+          : defaultObserver;
       return decorateClient(createIntegration({
         mode: input.mode,
         trace: input.trace,
         observer: {
-          onRequest: composeCloudShareObservers(options.onRequest, workflowObserver?.onRequest, defaultObserver.onRequest),
-          onAcquisition: composeCloudShareObservers(options.onAcquisition, workflowObserver?.onAcquisition, defaultObserver.onAcquisition),
+          // A workflow observer is the canonical transport capture when an
+          // authoritative workflow exists. Keep the mandatory Customer
+          // fallback for unscoped calls, but never persist the same exchange
+          // once as a workflow row and again as an unrelated default row.
+          onRequest: workflowObserver ? composeCloudShareObservers(composeCanonicalObserver(workflowObserver.onRequest, canonicalFallback.onRequest), options.onRequest) : composeCanonicalObserver(options.onRequest, canonicalFallback.onRequest),
+          onAcquisition: workflowObserver ? composeCloudShareObservers(composeCanonicalObserver(workflowObserver.onAcquisition, canonicalFallback.onAcquisition), options.onAcquisition) : composeCanonicalObserver(options.onAcquisition, canonicalFallback.onAcquisition),
         },
+        ...(options.scope === "workflow" && options.workflow.sequenceAllocator ? { attemptStartAllocator: options.workflow.sequenceAllocator } : options.scope === "custom_observer" && options.sequenceAllocator ? { attemptStartAllocator: options.sequenceAllocator } : {}),
         connection: {
           customerId: connection.customerId,
           apiId: connection.apiId,

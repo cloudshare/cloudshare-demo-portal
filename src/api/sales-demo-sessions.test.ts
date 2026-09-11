@@ -37,6 +37,8 @@ describe("Sales Enablement Session API handler", () => {
     expect(child.details.exchangeCorrelationId).not.toBe(parentCorrelationId);
     expect(child.details.durationMs).toBeGreaterThanOrEqual(0);
     expect(parent).toMatchObject({ details: expect.objectContaining({ oauthTransport: { transport: "tls", remoteFamily: "IPv4", remotePort: 443 } }) });
+    expect(parent.details).toMatchObject({ contributingExchangeIds: [expect.any(String)] });
+    expect(httpCalls).toBe(1);
     expect(JSON.stringify(parent)).not.toContain("provider-private-address");
     expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("provider-secret"); expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("private");
   });
@@ -97,16 +99,16 @@ describe("Sales Enablement Session API handler", () => {
     expect(sessions.discardReservation).toHaveBeenCalledOnce();
     expect(stored).toEqual([]);
   });
-  it("retains a definite provider rejection when post-dispatch reservation cleanup cannot be confirmed", async () => {
+  it("E: post-dispatch Sales semantic failures link contributing exchange IDs while DefiniteNoCall has none and never replays", async () => {
     const records = createInMemorySalesRecordRepository();
     await records.saveOpportunity({ id: "opp-cleanup-evidence", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
     const item = { id: "item-cleanup-evidence", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
     const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
-    const providerError = new CloudShareRequestError("CloudShare rejected the Sales payload", 422, { method: "POST", path: "/sales", requestBody: { externalId: "server-only" }, responseStatus: 422, responseBody: { error: "invalid Sales payload" } });
+    const providerError = new CloudShareRequestError("CloudShare rejected the Sales payload", 422, { method: "POST", path: "/sales", requestBody: { externalId: "server-only" }, responseStatus: 422, responseBody: { error: "invalid Sales payload" }, exchangeId: "exchange-failed-1" } as never);
     const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions: { save: vi.fn().mockResolvedValue(undefined), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(providerError) }) }, projectMembers, diagnostics, audit: { write: vi.fn() }, newId: () => "cleanup-evidence-session" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-cleanup-evidence", itemId: "item-cleanup-evidence", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
 
     expect(result).toMatchObject({ status: 503, body: { needsAttention: true, creationOutcome: { source: "reservation_cleanup_unconfirmed", retry: "unsafe_requires_support" } } });
-    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ method: "POST", path: "/sales" }), response: expect.objectContaining({ status: 422, body: { error: "invalid Sales payload" } }), details: expect.objectContaining({ failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: true }) }));
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ method: "POST", path: "/sales" }), response: expect.objectContaining({ status: 422, body: { error: "invalid Sales payload" } }), details: expect.objectContaining({ evidenceKind: "semantic", contributingExchangeIds: ["exchange-failed-1"], failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: true }) }));
     expect(JSON.stringify(result.body)).not.toContain("server-only");
   });
   it("keeps an active Item-read cooldown on its v3 surface when reservation cleanup cannot be confirmed", async () => {
@@ -462,6 +464,13 @@ describe("Sales Enablement Session API handler", () => {
     const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn() }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
     expect(result).toMatchObject({ status: 422, body: { correlationId: expect.any(String) } });
     expect(delivery.createSession).not.toHaveBeenCalled();
+  });
+
+  it("marks terminal rejected requests as semantic diagnostic evidence", async () => {
+    const diagnostics = { record: vi.fn() };
+    const result = await handleCreateSalesDemoSession({ records: { findOpportunity: vi.fn().mockResolvedValue(null) }, items: { findById: vi.fn() }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn() }, diagnostics, audit: { write: vi.fn() } }, { customerId: "certalis", actor: admin, body: { opportunityId: "missing", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+    expect(result.status).toBe(404);
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ evidenceKind: "semantic", failureMode: "opportunity_not_found" }) }));
   });
 
   it("blocks provisioning with correlated diagnostics when the fresh Project-member read fails", async () => {

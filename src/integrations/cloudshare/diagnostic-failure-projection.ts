@@ -7,6 +7,7 @@ import {
 } from "./errors";
 
 export interface CloudShareFailureEvidence {
+  readonly exchangeId?: string;
   readonly request: Record<string, unknown> | null;
   readonly response: Record<string, unknown> | null;
 }
@@ -27,6 +28,7 @@ export function projectCloudShareFailureContext(context: Record<string, unknown>
     return { request: null, response: null };
   }
   return {
+    ...(typeof context.exchangeId === "string" ? { exchangeId: context.exchangeId } : {}),
     request: {
       method: context.method,
       path: context.path,

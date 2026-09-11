@@ -561,7 +561,7 @@ describe("handleGetDiagnosticLog", () => {
     expect(entries.map((entry) => entry.message)).toEqual(["inside-end", "inside-start"]);
   });
 
-  it("returns bounded results with pagination metadata", async () => {
+  it("F: source-filtered and aggregate diagnostic caps expose complete boundaries without unreachable nextOffset", async () => {
     const repository = createInMemoryDiagnosticLogRepository();
     for (let index = 0; index < 3; index += 1) {
       await repository.append({

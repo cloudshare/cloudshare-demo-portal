@@ -400,12 +400,15 @@ export async function handlePublishSalesTrialOffering(
   let memberRead:
     | Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>
     | undefined;
+  let completedResourceReads: readonly { readonly exchangeId?: string }[] = [];
+  let completedMemberRead: { readonly exchangeId?: string } | undefined;
   const publishClientOptions = deps.cloudshareObserver?.({ customerId: request.customerId, actor: request.actor, correlationId, offeringId: offering.id });
   try {
     const validator =
       deps.itemProvisioningValidator ??
       deps.itemProvisioningValidatorFactory?.forConnection(connection, publishClientOptions);
     const reads = (await validator?.revalidate(item)) ?? [];
+    completedResourceReads = reads;
     await recordResourceReads(
       deps,
       request,
@@ -420,6 +423,7 @@ export async function handlePublishSalesTrialOffering(
     const memberSource =
       deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection, publishClientOptions);
     memberRead = await memberSource?.listActiveProjectMembers(item.project.id);
+    completedMemberRead = memberRead;
     if (memberRead) {
       await recordProjectMemberRead(
         deps,
@@ -434,6 +438,9 @@ export async function handlePublishSalesTrialOffering(
       );
     }
   } catch (error) {
+    const projectMemberReadFailure =
+      !(error instanceof SalesItemProvisioningValidationError) &&
+      !(error instanceof SalesItemProvisioningReadError);
     await recordPrePublishFailureEvidence(
       deps,
       request,
@@ -443,12 +450,20 @@ export async function handlePublishSalesTrialOffering(
       item.project.id,
       error,
     );
-    return publishFailure(deps, request, offering, correlationId, externalId, error);
+    return publishFailure(deps, request, offering, correlationId, externalId, error, [
+      ...knownTrialExchangeIds(completedResourceReads, memberRead, error),
+      cloudShareErrorContext(error)?.exchangeId,
+      nestedAcquisitionExchangeId(error),
+    ].filter((id): id is string => typeof id === "string"), projectMemberReadFailure ? "project_member_read" : undefined);
   }
   const selectedSalesPro = memberRead?.members.find(
     (member) => member.email.toLowerCase() === offering.salesProEmail.toLowerCase(),
   );
   if (!selectedSalesPro) {
+    const contributingExchangeIds = [
+      ...completedResourceReads.map((read) => read.exchangeId),
+      memberRead?.exchangeId,
+    ].filter((id): id is string => Boolean(id));
     if (memberRead) {
       await recordProjectMemberRead(
         deps,
@@ -462,6 +477,24 @@ export async function handlePublishSalesTrialOffering(
         "Selected Sales Pro was not active in the revalidated Project members",
       );
     }
+    await deps.diagnostics?.record({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.publish",
+      outcome: "failure",
+      level: "warn",
+      customerId: request.customerId,
+      actor: request.actor,
+      subject: { type: "sales_trial_offering", id: offering.id },
+      correlationId,
+      message: "Selected Sales Pro was not active in the revalidated Project members",
+      details: {
+        evidenceKind: "semantic",
+        ...knownTrialExchangeDetails(completedResourceReads, completedMemberRead),
+        integrationSurface: "cloudshare.v3.project_members_gui",
+        failureMode: "selected_sales_pro_inactive",
+      },
+      externalIds: { offeringId: offering.id, itemId: item.id, projectId: item.project.id },
+    });
     await auditLifecycle(
       deps,
       request,
@@ -540,9 +573,12 @@ export async function handlePublishSalesTrialOffering(
           externalId,
         },
         details: {
+          evidenceKind: "semantic",
+          ...knownTrialExchangeDetails(completedResourceReads, completedMemberRead),
           integrationSurface: "portal.sales_trial_offerings",
           failureMode: "local_reservation_persistence",
-          cloudShareAttempted: false,
+          cloudShareAttempted: true,
+          publicationAttempted: false,
         },
       }),
       auditLifecycle(
@@ -557,7 +593,8 @@ export async function handlePublishSalesTrialOffering(
           status: offering.status,
           failureMode: "local_reservation_persistence",
           integrationSurface: "portal.sales_trial_offerings",
-          cloudShareAttempted: false,
+          cloudShareAttempted: true,
+          publicationAttempted: false,
         },
         "Certalis could not reserve the Sales Trial Offering locally. No CloudShare publication was attempted.",
         correlationId,
@@ -647,6 +684,9 @@ export async function handlePublishSalesTrialOffering(
           request: created.request as unknown as Record<string, unknown>,
           response: created.response as unknown as Record<string, unknown>,
           details: {
+            evidenceKind: "semantic",
+            ...knownTrialExchangeDetails(completedResourceReads, completedMemberRead),
+            ...(created.exchangeId ? { contributingExchangeIds: [...knownTrialExchangeIds(completedResourceReads, completedMemberRead), created.exchangeId] } : {}),
             integrationSurface: "cloudshare.v4.sales",
             failureMode: "local_correlation_persistence",
             createdSalesExperienceId: created.salesExperienceId,
@@ -694,7 +734,7 @@ export async function handlePublishSalesTrialOffering(
       },
       request: created.request as unknown as Record<string, unknown>,
       response: created.response as unknown as Record<string, unknown>,
-      details: { integrationSurface: "cloudshare.v4.sales", status: "published" },
+      details: { evidenceKind: "semantic", ...knownTrialExchangeDetails(completedResourceReads, completedMemberRead), ...(created.exchangeId ? { contributingExchangeIds: [...knownTrialExchangeIds(completedResourceReads, completedMemberRead), created.exchangeId] } : {}), integrationSurface: "cloudshare.v4.sales", status: "published" },
     });
     await auditLifecycle(
       deps,
@@ -721,7 +761,11 @@ export async function handlePublishSalesTrialOffering(
         offering.id,
         reservation.updatedAt,
       );
-      return publishFailure(deps, request, offering, correlationId, externalId, error);
+      return publishFailure(deps, request, offering, correlationId, externalId, error, [
+        ...knownTrialExchangeIds(completedResourceReads, completedMemberRead, error),
+        cloudShareErrorContext(error)?.exchangeId,
+        nestedAcquisitionExchangeId(error),
+      ].filter((id): id is string => typeof id === "string"));
     }
     const needsAttention = {
       ...reservation,
@@ -764,6 +808,9 @@ export async function handlePublishSalesTrialOffering(
       request: cloudShareEvidence(error)?.request,
       response: cloudShareEvidence(error)?.response,
       details: {
+        evidenceKind: "semantic",
+        ...knownTrialExchangeDetails(completedResourceReads, completedMemberRead),
+        ...(cloudShareEvidence(error)?.exchangeId ? { contributingExchangeIds: [...knownTrialExchangeIds(completedResourceReads, completedMemberRead), cloudShareEvidence(error)!.exchangeId] } : {}),
         integrationSurface: "cloudshare.v4.sales",
         failureMode: "cloudshare_create_outcome_ambiguous",
         fallbackPersisted,
@@ -1383,9 +1430,9 @@ function isOutcomeAmbiguousCreateFailure(error: unknown): boolean {
 }
 
 function cloudShareErrorContext(error: unknown): Record<string, unknown> | undefined {
-  return error instanceof Error && "context" in error
-    ? (error as { context?: Record<string, unknown> }).context
-    : undefined;
+  if (!(error instanceof Error)) return undefined;
+  const own = "context" in error ? (error as { context?: Record<string, unknown> }).context : undefined;
+  return own ?? ("cause" in error ? cloudShareErrorContext((error as { cause?: unknown }).cause) : undefined);
 }
 
 function isCloudShareOAuthTokenFailure(error: unknown): boolean {
@@ -1410,6 +1457,7 @@ function cloudShareEvidence(error: unknown):
   | {
       readonly request: Record<string, unknown> | null;
       readonly response: Record<string, unknown> | null;
+      readonly exchangeId?: string;
     }
   | undefined {
   return projectCloudShareFailureEvidence(error);
@@ -1439,23 +1487,27 @@ async function publishFailure(
   correlationId: string,
   externalId: string,
   error: unknown,
+  contributingExchangeIds: readonly string[] = [],
+  failureModeOverride?: "project_member_read",
 ) {
   const itemValidationFailure = error instanceof SalesItemProvisioningValidationError;
   const itemReadFailure = error instanceof SalesItemProvisioningReadError;
   const oauthTokenFailure = isCloudShareOAuthTokenFailure(error);
   const evidence = cloudShareEvidence(itemReadFailure ? error.cause : error);
-  const integrationSurface = oauthTokenFailure
+  const integrationSurface = failureModeOverride === "project_member_read"
+    ? "cloudshare.v3.project_members_gui"
+    : oauthTokenFailure
     ? "cloudshare.v4.oauth.token"
     : itemValidationFailure || itemReadFailure
       ? "cloudshare.v3.sales_item_resources"
       : "cloudshare.v4.sales";
-  const failureMode = oauthTokenFailure
+  const failureMode = failureModeOverride ?? (oauthTokenFailure
     ? "cloudshare_oauth_token"
     : itemValidationFailure
       ? "item_resource_drift"
       : itemReadFailure
         ? "item_resource_read"
-        : "cloudshare_create";
+        : "cloudshare_create");
   await deps.diagnostics?.record({
     source: "sales-trial-offerings",
     operation: "sales.trial_offering.publish",
@@ -1465,7 +1517,9 @@ async function publishFailure(
     actor: request.actor,
     subject: { type: "sales_trial_offering", id: offering.id },
     correlationId,
-    message: oauthTokenFailure
+    message: failureModeOverride === "project_member_read"
+      ? "CloudShare could not publish the Sales Trial Offering because active Project members could not be read"
+      : oauthTokenFailure
       ? "CloudShare OAuth token request failed before Sales Experience creation"
       : itemValidationFailure
         ? "Catalogue Item is stale against CloudShare resources"
@@ -1480,9 +1534,12 @@ async function publishFailure(
     request: oauthTokenFailure ? null : evidence?.request,
     response: oauthTokenFailure ? null : evidence?.response,
     details: {
+      evidenceKind: "semantic",
       integrationSurface,
       failureMode,
+      ...(failureModeOverride === "project_member_read" ? { terminal: true } : {}),
       error: error instanceof Error ? error.message : String(error),
+      ...(contributingExchangeIds.length ? { contributingExchangeIds } : {}),
     },
   });
   const errorMessage = oauthTokenFailure
@@ -1512,6 +1569,34 @@ async function publishFailure(
     error: errorMessage,
     correlationId,
   });
+}
+
+function knownTrialExchangeIds(
+  reads: readonly { readonly exchangeId?: string }[],
+  memberRead?: { readonly exchangeId?: string },
+  error?: unknown,
+): string[] {
+  const completed = error && (error instanceof SalesItemProvisioningValidationError || error instanceof SalesItemProvisioningReadError)
+    ? error.completedReads.map((read) => read.exchangeId)
+    : [];
+  return [...reads.map((read) => read.exchangeId), memberRead?.exchangeId, ...completed]
+    .filter((id): id is string => typeof id === "string");
+}
+
+function knownTrialExchangeDetails(
+  reads: readonly { readonly exchangeId?: string }[],
+  memberRead?: { readonly exchangeId?: string },
+): Record<string, unknown> {
+  const ids = knownTrialExchangeIds(reads, memberRead);
+  return ids.length ? { contributingExchangeIds: ids } : {};
+}
+
+function nestedAcquisitionExchangeId(error: unknown): string | undefined {
+  const context = cloudShareErrorContext(error);
+  const acquisition = context?.acquisition;
+  return acquisition && typeof acquisition === "object" && !Array.isArray(acquisition) && typeof (acquisition as Record<string, unknown>).exchangeCorrelationId === "string"
+    ? (acquisition as Record<string, string>).exchangeCorrelationId
+    : undefined;
 }
 
 async function auditLifecycle(
@@ -1594,8 +1679,9 @@ async function rejectPublishPreflight(
       externalIds: { offeringId: offering.id, itemId: offering.itemId, externalId },
       request: { method: "POST", path: `/api/sales/trial-offerings/${offering.id}/publish` },
       response: { status },
-      details: {
-        integrationSurface: "portal.sales_trial_offerings",
+        details: {
+          evidenceKind: "semantic",
+          integrationSurface: "portal.sales_trial_offerings",
         failureMode,
         cloudShareAttempted: false,
       },
@@ -1632,6 +1718,7 @@ async function recordResourceReads(
     request: Record<string, unknown>;
     response: Record<string, unknown>;
     integrationSurface: string;
+    exchangeId?: string;
   }[],
   outcome: "success" | "failure",
   message: string,
@@ -1650,7 +1737,7 @@ async function recordResourceReads(
         message,
         request: read.request,
         response: read.response,
-        details: { integrationSurface: read.integrationSurface },
+        details: { integrationSurface: read.integrationSurface, evidenceKind: "semantic", ...(read.exchangeId ? { contributingExchangeIds: [read.exchangeId] } : {}) },
         externalIds: { offeringId, itemId, projectId },
       }),
     ),
@@ -1682,6 +1769,8 @@ async function recordProjectMemberRead(
     response: read.response as unknown as Record<string, unknown>,
     details: {
       integrationSurface: read.integrationSurface,
+      evidenceKind: "semantic",
+      ...(read.exchangeId ? { contributingExchangeIds: [read.exchangeId] } : {}),
       memberCount: read.members.length,
       cached: false,
     },
@@ -1744,8 +1833,10 @@ async function recordPrePublishFailureEvidence(
     response: evidence.response,
     details: {
       integrationSurface: "cloudshare.v3.project_members_gui",
+      evidenceKind: "semantic",
       failureMode: "project_member_read",
       cached: false,
+      ...(evidence.exchangeId ? { contributingExchangeIds: [evidence.exchangeId] } : {}),
     },
     externalIds: { offeringId, itemId, projectId },
   });

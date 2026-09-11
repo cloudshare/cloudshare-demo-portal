@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CloudShareAuthError, CloudShareRateLimitError } from "./errors";
 import { randomUUID } from "node:crypto";
 import { HttpTransportError, type HttpClient } from "./http";
+import type { CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 
 /**
  * CloudShare v4 (Accelerate) OAuth. Acquires a Bearer JWT via the
@@ -32,6 +33,8 @@ export interface V4TokenAcquisitionEvent {
   readonly integrationSurface: "cloudshare.v4.oauth.token";
   readonly failureMode?: "transport_failure" | "http_failure" | "unexpected_response";
   readonly causeClassification?: "timeout" | "dns" | "connection" | "invalid_json" | "invalid_schema" | "unknown";
+  readonly attemptStartSequence?: number;
+  readonly completedAt?: string;
 }
 
 export interface V4TokenProviderOptions {
@@ -47,6 +50,7 @@ export interface V4TokenProviderOptions {
   /** Bound token acquisition so cold/expired authentication cannot outlive reads. */
   readonly timeoutMs?: number;
   readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void> | void;
+  readonly attemptStartAllocator?: CloudShareWorkflowSequenceAllocator;
 }
 
 export function createV4TokenAcquisitionNoopObserver(): (event: V4TokenAcquisitionEvent) => void {
@@ -62,6 +66,7 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
   const now = opts.now ?? Date.now;
   const safetyMarginMs = opts.safetyMarginMs ?? 30_000;
   let cached: CachedToken | undefined;
+  const acquisitionTiming = new Map<string, { readonly attemptStartSequence?: number; readonly startedAtMs: number }>();
 
   function isFresh(token: CachedToken | undefined): token is CachedToken {
     return token !== undefined && now() < token.expiresAtMs - safetyMarginMs;
@@ -70,7 +75,9 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
   async function acquire(): Promise<CachedToken> {
     const startedAtMs = now();
     const exchangeCorrelationId = randomUUID();
-    const acquisitionMetadata = (event: Pick<V4TokenAcquisitionEvent, "durationMs" | "status" | "failureMode" | "causeClassification">) => ({ acquisition: { exchangeCorrelationId, durationMs: event.durationMs, ...(event.status === undefined ? {} : { status: event.status }), ...(event.failureMode ? { failureMode: event.failureMode } : {}), ...(event.causeClassification ? { causeClassification: event.causeClassification } : {}) } });
+    const attemptStartSequence = opts.attemptStartAllocator?.next();
+    acquisitionTiming.set(exchangeCorrelationId, { attemptStartSequence, startedAtMs });
+    const acquisitionMetadata = (event: Pick<V4TokenAcquisitionEvent, "durationMs" | "status" | "failureMode" | "causeClassification">) => ({ acquisition: { exchangeCorrelationId, durationMs: event.durationMs, ...(attemptStartSequence === undefined ? {} : { attemptStartSequence }), ...(event.status === undefined ? {} : { status: event.status }), ...(event.failureMode ? { failureMode: event.failureMode } : {}), ...(event.causeClassification ? { causeClassification: event.causeClassification } : {}) } });
     const body = new URLSearchParams({
       grant_type: "client_credentials",
       client_id: opts.clientId,
@@ -216,9 +223,12 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
 
   async function notifyAcquisition(event: V4TokenAcquisitionEvent): Promise<void> {
     try {
-      await opts.onAcquisition(event);
+      const timing = event.exchangeCorrelationId ? acquisitionTiming.get(event.exchangeCorrelationId) : undefined;
+      await opts.onAcquisition({ ...event, ...(timing?.attemptStartSequence === undefined ? {} : { attemptStartSequence: timing.attemptStartSequence, completedAt: event.completedAt ?? new Date(now()).toISOString() }) });
     } catch {
       // Diagnostics must not break CloudShare authentication.
+    } finally {
+      if (event.exchangeCorrelationId) acquisitionTiming.delete(event.exchangeCorrelationId);
     }
   }
 }

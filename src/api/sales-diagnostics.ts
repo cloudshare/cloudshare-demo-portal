@@ -11,6 +11,8 @@ const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-items", "sales-demo-se
 const SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET = 5_000;
+/** Causal investigations probe one row beyond the accepted 5,000 offset. */
+const SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND = SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + SALES_DIAGNOSTIC_MAX_PAGE_LIMIT + 1;
 
 type SalesDiagnosticSource = typeof SALES_DIAGNOSTIC_SOURCES[number];
 type SalesTrialEnrollmentReader = Pick<SalesTrialEnrollmentRepository, "findById"> & {
@@ -19,7 +21,7 @@ type SalesTrialEnrollmentReader = Pick<SalesTrialEnrollmentRepository, "findById
 type SalesTrialEnrollmentDependency = SalesTrialEnrollmentReader | SalesTrialEnrollmentRepository;
 type DiagnosticPageBody = {
   readonly entries: readonly Record<string, unknown>[];
-  readonly page: { readonly hasMore: boolean; readonly nextOffset: number | null };
+  readonly page: { readonly hasMore: boolean; readonly nextOffset: number | null; readonly complete?: boolean; readonly continuation?: string | null };
 };
 
 /**
@@ -32,6 +34,7 @@ export async function handleGetSalesDiagnosticLog(
   request: AdminRequest & { readonly customerId: string },
 ): Promise<AdminResponse> {
   const requestedSource = request.query.source?.trim();
+  const normalizedQuery = requestedSource === undefined ? request.query : { ...request.query, source: requestedSource };
   const requestedLimit = parseLimit(request.query.limit);
   const requestedOffset = parseOffset(request.query.offset);
   if (requestedOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) return { status: 400, body: { error: "sales_diagnostic_offset_exceeds_maximum", maxOffset: SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET } };
@@ -40,33 +43,31 @@ export async function handleGetSalesDiagnosticLog(
   }
 
   const causalTrialQuery = Boolean(request.query.subjectId && (request.query.subjectType === "sales_trial_enrollment" || request.query.subjectType === "sales_trial_offering"));
-  if (requestedSource && !causalTrialQuery) {
-    const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
-    return { ...response, body: projectDiagnosticPage(response.body) };
-  }
-
   if (causalTrialQuery) {
-    const subjectEntries = await readCausalSubjectEntries(deps, request.customerId, request.query, request.query.subjectId!.trim(), requestedOffset, requestedLimit);
+    const subjectRead = await readCausalSubjectEntries(deps, request.customerId, normalizedQuery, request.query.subjectId!.trim(), requestedOffset, requestedLimit);
+    const subjectEntries = subjectRead.entries;
     const pageEntries = subjectEntries.slice(requestedOffset, requestedOffset + requestedLimit);
     const candidateNextOffset = requestedOffset + pageEntries.length;
-    const hasMore = subjectEntries.length > candidateNextOffset && candidateNextOffset <= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
-    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore, nextOffset: hasMore ? candidateNextOffset : null } } };
+    const hasMore = subjectEntries.length > candidateNextOffset;
+    const bounded = subjectRead.truncated || requestedOffset + requestedLimit > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET || (hasMore && candidateNextOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET);
+    return { status: 200, body: { entries: pageEntries.map(salesBearerSafeProjection), page: { limit: requestedLimit, offset: requestedOffset, returned: pageEntries.length, hasMore: hasMore && !bounded, nextOffset: hasMore && !bounded ? candidateNextOffset : null, complete: !bounded && !hasMore, incompleteReason: bounded ? "sales_diagnostic_offset_cap" : undefined, continuation: hasMore && !bounded ? `offset=${candidateNextOffset}` : null } } };
   }
 
-  const requiredEntriesPerSource = requestedOffset + requestedLimit + 1;
-  const sourceEntries = await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({
+  const requiredEntriesPerSource = SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + SALES_DIAGNOSTIC_MAX_PAGE_LIMIT + 1;
+  const sources = requestedSource ? [requestedSource as SalesDiagnosticSource] : SALES_DIAGNOSTIC_SOURCES;
+  const sourceReads = await Promise.all(sources.map((source) => readSourceEntries({
     deps,
     customerId: request.customerId,
     query: request.query,
     source,
     requiredEntries: requiredEntriesPerSource,
   })));
-  const entries = sourceEntries.flat()
-    .slice()
-    .sort((left: Record<string, unknown>, right: Record<string, unknown>) => String(right.occurredAt).localeCompare(String(left.occurredAt)));
+  const entries = orderWorkflowDiagnostics(sourceReads.flatMap((read) => read.entries));
   const pageEntries = entries.slice(requestedOffset, requestedOffset + requestedLimit);
   const candidateNextOffset = requestedOffset + pageEntries.length;
-  const hasMore = entries.length > candidateNextOffset && candidateNextOffset <= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET;
+  const undisclosed = entries.length > candidateNextOffset;
+  const scanTruncated = sourceReads.some((read) => read.truncated);
+  const bounded = requestedOffset + requestedLimit > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET || scanTruncated;
 
   return {
     status: 200,
@@ -76,14 +77,17 @@ export async function handleGetSalesDiagnosticLog(
         limit: requestedLimit,
         offset: requestedOffset,
         returned: pageEntries.length,
-        hasMore,
-        nextOffset: hasMore ? candidateNextOffset : null,
+        hasMore: undisclosed && !bounded,
+        nextOffset: undisclosed && !bounded ? candidateNextOffset : null,
+        complete: !bounded && !undisclosed,
+        incompleteReason: bounded ? (requestedOffset + requestedLimit > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET ? "sales_diagnostic_offset_cap" : "sales_diagnostic_scan_truncated") : undefined,
+        continuation: undisclosed && !bounded ? `offset=${candidateNextOffset}` : null,
       },
     },
   };
 }
 
-async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentDependency }, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<readonly Record<string, unknown>[]> {
+async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { readonly salesTrialEnrollments?: SalesTrialEnrollmentDependency }, customerId: string, query: AdminRequest["query"], subjectId: string, offset: number, limit: number): Promise<{ readonly entries: readonly Record<string, unknown>[]; readonly truncated: boolean }> {
   const requestedType = query.subjectType;
   const enrollmentReader = deps.salesTrialEnrollments as SalesTrialEnrollmentReader | undefined;
   let enrollment = null;
@@ -91,36 +95,41 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
     if (!enrollmentReader) throw new Error("Sales diagnostics enrollment reader is not configured");
     enrollment = await enrollmentReader.findById(customerId, subjectId);
   }
-  const base = { ...query, subjectId, subjectType: requestedType, limit: String(offset + limit + 1), offset: "0" };
+  const base = { ...query, subjectId, subjectType: requestedType, limit: String(SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND), offset: "0" };
   const requestedSource = query.source;
   const sources: SalesDiagnosticSource[] = requestedType === "sales_trial_offering"
     ? (requestedSource === undefined
         ? ["sales-trial-offerings", "sales-trial-enrollment"]
         : requestedSource === "sales-trial-offerings"
           ? ["sales-trial-offerings"]
-          : [])
+          : requestedSource === "sales-trial-enrollment"
+            ? ["sales-trial-enrollment"]
+            : [])
     : (requestedSource === undefined ? ["sales-trial-enrollment"] : requestedSource === "sales-trial-enrollment" ? ["sales-trial-enrollment"] : []);
-  const direct = (await Promise.all(sources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
+  const directReads = await Promise.all(sources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND })));
+  const direct = directReads.flatMap((read) => read.entries).filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
     return subject?.id === subjectId && (subject.type === "sales_trial_offering" || subject.type === "sales_trial_enrollment");
   });
-  if (requestedType === "sales_trial_offering") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  const causalScanTruncated = (read: { readonly truncated: boolean }) => read.truncated;
+  if (requestedType === "sales_trial_offering") return { entries: orderWorkflowDiagnostics(direct), truncated: directReads.some(causalScanTruncated) };
   const enrollmentEntries = direct.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
   const offeringId = enrollment?.salesTrialOfferingId;
-  if (!enrollmentEntries.length && typeof offeringId !== "string") return direct.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
-  if (typeof offeringId !== "string") return enrollmentEntries.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  if (!enrollmentEntries.length && typeof offeringId !== "string") return { entries: orderWorkflowDiagnostics(direct), truncated: directReads.some(causalScanTruncated) };
+  if (typeof offeringId !== "string") return { entries: orderWorkflowDiagnostics(enrollmentEntries), truncated: directReads.some(causalScanTruncated) };
   const parentSources: SalesDiagnosticSource[] = requestedSource === undefined
     ? ["sales-trial-offerings", "sales-trial-enrollment"]
     : requestedSource === "sales-trial-offerings"
       ? ["sales-trial-offerings"]
       : [];
-  const parent = parentSources.length
-    ? (await Promise.all(parentSources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: offset + limit + 1 })))).flat().filter((entry) => {
+  const parentReads = parentSources.length
+    ? await Promise.all(parentSources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND })))
+    : [];
+  const parent = parentReads.flatMap((read) => read.entries).filter((entry) => {
       const subject = entry.subject as Record<string, unknown> | null;
       return subject?.type === "sales_trial_offering" && subject.id === offeringId;
-    })
-    : [];
-  return [...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()].sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+    });
+  return { entries: orderWorkflowDiagnostics([...new Map([...enrollmentEntries, ...parent].map((entry) => [entry.id, entry])).values()]), truncated: directReads.some(causalScanTruncated) || parentReads.some(causalScanTruncated) };
 }
 
 /** Entries have already crossed the direction-aware recorder seam. This
@@ -134,8 +143,63 @@ function projectDiagnosticPage(value: Record<string, unknown>): Record<string, u
   const entries = Array.isArray(value.entries)
     ? value.entries.map((entry) => salesBearerSafeProjection(entry))
     : value.entries;
-  return { ...value, entries };
+  const page = value.page && typeof value.page === "object" ? value.page as Record<string, unknown> : {};
+  const offset = typeof page.offset === "number" ? page.offset : 0;
+  const hasMore = page.hasMore === true;
+  // At the hard offset boundary a full-looking page can still be the last
+  // page returned by the bounded source scan; it is not proof that older
+  // evidence does not exist. Mark any non-empty boundary page incomplete.
+  const capped = offset >= SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET && (hasMore || (Array.isArray(page.entries) && page.entries.length > 0) || (typeof page.returned === "number" && page.returned > 0));
+  return { ...value, entries, page: { ...page, hasMore: capped ? false : hasMore, nextOffset: capped ? null : (typeof page.nextOffset === "number" ? page.nextOffset : null), complete: capped ? false : page.complete !== false, ...(capped ? { incompleteReason: "sales_diagnostic_offset_cap", continuation: null } : {}) } };
 }
+
+function orderWorkflowDiagnostics(entries: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const entry of entries) {
+    const key = typeof entry.correlationId === "string" && entry.correlationId ? `workflow:${entry.correlationId}` : `legacy:${entry.id}`;
+    const group = groups.get(key) ?? []; group.push(entry); groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => compareGroupAnchor(a, b)).flatMap((group) => {
+    const exchangeSequences = new Map<string, number>();
+    for (const entry of group) { const id = exchangeId(entry); const sequence = workflowSequence(entry); if (id && sequence !== undefined) exchangeSequences.set(id, sequence); }
+    const exchangeRanks = new Map([...exchangeSequences.keys()].sort((a, b) => (exchangeSequences.get(a)! - exchangeSequences.get(b)!) || a.localeCompare(b)).map((id, index) => [id, index] as const));
+    return group.sort((a, b) => compareWithinWorkflow(a, b, exchangeSequences, exchangeRanks));
+  });
+}
+function compareGroupAnchor(left: readonly Record<string, unknown>[], right: readonly Record<string, unknown>[]): number {
+  const l = left.reduce((best, e) => Math.max(best, Date.parse(String(e.occurredAt))), Number.NEGATIVE_INFINITY);
+  const r = right.reduce((best, e) => Math.max(best, Date.parse(String(e.occurredAt))), Number.NEGATIVE_INFINITY);
+  return r - l || String(left[0]?.correlationId ?? left[0]?.id).localeCompare(String(right[0]?.correlationId ?? right[0]?.id));
+}
+function compareWithinWorkflow(left: Record<string, unknown>, right: Record<string, unknown>, exchangeSequences: ReadonlyMap<string, number>, exchangeRanks: ReadonlyMap<string, number>): number {
+  const ld = left.details as Record<string, unknown> | null | undefined;
+  const rd = right.details as Record<string, unknown> | null | undefined;
+  const ls = workflowSequence(left); const rs = workflowSequence(right);
+  const le = exchangeId(left); const re = exchangeId(right);
+  const lIds = Array.isArray(ld?.contributingExchangeIds) ? ld.contributingExchangeIds.filter((id): id is string => typeof id === "string") : [];
+  const rIds = Array.isArray(rd?.contributingExchangeIds) ? rd.contributingExchangeIds.filter((id): id is string => typeof id === "string") : [];
+  const phase = (entry: Record<string, unknown>, ids: string[]) => { if (ids.length) { const mapped = ids.map((id) => exchangeSequences.get(id)).filter((n): n is number => n !== undefined); return mapped.length ? 1 : 2; } return workflowSequence(entry) === undefined ? 3 : 0; };
+  const lAnchor = lIds.length ? Math.max(...lIds.map((id) => exchangeRanks.get(id) ?? -1)) : (le ? exchangeRanks.get(le) : undefined) ?? ls ?? Number.POSITIVE_INFINITY;
+  const rAnchor = rIds.length ? Math.max(...rIds.map((id) => exchangeRanks.get(id) ?? -1)) : (re ? exchangeRanks.get(re) : undefined) ?? rs ?? Number.POSITIVE_INFINITY;
+  const lp = phase(left, lIds); const rp = phase(right, rIds);
+  const lPosition = lp === 0 ? lAnchor : lp === 1 ? lAnchor + 0.5 : Number.POSITIVE_INFINITY;
+  const rPosition = rp === 0 ? rAnchor : rp === 1 ? rAnchor + 0.5 : Number.POSITIVE_INFINITY;
+  const exchangeTieBreak = ls !== undefined && rs !== undefined ? (le ?? "").localeCompare(re ?? "") : 0;
+  return lPosition - rPosition || lp - rp || exchangeTieBreak || String(left.occurredAt).localeCompare(String(right.occurredAt)) || String(left.id).localeCompare(String(right.id));
+}
+function compareWorkflowDiagnostics(left: Record<string, unknown>, right: Record<string, unknown>): number {
+  const leftSequence = workflowSequence(left);
+  const rightSequence = workflowSequence(right);
+  if (leftSequence !== undefined && rightSequence !== undefined && leftSequence !== rightSequence) return leftSequence - rightSequence;
+  if (leftSequence !== undefined && rightSequence === undefined) return -1;
+  if (leftSequence === undefined && rightSequence !== undefined) return 1;
+  const leftExchange = exchangeId(left);
+  const rightExchange = exchangeId(right);
+  if (leftExchange && rightExchange && leftExchange !== rightExchange) return leftExchange.localeCompare(rightExchange);
+  return String(right.occurredAt).localeCompare(String(left.occurredAt)) || String(right.id).localeCompare(String(left.id));
+}
+function workflowSequence(value: Record<string, unknown>): number | undefined { const details = value.details as Record<string, unknown> | null | undefined; return typeof details?.attemptStartSequence === "number" ? details.attemptStartSequence : undefined; }
+function exchangeId(value: Record<string, unknown>): string | undefined { const details = value.details as Record<string, unknown> | null | undefined; return typeof details?.exchangeId === "string" ? details.exchangeId : undefined; }
 
 function isSalesDiagnosticSource(value: string): value is SalesDiagnosticSource {
   return (SALES_DIAGNOSTIC_SOURCES as readonly string[]).includes(value);
@@ -147,9 +211,10 @@ async function readSourceEntries(input: {
   readonly query: AdminRequest["query"];
   readonly source: SalesDiagnosticSource;
   readonly requiredEntries: number;
-}): Promise<readonly Record<string, unknown>[]> {
+}): Promise<{ readonly entries: readonly Record<string, unknown>[]; readonly truncated: boolean }> {
   const entries: Record<string, unknown>[] = [];
   let offset = 0;
+  let lastPageHasMore = false;
   while (entries.length < input.requiredEntries) {
     const limit = Math.min(SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT, input.requiredEntries - entries.length);
     const response = await handleGetDiagnosticLog(input.deps, {
@@ -158,10 +223,11 @@ async function readSourceEntries(input: {
     });
     const body = response.body as DiagnosticPageBody;
     entries.push(...body.entries);
+    lastPageHasMore = body.page.hasMore;
     if (!body.page.hasMore || body.page.nextOffset === null) break;
     offset = body.page.nextOffset;
   }
-  return entries;
+  return { entries, truncated: entries.length >= input.requiredEntries && lastPageHasMore };
 }
 
 function parseLimit(value: string | undefined): number {

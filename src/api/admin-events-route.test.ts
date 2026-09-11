@@ -20,7 +20,7 @@ describe("GET /api/admin/events", () => {
     mockCookies.mockResolvedValue({ get: () => ({ value: "portal-session" }) });
   });
 
-  it("derives Customer scope from the authenticated admin session", async () => {
+  it("H: authenticated Customer and admin role isolate protected evidence from ordinary and cross-Customer surfaces", async () => {
     const eventLog = createInMemoryEventLogRepository();
     const diagnostics = createInMemoryDiagnosticLogRepository();
     const protectedMarker = "synthetic-protected-route-marker";

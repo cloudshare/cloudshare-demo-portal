@@ -201,6 +201,8 @@ export interface DiagnosticRecorderOptions {
  */
 export interface DiagnosticRecorder {
   record(input: DiagnosticLogEntryInput): Promise<void>;
+  /** Canonical workflow evidence may opt into fallback when persistence fails. */
+  readonly recordCanonical?: (input: DiagnosticLogEntryInput) => Promise<void>;
 }
 
 export function createDiagnosticRecorder(
@@ -217,6 +219,10 @@ export function createDiagnosticRecorder(
       } catch (error) {
         options.onError?.(error, input);
       }
+    },
+    async recordCanonical(input: DiagnosticLogEntryInput): Promise<void> {
+      const redacted = redactDiagnosticInput(input, { secrets, sensitiveMode });
+      await options.repository.append(redacted);
     },
   };
 }

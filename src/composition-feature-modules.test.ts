@@ -10,6 +10,9 @@ import {
 import type { CloudShareClient, CloudShareRequestObservation, V4TokenAcquisitionEvent } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
+import { createCloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createSalesTrialCloudShareObserver } from "@/api/sales-trial-cloudshare-diagnostics";
 
 const CONNECTION: CloudShareConnectionRecord = {
   customerId: "customer-a", apiId: "api-id", apiKey: "api-key", webhookSecret: "webhook-secret",
@@ -74,22 +77,24 @@ describe("composition feature modules", () => {
     const { factory, record, integrations } = createObservedFactory();
     const customRequest = vi.fn().mockRejectedValue(new Error("custom observation unavailable"));
 
+    const allocator = createCloudShareWorkflowSequenceAllocator();
     factory.forConnection(CONNECTION, {
       scope: "workflow",
       workflow: {
         actor: { type: "candidate", id: "candidate-1" }, subject: { type: "exam_attempt", id: "attempt-1" },
-        correlationId: "workflow-correlation", source: "runtime",
+        correlationId: "workflow-correlation", source: "runtime", sequenceAllocator: allocator,
       },
       onRequest: customRequest,
     });
+    expect(integrations[0].attemptStartAllocator).toBe(allocator);
     await integrations[0].observer.onAcquisition(OAUTH_EVENT);
     await integrations[0].observer.onRequest(REQUEST_EVENT);
 
     expect(customRequest).toHaveBeenCalledOnce();
-    expect(record.mock.calls.map(([entry]) => entry)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ customerId: "customer-a", subject: { type: "exam_attempt", id: "attempt-1" }, correlationId: "workflow-correlation" }),
-      expect.objectContaining({ customerId: "customer-a", subject: { type: "customer", id: "customer-a" }, correlationId: "mandatory-customer-correlation-1" }),
-    ]));
+    expect(record.mock.calls.map(([entry]) => entry)).toEqual([
+      expect.objectContaining({ customerId: "customer-a", subject: { type: "exam_attempt", id: "attempt-1" }, correlationId: "workflow-correlation", operation: "cloudshare.oauth.token" }),
+      expect.objectContaining({ customerId: "customer-a", subject: { type: "exam_attempt", id: "attempt-1" }, correlationId: "workflow-correlation", operation: "cloudshare.request" }),
+    ]);
   });
 
   it("requires one explicit scope and composes Customer-only and custom-observer scopes fail-open", async () => {
@@ -103,12 +108,11 @@ describe("composition feature modules", () => {
     }));
 
     const customAcquisition = vi.fn().mockRejectedValue(new Error("custom observer unavailable"));
-    factory.forConnection(CONNECTION, { scope: "custom_observer", correlationId: "custom-correlation", onAcquisition: customAcquisition });
+    factory.forConnection(CONNECTION, { scope: "custom_observer", correlationId: "custom-correlation", actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, onAcquisition: customAcquisition });
     await integrations[1].observer.onAcquisition(OAUTH_EVENT);
     expect(customAcquisition).toHaveBeenCalledOnce();
-    expect(record).toHaveBeenCalledWith(expect.objectContaining({
-      customerId: "customer-a", subject: { type: "customer", id: "customer-a" }, correlationId: "mandatory-customer-correlation-2",
-    }));
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(record).toHaveBeenLastCalledWith(expect.objectContaining({ correlationId: "custom-correlation", actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" } }));
   });
 
   it("keeps mandatory Customer evidence isolated across connections", async () => {
@@ -119,6 +123,30 @@ describe("composition feature modules", () => {
     await integrations[1].observer.onAcquisition(OAUTH_EVENT);
     expect(record.mock.calls.map(([entry]) => entry.customerId)).toEqual(["customer-a", "customer-b"]);
     expect(record.mock.calls.map(([entry]) => entry.correlationId)).toEqual(["mandatory-customer-correlation-1", "mandatory-customer-correlation-2"]);
+  });
+
+  it("falls back to the real Customer recorder after a canonical first append rejects", async () => {
+    const append = vi.fn().mockRejectedValueOnce(new Error("canonical write failed")).mockResolvedValue(undefined);
+    const recorder = createDiagnosticRecorder({ repository: { append } as never });
+    const integrations: Parameters<typeof createCloudShareIntegrationForConnection>[0][] = [];
+    const factory = createCloudShareClientFactory({ diagnostics: recorder, mode: "fixture", createIntegration: (input) => { integrations.push(input); return {} as CloudShareClient; }, decorateClient: (client) => client });
+    const custom = vi.fn((event: CloudShareRequestObservation) => recorder.recordCanonical!({ source: "sales-trial-enrollment", operation: "trial.request", outcome: event.outcome, customerId: "customer-a", correlationId: "trial-correlation", actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, message: "trial exchange", occurredAt: new Date(event.occurredAt) }));
+    factory.forConnection(CONNECTION, { scope: "custom_observer", correlationId: "trial-correlation", actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, source: "sales-trial-enrollment", onRequest: custom });
+    await integrations[0].observer.onRequest(REQUEST_EVENT);
+    expect(append).toHaveBeenCalledTimes(2);
+    expect(append.mock.calls[1][0]).toMatchObject({ customerId: "customer-a", correlationId: "trial-correlation", actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" } });
+  });
+
+  it("uses the real custom observer and recorder seam for the first canonical append failure", async () => {
+    const append = vi.fn().mockRejectedValueOnce(new Error("canonical write failed")).mockResolvedValue(undefined);
+    const recorder = createDiagnosticRecorder({ repository: { append } as never });
+    const actual = createSalesTrialCloudShareObserver({ diagnostics: recorder, customerId: "customer-a", source: "sales-trial-enrollment", correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" }, candidateEmail: "candidate@example.test" });
+    const integrations: Parameters<typeof createCloudShareIntegrationForConnection>[0][] = [];
+    const factory = createCloudShareClientFactory({ diagnostics: recorder, mode: "fixture", createIntegration: (input) => { integrations.push(input); return {} as CloudShareClient; }, decorateClient: (client) => client });
+    factory.forConnection(CONNECTION, { ...actual, onRequest: actual.onRequest });
+    await integrations[0].observer.onRequest({ ...REQUEST_EVENT, exchangeId: "exchange-real", attemptStartSequence: 7, completedAt: "2026-09-03T12:00:02.000Z" });
+    expect(append).toHaveBeenCalledTimes(2);
+    expect(append.mock.calls[1][0]).toMatchObject({ source: "sales-trial-enrollment", operation: "cloudshare.request", customerId: "customer-a", candidateEmail: "candidate@example.test", occurredAt: new Date("2026-09-03T12:00:01.000Z"), correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" }, details: { exchangeId: "exchange-real", attemptStartSequence: 7, completedAt: "2026-09-03T12:00:02.000Z", durationMs: 1, evidenceKind: "transport" } });
   });
 
   it("exposes the approved narrow dependency bundles", () => {

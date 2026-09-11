@@ -27,6 +27,13 @@ function fakeRepository(): DiagnosticLogRepository & {
 }
 
 describe("redactDiagnosticInput", () => {
+  it("keeps ordinary recording fail-open while exposing canonical persistence failures", async () => {
+    const repository = { ...fakeRepository(), append: vi.fn().mockRejectedValue(new Error("db unavailable")) };
+    const recorder = createDiagnosticRecorder({ repository });
+    const input = { source: "sales-items", operation: "x", outcome: "success" as const, message: "x" };
+    await expect(recorder.record(input)).resolves.toBeUndefined();
+    await expect(recorder.recordCanonical?.(input)).rejects.toThrow("db unavailable");
+  });
   it("masks all request headers while retaining request and response body evidence verbatim", () => {
     const redacted = redactDiagnosticInput({
       source: "auth",

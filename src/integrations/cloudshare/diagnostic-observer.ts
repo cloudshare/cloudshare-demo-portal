@@ -25,6 +25,10 @@ export function createCloudShareDiagnosticObserver(input: {
       request: event.result?.request as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.request : projectFailureRequest(event.error?.context)) ?? null,
       response: event.result?.response as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.response : projectFailureResponse(event.error?.context)) ?? null,
       details: {
+        evidenceKind: "transport",
+        exchangeId: event.exchangeId,
+        attemptStartSequence: event.attemptStartSequence,
+        completedAt: event.completedAt,
         ...(input.correlationId ? { sequence: ++sequence } : {}),
         durationMs: event.durationMs,
         integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,
@@ -42,6 +46,10 @@ export function createCloudShareDiagnosticObserver(input: {
     request: null,
     response: null,
     details: {
+      exchangeId: event.exchangeCorrelationId,
+      evidenceKind: "transport",
+      attemptStartSequence: event.attemptStartSequence,
+      completedAt: event.completedAt,
       ...(input.correlationId ? { sequence: ++sequence } : {}),
       ...(event.exchangeCorrelationId ? { exchangeCorrelationId: event.exchangeCorrelationId } : {}),
       durationMs: event.durationMs,
@@ -64,6 +72,7 @@ export function createCloudShareWorkflowObserver(input: {
   readonly diagnostics: DiagnosticRecorder;
   readonly customerId: string;
 } & CloudShareWorkflowObservationContext) {
+  const recordCanonical = input.diagnostics.recordCanonical ?? input.diagnostics.record;
   const sequenceAllocator = input.sequenceAllocator ?? createCloudShareWorkflowSequenceAllocator();
   const subject = () => typeof input.subject === "function" ? input.subject() : input.subject;
   const anchor = () => ({
@@ -81,7 +90,7 @@ export function createCloudShareWorkflowObserver(input: {
       const projectedFailure = projectCloudShareFailureContext(event.error?.context);
       const oauthFailure = projectedFailure?.request === null && projectedFailure.response === null;
       const sequence = sequenceAllocator.next();
-      await input.diagnostics.record({
+      await recordCanonical({
         occurredAt: new Date(event.occurredAt), source: input.source,
         operation: "cloudshare.request", outcome: event.outcome,
         ...anchor(),
@@ -89,6 +98,10 @@ export function createCloudShareWorkflowObserver(input: {
         request: event.result?.request as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.request : projectFailureRequest(event.error?.context)) ?? null,
         response: event.result?.response as unknown as Record<string, unknown> ?? (projectedFailure ? projectedFailure.response : projectFailureResponse(event.error?.context)) ?? null,
         details: {
+          exchangeId: event.exchangeId,
+          evidenceKind: "transport",
+          attemptStartSequence: event.attemptStartSequence,
+          completedAt: event.completedAt,
           sequence, durationMs: event.durationMs,
           integrationSurface: event.result?.integrationSurface ?? event.error?.context?.integrationSurface ?? null,
           ...(event.result ? { host: event.result.host } : {}),
@@ -101,13 +114,17 @@ export function createCloudShareWorkflowObserver(input: {
     onAcquisition: async (event: V4TokenAcquisitionEvent) => {
       const sequence = sequenceAllocator.next();
       const exchangeCorrelationId = event.exchangeCorrelationId ?? randomUUID();
-      await input.diagnostics.record({
+      await recordCanonical({
         occurredAt: new Date(event.occurredAt), source: input.source,
         operation: "cloudshare.oauth.token", outcome: event.outcome,
         ...anchor(),
         message: event.outcome === "failure" ? "CloudShare OAuth exchange failed." : "CloudShare OAuth exchange completed.",
         request: null, response: null,
         details: {
+          exchangeId: exchangeCorrelationId,
+          evidenceKind: "transport",
+          attemptStartSequence: event.attemptStartSequence,
+          completedAt: event.completedAt,
           sequence, durationMs: event.durationMs, integrationSurface: event.integrationSurface,
           parentCorrelationId: input.correlationId, exchangeCorrelationId,
           ...(event.status !== undefined ? { status: event.status } : {}),

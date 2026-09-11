@@ -132,18 +132,22 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   }
   const workflowScope = certificationCloudShareWorkflow({ actor: request.actor, customerId: request.customerId, subject: { type: "sales_demo_session", id }, correlationId, source: "sales-demo-sessions", externalIds: { opportunityId: opportunity.id, projectId: item.project.id } });
   let createDispatched = false;
+  let completedResourceReads: readonly { readonly exchangeId?: string }[] = [];
+  let completedMemberRead: { readonly exchangeId?: string } | undefined;
   try {
     const delivery = deps.deliveryFactory?.forConnection(connection, workflowScope) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, workflowScope));
     const validator = deps.itemProvisioningValidator ?? deps.itemProvisioningValidatorFactory?.forConnection(connection, workflowScope);
     const resourceReads = validator ? await validator.revalidate(item) : [];
-    await recordResourceReads(deps, request, correlationId, item.id, item.project.id, resourceReads, "success");
+    completedResourceReads = resourceReads;
+    await recordResourceReads(deps, request, correlationId, id, item.id, item.project.id, resourceReads, "success");
     // Re-read immediately before POST /sales. This deliberately accepts the
     // narrow race after this check; a cached or Item-stored member is never used.
     const projectMembers = deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection, workflowScope) ?? createCloudShareProjectMemberSource((deps.cloudshare ?? missingClientFactory).forConnection(connection, workflowScope));
     let memberRead: Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>;
     try { memberRead = await projectMembers.listActiveProjectMembers(item.project.id); }
     catch (error) { throw new SalesProjectMemberReadError(error); }
-    await recordProjectMemberRead(deps, request, correlationId, item.id, item.project.id, memberRead, "success");
+    await recordProjectMemberRead(deps, request, correlationId, id, item.id, item.project.id, memberRead, "success");
+    completedMemberRead = memberRead;
     const selectedSalesPro = memberRead.members.find((member) => member.email.toLowerCase() === parsed.data.salesProEmail.toLowerCase());
     if (!selectedSalesPro) throw new SalesProjectMemberSelectionError("The selected Sales Pro is no longer an active member of this Item's CloudShare Project.", memberRead);
     createDispatched = true;
@@ -156,14 +160,14 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       // response: the admin must be told not to retry even during a secondary
       // observability outage.
       await Promise.allSettled([
-        evidence(deps, request, correlationId, session, "failure", "CloudShare Sales Experience was created but Certalis could not persist its correlation", created, { integrationSurface: "cloudshare.v4.sales", failureMode: "local_correlation_persistence", createdSalesExperienceId: created.salesExperienceId, error: error instanceof Error ? error.message : String(error) }),
+        evidence(deps, request, correlationId, session, "failure", "CloudShare Sales Experience was created but Certalis could not persist its correlation", created, { ...contributionDetails(completedResourceReads, completedMemberRead, created.exchangeId), integrationSurface: "cloudshare.v4.sales", failureMode: "local_correlation_persistence", createdSalesExperienceId: created.salesExperienceId, error: error instanceof Error ? error.message : String(error) }),
         deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "failure", correlationId, details: { cloudShareSalesExperienceId: created.salesExperienceId, opportunityId: opportunity.id, itemId: item.id, externalId, needsAttention: true }, error: error instanceof Error ? error.message : "Local correlation persistence failed" }),
       ]);
       const reason = "CloudShare created the Sales Experience, but Certalis could not save its correlation. Do not retry creation; review support diagnostics.";
       return response(503, { error: reason, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("certalis_correlation_persistence", reason, id) });
     }
     const afterSave = await Promise.allSettled([
-      evidence(deps, request, correlationId, session, "success", "Sales Enablement Session created", created, { integrationSurface: "cloudshare.v4.sales", registrationType: session.registrationType, sendInvitations: session.sendInvitations }),
+      evidence(deps, request, correlationId, session, "success", "Sales Enablement Session created", created, { ...contributionDetails(completedResourceReads, completedMemberRead, created.exchangeId), integrationSurface: "cloudshare.v4.sales", registrationType: session.registrationType, sendInvitations: session.sendInvitations }),
       deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "success", correlationId, details: { cloudShareSalesExperienceId: created.salesExperienceId, opportunityId: opportunity.id, itemId: item.id, externalId } }),
     ]);
     if (afterSave.some((result) => result.status === "rejected")) {
@@ -189,7 +193,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     if (ambiguousCreate) {
       await Promise.allSettled([
         deps.sessions.updateOperationalState?.(request.customerId, id, { operationalStatus: "needs_attention", attentionReason: `cloudshare_v4_post_sales_ambiguous: ${AMBIGUOUS_CREATE_REASON}` }),
-        evidence(deps, request, correlationId, reservation, "failure", AMBIGUOUS_CREATE_REASON, cloudShareEvidence(error), { integrationSurface: "cloudshare.v4.sales", failureMode: "cloudshare_create_outcome_ambiguous", retry: "unsafe_requires_support", error: error instanceof Error ? error.message : String(error) }),
+        evidence(deps, request, correlationId, reservation, "failure", AMBIGUOUS_CREATE_REASON, cloudShareEvidence(error), { ...contributionDetails(completedResourceReads, completedMemberRead, cloudShareEvidence(error)?.exchangeId, oauthFailureMetadata(error).oauthExchangeCorrelationId), integrationSurface: "cloudshare.v4.sales", failureMode: "cloudshare_create_outcome_ambiguous", retry: "unsafe_requires_support", error: error instanceof Error ? error.message : String(error) }),
         deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "failure", correlationId, details: { externalId, opportunityId: opportunity.id, itemId: item.id, failureMode: "cloudshare_create_outcome_ambiguous", integrationSurface: "cloudshare.v4.sales", retry: "unsafe_requires_support" }, error: error instanceof Error ? error.message : "CloudShare POST outcome is unknown" }),
       ]);
       return response(502, { error: AMBIGUOUS_CREATE_REASON, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("cloudshare_v4_post_sales_ambiguous", AMBIGUOUS_CREATE_REASON, id) });
@@ -215,7 +219,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
           ? "Certalis could not confirm the Sales Enablement reservation was discarded after CloudShare rejected the create request. Do not retry creation; review support diagnostics."
           : "Certalis could not confirm the pre-dispatch Sales Enablement reservation was discarded. Do not retry creation; review support diagnostics.";
         const cleanupIntegrationSurface = cleanupAfterProviderAttempt ? "cloudshare.v4.sales" : itemReadFailure ? "cloudshare.v3.sales_item_resources" : memberReadFailure ? "cloudshare.v3.project_members_gui" : preWriteCooldownFailure ? "cloudshare.v4.sales" : "portal.sales_demo_sessions";
-        const details = { integrationSurface: cleanupIntegrationSurface, failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: cleanupAfterProviderAttempt, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
+        const details = { ...contributionDetails(completedResourceReads, completedMemberRead, cloudShareEvidence(error)?.exchangeId, oauthFailureMetadata(error).oauthExchangeCorrelationId), integrationSurface: cleanupIntegrationSurface, failureMode: "reservation_cleanup_unconfirmed", cloudShareAttempted: cleanupAfterProviderAttempt, retry: "unsafe_requires_support", opportunityId: reservation.opportunityId, itemId: reservation.itemId };
         await Promise.allSettled([
           evidence(deps, request, correlationId, reservation, "failure", reason, cleanupAfterProviderAttempt ? cloudShareEvidence(error) : undefined, details),
           deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: reservation.id, outcome: "failure", correlationId, details, error: reason }),
@@ -224,15 +228,16 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
       }
     }
     if (itemValidationFailure || itemReadFailure) {
-      await recordResourceReads(deps, request, correlationId, item.id, item.project.id, error.completedReads, "failure");
+      await recordResourceReads(deps, request, correlationId, id, item.id, item.project.id, error.completedReads, "failure");
     }
+    const knownExchangeIds = contributionIds(completedResourceReads, completedMemberRead, error, cloudShareErrorContext(error)?.exchangeId, itemValidationFailure || itemReadFailure ? error.completedReads : [], memberSelectionFailure ? [error.read.exchangeId] : [], memberReadFailure ? [cloudShareErrorContext(error.cause)?.exchangeId] : []);
     const causeEvidence = preWriteCooldownFailure ? undefined : cloudShareEvidence(itemReadFailure || memberReadFailure ? error.cause : error);
-    if (memberSelectionFailure) await recordProjectMemberRead(deps, request, correlationId, item.id, item.project.id, error.read, "failure");
-    const oauthMetadata = preWriteAuthFailure ? oauthFailureMetadata(error) : undefined;
+    if (memberSelectionFailure) await recordProjectMemberRead(deps, request, correlationId, id, item.id, item.project.id, error.read, "failure");
+    const oauthMetadata = preWriteAuthFailure ? oauthFailureMetadata(error) : {};
     const integrationSurface = preWriteAuthFailure ? "cloudshare.v4.oauth.token" : memberSelectionFailure || memberReadFailure ? "cloudshare.v3.project_members_gui" : itemValidationFailure || itemReadFailure ? "cloudshare.v3.sales_item_resources" : "cloudshare.v4.sales";
     const failureMode = preWriteAuthFailure ? "cloudshare_auth_pre_write" : preWriteCooldownFailure ? "cloudshare_cooldown_pre_write" : memberReadFailure ? "project_member_read" : memberSelectionFailure ? "selected_sales_pro_inactive" : validationFailure ? "main_sales_pro_validation" : itemValidationFailure ? "item_resource_drift" : itemReadFailure ? "item_resource_read" : "cloudshare_create";
     await Promise.allSettled([
-    evidence(deps, request, correlationId, { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: "unprovisioned", externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: parsed.data.salesProEmail, salesProDisplayName: "unresolved", registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants", createdAt: new Date() }, "failure", memberReadFailure ? "CloudShare could not read active Project members for the selected Sales Pro" : memberSelectionFailure ? "Selected Sales Pro is not active in this CloudShare Project" : validationFailure ? "CloudShare main Sales Pro validation failed" : itemValidationFailure ? "Catalogue Item is stale against CloudShare resources" : itemReadFailure ? "CloudShare could not fully revalidate this Catalogue Item" : preWriteProviderFailure ? "CloudShare rejected the operation before the Sales Experience create request. Retry is safe." : "CloudShare Sales Experience creation failed", causeEvidence, { integrationSurface, failureMode, ...(preWriteProviderFailure ? { retry: "safe", cloudShareAttempted: false, ...oauthMetadata } : {}), error: error instanceof Error ? error.message : String(error) }),
+    evidence(deps, request, correlationId, { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: "unprovisioned", externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: parsed.data.salesProEmail, salesProDisplayName: "unresolved", registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants", createdAt: new Date() }, "failure", memberReadFailure ? "CloudShare could not read active Project members for the selected Sales Pro" : memberSelectionFailure ? "Selected Sales Pro is not active in this CloudShare Project" : validationFailure ? "CloudShare main Sales Pro validation failed" : itemValidationFailure ? "Catalogue Item is stale against CloudShare resources" : itemReadFailure ? "CloudShare could not fully revalidate this Catalogue Item" : preWriteProviderFailure ? "CloudShare rejected the operation before the Sales Experience create request. Retry is safe." : "CloudShare Sales Experience creation failed", causeEvidence, { integrationSurface, failureMode, ...(knownExchangeIds.length ? { contributingExchangeIds: knownExchangeIds } : {}), ...(preWriteProviderFailure ? { retry: "safe", cloudShareAttempted: false, ...oauthMetadata, ...(oauthMetadata.oauthExchangeCorrelationId ? { contributingExchangeIds: [...knownExchangeIds, oauthMetadata.oauthExchangeCorrelationId] } : {}) } : {}), error: error instanceof Error ? error.message : String(error) }),
       deps.audit?.write({ id: randomUUID(), occurredAt: (deps.now ?? (() => new Date()))(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "failure", correlationId, details: { externalId, opportunityId: opportunity.id, itemId: item.id, failureMode, integrationSurface }, error: error instanceof Error ? error.message : "Unknown CloudShare failure" }),
     ]);
     const errorMessage = rateLimitFailure ? "CloudShare throttled the Sales Enablement Session request. Retry after the provider cooldown." : salesAuthorizationFailure ? "CloudShare rejected the configured credentials or permissions for Sales Experience creation. Review the Customer connection and support diagnostics before retrying." : memberReadFailure ? "CloudShare could not retrieve active Project members. Review support diagnostics before retrying." : memberSelectionFailure ? "The selected Sales Pro is no longer an active Project member. Select a current Sales Pro and try again." : validationFailure ? "CloudShare rejected the selected Sales Pro. Review support diagnostics." : itemValidationFailure ? "This Item no longer matches its CloudShare resources. Refresh the Item before provisioning." : itemReadFailure ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying." : preWriteAuthFailure ? "CloudShare authentication failed before creation. Retry the Sales Enablement Session." : "CloudShare could not create the Sales Experience. Review support diagnostics.";
@@ -246,11 +251,24 @@ function toDeliveryInput(input: SessionBody, item: { name: string; project: { id
 function opaqueCloudShareId(value: string): string { return value.replaceAll("-", ""); }
 function isChronological(input: SessionBody): boolean { return input.end > input.start; }
 const missingClientFactory: Pick<CloudShareClientFactory, "forConnection"> = { forConnection() { throw new Error("Sales Delivery is not configured."); } };
-function cloudShareEvidence(error: unknown): { request: Record<string, unknown> | null; response: Record<string, unknown> | null } | undefined {
-  return projectCloudShareFailureEvidence(error);
+function cloudShareEvidence(error: unknown): { request: Record<string, unknown> | null; response: Record<string, unknown> | null; exchangeId?: string } | undefined {
+  const evidence = projectCloudShareFailureEvidence(error);
+  if (!evidence) return undefined;
+  const context = cloudShareErrorContext(error);
+  return { ...evidence, ...(typeof context?.exchangeId === "string" ? { exchangeId: context.exchangeId } : {}) };
 }
+// All terminal Sales outcomes use this same deduplicated contribution set.
+function contributionIds(...values: unknown[]): string[] {
+  const ids: string[] = [];
+  const visit = (value: unknown): void => { if (typeof value === "string") ids.push(value); else if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object" && typeof (value as { exchangeId?: unknown }).exchangeId === "string") ids.push((value as { exchangeId: string }).exchangeId); };
+  values.forEach(visit);
+  return [...new Set(ids)];
+}
+function contributionDetails(...values: unknown[]): Record<string, unknown> { const ids = contributionIds(...values); return ids.length ? { contributingExchangeIds: ids } : {}; }
 function cloudShareErrorContext(error: unknown): Record<string, unknown> | undefined {
-  return error instanceof Error && "context" in error && error.context && typeof error.context === "object" ? error.context as Record<string, unknown> : undefined;
+  if (!(error instanceof Error)) return undefined;
+  const own = "context" in error && error.context && typeof error.context === "object" ? error.context as Record<string, unknown> : undefined;
+  return own ?? ("cause" in error ? cloudShareErrorContext(error.cause) : undefined);
 }
 function isPreWriteAuthFailure(error: unknown): boolean {
   if (error instanceof SalesItemProvisioningReadError || error instanceof SalesProjectMemberReadError) return isPreWriteAuthFailure(error.cause);
@@ -296,7 +314,7 @@ function isCloudShareServerResponseFailure(error: unknown): boolean {
 async function rejected(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, status: number, error: string, reason: string, externalIds: Record<string, string> = {}) {
   const correlationId = randomUUID(); const now = (deps.now ?? (() => new Date()))(); const subjectId = externalIds.opportunityId ?? externalIds.itemId ?? "unprovisioned";
   await Promise.allSettled([
-    deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: subjectId }, correlationId, message: error, externalIds, request: { method: "POST", path: "/api/sales/demo-sessions" }, response: { status }, details: { integrationSurface: "portal.sales_demo_sessions", failureMode: reason } }),
+    deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: subjectId }, correlationId, message: error, externalIds, request: { method: "POST", path: "/api/sales/demo-sessions" }, response: { status }, details: { evidenceKind: "semantic", integrationSurface: "portal.sales_demo_sessions", failureMode: reason } }),
     deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId, outcome: "denied", correlationId, details: { reason, ...externalIds }, error }),
   ]);
   return response(status, { error, correlationId });
@@ -370,11 +388,11 @@ function isCloudShareAuthorizationFailure(error: unknown): boolean {
   const status = (error as { status?: unknown }).status;
   return status === 401 || status === 403;
 }
-async function evidence(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, session: SalesDemoSession, outcome: "success" | "failure", message: string, cloudshare: { request: unknown; response: unknown } | undefined, details: Record<string, unknown>) {
-  await deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, externalId: session.externalId, opportunityId: session.opportunityId, itemId: session.itemId }, request: cloudshare?.request as Record<string, unknown> | undefined, response: cloudshare?.response as Record<string, unknown> | undefined, details });
+async function evidence(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, session: SalesDemoSession, outcome: "success" | "failure", message: string, cloudshare: { request: unknown; response: unknown; exchangeId?: string } | undefined, details: Record<string, unknown>) {
+  await deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, externalId: session.externalId, opportunityId: session.opportunityId, itemId: session.itemId }, request: cloudshare?.request as Record<string, unknown> | undefined, response: cloudshare?.response as Record<string, unknown> | undefined, details: { evidenceKind: "semantic", ...(cloudshare?.exchangeId ? { contributingExchangeIds: [cloudshare.exchangeId] } : {}), ...details } });
 }
-async function recordResourceReads(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, itemId: string, projectId: string, reads: readonly { request: Record<string, unknown>; response: Record<string, unknown>; integrationSurface: string }[], outcome: "success" | "failure") {
-  await Promise.allSettled(reads.map((read) => deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.enablement_session.item_resources.revalidated", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, correlationId, message: outcome === "success" ? "Catalogue Item resource revalidated before Sales Enablement Session provisioning" : "Catalogue Item revalidation found stale CloudShare resources", request: read.request, response: read.response, details: { integrationSurface: read.integrationSurface }, externalIds: { itemId, projectId } })));
+async function recordResourceReads(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, sessionId: string, itemId: string, projectId: string, reads: readonly { request: Record<string, unknown>; response: Record<string, unknown>; integrationSurface: string; exchangeId?: string }[], outcome: "success" | "failure") {
+  await Promise.allSettled(reads.map((read) => deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.enablement_session.item_resources.revalidated", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: sessionId }, correlationId, message: outcome === "success" ? "Catalogue Item resource revalidated before Sales Enablement Session provisioning" : "Catalogue Item revalidation found stale CloudShare resources", request: read.request, response: read.response, details: { integrationSurface: read.integrationSurface, evidenceKind: "semantic", ...(read.exchangeId ? { contributingExchangeIds: [read.exchangeId] } : {}) }, externalIds: { itemId, projectId } })));
 }
 class SalesProjectMemberSelectionError extends Error {
   constructor(message: string, readonly read: Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>) { super(message); this.name = "SalesProjectMemberSelectionError"; }
@@ -382,8 +400,8 @@ class SalesProjectMemberSelectionError extends Error {
 class SalesProjectMemberReadError extends Error {
   constructor(readonly cause: unknown) { super("CloudShare could not read active Project members before provisioning."); this.name = "SalesProjectMemberReadError"; }
 }
-async function recordProjectMemberRead(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, itemId: string, projectId: string, read: Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>, outcome: "success" | "failure") {
+async function recordProjectMemberRead(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, sessionId: string, itemId: string, projectId: string, read: Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>, outcome: "success" | "failure") {
   // Observability outages must not turn a validated, yet-to-be-created remote
   // Experience into a retry hazard. The primary creation audit still follows.
-  await Promise.allSettled([deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.enablement_session.project_members.revalidated", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, correlationId, message: outcome === "success" ? "Active Project members revalidated before Sales Enablement Session provisioning" : "Selected Sales Pro was not active in the revalidated Project members", request: read.request as unknown as Record<string, unknown>, response: read.response as unknown as Record<string, unknown>, details: { integrationSurface: read.integrationSurface, cached: false, memberCount: read.members.length }, externalIds: { itemId, projectId } })]);
+  await Promise.allSettled([deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.enablement_session.project_members.revalidated", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: sessionId }, correlationId, message: outcome === "success" ? "Active Project members revalidated before Sales Enablement Session provisioning" : "Selected Sales Pro was not active in the revalidated Project members", request: read.request as unknown as Record<string, unknown>, response: read.response as unknown as Record<string, unknown>, details: { integrationSurface: read.integrationSurface, cached: false, memberCount: read.members.length, evidenceKind: "semantic", ...(read.exchangeId ? { contributingExchangeIds: [read.exchangeId] } : {}) }, externalIds: { itemId, projectId } })]);
 }

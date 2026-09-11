@@ -8,6 +8,7 @@ import type {
   CloudShareRequestObservation,
   V4TokenAcquisitionEvent,
 } from "@/integrations/cloudshare";
+import { createCloudShareWorkflowSequenceAllocator, type CloudShareWorkflowSequenceAllocator } from "@/ports/cloudshare-observation";
 import { projectCloudShareFailureContext } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 type RequestFailure = NonNullable<CloudShareRequestObservation["error"]>;
@@ -116,13 +117,21 @@ export function createSalesTrialCloudShareObserver(input: {
   readonly source: "sales-trial-enrollment" | "sales-trial-offerings";
   readonly externalIds?: Record<string, string>;
   readonly candidateEmail?: string | null;
+  readonly sequenceAllocator?: CloudShareWorkflowSequenceAllocator;
 }): {
   readonly scope: "custom_observer";
   readonly correlationId: string;
+  readonly actor: DiagnosticActor;
+  readonly subject: DiagnosticSubject | (() => DiagnosticSubject);
+  readonly source: "sales-trial-enrollment" | "sales-trial-offerings";
+  readonly candidateEmail?: string | null;
+  readonly externalIds?: Record<string, string>;
+  readonly sequenceAllocator: CloudShareWorkflowSequenceAllocator;
   readonly onRequest: (event: CloudShareRequestObservation) => Promise<void>;
   readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void>;
 } {
-  let sequence = 0;
+  let completionSequence = 0;
+  const sequenceAllocator = input.sequenceAllocator ?? createCloudShareWorkflowSequenceAllocator();
 
   function resolveSubject(): DiagnosticSubject {
     return typeof input.subject === "function" ? input.subject() : input.subject;
@@ -131,14 +140,20 @@ export function createSalesTrialCloudShareObserver(input: {
   return {
     scope: "custom_observer",
     correlationId: input.correlationId,
+    actor: input.actor,
+    subject: input.subject,
+    source: input.source,
+    candidateEmail: input.candidateEmail,
+    externalIds: input.externalIds,
+    sequenceAllocator,
     onRequest: async (event) => {
       if (!input.diagnostics) {
         return;
       }
       const result = event.result;
       const failure = event.error;
-      sequence += 1;
-      await input.diagnostics.record({
+      completionSequence += 1;
+      await (input.diagnostics.recordCanonical ?? input.diagnostics.record)({
         occurredAt: new Date(event.occurredAt),
         source: input.source,
         operation: "sales_trial.cloudshare.request",
@@ -156,7 +171,11 @@ export function createSalesTrialCloudShareObserver(input: {
         request: projectRequest(result, failure),
         response: projectResponse(result, failure),
         details: {
-          sequence,
+          evidenceKind: "transport",
+          exchangeId: event.exchangeId,
+          attemptStartSequence: event.attemptStartSequence,
+          completedAt: event.completedAt,
+          sequence: completionSequence,
           durationMs: event.durationMs,
           integrationSurface:
             result?.integrationSurface ??
@@ -177,8 +196,8 @@ export function createSalesTrialCloudShareObserver(input: {
       if (!input.diagnostics) {
         return;
       }
-      sequence += 1;
-      await input.diagnostics.record({
+      completionSequence += 1;
+      await (input.diagnostics.recordCanonical ?? input.diagnostics.record)({
         occurredAt: new Date(event.occurredAt),
         source: input.source,
         operation: "sales_trial.cloudshare.oauth_token",
@@ -193,8 +212,14 @@ export function createSalesTrialCloudShareObserver(input: {
           event.outcome === "success"
             ? "CloudShare OAuth token acquired."
             : "CloudShare OAuth token acquisition failed.",
+        request: null,
+        response: null,
         details: {
-          sequence,
+          evidenceKind: "transport",
+          exchangeId: event.exchangeCorrelationId,
+          attemptStartSequence: event.attemptStartSequence,
+          completedAt: event.completedAt,
+          sequence: completionSequence,
           durationMs: event.durationMs,
           integrationSurface: event.integrationSurface,
           ...(event.status !== undefined ? { status: event.status } : {}),
