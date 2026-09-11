@@ -270,7 +270,7 @@ function renderTextValue(value: string | null | undefined, monospace = false): R
  * operation label. This keeps Session and Trial rows comparable while
  * retaining endpoint/resource specificity supplied by the exchange. */
 function operationLabel(entry: DiagnosticLogTableEntry): string {
-  const surface = entry.details?.integrationSurface;
+  const surface = readIntegrationSurface(entry.details);
   if ((entry.operation === "cloudshare.request" || entry.operation === "sales_trial.cloudshare.request") && typeof surface === "string" && surface.length > 0) return surface;
   return entry.operation;
 }

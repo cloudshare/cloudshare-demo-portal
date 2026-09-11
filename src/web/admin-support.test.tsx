@@ -18,11 +18,11 @@ describe("AdminSupportFeature", () => {
         { id: "trial", occurredAt: "2026-09-11T10:01:00.000Z", level: "info", source: "sales-trial-enrollment", operation: "sales_trial.cloudshare.request", outcome: "success", customerId: "customer-certalis", actor: { type: "admin" }, subject: { type: "sales_trial_enrollment", id: "trial-1" }, message: "Trial exchange", correlationId: "corr-trial", details: { evidenceKind: "transport", integrationSurface: "cloudshare.v3.projects" } },
       ], page: { limit: 50, offset: 0, returned: 2, hasMore: false, nextOffset: null },
     }));
-    render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ source: "sales-demo-sessions" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
+    render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{}} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
     expect(await screen.findByText("cloudshare.v3.projects")).toBeTruthy();
     expect(screen.getByText("cloudshare.v3")).toBeTruthy();
     expect(screen.queryByText("sales_trial.cloudshare.request")).toBeNull();
-    expect(fetchAdmin).toHaveBeenCalledWith("/api/sales/diagnostics?source=sales-demo-sessions&limit=50&offset=0");
+    expect(fetchAdmin).toHaveBeenCalledWith("/api/sales/diagnostics?limit=50&offset=0");
   });
 
   it("reloads page zero when applying unchanged deep-linked Support Diagnostics filters", async () => {
