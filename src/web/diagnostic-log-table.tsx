@@ -266,6 +266,15 @@ function renderTextValue(value: string | null | undefined, monospace = false): R
   );
 }
 
+/** CloudShare transport rows use the captured integration surface as their
+ * operation label. This keeps Session and Trial rows comparable while
+ * retaining endpoint/resource specificity supplied by the exchange. */
+function operationLabel(entry: DiagnosticLogTableEntry): string {
+  const surface = entry.details?.integrationSurface;
+  if ((entry.operation === "cloudshare.request" || entry.operation === "sales_trial.cloudshare.request") && typeof surface === "string" && surface.length > 0) return surface;
+  return entry.operation;
+}
+
 export function DiagnosticLogTable({
   entries,
   expandedDiagnosticId,
@@ -416,7 +425,7 @@ export function DiagnosticLogTable({
                   </td>
                   <td style={BODY_CELL_STYLE}>{renderTextValue(entry.source)}</td>
                   <td style={{ ...BODY_CELL_STYLE, fontFamily: "monospace" }}>
-                    <div style={{ wordBreak: "break-word" }}>{entry.operation}</div>
+                    <div style={{ wordBreak: "break-word" }}>{operationLabel(entry)}</div>
                     {integrationSurface ? (
                       <div style={{ marginTop: "0.2rem", ...MUTED_TEXT_STYLE }}>
                         Surface: {integrationSurface}

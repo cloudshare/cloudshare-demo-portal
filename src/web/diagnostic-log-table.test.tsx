@@ -13,6 +13,16 @@ function Harness(props: { entry: DiagnosticLogTableEntry }) {
 }
 
 describe("DiagnosticLogTable Support hints", () => {
+  it("uses the captured CloudShare surface as the Operation label for Session and Trial transport rows", () => {
+    const { container } = render(<DiagnosticLogTable entries={[
+      { ...baseEntry, id: "session", operation: "cloudshare.request", details: { evidenceKind: "transport", integrationSurface: "cloudshare.v3" } },
+      { ...baseEntry, id: "trial", operation: "sales_trial.cloudshare.request", details: { evidenceKind: "transport", integrationSurface: "cloudshare.v3.projects" } },
+    ]} expandedDiagnosticId={null} onToggleExpanded={() => undefined} />);
+    expect(container.textContent).toContain("cloudshare.v3");
+    expect(container.textContent).toContain("cloudshare.v3.projects");
+    expect(container.textContent).not.toContain("sales_trial.cloudshare.request");
+  });
+
   it("renders explicit transport, semantic, and legacy evidence labels with timing metadata", () => {
     const { container } = render(<DiagnosticLogTable entries={[
       { ...baseEntry, id: "transport", details: { evidenceKind: "transport", exchangeId: "ex-1", attemptStartSequence: 2, completedAt: "2026-09-10T12:00:01Z", durationMs: 12 } },
