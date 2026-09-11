@@ -146,7 +146,7 @@ describe("composition feature modules", () => {
     factory.forConnection(CONNECTION, { ...actual, onRequest: actual.onRequest });
     await integrations[0].observer.onRequest({ ...REQUEST_EVENT, exchangeId: "exchange-real", attemptStartSequence: 7, completedAt: "2026-09-03T12:00:02.000Z" });
     expect(append).toHaveBeenCalledTimes(2);
-    expect(append.mock.calls[1][0]).toMatchObject({ source: "sales-trial-enrollment", operation: "cloudshare.request", customerId: "customer-a", occurredAt: new Date("2026-09-03T12:00:01.000Z"), correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" }, details: { exchangeId: "exchange-real", attemptStartSequence: 7, completedAt: "2026-09-03T12:00:02.000Z", durationMs: 1, evidenceKind: "transport" } });
+    expect(append.mock.calls[1][0]).toMatchObject({ source: "sales-trial-enrollment", operation: "cloudshare.request", customerId: "customer-a", candidateEmail: "candidate@example.test", occurredAt: new Date("2026-09-03T12:00:01.000Z"), correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" }, details: { exchangeId: "exchange-real", attemptStartSequence: 7, completedAt: "2026-09-03T12:00:02.000Z", durationMs: 1, evidenceKind: "transport" } });
   });
 
   it("exposes the approved narrow dependency bundles", () => {

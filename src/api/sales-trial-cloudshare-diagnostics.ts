@@ -124,6 +124,7 @@ export function createSalesTrialCloudShareObserver(input: {
   readonly actor: DiagnosticActor;
   readonly subject: DiagnosticSubject | (() => DiagnosticSubject);
   readonly source: "sales-trial-enrollment" | "sales-trial-offerings";
+  readonly candidateEmail?: string | null;
   readonly externalIds?: Record<string, string>;
   readonly sequenceAllocator: CloudShareWorkflowSequenceAllocator;
   readonly onRequest: (event: CloudShareRequestObservation) => Promise<void>;
@@ -142,6 +143,7 @@ export function createSalesTrialCloudShareObserver(input: {
     actor: input.actor,
     subject: input.subject,
     source: input.source,
+    candidateEmail: input.candidateEmail,
     externalIds: input.externalIds,
     sequenceAllocator,
     onRequest: async (event) => {
