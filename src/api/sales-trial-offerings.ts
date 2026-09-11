@@ -1812,7 +1812,7 @@ async function recordPrePublishFailureEvidence(
   }
   await deps.diagnostics?.record({
     source: "sales-trial-offerings",
-    operation: "sales.trial_offering.project_members.revalidated",
+    operation: "sales.trial_offering.publish",
     outcome: "failure",
     level: "warn",
     customerId: request.customerId,
@@ -1826,6 +1826,7 @@ async function recordPrePublishFailureEvidence(
       integrationSurface: "cloudshare.v3.project_members_gui",
       evidenceKind: "semantic",
       failureMode: "project_member_read",
+      terminal: true,
       cached: false,
       ...(evidence.exchangeId ? { contributingExchangeIds: [evidence.exchangeId] } : {}),
     },
