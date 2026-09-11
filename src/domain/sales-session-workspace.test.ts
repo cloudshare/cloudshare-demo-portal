@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity } from "./sales-session-workspace";
+import { groupSafeSalesSessionActivity, projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity } from "./sales-session-workspace";
 
 describe("safe Sales Session Activity projection", () => {
+  it("keeps independent correlations and legacy rows separate while marking mixed outcomes", () => {
+    const base = { occurredAt: new Date("2026-07-24T09:00:00Z"), operation: "sales.demo_session.created", actorType: "admin", subjectType: "sales_demo_session", subjectId: "session-1" };
+    const rows = [
+      projectSafeSalesSessionActivity({ ...base, outcome: "success", correlationId: "a" }, "session-1")!,
+      projectSafeSalesSessionActivity({ ...base, occurredAt: new Date("2026-07-24T09:01:00Z"), outcome: "failure", correlationId: "a" }, "session-1")!,
+      projectSafeSalesSessionActivity({ ...base, occurredAt: new Date("2026-07-24T09:02:00Z"), outcome: "success", correlationId: "b" }, "session-1")!,
+      projectSafeSalesSessionActivity({ ...base, occurredAt: new Date("2026-07-24T09:03:00Z"), outcome: "success", correlationId: null }, "session-1")!,
+    ];
+    const groups = groupSafeSalesSessionActivity(rows);
+    expect(groups).toHaveLength(3);
+    expect(groups.find((group) => group.diagnosticRecords.some((record) => record.correlationId === "a"))?.outcome).toBe("mixed");
+    expect(groups.filter((group) => group.diagnosticRecords.length === 0)).toHaveLength(1);
+  });
   it("creates controlled operational copy without accepting raw diagnostic message or protected evidence", () => {
     const entry = projectSafeSalesSessionActivity({ occurredAt: new Date("2026-07-24T09:00:00Z"), operation: "sales.demo_session.created", outcome: "failure", actorType: "admin", subjectType: "sales_demo_session", subjectId: "session-1", correlationId: "corr-1" }, "session-1");
     const serialized = JSON.stringify({ entry, message: undefined, request: undefined, response: undefined });

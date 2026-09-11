@@ -6,6 +6,8 @@ export interface SalesSessionWorkspaceResponse {
   readonly summary: { readonly id: string; readonly sessionName: string; readonly revision: number; readonly start: string; readonly end: string; readonly timeZone: string; readonly operation: ReturnType<typeof projectSalesSessionStatus>["operation"]; readonly experience: { readonly value: string; readonly source: string; readonly freshness: string; readonly observedAt?: string } };
   readonly participants: readonly { readonly id: string; readonly name: string; readonly email: string; readonly invitationStatus: "sent" | "notSent"; readonly participationStatus: string; readonly environment: SalesParticipantEnvironmentObservation; readonly environmentAttention: SafeSalesParticipantAttention | null }[];
   readonly activity: readonly SafeSalesSessionActivity[];
+  readonly activityGroups?: readonly SafeSalesSessionActivityGroup[];
+  readonly activityHistory?: { readonly complete: boolean; readonly omittedCount: number };
   readonly details: { readonly accountName: string; readonly opportunityName: string; readonly itemName: string; readonly invitationMode: string };
 }
 export type SalesSessionWorkspaceRead = { readonly state: "available"; readonly workspace: SalesSessionWorkspaceResponse } | { readonly state: "stale" };
@@ -20,6 +22,22 @@ export type SafeSalesSessionActivity = {
   readonly subject: { readonly type: "sales_demo_session"; readonly id: string };
   readonly correlationId?: string;
 };
+export type SafeSalesSessionActivityGroup = { readonly summary: string; readonly outcome: "success" | "failure" | "mixed"; readonly actor: string; readonly subject: string; readonly firstAt: string; readonly lastAt: string; readonly count: number; readonly diagnosticRecords: readonly { readonly correlationId: string; readonly occurredAt: string }[] };
+
+/** Groups complete workflow anchors in the read model, not in the browser. */
+export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSessionActivity[]): readonly SafeSalesSessionActivityGroup[] {
+  const groups = new Map<string, SafeSalesSessionActivityGroup>();
+  for (const entry of entries) {
+    const actor = safeActivityActor(entry.actor?.type);
+    const key = `${entry.kind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}`}\u0000${entry.subject.type}`;
+    const current = groups.get(key);
+    const record = entry.correlationId ? [{ correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : [];
+    if (!current) { groups.set(key, { summary: entry.summary, outcome: entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, diagnosticRecords: record }); continue; }
+    groups.set(key, { ...current, outcome: current.outcome === entry.outcome ? current.outcome : "mixed", firstAt: entry.occurredAt < current.firstAt ? entry.occurredAt : current.firstAt, lastAt: entry.occurredAt > current.lastAt ? entry.occurredAt : current.lastAt, count: current.count + 1, diagnosticRecords: entry.correlationId && !current.diagnosticRecords.some((r) => r.correlationId === entry.correlationId) ? [...current.diagnosticRecords, ...record] : current.diagnosticRecords });
+  }
+  return [...groups.values()].sort((a, b) => b.lastAt.localeCompare(a.lastAt) || b.firstAt.localeCompare(a.firstAt) || a.summary.localeCompare(b.summary));
+}
+function safeActivityActor(value: "admin" | "candidate" | "system" | "unknown" | undefined): string { return value === "admin" ? "Sales admin" : value === "candidate" ? "Candidate" : value === "system" ? "Certalis system" : value === "unknown" ? "Unknown actor" : "Not recorded"; }
 
 /** Ordinary Session Activity is deliberately a fresh DTO, not a trimmed
  * DiagnosticLogEntry. Unknown operations and actor types fail closed to generic

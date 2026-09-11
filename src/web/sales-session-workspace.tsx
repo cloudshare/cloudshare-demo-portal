@@ -8,12 +8,12 @@ import { useContext } from "react";
 import { SalesWorkspaceExpiryContext } from "./sales-workspace-chrome";
 import { statusBadgeStyle } from "./status-badge";
 import styles from "./sales-session-workspace.module.css";
-import type { SafeSalesSessionActivity, SalesSessionWorkspaceResponse } from "@/domain/sales-session-workspace";
+import { groupSafeSalesSessionActivity as groupReadModelActivity, type SafeSalesSessionActivity, type SalesSessionWorkspaceResponse } from "@/domain/sales-session-workspace";
 import type { SalesSessionVerifyResponse } from "@/api/sales-session-reconciliation";
 
 type Area = "participants" | "activity" | "details";
 type DiagnosticRecord = { readonly correlationId: string; readonly occurredAt: string };
-type ActivityGroup = { readonly summary: string; readonly outcome: SafeSalesSessionActivity["outcome"]; readonly actor: string; readonly subject: string; readonly firstAt: string; readonly lastAt: string; readonly count: number; readonly diagnosticRecords: readonly DiagnosticRecord[] };
+type ActivityGroup = ReturnType<typeof groupReadModelActivity>[number];
 
 export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly sessionId: string; readonly area: Area; readonly queueHref: string }) {
   const router = useRouter();
@@ -60,7 +60,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
     return () => { live = false; };
   }, [handleSessionExpired, sessionId, workspace]);
   useEffect(() => { areaHeading.current?.focus(); }, [area, workspace?.summary.id]);
-  const activity = useMemo(() => workspace ? groupSalesSessionActivity(workspace.activity) : [], [workspace]);  const retryAutomaticRefresh = async () => {
+  const activity = useMemo(() => workspace ? (workspace.activityGroups ?? groupSalesSessionActivity(workspace.activity)) : [], [workspace]);  const retryAutomaticRefresh = async () => {
     if (requestInFlight.current) return;
     requestInFlight.current = true; setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Retrying CloudShare status…");
     const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });
@@ -101,6 +101,9 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
 }
 
 export function groupSalesSessionActivity(entries: readonly SafeSalesSessionActivity[]): readonly ActivityGroup[] {
+  return groupReadModelActivity(entries);
+/* istanbul ignore next - retained export for existing callers */
+/*
   const groups = new Map<string, ActivityGroup>();
   for (const entry of entries) {
     const actor = humanActivityActor(entry.actor?.type);
@@ -116,7 +119,7 @@ export function groupSalesSessionActivity(entries: readonly SafeSalesSessionActi
     groups.set(key, { ...current, firstAt: entry.occurredAt < current.firstAt ? entry.occurredAt : current.firstAt, lastAt: entry.occurredAt > current.lastAt ? entry.occurredAt : current.lastAt, count: current.count + 1, diagnosticRecords });
   }
   return [...groups.values()].sort((left, right) => right.lastAt.localeCompare(left.lastAt) || right.firstAt.localeCompare(left.firstAt) || left.summary.localeCompare(right.summary) || left.actor.localeCompare(right.actor));
-}
+*/
 
 function SummaryMetric({ label, children }: { readonly label: string; readonly children: React.ReactNode }) { return <div><dt>{label}</dt><dd>{children}</dd></div>; }
 function DetailGroup({ label, values }: { readonly label: string; readonly values: readonly (readonly [string, string])[] }) { return <section aria-label={label} className={styles.detailGroup}><h3>{label}</h3><dl>{values.map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}</dl></section>; }
