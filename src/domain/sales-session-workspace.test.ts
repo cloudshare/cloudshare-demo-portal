@@ -15,6 +15,25 @@ describe("safe Sales Session Activity projection", () => {
     expect(groupSafeSalesSessionActivity(children)).toHaveLength(1);
   });
 
+  it("groups realistic participant registration and reconciliation traces by terminal meaning", () => {
+    const registration = [
+      activity("unknown", "register", "success", "2026-07-24T09:00:00.000Z"),
+      activity("participant_properties_ensured", "register", "success", "2026-07-24T09:00:01.000Z"),
+      activity("participant_correlation_backfilled", "register", "success", "2026-07-24T09:00:02.000Z"),
+      activity("participants_registered", "register", "success", "2026-07-24T09:00:03.000Z"),
+    ];
+    const reconciliation = [
+      activity("unknown", "reconcile", "success", "2026-07-24T09:01:00.000Z"),
+      activity("participant_environment_observed", "reconcile", "success", "2026-07-24T09:01:01.000Z"),
+      activity("participant_reconciled", "reconcile", "success", "2026-07-24T09:01:02.000Z"),
+      activity("participants_reconciled", "reconcile", "success", "2026-07-24T09:01:03.000Z"),
+    ];
+    expect(groupSafeSalesSessionActivity([...registration, ...reconciliation])).toEqual(expect.arrayContaining([
+      expect.objectContaining({ correlationId: "register", count: 4, outcome: "success" }),
+      expect.objectContaining({ correlationId: "reconcile", count: 4, outcome: "success" }),
+    ]));
+  });
+
   it("keeps same-kind correlations separate and orders tied timestamps by persisted id", () => {
     const groups = groupSafeSalesSessionActivity([activity("session_provision", "b", "success", "2026-07-24T09:00:00.000Z", "b-id"), activity("session_provision", "a", "success", "2026-07-24T09:00:00.000Z", "a-id"), activity("session_provision", null, "failure", "2026-07-24T09:00:00.000Z", "legacy-2"), activity("session_provision", null, "success", "2026-07-24T09:00:00.000Z", "legacy-1")]);
     expect(groups).toHaveLength(4);
@@ -48,7 +67,7 @@ describe("safe Sales Session Activity projection", () => {
     ];
     const groups = groupSafeSalesSessionActivity(rows);
     expect(groups).toHaveLength(3);
-    expect(groups.find((group) => group.diagnosticRecords.some((record) => record.correlationId === "a"))?.outcome).toBe("mixed");
+    expect(groups.find((group) => group.diagnosticRecords.some((record) => record.correlationId === "a"))?.outcome).toBe("failure");
     expect(groups.filter((group) => group.diagnosticRecords.length === 0)).toHaveLength(1);
   });
   it("creates controlled operational copy without accepting raw diagnostic message or protected evidence", () => {

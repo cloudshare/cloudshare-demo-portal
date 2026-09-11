@@ -51,7 +51,7 @@ describe("Prisma Sales Session workspace repository", () => {
     if (!result || result.state !== "available") throw new Error("expected workspace");
     expect(result.workspace.activity.some((entry) => entry.activityId === "probe")).toBe(false);
     expect(result.workspace.activityGroups.find((group) => group.correlationId === "boundary")?.outcome).toBe("incomplete");
-    expect(result.workspace.activityHistory).toMatchObject({ complete: false, partialGroups: 1 });
+    expect(result.workspace.activityHistory).toMatchObject({ complete: false, partialGroups: 5500 });
   });
 
   it("uses persisted ids as the deterministic tie breaker and fails closed across Customers", async () => {

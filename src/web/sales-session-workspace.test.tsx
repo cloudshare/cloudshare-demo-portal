@@ -243,7 +243,7 @@ describe("Sales Session workspace", () => {
     render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
 
     expect(await screen.findByRole("list", { name: "Sales Session activity timeline" })).not.toBeNull();
-    expect(screen.getByText("2 equivalent events")).not.toBeNull();
+    expect(screen.getByText("2 workflow steps")).not.toBeNull();
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:00:00.000Z");
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:04:00.000Z");
     expect(screen.getAllByText("1 diagnostic record")).toHaveLength(2);
