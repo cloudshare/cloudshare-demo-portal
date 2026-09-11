@@ -277,11 +277,12 @@ describe("Sales Session workspace", () => {
   it("settles an in-flight non-Activity refresh safely when entering Activity", async () => {
     let resolveRefresh!: (value: Response) => void;
     const refreshPending = new Promise<Response>((resolve) => { resolveRefresh = resolve; });
+    const initial = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.includes("refresh?mode=automatic")) return refreshPending;
       if (init?.method === "POST") return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
-      return new Response(JSON.stringify(data), { status: 200 });
+      return new Response(JSON.stringify(initial), { status: 200 });
     });
     const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
     await screen.findByRole("heading", { name: "Acme enablement" });
