@@ -263,6 +263,22 @@ describe("Sales Session workspace", () => {
     expect(screen.getByText(/Activity shows ordinary operational metadata only/)).not.toBeNull();
   });
 
+  it("presents retained ambiguity as incomplete beside a later definite failure", async () => {
+    const responseBody = { ...data, activityGroups: [
+      { workflowId: "ambiguous", summary: "Business outcome and evidence are incomplete.", outcome: "incomplete", actor: "Sales admin", subject: "This Sales Session", firstAt: "2026-07-23T09:00:00.000Z", lastAt: "2026-07-23T09:01:00.000Z", count: 2, correlationId: "corr-ambiguous", steps: [{ label: "OAuth token acquired.", outcome: "success", occurredAt: "2026-07-23T09:00:00.000Z" }, { label: "Business outcome unknown.", outcome: "incomplete", occurredAt: "2026-07-23T09:01:00.000Z" }], diagnosticRecords: [] },
+      { workflowId: "definite", summary: "Sales Session provision failed.", outcome: "failure", actor: "Sales admin", subject: "This Sales Session", firstAt: "2026-07-23T09:02:00.000Z", lastAt: "2026-07-23T09:02:00.000Z", count: 1, correlationId: "corr-definite", steps: [{ label: "Sales Session provision failed.", outcome: "failure", occurredAt: "2026-07-23T09:02:00.000Z" }], diagnosticRecords: [] },
+    ] };
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(responseBody), { status: 200 }));
+    render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
+    expect(await screen.findByText("Business outcome and evidence are incomplete.")).not.toBeNull();
+    expect(screen.getByText("OAuth token acquired.")).not.toBeNull();
+    expect(screen.getByText("Business outcome unknown.")).not.toBeNull();
+    expect(screen.getAllByText("Sales Session provision failed.").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByRole("link", { name: "Open Sales support investigation" })).toHaveLength(2);
+    expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toEqual(expect.arrayContaining(["2026-07-23T09:00:00.000Z", "2026-07-23T09:01:00.000Z", "2026-07-23T09:02:00.000Z"]));
+    expect(document.body.textContent).not.toMatch(/loginUrl|Bearer|provider-id|requestJson|responseJson|subjectId=/i);
+  });
+
   it("presents Details as labelled relationship and configuration groups", async () => {
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
     render(<SalesSessionWorkspace sessionId="session-1" area="details" queueHref="/sales?tab=sessions" />);

@@ -23,6 +23,16 @@ describe("Sales Session workspace handler", () => {
     expect(JSON.stringify(result.body)).not.toMatch(/loginUrl|bearer|api[_-]?key|authorization|responseJson|requestJson/i);
   });
 
+  it("preserves retained ambiguous and later definite workflows as separate safe DTOs", async () => {
+    const read = vi.fn().mockResolvedValue({ state: "available", workspace: { ...workspace, activityGroups: [
+      { workflowId: "ambiguous", summary: "Business outcome and evidence are incomplete.", outcome: "incomplete", actor: "Sales admin", subject: "This Sales Session", firstAt: "2026-07-23T09:00:00.000Z", lastAt: "2026-07-23T09:01:00.000Z", count: 2, correlationId: "corr-ambiguous", steps: [{ label: "OAuth token acquired.", outcome: "success", occurredAt: "2026-07-23T09:00:00.000Z" }, { label: "Business outcome unknown.", outcome: "incomplete", occurredAt: "2026-07-23T09:01:00.000Z" }], diagnosticRecords: [{ correlationId: "corr-ambiguous", occurredAt: "2026-07-23T09:00:00.000Z" }] },
+      { workflowId: "definite", summary: "Sales Session provision failed.", outcome: "failure", actor: "Sales admin", subject: "This Sales Session", firstAt: "2026-07-23T09:02:00.000Z", lastAt: "2026-07-23T09:02:00.000Z", count: 1, correlationId: "corr-definite", steps: [{ label: "Sales Session provision failed.", outcome: "failure", occurredAt: "2026-07-23T09:02:00.000Z" }], diagnosticRecords: [{ correlationId: "corr-definite", occurredAt: "2026-07-23T09:02:00.000Z" }] },
+    ] } });
+    const result = await handleReadSalesSessionWorkspace({ workspace: { read } }, { customerId: "customer-a", sessionId: "session-1" });
+    expect(result).toMatchObject({ status: 200, body: { activityGroups: [expect.objectContaining({ correlationId: "corr-ambiguous", outcome: "incomplete" }), expect.objectContaining({ correlationId: "corr-definite", outcome: "failure" })] } });
+    expect(JSON.stringify(result.body)).not.toMatch(/loginUrl|Bearer|provider-id|requestJson|responseJson|subjectId=/i);
+  });
+
   it("fails closed for absent, archived, or cross-Customer targets", async () => {
     const read = vi.fn().mockResolvedValue(null);
     const result = await handleReadSalesSessionWorkspace({ workspace: { read } }, { customerId: "customer-a", sessionId: "customer-b-session" });
