@@ -27,6 +27,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   const [refreshOutcome, setRefreshOutcome] = useState<"idle" | "pending" | "success" | "failure">("idle");
   const [refreshBusy, setRefreshBusy] = useState(false);
   const requestInFlight = useRef(false);
+  const mounted = useRef(true);
   const shellExpiry = useContext(SalesWorkspaceExpiryContext);
   const areaHeading = useRef<HTMLHeadingElement>(null);
   const handleSessionExpired = useMemo(() => shellExpiry ?? createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { setSessionExpired(true); router.replace(path); } }), [router, shellExpiry]);
@@ -38,14 +39,14 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
       if (!response.ok) throw new Error(body.error ?? "The Sales Session could not be loaded.");
       if (live) setWorkspace(body);
     }).catch((cause) => { if (live) setError(cause instanceof Error ? cause.message : "The Sales Session could not be loaded."); });
-    return () => { live = false; };
+    return () => { live = false; mounted.current = false; };
   }, [handleSessionExpired, sessionId]);
   useEffect(() => {
     if (area === "activity" || !workspace || workspace.summary.experience.freshness === "fresh" || requestInFlight.current) return;
     const snapshot = `${workspace.summary.id}:${workspace.summary.experience.source}:${workspace.summary.experience.freshness}:${workspace.summary.experience.observedAt ?? ""}`;
     if (attemptedRefresh.current === snapshot) return;
     attemptedRefresh.current = snapshot;
-    let live = true; requestInFlight.current = true; setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Checking the latest CloudShare status…");
+    requestInFlight.current = true; setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Checking the latest CloudShare status…");
     const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });
     void request(`/api/sales/enablement-sessions/refresh?mode=automatic&targetId=${encodeURIComponent(sessionId)}&limit=1`, { method: "POST" }).then(async (response) => {
       const body = await response.json() as { error?: string; correlationId?: string };
@@ -53,9 +54,8 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
       const reread = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace`, { cache: "no-store" });
       const next = await reread.json() as SalesSessionWorkspaceResponse & { error?: string };
       if (!reread.ok) throw new Error(next.error ?? "The refreshed Sales Session could not be read.");
-      if (live) { setWorkspace(next); if (next.summary.experience.freshness !== "fresh") { setRefreshOutcome("failure"); setAutomaticRefresh("CloudShare returned no fresh observation. Retry or open Sales support."); } else { setRefreshOutcome("success"); setAutomaticRefresh("CloudShare status refreshed."); } }
-    }).catch((cause) => { if (live) { setRefreshOutcome("failure"); setAutomaticRefresh(cause instanceof Error ? cause.message : "Automatic refresh failed. Retry or open Sales support."); } }).finally(() => { requestInFlight.current = false; setRefreshBusy(false); });
-    return () => { live = false; };
+      if (mounted.current) { setWorkspace(next); if (next.summary.experience.freshness !== "fresh") { setRefreshOutcome("failure"); setAutomaticRefresh("CloudShare returned no fresh observation. Retry or open Sales support."); } else { setRefreshOutcome("success"); setAutomaticRefresh("CloudShare status refreshed."); } }
+    }).catch((cause) => { if (mounted.current) { setRefreshOutcome("failure"); setAutomaticRefresh(cause instanceof Error ? cause.message : "Automatic refresh failed. Retry or open Sales support."); } }).finally(() => { requestInFlight.current = false; if (mounted.current) setRefreshBusy(false); });
   }, [area, handleSessionExpired, sessionId, workspace]);
   useEffect(() => { areaHeading.current?.focus(); }, [area, workspace?.summary.id]);
   const activity = (workspace?.activityGroups ?? []).map((group) => ({ ...group, steps: group.steps ?? [] }));
@@ -82,7 +82,6 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   const queueIsHistory = new URLSearchParams(queueHref.split("?")[1] ?? "").get("queue") === "history";
   const verifyNow = async () => { if (requestInFlight.current) return; requestInFlight.current = true; const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired }); setVerifying(true); setVerificationCorrelationId(null); setVerification("Verifying this Sales Session with CloudShare…"); try { const response = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/verify`, { method: "POST" }); const body = await response.json() as SalesSessionVerifyResponse & { error?: string }; setVerificationCorrelationId(typeof body.correlationId === "string" ? body.correlationId : null); if (!response.ok) { throw new Error(body.error ?? "Verification failed. Retry or open Sales support."); } if (body.source !== "cloudshare_v4_get_sales" || !body.correlationId || !body.observedAt || !["notStarted", "inProgress", "ended"].includes(body.experienceStatus) || body.freshness !== "fresh") throw new Error("CloudShare returned an incomplete verification observation. Retry or open Sales support."); setWorkspace((current) => current ? { ...current, summary: { ...current.summary, experience: { value: body.experienceStatus, source: body.source, freshness: body.freshness, observedAt: body.observedAt } } } : current); setVerification(`Verified from CloudShare: ${body.experienceStatus} at ${body.observedAt}. Correlation ${body.correlationId}.`); router.refresh(); } catch (cause) { setVerification(cause instanceof Error ? `${cause.message} Retry or open Sales support.` : "Verification failed. Retry or open Sales support."); } finally { setVerifying(false); requestInFlight.current = false; } };
   const activityHistory = workspace.activityHistory ?? { complete: true, hasMore: false };
-  if (area === "activity" && refreshBusy) return <section aria-label="Sales Session workspace" className={styles.workspace}><section aria-busy="true" className={styles.loading}>Finishing the current status check before opening Activity…</section></section>;
   return <section aria-label="Sales Session workspace" className={styles.workspace}>
     <header className={styles.summary}>
       <div className={styles.summaryTopline}><div className={styles.contextTrail}><a aria-label="Back to Sessions" href={queueHref}><span aria-hidden="true">← </span>Sessions</a><span aria-hidden="true"> / </span><span>{queueIsHistory ? "History" : "Session"}</span><span aria-hidden="true"> / </span><span aria-current="page">{workspace.summary.sessionName}</span></div><span>Revision {workspace.summary.revision}</span></div>
