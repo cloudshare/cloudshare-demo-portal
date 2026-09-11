@@ -159,7 +159,8 @@ function orderWorkflowDiagnostics(entries: readonly Record<string, unknown>[]): 
   return [...groups.values()].sort((a, b) => compareGroupAnchor(a, b)).flatMap((group) => {
     const exchangeSequences = new Map<string, number>();
     for (const entry of group) { const id = exchangeId(entry); const sequence = workflowSequence(entry); if (id && sequence !== undefined) exchangeSequences.set(id, sequence); }
-    return group.sort((a, b) => compareWithinWorkflow(a, b, exchangeSequences));
+    const exchangeRanks = new Map([...exchangeSequences.keys()].sort((a, b) => (exchangeSequences.get(a)! - exchangeSequences.get(b)!) || a.localeCompare(b)).map((id, index) => [id, index] as const));
+    return group.sort((a, b) => compareWithinWorkflow(a, b, exchangeSequences, exchangeRanks));
   });
 }
 function compareGroupAnchor(left: readonly Record<string, unknown>[], right: readonly Record<string, unknown>[]): number {
@@ -167,7 +168,7 @@ function compareGroupAnchor(left: readonly Record<string, unknown>[], right: rea
   const r = right.reduce((best, e) => Math.max(best, Date.parse(String(e.occurredAt))), Number.NEGATIVE_INFINITY);
   return r - l || String(left[0]?.correlationId ?? left[0]?.id).localeCompare(String(right[0]?.correlationId ?? right[0]?.id));
 }
-function compareWithinWorkflow(left: Record<string, unknown>, right: Record<string, unknown>, exchangeSequences: ReadonlyMap<string, number>): number {
+function compareWithinWorkflow(left: Record<string, unknown>, right: Record<string, unknown>, exchangeSequences: ReadonlyMap<string, number>, exchangeRanks: ReadonlyMap<string, number>): number {
   const ld = left.details as Record<string, unknown> | null | undefined;
   const rd = right.details as Record<string, unknown> | null | undefined;
   const ls = workflowSequence(left); const rs = workflowSequence(right);
@@ -175,8 +176,8 @@ function compareWithinWorkflow(left: Record<string, unknown>, right: Record<stri
   const lIds = Array.isArray(ld?.contributingExchangeIds) ? ld.contributingExchangeIds.filter((id): id is string => typeof id === "string") : [];
   const rIds = Array.isArray(rd?.contributingExchangeIds) ? rd.contributingExchangeIds.filter((id): id is string => typeof id === "string") : [];
   const phase = (entry: Record<string, unknown>, ids: string[]) => { if (ids.length) { const mapped = ids.map((id) => exchangeSequences.get(id)).filter((n): n is number => n !== undefined); return mapped.length ? 1 : 2; } return workflowSequence(entry) === undefined ? 3 : 0; };
-  const lAnchor = lIds.length ? Math.max(...lIds.map((id) => exchangeSequences.get(id) ?? -1)) : ls ?? Number.POSITIVE_INFINITY;
-  const rAnchor = rIds.length ? Math.max(...rIds.map((id) => exchangeSequences.get(id) ?? -1)) : rs ?? Number.POSITIVE_INFINITY;
+  const lAnchor = lIds.length ? Math.max(...lIds.map((id) => exchangeRanks.get(id) ?? -1)) : (le ? exchangeRanks.get(le) : undefined) ?? ls ?? Number.POSITIVE_INFINITY;
+  const rAnchor = rIds.length ? Math.max(...rIds.map((id) => exchangeRanks.get(id) ?? -1)) : (re ? exchangeRanks.get(re) : undefined) ?? rs ?? Number.POSITIVE_INFINITY;
   const lp = phase(left, lIds); const rp = phase(right, rIds);
   const lPosition = lp === 0 ? lAnchor : lp === 1 ? lAnchor + 0.5 : Number.POSITIVE_INFINITY;
   const rPosition = rp === 0 ? rAnchor : rp === 1 ? rAnchor + 0.5 : Number.POSITIVE_INFINITY;

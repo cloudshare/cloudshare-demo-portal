@@ -570,6 +570,7 @@ export async function handlePublishSalesTrialOffering(
           externalId,
         },
         details: {
+          evidenceKind: "semantic",
           integrationSurface: "portal.sales_trial_offerings",
           failureMode: "local_reservation_persistence",
           cloudShareAttempted: false,

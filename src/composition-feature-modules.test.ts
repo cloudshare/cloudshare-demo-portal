@@ -129,7 +129,8 @@ describe("composition feature modules", () => {
     const recorder = createDiagnosticRecorder({ repository: { append } as never });
     const integrations: Parameters<typeof createCloudShareIntegrationForConnection>[0][] = [];
     const factory = createCloudShareClientFactory({ diagnostics: recorder, mode: "fixture", createIntegration: (input) => { integrations.push(input); return {} as CloudShareClient; }, decorateClient: (client) => client });
-    factory.forConnection(CONNECTION, { scope: "workflow", workflow: { actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, correlationId: "trial-correlation", source: "sales-trial-enrollment" } });
+    const custom = vi.fn((event: CloudShareRequestObservation) => recorder.recordCanonical!({ source: "sales-trial-enrollment", operation: "trial.request", outcome: event.outcome, customerId: "customer-a", correlationId: "trial-correlation", actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, message: "trial exchange", occurredAt: new Date(event.occurredAt) }));
+    factory.forConnection(CONNECTION, { scope: "custom_observer", correlationId: "trial-correlation", actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" }, source: "sales-trial-enrollment", onRequest: custom });
     await integrations[0].observer.onRequest(REQUEST_EVENT);
     expect(append).toHaveBeenCalledTimes(2);
     expect(append.mock.calls[1][0]).toMatchObject({ customerId: "customer-a", correlationId: "trial-correlation", actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" } });

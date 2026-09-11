@@ -230,7 +230,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     if (itemValidationFailure || itemReadFailure) {
       await recordResourceReads(deps, request, correlationId, id, item.id, item.project.id, error.completedReads, "failure");
     }
-    const knownExchangeIds = contributionIds(completedResourceReads, completedMemberRead, error, itemValidationFailure || itemReadFailure ? error.completedReads : [], memberSelectionFailure ? [error.read.exchangeId] : [], memberReadFailure ? [cloudShareErrorContext(error.cause)?.exchangeId] : []);
+    const knownExchangeIds = contributionIds(completedResourceReads, completedMemberRead, error, cloudShareErrorContext(error)?.exchangeId, itemValidationFailure || itemReadFailure ? error.completedReads : [], memberSelectionFailure ? [error.read.exchangeId] : [], memberReadFailure ? [cloudShareErrorContext(error.cause)?.exchangeId] : []);
     const causeEvidence = preWriteCooldownFailure ? undefined : cloudShareEvidence(itemReadFailure || memberReadFailure ? error.cause : error);
     if (memberSelectionFailure) await recordProjectMemberRead(deps, request, correlationId, id, item.id, item.project.id, error.read, "failure");
     const oauthMetadata = preWriteAuthFailure ? oauthFailureMetadata(error) : {};
