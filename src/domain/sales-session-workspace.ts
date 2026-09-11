@@ -45,7 +45,7 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
     const businessKind = (!terminalKinds.has(entry.kind) && known?.size === 1) ? [...known][0] : entry.kind;
     // Correlation is the stable workflow anchor. Legacy rows have no anchor;
     // retain each persisted row independently, including same-millisecond rows.
-    const correlationKind = known?.size === 1 ? [...known][0] : known?.size === 0 ? "child_only" : businessKind;
+    const correlationKind = known?.size === 1 ? [...known][0] : (!known || known.size === 0) ? "child_only" : businessKind;
     const key = `${entry.correlationId ? correlationKind : businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}:${entry.activityId ?? `index:${index}`}`}\u0000${entry.subject.type}`;
     const current = groups.get(key);
     const record = entry.correlationId ? [{ correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : [];
@@ -59,7 +59,10 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
     // final status. Child transport/revalidation failures remain visible as
     // mixed evidence only when the terminal operation itself succeeded.
     const terminalOutcome = terminal?.outcome;
-    const outcome = terminalOutcome === "failure" ? "failure" : terminalOutcome === "success" ? (hasFailure ? "mixed" : "success") : hasFailure && hasSuccess ? "mixed" : hasFailure ? "failure" : "incomplete";
+    // Child transport, OAuth, validation, and revalidation evidence never
+    // establishes a business outcome by itself. Until a terminal business
+    // row exists, the whole correlated history remains incomplete.
+    const outcome = terminalOutcome === "failure" ? "failure" : terminalOutcome === "success" ? (hasFailure ? "mixed" : "success") : "incomplete";
     const authoritative = terminal ?? nextEntries[0];
     groups.set(key, { entries: nextEntries, group: { ...current.group, summary: terminal ? authoritative.summary : incompleteSummary(), actor: terminal ? safeActivityActor(authoritative.actor?.type) : current.group.actor, outcome, firstAt: nextEntries[0].occurredAt, lastAt: nextEntries[nextEntries.length - 1].occurredAt, count: nextEntries.length, diagnosticRecords: entry.correlationId && !current.group.diagnosticRecords.some((r) => r.correlationId === entry.correlationId) ? [...current.group.diagnosticRecords, ...record] : current.group.diagnosticRecords } });
   }
