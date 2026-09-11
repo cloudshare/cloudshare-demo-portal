@@ -121,6 +121,10 @@ export function createSalesTrialCloudShareObserver(input: {
 }): {
   readonly scope: "custom_observer";
   readonly correlationId: string;
+  readonly actor: DiagnosticActor;
+  readonly subject: DiagnosticSubject | (() => DiagnosticSubject);
+  readonly source: "sales-trial-enrollment" | "sales-trial-offerings";
+  readonly externalIds?: Record<string, string>;
   readonly sequenceAllocator: CloudShareWorkflowSequenceAllocator;
   readonly onRequest: (event: CloudShareRequestObservation) => Promise<void>;
   readonly onAcquisition: (event: V4TokenAcquisitionEvent) => Promise<void>;
@@ -135,6 +139,10 @@ export function createSalesTrialCloudShareObserver(input: {
   return {
     scope: "custom_observer",
     correlationId: input.correlationId,
+    actor: input.actor,
+    subject: input.subject,
+    source: input.source,
+    externalIds: input.externalIds,
     sequenceAllocator,
     onRequest: async (event) => {
       if (!input.diagnostics) {

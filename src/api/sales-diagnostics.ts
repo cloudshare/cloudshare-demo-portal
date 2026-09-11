@@ -12,7 +12,7 @@ const SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET = 5_000;
 /** Causal investigations probe one row beyond the accepted 5,000 offset. */
-const SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND = SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + 1;
+const SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND = SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET + SALES_DIAGNOSTIC_MAX_PAGE_LIMIT + 1;
 
 type SalesDiagnosticSource = typeof SALES_DIAGNOSTIC_SOURCES[number];
 type SalesTrialEnrollmentReader = Pick<SalesTrialEnrollmentRepository, "findById"> & {
@@ -94,7 +94,7 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
     if (!enrollmentReader) throw new Error("Sales diagnostics enrollment reader is not configured");
     enrollment = await enrollmentReader.findById(customerId, subjectId);
   }
-  const base = { ...query, subjectId, subjectType: requestedType, limit: String(offset + limit + 1), offset: "0" };
+  const base = { ...query, subjectId, subjectType: requestedType, limit: String(SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND), offset: "0" };
   const requestedSource = query.source;
   const sources: SalesDiagnosticSource[] = requestedType === "sales_trial_offering"
     ? (requestedSource === undefined
@@ -103,12 +103,12 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
           ? ["sales-trial-offerings"]
           : [])
     : (requestedSource === undefined ? ["sales-trial-enrollment"] : requestedSource === "sales-trial-enrollment" ? ["sales-trial-enrollment"] : []);
-  const directReads = await Promise.all(sources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: offset + limit + 1 })));
+  const directReads = await Promise.all(sources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND })));
   const direct = directReads.flatMap((read) => read.entries).filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
     return subject?.id === subjectId && (subject.type === "sales_trial_offering" || subject.type === "sales_trial_enrollment");
   });
-  const causalScanTruncated = (read: { readonly truncated: boolean }) => read.truncated && offset + limit + 1 >= SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND;
+  const causalScanTruncated = (read: { readonly truncated: boolean }) => read.truncated;
   if (requestedType === "sales_trial_offering") return { entries: orderWorkflowDiagnostics(direct), truncated: directReads.some(causalScanTruncated) };
   const enrollmentEntries = direct.filter((entry) => (entry.subject as Record<string, unknown> | null)?.type === "sales_trial_enrollment");
   const offeringId = enrollment?.salesTrialOfferingId;
@@ -120,7 +120,7 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
       ? ["sales-trial-offerings"]
       : [];
   const parentReads = parentSources.length
-    ? await Promise.all(parentSources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: offset + limit + 1 })))
+    ? await Promise.all(parentSources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND })))
     : [];
   const parent = parentReads.flatMap((read) => read.entries).filter((entry) => {
       const subject = entry.subject as Record<string, unknown> | null;

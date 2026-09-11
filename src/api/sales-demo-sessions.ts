@@ -258,7 +258,12 @@ function cloudShareEvidence(error: unknown): { request: Record<string, unknown> 
   return { ...evidence, ...(typeof context?.exchangeId === "string" ? { exchangeId: context.exchangeId } : {}) };
 }
 // All terminal Sales outcomes use this same deduplicated contribution set.
-function contributionIds(...values: unknown[]): string[] { return [...new Set(values.flat(Infinity).filter((value): value is string => typeof value === "string"))]; }
+function contributionIds(...values: unknown[]): string[] {
+  const ids: string[] = [];
+  const visit = (value: unknown): void => { if (typeof value === "string") ids.push(value); else if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object" && typeof (value as { exchangeId?: unknown }).exchangeId === "string") ids.push((value as { exchangeId: string }).exchangeId); };
+  values.forEach(visit);
+  return [...new Set(ids)];
+}
 function contributionDetails(...values: unknown[]): Record<string, unknown> { const ids = contributionIds(...values); return ids.length ? { contributingExchangeIds: ids } : {}; }
 function cloudShareErrorContext(error: unknown): Record<string, unknown> | undefined {
   return error instanceof Error && "context" in error && error.context && typeof error.context === "object" ? error.context as Record<string, unknown> : undefined;
