@@ -375,17 +375,107 @@ describe("Sales Session workspace", () => {
   });
 
   it("ignores StrictMode refresh failure from a replaced session", async () => {
-    let rejectPost!: (reason?: unknown) => void;
-    const post = new Promise<Response>((_, reject) => { rejectPost = reject; });
+    let resolvePost!: (value: Response) => void;
+    const post = new Promise<Response>((resolve) => { resolvePost = resolve; });
     const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
     vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).includes("refresh?mode=automatic") ? post : new Response(JSON.stringify(stale), { status: 200 }));
     const rendered = render(<StrictMode><SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
     await screen.findByRole("heading", { name: "Participants" });
     rendered.rerender(<StrictMode><SalesSessionWorkspace sessionId="session-2" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
-    await act(async () => { rejectPost(new Error("old session failed")); });
+    await act(async () => { resolvePost(new Response(JSON.stringify({ correlationId: "old-refresh" }), { status: 200 })); });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.queryByText("old session failed")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Acme enablement" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Participants" })).not.toBeNull();
+  });
+
+  it("remounts session-owned state when an automatic refresh crosses session identity", async () => {
+    let resolveOld!: (value: Response) => void;
+    const oldPost = new Promise<Response>((resolve) => { resolveOld = resolve; });
+    const stale = { ...data, summary: { ...data.summary, sessionName: "Old session", experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    const next = { ...data, summary: { ...data.summary, id: "session-2", sessionName: "New session" } };
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("refresh?mode=automatic")) return oldPost;
+      if (url.includes("session-2")) return new Response(JSON.stringify(next), { status: 200 });
+      if (url.includes("/workspace")) return new Response(JSON.stringify(stale), { status: 200 });
+      if (init?.method === "POST") return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+      return new Response(JSON.stringify(next), { status: 200 });
+    });
+    const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Old session" });
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("refresh?mode=automatic"))).toHaveLength(1));
+    rendered.rerender(<SalesSessionWorkspace sessionId="session-2" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "New session" });
+    expect(screen.queryByRole("heading", { name: "Old session" })).toBeNull();
+    expect((screen.getByRole("button", { name: "Verify now" }) as HTMLButtonElement).disabled).toBe(false);
+    resolveOld(new Response(JSON.stringify({ correlationId: "old-refresh" }), { status: 200 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole("heading", { name: "New session" })).not.toBeNull();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("refresh?mode=automatic"))).toHaveLength(1);
+  });
+
+  it("ignores a replaced session workspace 401 without expiring the new session", async () => {
+    let resolveOld!: (value: Response) => void;
+    const oldLoad = new Promise<Response>((resolve) => { resolveOld = resolve; });
+    const next = { ...data, summary: { ...data.summary, id: "session-2", sessionName: "Replacement session" } };
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).includes("session-1") ? oldLoad : new Response(JSON.stringify(next), { status: 200 }));
+    router.replace.mockClear();
+    const rendered = render(<StrictMode><SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" /></StrictMode>);
+    rendered.rerender(<StrictMode><SalesSessionWorkspace sessionId="session-2" area="activity" queueHref="/sales?tab=sessions" /></StrictMode>);
+    expect(await screen.findByRole("heading", { name: "Replacement session" })).not.toBeNull();
+    resolveOld(new Response(JSON.stringify({ error: "Session expired" }), { status: 401 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Replacement session" })).not.toBeNull();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("session-2"))).toBe(true);
+  });
+
+  it("ignores an old Verify response after session replacement", async () => {
+    let resolveVerify!: (value: Response) => void;
+    const verify = new Promise<Response>((resolve) => { resolveVerify = resolve; });
+    const next = { ...data, summary: { ...data.summary, id: "session-2", sessionName: "Replacement session" } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/verify")) return verify;
+      return new Response(JSON.stringify(url.includes("session-2") ? next : data), { status: 200 });
+    });
+    const rendered = render(<StrictMode><SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Verify now" }));
+    expect(screen.getByRole("button", { name: "Verifying…" })).not.toBeNull();
+    rendered.rerender(<StrictMode><SalesSessionWorkspace sessionId="session-2" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
+    await screen.findByRole("heading", { name: "Replacement session" });
+    resolveVerify(new Response(JSON.stringify({ correlationId: "old-verify", experienceStatus: "inProgress", observedAt: "2026-07-24T09:01:00.000Z", freshness: "fresh", source: "cloudshare_v4_get_sales" }), { status: 200 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText(/Verifying this Sales Session/)).toBeNull();
+    expect(screen.queryByText(/old-verify/)).toBeNull();
+    expect((screen.getByRole("button", { name: "Verify now" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("clears automatic support correlation before retry and settles success cleanly", async () => {
+    let posts = 0;
+    let resolveFailureB!: (value: Response) => void;
+    const failureB = new Promise<Response>((resolve) => { resolveFailureB = resolve; });
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    const fresh = { ...data, summary: { ...data.summary, experience: { value: "inProgress", source: "cloudshare_v4_sales_list", freshness: "fresh", observedAt: "2026-07-24T09:01:00.000Z" } } };
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/workspace")) return new Response(JSON.stringify(posts >= 3 ? fresh : stale), { status: 200 });
+      if (init?.method === "POST") { posts += 1; if (posts === 1) return new Response(JSON.stringify({ error: "Failure A", correlationId: "corr-A" }), { status: 503 }); if (posts === 2) return failureB; return new Response(JSON.stringify({ correlationId: "corr-C" }), { status: 200 }); }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await screen.findByText("Failure A");
+    expect(screen.getByRole("link", { name: "Open Sales support" }).getAttribute("href")).toContain("corr-A");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Retry" })).toBeNull());
+    resolveFailureB(new Response(JSON.stringify({ error: "Failure B" }), { status: 503 }));
+    await screen.findByText("Failure B");
+    expect(screen.getByRole("link", { name: "Open Sales support" }).getAttribute("href")).not.toContain("corr-A");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("CloudShare status refreshed.");
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("refresh?mode=automatic"))).toHaveLength(3);
   });
 
   it("presents retained ambiguity as incomplete beside a later definite failure", async () => {

@@ -13,7 +13,11 @@ import type { SalesSessionVerifyResponse } from "@/api/sales-session-reconciliat
 type Area = "participants" | "activity" | "details";
 type DiagnosticRecord = { readonly correlationId: string; readonly occurredAt: string };
 
-export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly sessionId: string; readonly area: Area; readonly queueHref: string }) {
+export function SalesSessionWorkspace(props: { readonly sessionId: string; readonly area: Area; readonly queueHref: string }) {
+  return <SalesSessionWorkspaceState key={props.sessionId} {...props} />;
+}
+
+function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly sessionId: string; readonly area: Area; readonly queueHref: string }) {
   const router = useRouter();
   const [workspace, setWorkspace] = useState<SalesSessionWorkspaceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +34,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   const lifecycle = useRef({ active: false, token: 0 });
   const shellExpiry = useContext(SalesWorkspaceExpiryContext);
   const areaHeading = useRef<HTMLHeadingElement>(null);
-  const handleSessionExpired = useMemo(() => shellExpiry ?? createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { setSessionExpired(true); router.replace(path); } }), [router, shellExpiry]);
+  const handleSessionExpired = useMemo(() => shellExpiry ?? createPortalSessionExpiryRedirect({ currentPath: () => `${window.location.pathname}${window.location.search}`, fallbackLoginPath: "/login", replace: (path) => { if (lifecycle.current.active) { setSessionExpired(true); router.replace(path); } } }), [router, shellExpiry]);
   useEffect(() => {
     const owner = lifecycle.current;
     owner.active = true;
@@ -68,7 +72,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   const activity = (workspace?.activityGroups ?? []).map((group) => ({ ...group, steps: group.steps ?? [] }));
   const retryAutomaticRefresh = async () => {
     if (requestInFlight.current) return;
-    requestInFlight.current = true; const token = lifecycle.current.token; setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Retrying CloudShare status…");
+    requestInFlight.current = true; const token = lifecycle.current.token; setRefreshCorrelationId(null); setRefreshBusy(true); setRefreshOutcome("pending"); setAutomaticRefresh("Retrying CloudShare status…");
     const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: handleSessionExpired });
     try {
       const response = await request(`/api/sales/enablement-sessions/refresh?mode=automatic&targetId=${encodeURIComponent(sessionId)}&limit=1`, { method: "POST" });
