@@ -50,8 +50,8 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
       const sourceCapped = activity.length > SOURCE_SCAN_LIMIT;
       const probe = sourceCapped ? activity[SOURCE_SCAN_LIMIT] : undefined;
       const presentedRows = activity.slice(0, SOURCE_SCAN_LIMIT);
-      const sessionCreationAmbiguous = session.operationalStatus === "needs_attention" && session.attentionReason?.includes("cloudshare_v4_post_sales_ambiguous") === true;
-      const projectedActivity = presentedRows.map((entry) => projectSafeSalesSessionActivity({ ...entry, sessionCreationAmbiguous }, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+      const ambiguousCorrelation = session.operationalStatus === "needs_attention" ? session.attentionReason?.match(/cloudshare_v4_post_sales_ambiguous[\s\S]*?correlationId:([^\s]+)/)?.[1] : undefined;
+      const projectedActivity = presentedRows.map((entry) => projectSafeSalesSessionActivity({ ...entry, sessionCreationAmbiguous: Boolean(ambiguousCorrelation && entry.correlationId === ambiguousCorrelation) }, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
       const allActivityGroups = groupSafeSalesSessionActivity(projectedActivity).map((group) =>
         probe ? { ...group, outcome: "incomplete" as const, summary: "Business outcome and evidence are incomplete." } : group,
       );
