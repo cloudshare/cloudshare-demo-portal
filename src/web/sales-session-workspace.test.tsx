@@ -228,7 +228,7 @@ describe("Sales Session workspace", () => {
     expect(document.body.textContent).not.toMatch(/Bearer|provider response/);
   });
 
-  it("groups equivalent safe Activity while retaining its time range, count, and diagnostic link", async () => {
+  it("summarizes grouped Activity without repeating diagnostic step or subject details", async () => {
     const repeatedActivity = {
       ...data,
       activity: [
@@ -245,9 +245,9 @@ describe("Sales Session workspace", () => {
     render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
 
     expect(await screen.findByRole("list", { name: "Sales Session activity timeline" })).not.toBeNull();
-    expect(screen.getByText("2 workflow steps")).not.toBeNull();
-    expect(screen.getByText("OAuth token acquired.")).not.toBeNull();
-    expect(screen.getAllByText("Completed").length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByText(/workflow steps?/)).toBeNull();
+    expect(screen.queryByText("OAuth token acquired.")).toBeNull();
+    expect(screen.getAllByText("Completed")).toHaveLength(2);
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:00:00.000Z");
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:04:00.000Z");
     expect(screen.queryByText(/diagnostic record/)).toBeNull();
@@ -259,7 +259,7 @@ describe("Sales Session workspace", () => {
     ]);
     expect(document.querySelectorAll("a[href*='source='], a[href*='subject='], a[href*='operation='], a[href*='surface='], a[href*='filter=']")).toHaveLength(0);
     expect(screen.getAllByText("Actor: Sales admin")).toHaveLength(2);
-    expect(screen.getAllByText("Subject: This Sales Session")).toHaveLength(2);
+    expect(screen.queryByText("Subject: This Sales Session")).toBeNull();
     expect(screen.getByText(/Activity shows ordinary operational metadata only/)).not.toBeNull();
   });
 
@@ -486,9 +486,9 @@ describe("Sales Session workspace", () => {
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(responseBody), { status: 200 }));
     render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
     expect(await screen.findByText("Business outcome and evidence are incomplete.")).not.toBeNull();
-    expect(screen.getByText("OAuth token acquired.")).not.toBeNull();
-    expect(screen.getByText("Business outcome unknown.")).not.toBeNull();
-    expect(screen.getAllByText("Sales Session provision failed.").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("OAuth token acquired.")).toBeNull();
+    expect(screen.queryByText("Business outcome unknown.")).toBeNull();
+    expect(screen.getByText("Sales Session provision failed.")).not.toBeNull();
     expect(screen.getAllByRole("link", { name: "Open Sales support investigation" })).toHaveLength(2);
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toEqual(expect.arrayContaining(["2026-07-23T09:00:00.000Z", "2026-07-23T09:01:00.000Z", "2026-07-23T09:02:00.000Z"]));
     expect(document.body.textContent).not.toMatch(/loginUrl|Bearer|provider-id|requestJson|responseJson|subjectId=/i);
