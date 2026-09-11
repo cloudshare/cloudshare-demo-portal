@@ -954,6 +954,7 @@ describe("Sales Trial Offering API", () => {
       attentionReason: null,
     });
     const createSession = vi.fn();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
     const deps = createDeps(
       {
         ...repository,
@@ -963,6 +964,7 @@ describe("Sales Trial Offering API", () => {
         deliveryFactory: {
           forConnection: vi.fn().mockReturnValue({ createSession }),
         },
+        diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
       },
     );
 
@@ -981,6 +983,8 @@ describe("Sales Trial Offering API", () => {
       },
     });
     expect(createSession).not.toHaveBeenCalled();
+    const [diagnostic] = await diagnosticRepository.query({ operation: "sales.trial_offering.publish" });
+    expect(diagnostic).toMatchObject({ details: { evidenceKind: "semantic" } });
     expect(deps.audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "sales.trial_offering.publish",

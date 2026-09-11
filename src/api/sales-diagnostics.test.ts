@@ -160,6 +160,13 @@ describe("Sales diagnostics handler", () => {
     expect(response).toMatchObject({ status: 200, body: { page: { returned: 500, hasMore: false, nextOffset: null } } });
   });
 
+  it("keeps enrollment-source evidence when filtering an offering subject", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-trial-enrollment", operation: "legacy", outcome: "failure", customerId: "customer-certalis", subject: { type: "sales_trial_offering", id: "offering-1" }, externalIds: { offeringId: "offering-1" }, message: "legacy enrollment evidence" });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, salesTrialEnrollments: enrollmentRepo(), logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-trial-enrollment", subjectType: "sales_trial_offering", subjectId: "offering-1" } });
+    expect((response.body as { entries: Array<{ message: string }> }).entries.map((entry) => entry.message)).toEqual(["legacy enrollment evidence"]);
+  });
+
   it("F: source-filtered and aggregate Sales pages mark the 5000 boundary incomplete while ordinary pages remain complete", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     for (let index = 0; index < 5001; index += 1) {
