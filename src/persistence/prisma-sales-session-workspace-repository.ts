@@ -52,7 +52,7 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
       const presentedRows = activity.slice(0, SOURCE_SCAN_LIMIT);
       const projectedActivity = presentedRows.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
       const allActivityGroups = groupSafeSalesSessionActivity(projectedActivity).map((group) =>
-        probe ? { ...group, outcome: "incomplete" as const } : group,
+        probe ? { ...group, outcome: "incomplete" as const, summary: "Business outcome and evidence are incomplete." } : group,
       );
       const activityGroups = allActivityGroups.slice(0, MAX_PRESENTED_ACTIVITY_GROUPS);
       const presentationCapped = allActivityGroups.length > MAX_PRESENTED_ACTIVITY_GROUPS;
