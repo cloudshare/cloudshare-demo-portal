@@ -160,8 +160,8 @@ export function createCloudShareClientFactory(input: {
             customerId: connection.customerId,
             ...((options as Extract<CloudShareClientObservationOptions, { readonly scope: "workflow" }>).workflow),
           })
-        : options.scope === "custom_observer"
-          ? createCloudShareWorkflowObserver({ diagnostics: { ...input.diagnostics, recordCanonical: input.diagnostics.record }, customerId: connection.customerId, actor: options.actor, subject: options.subject, correlationId: options.correlationId, source: options.source ?? "cloudshare-integration", externalIds: options.externalIds })
+          : options.scope === "custom_observer"
+          ? createCloudShareWorkflowObserver({ diagnostics: { ...input.diagnostics, recordCanonical: input.diagnostics.record }, customerId: connection.customerId, actor: options.actor, subject: options.subject, correlationId: options.correlationId, source: options.source ?? "cloudshare-integration", externalIds: options.externalIds, candidateEmail: options.candidateEmail })
           : defaultObserver;
       return decorateClient(createIntegration({
         mode: input.mode,
