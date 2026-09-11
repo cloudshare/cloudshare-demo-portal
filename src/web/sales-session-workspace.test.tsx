@@ -274,6 +274,27 @@ describe("Sales Session workspace", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("refresh?mode=automatic");
   });
 
+  it("settles an in-flight non-Activity refresh safely when entering Activity", async () => {
+    let resolveRefresh!: (value: Response) => void;
+    const refreshPending = new Promise<Response>((resolve) => { resolveRefresh = resolve; });
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("refresh?mode=automatic")) return refreshPending;
+      if (init?.method === "POST") return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+      return new Response(JSON.stringify(data), { status: 200 });
+    });
+    const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("refresh?mode=automatic"))).toBe(true));
+    rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
+    expect(screen.getByRole("navigation", { name: "Session workspace areas" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Activity" })).not.toBeNull();
+    resolveRefresh(new Response(JSON.stringify({ correlationId: "refresh-1" }), { status: 200 }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/workspace") && fetchMock.mock.calls.length > 1)).toBe(true));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Activity" })).not.toBeNull());
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("refresh?mode=automatic"))).toHaveLength(1);
+  });
+
   it("presents retained ambiguity as incomplete beside a later definite failure", async () => {
     const responseBody = { ...data, activityGroups: [
       { workflowId: "ambiguous", summary: "Business outcome and evidence are incomplete.", outcome: "incomplete", actor: "Sales admin", subject: "This Sales Session", firstAt: "2026-07-23T09:00:00.000Z", lastAt: "2026-07-23T09:01:00.000Z", count: 2, correlationId: "corr-ambiguous", steps: [{ label: "OAuth token acquired.", outcome: "success", occurredAt: "2026-07-23T09:00:00.000Z" }, { label: "Business outcome unknown.", outcome: "incomplete", occurredAt: "2026-07-23T09:01:00.000Z" }], diagnosticRecords: [] },
