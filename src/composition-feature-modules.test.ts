@@ -136,6 +136,18 @@ describe("composition feature modules", () => {
     expect(append.mock.calls[1][0]).toMatchObject({ customerId: "customer-a", correlationId: "trial-correlation", actor: { type: "admin", id: "admin-1" }, subject: { type: "sales_trial_enrollment", id: "enrollment-1" } });
   });
 
+  it("uses the real custom observer and recorder seam for the first canonical append failure", async () => {
+    const append = vi.fn().mockRejectedValueOnce(new Error("canonical write failed")).mockResolvedValue(undefined);
+    const recorder = createDiagnosticRecorder({ repository: { append } as never });
+    const integrations: Parameters<typeof createCloudShareIntegrationForConnection>[0][] = [];
+    const factory = createCloudShareClientFactory({ diagnostics: recorder, mode: "fixture", createIntegration: (input) => { integrations.push(input); return {} as CloudShareClient; }, decorateClient: (client) => client });
+    const observer = factory.forConnection(CONNECTION, { scope: "custom_observer", source: "sales-trial-enrollment", correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" }, onRequest: (event) => recorder.recordCanonical!({ source: "sales-trial-enrollment", operation: "trial.request", outcome: event.outcome, customerId: "customer-a", correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" }, message: "trial exchange", occurredAt: new Date(event.occurredAt) }) });
+    await integrations[0].observer.onRequest({ ...REQUEST_EVENT, exchangeId: "exchange-real" });
+    expect(observer).toBeDefined();
+    expect(append).toHaveBeenCalledTimes(2);
+    expect(append.mock.calls[1][0]).toMatchObject({ source: "sales-trial-enrollment", correlationId: "corr-real-custom", actor: { type: "admin", id: "admin-real" }, subject: { type: "sales_trial_enrollment", id: "enrollment-real" } });
+  });
+
   it("exposes the approved narrow dependency bundles", () => {
     const inputs = createInputs();
 
