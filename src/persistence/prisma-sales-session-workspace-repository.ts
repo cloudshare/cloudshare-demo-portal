@@ -37,7 +37,7 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         // Read the complete local history before the UI applies presentation
         // grouping/limits. A fixed query limit can split one workflow and make
         // the resulting Activity timeline materially misleading.
-        where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 501,
+        where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 5501,
         select: { occurredAt: true, operation: true, outcome: true, actorType: true, subjectType: true, subjectId: true, correlationId: true },
       });
       return { state: "available", workspace: {
@@ -45,7 +45,7 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant), environmentAttention: projectSafeSalesParticipantAttention(participant) })),
         activity: activity.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null),
         activityGroups: groupSafeSalesSessionActivity(activity.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null)),
-        activityHistory: { complete: activity.length <= 500, omittedCount: activity.length > 500 ? 1 : 0 },
+        activityHistory: { complete: activity.length <= 5500, omittedCount: activity.length > 5500 ? 1 : 0 },
         details: { accountName: session.opportunity.account.name, opportunityName: session.opportunity.name, itemName: session.item.name, invitationMode: session.sendInvitations === "salesProsAndParticipants" ? "Sales Pros and participants" : "No native invitations" },
       } };
     },

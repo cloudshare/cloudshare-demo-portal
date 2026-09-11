@@ -31,7 +31,7 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
   for (const entry of entries) if (entry.correlationId && entry.kind !== "unknown") {
     const kinds = knownByCorrelation.get(entry.correlationId) ?? new Set<string>(); kinds.add(entry.kind); knownByCorrelation.set(entry.correlationId, kinds);
   }
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
     const actor = safeActivityActor(entry.actor?.type);
     const known = entry.correlationId ? knownByCorrelation.get(entry.correlationId) : undefined;
     // Transport/OAuth/revalidation rows are intentionally absorbed into the
@@ -39,7 +39,9 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
     // correlation has multiple business meanings, unknown evidence remains a
     // controlled incomplete child rather than being assigned ambiguously.
     const businessKind = entry.kind === "unknown" && known?.size === 1 ? [...known][0] : entry.kind;
-    const key = `${businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}`}\u0000${entry.subject.type}`;
+    // Correlation is the stable workflow anchor. Legacy rows have no anchor;
+    // retain each persisted row independently, including same-millisecond rows.
+    const key = `${businessKind}\u0000${entry.correlationId ?? `legacy:${entry.occurredAt}:${index}`}\u0000${entry.subject.type}`;
     const current = groups.get(key);
     const record = entry.correlationId ? [{ correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : [];
     if (!current) { groups.set(key, { summary: entry.summary, outcome: entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, diagnosticRecords: record }); continue; }
