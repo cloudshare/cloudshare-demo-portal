@@ -256,6 +256,9 @@ describe("Sales Enablement Session API handler", () => {
     expect(delivery.createSession).toHaveBeenCalledOnce();
     expect(sessions.save).toHaveBeenCalledOnce();
     expect(stored[0]).toMatchObject({ id: "ambiguous-session", cloudShareSalesExperienceId: "pending:ambiguous-session", operationalStatus: "needs_attention", attentionReason: expect.stringContaining("cloudshare_v4_post_sales_ambiguous") });
+    expect(stored[0]?.attentionReason).toContain(`correlationId:${first.body.correlationId}`);
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.created.ambiguous", correlationId: first.body.correlationId, outcome: "failure" }));
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.created", correlationId: second.body.correlationId, outcome: "failure" }));
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: second.body.correlationId, subject: { type: "sales_demo_session", id: "ambiguous-session" }, details: expect.objectContaining({ failureMode: "cloudshare_create_duplicate_blocked" }) }));
     expect(JSON.stringify(first.body)).not.toContain("server-only");
   });

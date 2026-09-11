@@ -1,12 +1,16 @@
 import type { PrismaClient } from "@prisma/client";
 import { projectSalesSessionStatus } from "@/domain/sales-session-status";
-import { projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity, type SalesSessionWorkspaceRead } from "@/domain/sales-session-workspace";
+import { groupSafeSalesSessionActivity, projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity, type SalesSessionWorkspaceRead } from "@/domain/sales-session-workspace";
 
 export interface SalesSessionWorkspaceRepository {
   /** Returns a single safe, local projection or null. Customer and archived-record
    * predicates are intentionally owned here so ordinary callers cannot weaken them. */
   read(customerId: string, sessionId: string): Promise<SalesSessionWorkspaceRead | null>;
 }
+
+/** The source scan is bounded, then a separate workflow presentation limit is applied. */
+const SOURCE_SCAN_LIMIT = 5500;
+const MAX_PRESENTED_ACTIVITY_GROUPS = 100;
 
 /**
  * The Session workspace's deep local read seam. It joins the persisted Sales
@@ -34,13 +38,39 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         experienceStatusSource: session.experienceStatusSource === "cloudshare_v4_sales_list" || session.experienceStatusSource === "cloudshare_v4_get_sales" ? session.experienceStatusSource : null,
       }, new Date());
       const activity = await prisma.diagnosticLogEntry.findMany({
-        where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 100,
-        select: { occurredAt: true, operation: true, outcome: true, actorType: true, subjectType: true, subjectId: true, correlationId: true },
+        // Read the complete local history before the UI applies presentation
+        // grouping/limits. A fixed query limit can split one workflow and make
+        // the resulting Activity timeline materially misleading.
+        where: { customerId, subjectId: session.id, subjectType: "sales_demo_session" }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: SOURCE_SCAN_LIMIT + 1,
+        select: { id: true, occurredAt: true, operation: true, outcome: true, actorType: true, subjectType: true, subjectId: true, correlationId: true },
       });
+      // The final row is a probe, never presentation data.  Keep the probe's
+      // correlation so a displayed group can truthfully be marked incomplete
+      // when its history continues beyond the read boundary.
+      const sourceCapped = activity.length > SOURCE_SCAN_LIMIT;
+      const probe = sourceCapped ? activity[SOURCE_SCAN_LIMIT] : undefined;
+      const presentedRows = activity.slice(0, SOURCE_SCAN_LIMIT);
+      const explicitAmbiguousCorrelation = session.operationalStatus === "needs_attention" ? session.attentionReason?.match(/cloudshare_v4_post_sales_ambiguous[\s\S]*?correlationId:([^\s]+)/)?.[1] : undefined;
+      const legacyAmbiguous = session.operationalStatus === "needs_attention" && session.attentionReason?.includes("cloudshare_v4_post_sales_ambiguous") === true && !explicitAmbiguousCorrelation;
+      const legacyAmbiguousCorrelations = legacyAmbiguous
+        ? new Set(presentedRows.filter((entry) => entry.operation === "sales.demo_session.created" && entry.outcome === "failure" && entry.correlationId).map((entry) => entry.correlationId as string))
+        : new Set<string>();
+      const projectedActivity = presentedRows.map((entry) => projectSafeSalesSessionActivity({ ...entry, sessionCreationAmbiguous: Boolean((explicitAmbiguousCorrelation && entry.correlationId === explicitAmbiguousCorrelation) || legacyAmbiguousCorrelations.has(entry.correlationId ?? "")) }, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+      const allActivityGroups = groupSafeSalesSessionActivity(projectedActivity).map((group) =>
+        probe ? { ...group, outcome: "incomplete" as const, summary: "Business outcome and evidence are incomplete." } : group,
+      );
+      const activityGroups = allActivityGroups.slice(0, MAX_PRESENTED_ACTIVITY_GROUPS);
+      const presentationCapped = allActivityGroups.length > MAX_PRESENTED_ACTIVITY_GROUPS;
       return { state: "available", workspace: {
         summary: { id: session.id, sessionName: session.sessionName || "Sales Enablement Session", revision: session.revision, start: session.start, end: session.end, timeZone: session.timeZone, operation: status.operation, experience: status.experience },
         participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant), environmentAttention: projectSafeSalesParticipantAttention(participant) })),
-        activity: activity.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null),
+        activity: projectedActivity,
+        activityGroups,
+        activityHistory: sourceCapped
+          ? { complete: false, hasMore: true, reason: "source_scan_limit", presentedWorkflowCount: activityGroups.length }
+          : presentationCapped
+            ? { complete: false, hasMore: true, reason: "workflow_presentation_limit", presentedWorkflowCount: activityGroups.length, totalWorkflowCount: allActivityGroups.length }
+            : { complete: true, hasMore: false, presentedWorkflowCount: activityGroups.length, totalWorkflowCount: allActivityGroups.length },
         details: { accountName: session.opportunity.account.name, opportunityName: session.opportunity.name, itemName: session.item.name, invitationMode: session.sendInvitations === "salesProsAndParticipants" ? "Sales Pros and participants" : "No native invitations" },
       } };
     },

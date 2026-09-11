@@ -11,5 +11,6 @@ export async function handleReadSalesSessionWorkspace(deps: SalesSessionWorkspac
   const workspace = await deps.workspace.read(request.customerId, request.sessionId);
   if (!workspace) return { status: 404, body: { error: "This Sales Session is unavailable for this Customer." } };
   if (workspace.state === "stale") return { status: 409, body: { error: "This Sales Session is an incomplete local reservation and cannot be opened." } };
-  return { status: 200, body: workspace.workspace };
+  const body = workspace.workspace;
+  return { status: 200, body: { ...body, activityGroups: body.activityGroups, activityHistory: body.activityHistory ?? { complete: true, hasMore: false } } };
 }
