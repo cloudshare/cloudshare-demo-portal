@@ -247,13 +247,13 @@ describe("Sales Session workspace", () => {
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:00:00.000Z");
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:04:00.000Z");
     expect(screen.getAllByText("1 diagnostic record")).toHaveLength(2);
-    const correlationDisclosure = document.querySelector("details");
-    expect(correlationDisclosure?.open).toBe(false);
-    expect(correlationDisclosure?.querySelectorAll("a")).toHaveLength(1);
-    expect(correlationDisclosure?.textContent).toContain("Diagnostic records connect this Activity to protected Support evidence");
-    expect(correlationDisclosure?.querySelector('[href*="corr-2"]')?.textContent).toBe("Open diagnostic record from 2026-07-23T09:04:00.000Z");
-    expect(correlationDisclosure?.textContent).not.toContain("corr-1");
-    expect(correlationDisclosure?.textContent).not.toContain("corr-2");
+    const supportLinks = screen.getAllByRole("link", { name: "Open Sales support" });
+    expect(supportLinks).toHaveLength(2);
+    expect(supportLinks.map((link) => link.getAttribute("href"))).toEqual([
+      "/sales?tab=support&correlationId=corr-2",
+      "/sales?tab=support&correlationId=corr-1",
+    ]);
+    expect(document.querySelectorAll("a[href*='source='], a[href*='subject='], a[href*='operation='], a[href*='surface='], a[href*='filter=']")).toHaveLength(0);
     expect(screen.getAllByText("Actor: Sales admin")).toHaveLength(2);
     expect(screen.getAllByText("Subject: This Sales Session")).toHaveLength(2);
     expect(screen.getByText(/Activity shows ordinary operational metadata only/)).not.toBeNull();
