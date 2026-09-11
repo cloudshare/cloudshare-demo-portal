@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import React, { StrictMode } from "react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionWorkspace } from "./sales-session-workspace";
@@ -356,6 +356,36 @@ describe("Sales Session workspace", () => {
     resolvePost(new Response(JSON.stringify({ correlationId: "refresh-ok" }), { status: 200 }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("settles StrictMode automatic refresh success and retry without a stuck owner", async () => {
+    let posts = 0;
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    const fresh = { ...data, summary: { ...data.summary, experience: { value: "inProgress", source: "cloudshare_v4_sales_list", freshness: "fresh", observedAt: "2026-07-24T09:01:00.000Z" } } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).includes("/workspace")) return new Response(JSON.stringify(posts >= 1 ? fresh : stale), { status: 200 });
+      if (init?.method === "POST") { posts += 1; return new Response(JSON.stringify({ correlationId: `strict-${posts}` }), { status: 200 }); }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    });
+    render(<StrictMode><SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
+    await screen.findByRole("heading", { name: "Participants" });
+    await screen.findByText("CloudShare status refreshed.");
+    expect(posts).toBe(1);
+    expect((screen.getByRole("button", { name: "Verify now" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("ignores StrictMode refresh failure from a replaced session", async () => {
+    let rejectPost!: (reason?: unknown) => void;
+    const post = new Promise<Response>((_, reject) => { rejectPost = reject; });
+    const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).includes("refresh?mode=automatic") ? post : new Response(JSON.stringify(stale), { status: 200 }));
+    const rendered = render(<StrictMode><SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
+    await screen.findByRole("heading", { name: "Participants" });
+    rendered.rerender(<StrictMode><SalesSessionWorkspace sessionId="session-2" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
+    await act(async () => { rejectPost(new Error("old session failed")); });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText("old session failed")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
   it("presents retained ambiguity as incomplete beside a later definite failure", async () => {
