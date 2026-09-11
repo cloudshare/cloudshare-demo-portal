@@ -38,5 +38,7 @@ describe("Sales refresh and Verify production route composition", () => {
     state.session = { customerId: "helios", userId: "admin", email: "admin@helios.test", workspace: "sales" };
     await verify(new Request("http://localhost/api/sales/enablement-sessions/session-1/verify"), { params: Promise.resolve({ sessionId: "session-1" }) });
     expect(state.reconcile).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ customerId: "helios", sessionId: "session-1" }));
+    expect(state.reconcile.mock.calls[0][0]).toMatchObject({ cloudshare: state.services.cloudshareClientFactory });
+    expect(state.reconcile.mock.calls[0][0]).not.toHaveProperty("deliveryFactory");
   });
 });
