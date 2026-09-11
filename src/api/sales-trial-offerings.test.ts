@@ -194,6 +194,7 @@ function createDeps(
       forConnection: vi.fn().mockReturnValue({
         createSession: vi.fn().mockResolvedValue({
           salesExperienceId: "sales-1",
+          exchangeId: "create-session-exchange",
           request: { method: "POST", path: "/sales", body: { id: "provider-body" } },
           response: { status: 201, body: { id: "sales-1" } },
         }),
@@ -205,6 +206,7 @@ function createDeps(
           request: { method: "GET", path: "/projects/project-1/blueprints" },
           response: { status: 200, body: [] },
           integrationSurface: "cloudshare.v3.projects.blueprints",
+          exchangeId: "item-resource-exchange",
         },
       ]),
     },
@@ -214,6 +216,7 @@ function createDeps(
         request: { method: "GET", path: "/projects/project-1/members" },
         response: { status: 200, body: [] },
         integrationSurface: "cloudshare.v3.project_members_gui",
+        exchangeId: "project-member-exchange",
       }),
     },
     timezones: {
@@ -984,7 +987,14 @@ describe("Sales Trial Offering API", () => {
     });
     expect(createSession).not.toHaveBeenCalled();
     const [diagnostic] = await diagnosticRepository.query({ operation: "sales.trial_offering.publish" });
-    expect(diagnostic).toMatchObject({ details: { evidenceKind: "semantic" } });
+    expect(diagnostic).toMatchObject({
+      details: {
+        evidenceKind: "semantic",
+        cloudShareAttempted: true,
+        publicationAttempted: false,
+        contributingExchangeIds: ["item-resource-exchange", "project-member-exchange"],
+      },
+    });
     expect(deps.audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "sales.trial_offering.publish",
@@ -1101,6 +1111,7 @@ describe("Sales Trial Offering API", () => {
       new CloudShareTransportError("timeout", {
         method: "POST",
         path: "/sales",
+        exchangeId: "ambiguous-create-exchange",
         cause: { code: "ETIMEDOUT" },
       }),
     );
@@ -1161,9 +1172,15 @@ describe("Sales Trial Offering API", () => {
         externalId: "offering1",
       },
       details: {
+        evidenceKind: "semantic",
         integrationSurface: "cloudshare.v4.sales",
         failureMode: "cloudshare_create_outcome_ambiguous",
         fallbackPersisted: true,
+        contributingExchangeIds: [
+          "item-resource-exchange",
+          "project-member-exchange",
+          "ambiguous-create-exchange",
+        ],
       },
     });
     const persisted = await repository.findById("customer-1", "offering-1");
@@ -1223,6 +1240,7 @@ describe("Sales Trial Offering API", () => {
               responseStatus: 403,
               requestBody: { registrationType: "registeredParticipantsOnly" },
               responseBody: { error: "forbidden" },
+              exchangeId: "definite-create-exchange",
             }),
           ),
         }),
@@ -1251,8 +1269,14 @@ describe("Sales Trial Offering API", () => {
       request: { method: "POST", path: "/sales" },
       response: { status: 403, body: { error: "forbidden" } },
       details: {
+        evidenceKind: "semantic",
         integrationSurface: "cloudshare.v4.sales",
         failureMode: "cloudshare_create",
+        contributingExchangeIds: [
+          "item-resource-exchange",
+          "project-member-exchange",
+          "definite-create-exchange",
+        ],
       },
     });
     expect(deps.audit.write).toHaveBeenCalledWith(
@@ -1508,6 +1532,11 @@ describe("Sales Trial Offering API", () => {
       source: "sales-trial-offerings",
       operation: "sales.trial_offering.project_members.revalidated",
     }))[0];
+    const [terminalEntry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.publish",
+      outcome: "success",
+    });
 
     expect(resourceEntry).toMatchObject({
       outcome: "success",
@@ -1522,6 +1551,16 @@ describe("Sales Trial Offering API", () => {
         integrationSurface: "cloudshare.v3.project_members_gui",
         memberCount: 1,
         cached: false,
+      },
+    });
+    expect(terminalEntry).toMatchObject({
+      details: {
+        evidenceKind: "semantic",
+        contributingExchangeIds: [
+          "item-resource-exchange",
+          "project-member-exchange",
+          "create-session-exchange",
+        ],
       },
     });
   });
@@ -1595,10 +1634,16 @@ describe("Sales Trial Offering API", () => {
       request: { method: "POST", path: "/sales" },
       response: { status: 201, body: { id: "sales-1" } },
       details: {
+        evidenceKind: "semantic",
         integrationSurface: "cloudshare.v4.sales",
         failureMode: "local_correlation_persistence",
         createdSalesExperienceId: "sales-1",
         fallbackPersisted: true,
+        contributingExchangeIds: [
+          "item-resource-exchange",
+          "project-member-exchange",
+          "create-session-exchange",
+        ],
       },
     });
     expect(deps.audit.write).toHaveBeenCalledWith(
@@ -2587,6 +2632,7 @@ describe("Sales Trial Offering API", () => {
       method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
       requestBody: { client_secret: "marker-client_secret" }, responseStatus: 504,
       responseBody: { access_token: "marker-access_token" },
+      acquisition: { exchangeCorrelationId: "oauth-exchange" },
     }));
     const deps = createDeps(repository, {
       diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
@@ -2608,7 +2654,17 @@ describe("Sales Trial Offering API", () => {
     expect(entry).toMatchObject({
       message: "CloudShare OAuth token request failed before Sales Experience creation",
       request: null, response: null,
-      details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "cloudshare_oauth_token" }),
+      details: {
+        evidenceKind: "semantic",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        failureMode: "cloudshare_oauth_token",
+        contributingExchangeIds: [
+          "item-resource-exchange",
+          "project-member-exchange",
+          "oauth-exchange",
+        ],
+        error: "gateway timeout",
+      },
     });
     expect(JSON.stringify(entry)).not.toContain("marker-client_secret");
     expect(JSON.stringify(entry)).not.toContain("marker-access_token");
