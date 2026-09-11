@@ -49,7 +49,11 @@ export function groupSafeSalesSessionActivity(entries: readonly SafeSalesSession
     const terminal = nextEntries.find((candidate) => candidate.kind === "session_provision" || candidate.kind === "session_reconciliation");
     const hasFailure = nextEntries.some((candidate) => candidate.outcome === "failure");
     const hasSuccess = nextEntries.some((candidate) => candidate.outcome === "success");
-    const outcome = hasFailure && hasSuccess ? "mixed" : hasFailure ? "failure" : terminal ? "success" : "incomplete";
+    // The terminal business operation is authoritative for the workflow's
+    // final status. Child transport/revalidation failures remain visible as
+    // mixed evidence only when the terminal operation itself succeeded.
+    const terminalOutcome = terminal?.outcome;
+    const outcome = terminalOutcome === "failure" ? "failure" : terminalOutcome === "success" ? (hasFailure ? "mixed" : "success") : hasFailure && hasSuccess ? "mixed" : hasFailure ? "failure" : "incomplete";
     groups.set(key, { entries: nextEntries, group: { ...current.group, summary: terminal?.summary ?? current.group.summary, outcome, firstAt: entry.occurredAt < current.group.firstAt ? entry.occurredAt : current.group.firstAt, lastAt: entry.occurredAt > current.group.lastAt ? entry.occurredAt : current.group.lastAt, count: nextEntries.length, diagnosticRecords: entry.correlationId && !current.group.diagnosticRecords.some((r) => r.correlationId === entry.correlationId) ? [...current.group.diagnosticRecords, ...record] : current.group.diagnosticRecords } });
   }
   return [...groups.values()].map(({ group }) => group).sort((a, b) => b.lastAt.localeCompare(a.lastAt) || b.firstAt.localeCompare(a.firstAt) || a.summary.localeCompare(b.summary));

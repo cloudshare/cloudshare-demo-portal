@@ -8,6 +8,11 @@ export interface SalesSessionWorkspaceRepository {
   read(customerId: string, sessionId: string): Promise<SalesSessionWorkspaceRead | null>;
 }
 
+/** The read probe is 5,501 rows; presentation is capped at 5,500 complete
+ * workflow groups, never raw rows. This preserves correlation histories when
+ * a workflow spans the probe boundary and reports omission metadata honestly. */
+const MAX_PRESENTED_ACTIVITY_GROUPS = 5500;
+
 /**
  * The Session workspace's deep local read seam. It joins the persisted Sales
  * relationship and participants, derives the independent operation and
@@ -41,14 +46,15 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         select: { occurredAt: true, operation: true, outcome: true, actorType: true, subjectType: true, subjectId: true, correlationId: true },
       });
       const projectedActivity = activity.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-      const activityForPresentation = projectedActivity.slice(0, 5500);
-      const activityGroups = groupSafeSalesSessionActivity(activityForPresentation);
+      const allActivityGroups = groupSafeSalesSessionActivity(projectedActivity);
+      const activityGroups = allActivityGroups.slice(0, MAX_PRESENTED_ACTIVITY_GROUPS);
+      const omittedGroupCount = Math.max(0, allActivityGroups.length - activityGroups.length);
       return { state: "available", workspace: {
         summary: { id: session.id, sessionName: session.sessionName || "Sales Enablement Session", revision: session.revision, start: session.start, end: session.end, timeZone: session.timeZone, operation: status.operation, experience: status.experience },
         participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant), environmentAttention: projectSafeSalesParticipantAttention(participant) })),
         activity: projectedActivity,
         activityGroups,
-        activityHistory: { complete: activity.length <= 5500, omittedCount: activity.length > 5500 ? activity.length - 5500 : 0, presentedGroupCount: activityGroups.length, totalGroupCount: activityGroups.length, partialGroups: activity.length > 5500 ? 1 : 0 },
+        activityHistory: { complete: activity.length <= 5500 && omittedGroupCount === 0, omittedCount: activity.length > 5500 ? activity.length - 5500 : omittedGroupCount, presentedGroupCount: activityGroups.length, totalGroupCount: allActivityGroups.length, partialGroups: activity.length > 5500 ? 1 : 0 },
         details: { accountName: session.opportunity.account.name, opportunityName: session.opportunity.name, itemName: session.item.name, invitationMode: session.sendInvitations === "salesProsAndParticipants" ? "Sales Pros and participants" : "No native invitations" },
       } };
     },
