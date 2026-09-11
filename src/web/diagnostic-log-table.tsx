@@ -131,7 +131,9 @@ function formatExternalIds(externalIds: DiagnosticLogTableEntry["externalIds"]):
 }
 
 function readIntegrationSurface(details: DiagnosticLogTableEntry["details"]): string | null {
-  return typeof details?.integrationSurface === "string" ? details.integrationSurface : null;
+  if (typeof details?.integrationSurface !== "string") return null;
+  const surface = details.integrationSurface.trim();
+  return surface.length > 0 ? surface : null;
 }
 
 function summariseRequestResponse(entry: DiagnosticLogTableEntry): string {
@@ -271,7 +273,7 @@ function renderTextValue(value: string | null | undefined, monospace = false): R
  * retaining endpoint/resource specificity supplied by the exchange. */
 function operationLabel(entry: DiagnosticLogTableEntry): string {
   const surface = readIntegrationSurface(entry.details);
-  if ((entry.operation === "cloudshare.request" || entry.operation === "sales_trial.cloudshare.request") && typeof surface === "string" && surface.length > 0) return surface;
+  if ((entry.operation === "cloudshare.request" || entry.operation === "sales_trial.cloudshare.request" || entry.operation === "cloudshare.oauth.token" || entry.operation === "sales_trial.cloudshare.oauth_token") && surface) return surface;
   return entry.operation;
 }
 

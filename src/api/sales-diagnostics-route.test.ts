@@ -162,6 +162,20 @@ describe("Sales diagnostics HTTP isolation", () => {
     expect(serialized).toContain("https://provider/private"); expect(serialized).toContain("private-capability");
   });
 
+  it("projects paired Session and Trial OAuth surfaces through the protected Sales route DTO", async () => {
+    mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
+    mockHandleGetDiagnosticLog.mockResolvedValue({ status: 200, body: { entries: [
+      { operation: "cloudshare.oauth.token", details: { integrationSurface: " cloudshare.v4.oauth.token " } },
+      { operation: "sales_trial.cloudshare.oauth_token", details: { integrationSurface: "cloudshare.v4.oauth.token" } },
+    ], page: { hasMore: false, nextOffset: null } } });
+    const response = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics"));
+    expect(await response.json()).toMatchObject({ entries: expect.arrayContaining([
+      { operation: "cloudshare.oauth.token", details: { integrationSurface: " cloudshare.v4.oauth.token " } },
+      { operation: "sales_trial.cloudshare.oauth_token", details: { integrationSurface: "cloudshare.v4.oauth.token" } },
+    ]) });
+    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ customerId: "customer-certalis" }));
+  });
+
   it("does not let a Sales route caller widen support to an arbitrary source", async () => {
     mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
 

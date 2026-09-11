@@ -23,6 +23,17 @@ describe("DiagnosticLogTable Support hints", () => {
     expect(container.textContent).not.toContain("sales_trial.cloudshare.request");
   });
 
+  it("uses the shared surface for Session and Trial OAuth rows and falls back for blank history", () => {
+    const { container } = render(<DiagnosticLogTable entries={[
+      { ...baseEntry, id: "session-oauth", operation: "cloudshare.oauth.token", details: { evidenceKind: "transport", integrationSurface: " cloudshare.v4.oauth.token " } },
+      { ...baseEntry, id: "trial-oauth", operation: "sales_trial.cloudshare.oauth_token", details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4.oauth.token" } },
+      { ...baseEntry, id: "legacy", operation: "cloudshare.request", details: { evidenceKind: "transport", integrationSurface: "   " } },
+    ]} expandedDiagnosticId={null} onToggleExpanded={() => undefined} />);
+    expect(container.textContent).toContain("cloudshare.v4.oauth.token");
+    expect(container.textContent).toContain("cloudshare.request");
+    expect(container.textContent).not.toContain("sales_trial.cloudshare.oauth_token");
+  });
+
   it("renders explicit transport, semantic, and legacy evidence labels with timing metadata", () => {
     const { container } = render(<DiagnosticLogTable entries={[
       { ...baseEntry, id: "transport", details: { evidenceKind: "transport", exchangeId: "ex-1", attemptStartSequence: 2, completedAt: "2026-09-10T12:00:01Z", durationMs: 12 } },
