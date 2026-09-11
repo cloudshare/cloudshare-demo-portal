@@ -107,4 +107,3 @@ function humanExperience(value: string): string { return value === "notStarted" 
 function humanInvitation(value: string): string { return value === "sent" ? "Sent" : "Not sent"; }
 function humanParticipation(value: string): string { return value === "inProgress" ? "In progress" : value === "concluded" ? "Concluded" : "Pending"; }
 function humanEnvironmentSource(value: string): string { if (value === "cloudshare_v3_environment") return "Observed from CloudShare Environment"; if (value === "cloudshare_v4_sales_participant_roster") return "Observed from CloudShare participant roster"; if (value === "not_assigned") return "No CloudShare Environment is assigned"; return "CloudShare Environment state has not been observed"; }
-
