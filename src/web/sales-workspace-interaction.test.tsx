@@ -647,7 +647,8 @@ describe("SalesWorkspace interaction", () => {
     expect(fetchMock).toHaveBeenCalled();
   });
 
-  it("keeps the typed operation filter when a Support route renders", async () => {
+  it("keeps the typed operation filter through Support apply and route restoration", async () => {
+    const user = userEvent.setup();
     const diagnosticsRequests: URL[] = [];
     vi.spyOn(window, "fetch").mockImplementation(async (input) => {
       const url = new URL(String(input), "http://localhost:3000");
@@ -658,8 +659,14 @@ describe("SalesWorkspace interaction", () => {
       return json({ error: `Unexpected request ${url.pathname}` }, 500);
     });
 
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "support", operation: "cloudshare.request" }} />);
+    const view = render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "support" }} />);
 
+    const operation = await screen.findByLabelText("Operation");
+    await user.type(operation, "cloudshare.request");
+    await user.click(screen.getByRole("button", { name: "Apply Filters" }));
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=support&operation=cloudshare.request");
+    await waitFor(() => expect(diagnosticsRequests.at(-1)?.searchParams.get("operation")).toBe("cloudshare.request"));
+    view.rerender(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "support", operation: "cloudshare.request" }} />);
     expect((await screen.findByLabelText("Operation")) as HTMLInputElement).toHaveProperty("value", "cloudshare.request");
     await waitFor(() => expect(diagnosticsRequests.at(-1)?.searchParams.get("operation")).toBe("cloudshare.request"));
   });
