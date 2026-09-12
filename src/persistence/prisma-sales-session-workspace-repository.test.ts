@@ -100,9 +100,9 @@ describe("Prisma Sales Session workspace repository", () => {
   it("projects eligibility and an active launch link from persisted Customer-scoped records", async () => {
     const participant = { id: "participant-1", createdAt: new Date(), invitationStatus: "sent", participationStatus: "pending", contact: { firstName: "Ada", lastName: "Lovelace", email: "ada@example.test" }, environmentStatus: null, environmentId: null, environmentObservedAt: null };
     const findMany = vi.fn().mockResolvedValue([]);
-    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session({ start: "2099-07-25T09:00:00.000Z", end: "2099-07-25T10:00:00.000Z", sendInvitations: "salesProsAndParticipants", participants: [participant] })) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1) }, salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([{ salesSessionParticipantId: "participant-1" }]) }, diagnosticLogEntry: { findMany } } as never);
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session({ start: "2020-07-25T09:00:00.000Z", end: "2099-07-25T10:00:00.000Z", sendInvitations: "salesProsAndParticipants", participants: [participant] })) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1) }, salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([{ salesSessionParticipantId: "participant-1" }]) }, diagnosticLogEntry: { findMany } } as never);
     const result = await repository.read("customer-a", "session-1");
     if (!result || result.state !== "available") throw new Error("expected workspace");
-    expect(result.workspace.participants[0]?.actionState).toMatchObject({ primary: "launch", canInvite: true, canLaunch: true, canRevoke: true, hasActiveLaunchLink: true });
+    expect(result.workspace.participants[0]?.actionState).toMatchObject({ primary: "launch", canInvite: false, canLaunch: false, canRevoke: true, hasActiveLaunchLink: true });
   });
 });
