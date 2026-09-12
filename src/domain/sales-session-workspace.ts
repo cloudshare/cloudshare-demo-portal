@@ -18,7 +18,7 @@ export function projectParticipantActionState(input: { readonly access: "before_
   const validWindow = input.access === "before_window" || input.access === "open";
   const canLaunch = validWindow && !input.concluded;
   const canInvite = canLaunch && input.sendInvitations === "salesProsAndParticipants";
-  const canRevoke = input.hasActiveLaunchLink && validWindow && !input.concluded;
+  const canRevoke = input.hasActiveLaunchLink;
   const primary = canInvite ? (input.invitationSent ? "launch" : "invite") : canLaunch ? "launch" : "diagnostics";
   return { primary, canInvite, canLaunch, canRevoke, hasActiveLaunchLink: input.hasActiveLaunchLink, reason: input.concluded ? "Participation is concluded; invitation and launch are unavailable." : !validWindow ? "The named Session time window is not open; mutation actions are unavailable." : !canInvite ? "Native invitations are disabled for this Session; direct launch remains available." : input.invitationSent ? "Participant is invited and may launch independently of native invitation status." : "Participant is eligible for a native invitation or direct launch." };
 }
