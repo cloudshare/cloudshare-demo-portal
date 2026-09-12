@@ -8,7 +8,7 @@ import { SalesSessionWorkspace } from "./sales-session-workspace";
 const router = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
-const data = { summary: { id: "session-1", sessionName: "Acme enablement", revision: 3, start: "2026-07-24T09:00:00.000Z", end: "2026-07-24T10:00:00.000Z", timeZone: "Europe/London", operation: { value: "correlated", source: "certalis_persistence" }, experience: { value: "notStarted", source: "cloudshare_v4_get_sales", freshness: "fresh", observedAt: "2026-07-24T08:59:00.000Z" } }, participants: [{ id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", environment: { value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" } }], activity: [{ occurredAt: "2026-07-23T09:00:00.000Z", kind: "session_provision", summary: "Sales Session provision completed.", outcome: "success", actor: { type: "admin" }, subject: { type: "sales_demo_session", id: "session-1" }, correlationId: "corr-1" }], details: { accountName: "Acme", opportunityName: "Evaluation", itemName: "Enablement item", invitationMode: "Sales Pros and participants" } };
+const data = { summary: { id: "session-1", sessionName: "Acme enablement", revision: 3, start: "2026-07-24T09:00:00.000Z", end: "2026-07-24T10:00:00.000Z", timeZone: "Europe/London", operation: { value: "correlated", source: "certalis_persistence" }, experience: { value: "notStarted", source: "cloudshare_v4_get_sales", freshness: "fresh", observedAt: "2026-07-24T08:59:00.000Z" } }, participants: [{ id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", environment: { value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" } }], total: 1, offset: 0, limit: 25, hasMore: false, activity: [{ occurredAt: "2026-07-23T09:00:00.000Z", kind: "session_provision", summary: "Sales Session provision completed.", outcome: "success", actor: { type: "admin" }, subject: { type: "sales_demo_session", id: "session-1" }, correlationId: "corr-1" }], details: { accountName: "Acme", opportunityName: "Evaluation", itemName: "Enablement item", invitationMode: "Sales Pros and participants" } };
 
 describe("Sales Session workspace", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -100,6 +100,7 @@ describe("Sales Session workspace", () => {
     const user = userEvent.setup();
     let verifyCalls = 0;
     vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/participants/page")) return new Response(JSON.stringify(data), { status: 200 });
       if (String(input).includes("/workspace")) return new Response(JSON.stringify(data), { status: 200 });
       verifyCalls += 1;
       return verifyCalls === 1
@@ -118,7 +119,7 @@ describe("Sales Session workspace", () => {
   });
 
   it("opens Participants by default, routes local areas, and links correlation to authorized Support", async () => {
-    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(data), { status: 200 })));
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions&queue=history&offset=25" />);
 
     expect(await screen.findByRole("heading", { name: "Acme enablement" })).not.toBeNull();
@@ -130,6 +131,7 @@ describe("Sales Session workspace", () => {
     expect(screen.getByRole("link", { name: "Details" }).getAttribute("href")).toContain("area=details");
     expect(screen.getByRole("link", { name: "Back to Sessions" }).getAttribute("href")).toBe("/sales?tab=sessions&queue=history&offset=25");
     expect(screen.getByRole("cell", { name: /Ready/ })).not.toBeNull();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/participants/page?offset=0&limit=25"))).toBe(true);
   });
 
   it("invokes the browser fetch interface with its required Window receiver", async () => {
@@ -141,7 +143,7 @@ describe("Sales Session workspace", () => {
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
 
     expect(await screen.findByRole("heading", { name: "Acme enablement" })).not.toBeNull();
-    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it("renders an understandable safe state for an unavailable Session", async () => {
@@ -162,7 +164,7 @@ describe("Sales Session workspace", () => {
   });
 
   it.each(["participants", "activity", "details"] as const)("moves focus to the %s heading after a fresh route load", async (area) => {
-    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
+    vi.spyOn(window, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(data), { status: 200 })));
     const rendered = render(<SalesSessionWorkspace sessionId="session-1" area={area} queueHref="/sales?tab=sessions" />);
     const firstHeading = await screen.findByRole("heading", { name: area[0].toUpperCase() + area.slice(1) });
     await waitFor(() => expect(document.activeElement).toBe(firstHeading));
@@ -173,7 +175,7 @@ describe("Sales Session workspace", () => {
   });
 
   it("does not steal focus again when the loaded workspace rerenders", async () => {
-    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
+    vi.spyOn(window, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(data), { status: 200 })));
     const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
     const initialHeading = await screen.findByRole("heading", { name: "Participants" });
     await waitFor(() => expect(document.activeElement).toBe(initialHeading));
@@ -189,7 +191,7 @@ describe("Sales Session workspace", () => {
 
   it("keeps the actionable Certalis reason in a needs-attention summary", async () => {
     const needsAttention = { ...data, summary: { ...data.summary, operation: { value: "needs_attention", source: "certalis_persistence", reason: "Participant correlation requires support.", retry: "unsafe_requires_support", dimension: "certalis_operation" } } };
-    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(needsAttention), { status: 200 }));
+    vi.spyOn(window, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(needsAttention), { status: 200 })));
 
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
 
@@ -197,13 +199,13 @@ describe("Sales Session workspace", () => {
   });
 
   it("presents Participants as a labelled read-only roster preview", async () => {
-    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
+    vi.spyOn(window, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(data), { status: 200 })));
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
 
-    expect(await screen.findByRole("table", { name: "Participant roster preview" })).not.toBeNull();
+    expect(await screen.findByRole("table", { name: "Participant roster" })).not.toBeNull();
     expect(screen.getByRole("columnheader", { name: "Participant" })).not.toBeNull();
     expect(screen.getByRole("columnheader", { name: "Environment source" })).not.toBeNull();
-    expect(screen.getByText(/Detailed participant management follows in a later workspace/)).not.toBeNull();
+    expect(screen.getByText("Bounded Participant workspace page.")).not.toBeNull();
   });
 
   it("explains persisted Participant Environment attention without exposing raw evidence", async () => {
@@ -218,12 +220,12 @@ describe("Sales Session workspace", () => {
         },
       }],
     };
-    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(attentionData), { status: 200 }));
+    vi.spyOn(window, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(attentionData), { status: 200 })));
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
 
-    expect(await screen.findByText("Needs attention")).not.toBeNull();
-    expect(screen.getByText("Multiple matching Participant Environments require support review.")).not.toBeNull();
-    expect(screen.getByText(/Attention source: Certalis Environment correlation check/)).not.toBeNull();
+    expect(await screen.findByText("CloudShare Environment state has not been observed")).not.toBeNull();
+    expect(screen.queryByText("Multiple matching Participant Environments require support review.")).toBeNull();
+    expect(screen.queryByText(/Certalis Environment correlation check/)).toBeNull();
     expect(screen.getByText("CloudShare Environment state has not been observed")).not.toBeNull();
     expect(document.body.textContent).not.toMatch(/Bearer|provider response/);
   });
@@ -265,7 +267,7 @@ describe("Sales Session workspace", () => {
 
   it("keeps retained Activity local-only when its status snapshot is stale", async () => {
     const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } }, activityGroups: [{ workflowId: "local", summary: "Local activity", outcome: "success", actor: "Sales admin", subject: "This Sales Session", firstAt: "2026-07-23T09:00:00.000Z", lastAt: "2026-07-23T09:00:00.000Z", count: 1, correlationId: "corr-local", steps: [{ label: "Local activity", outcome: "success", occurredAt: "2026-07-23T09:00:00.000Z" }], diagnosticRecords: [] }] };
-    const fetchMock = vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(stale), { status: 200 }));
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(stale), { status: 200 })));
     render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
     await screen.findByRole("list", { name: "Sales Session activity timeline" });
     await new Promise((resolve) => setTimeout(resolve, 30));
@@ -351,7 +353,7 @@ describe("Sales Session workspace", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
     await screen.findByRole("heading", { name: "Participants" });
-    await waitFor(() => expect(window.fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(window.fetch).toHaveBeenCalledTimes(3));
     rendered.unmount();
     resolvePost(new Response(JSON.stringify({ correlationId: "refresh-ok" }), { status: 200 }));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -495,7 +497,7 @@ describe("Sales Session workspace", () => {
   });
 
   it("presents Details as labelled relationship and configuration groups", async () => {
-    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
+    vi.spyOn(window, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(data), { status: 200 })));
     render(<SalesSessionWorkspace sessionId="session-1" area="details" queueHref="/sales?tab=sessions" />);
 
     expect(await screen.findByRole("region", { name: "Sales relationship" })).not.toBeNull();
