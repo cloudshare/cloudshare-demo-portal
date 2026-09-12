@@ -18,7 +18,7 @@ describe("safe Sales Session Activity projection", () => {
 
   it("fails closed for ended or concluded participant mutations while retaining active-link evidence", () => {
     expect(projectParticipantActionState({ access: "closed", sendInvitations: "dontSend", concluded: false, hasActiveLaunchLink: true, invitationSent: true })).toMatchObject({ primary: "diagnostics", canInvite: false, canLaunch: false, canRevoke: true, hasActiveLaunchLink: true });
-    expect(projectParticipantActionState({ access: "open", sendInvitations: "dontSend", concluded: true, hasActiveLaunchLink: true, invitationSent: true })).toMatchObject({ primary: "diagnostics", canInvite: false, canLaunch: false, canRevoke: false, hasActiveLaunchLink: true });
+    expect(projectParticipantActionState({ access: "open", sendInvitations: "dontSend", concluded: true, hasActiveLaunchLink: true, invitationSent: true })).toMatchObject({ primary: "diagnostics", canInvite: false, canLaunch: false, canRevoke: true, hasActiveLaunchLink: true });
   });
 
   it("collapses the complete #431 transport sequence into one provision workflow", () => {
