@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SalesExperienceType } from "@/domain/sales-experience-type";
 import type { CloudShareSalesExperienceStatus } from "@/domain/sales-session-status";
 import type { CloudShareClient, CloudShareDetailedResult, CloudShareRequestDiagnostics, CloudShareResponseDiagnostics } from "./client";
-import { CloudShareResponseError } from "./errors";
+import { CloudShareAuthError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError } from "./errors";
 
 /** Already-sanitized data returned by the client boundary. Keep the complete
  * exchange because Sales support needs headers and transport facts as well as
@@ -370,8 +370,21 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       return { participants: rows.map(mapSalesParticipant), completeness: "complete", provenance: { expectedCount, returnedCount: rows.length, offsets }, ...participantEvidence(evidence) };
     },
     async inviteParticipants(salesExperienceId, participantIds) {
-      const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });
-      return { ...participantEvidence(evidence), dispatchOutcome: "acknowledged" as const };
+      try {
+        const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });
+        return { ...participantEvidence(evidence), dispatchOutcome: "acknowledged" as const };
+      } catch (error) {
+        const context = error instanceof Error && "context" in error && typeof error.context === "object" && error.context !== null ? error.context as Record<string, unknown> : {};
+        const evidence = { request: { method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds }, response: { status: typeof context.responseStatus === "number" ? context.responseStatus : typeof context.status === "number" ? context.status : 0, ...(Object.hasOwn(context, "responseBody") ? { body: context.responseBody } : {}) } } as SalesDeliveryEvidence;
+        const dispatchOutcome = error instanceof CloudShareAuthError || (error instanceof CloudShareRequestError && error.status === 401)
+          ? "not_dispatched" as const
+          : error instanceof CloudShareRequestError
+            ? "provider_rejected" as const
+            : error instanceof CloudShareTransportError
+              ? "ambiguous_after_dispatch" as const
+              : "ambiguous_after_dispatch" as const;
+        return { ...evidence, dispatchOutcome };
+      }
     },
     async createSponsoredLink(salesExperienceId, participant) {
       const { data, evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/sponsored-link`, body: { ...participant, preRegisteredStudent: false }, schema: sponsoredLinkSchema });
