@@ -11,6 +11,11 @@ export interface SalesParticipantWorkspaceRow {
   readonly nativeInvitationsEnabled: boolean;
   readonly providerCorrelation: boolean;
   readonly activeLaunchCapability: boolean;
+  readonly currentCommandId: string | null;
+  readonly invitationOutcome: string | null;
+  readonly launchOperation: { readonly outcome: string; readonly correlationId: string | null } | null;
+  readonly environment: { readonly value: string | null; readonly source: string; readonly observedAt?: string };
+  readonly environmentAttention: { readonly reason: string; readonly source: string } | null;
 }
 
 export interface SalesParticipantWorkspacePage {
