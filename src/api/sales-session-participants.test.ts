@@ -735,4 +735,28 @@ describe("Sales Session participant invitation", () => {
     expect(inviteParticipants).not.toHaveBeenCalled();
     expect(ledger.finishBatch).toHaveBeenCalledWith(expect.objectContaining({ expectedPhase: "settled" }));
   });
+
+  it("does not reconcile or clear an indefinitely retained resend no-replay command", async () => {
+    const participant = { ...storedParticipant(), invitationStatus: "sent" as const };
+    const commandId = randomUUID();
+    const inviteParticipants = vi.fn();
+    const ledger: SalesParticipantInvitationLedger = {
+      admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }),
+      markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), finishBatch: vi.fn(),
+      readCurrent: vi.fn().mockResolvedValue({
+        command: { customerId: "customer-1", commandId, phase: "settled", revision: 4, correlationId: "corr-resend" },
+        outcome: { commandId, outcome: "blocked", correlationId: "corr-resend", counts: { no_replay: 1 }, targets: [{ participantId: participant.id, outcome: "no_replay", reason: "ambiguous_after_dispatch" }] },
+      }),
+    };
+    const listParticipants = vi.fn().mockRejectedValue(new Error("reconciliation must not run"));
+    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger,
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() },
+      participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants, inviteParticipants }) }, diagnostics: { record: vi.fn() },
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "resend", commandId) });
+    expect(result).toMatchObject({ status: 200, body: { code: "command_replayed", outcome: "blocked", commandId } });
+    expect(listParticipants).not.toHaveBeenCalled();
+    expect(inviteParticipants).not.toHaveBeenCalled();
+    expect(ledger.finishBatch).not.toHaveBeenCalled();
+  });
 });
