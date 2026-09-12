@@ -313,9 +313,10 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     }
     if (acknowledgedInvite) {
       const dispatchOutcome = acknowledgedInvite.dispatchOutcome;
-      const outcome = dispatchOutcome === "ambiguous_after_dispatch" ? "no_replay" as const : "failed_retryable" as const;
-      const reason = dispatchOutcome === "ambiguous_after_dispatch" ? "ambiguous_after_dispatch" as const : "failed_retryable" as const;
-      await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "settled", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome, reason })) });
+      const ambiguous = dispatchOutcome === "ambiguous_after_dispatch";
+      const outcome = ambiguous ? "no_replay" as const : "confirmation_required" as const;
+      const reason = ambiguous ? "ambiguous_after_dispatch" as const : "confirmation_required" as const;
+      await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: ambiguous ? "settled" : "evaluating_confirmation", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome, reason })) });
       return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed.", participantInvitationConfirmationFailed(error), acknowledgedInvite, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]);
     }
     // Once the durable dispatch marker exists, an unclassified failure has no
