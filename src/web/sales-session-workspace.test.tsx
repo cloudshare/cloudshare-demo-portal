@@ -518,7 +518,7 @@ describe("Sales Session workspace", () => {
   });
   it("posts invite JSON for the active participant and exposes correlation feedback", async () => {
     const inviteData = { ...data, summary: { ...data.summary, start: "2099-07-24T09:00:00.000Z", end: "2099-07-24T10:00:00.000Z" }, participants: [{ ...data.participants[0], invitationStatus: "notSent" }] };
-    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (_input, init) => init?.method === "POST" ? new Response(JSON.stringify({ message: "Invited", correlationId: "corr-invite" }), { status: 200 }) : new Response(JSON.stringify(inviteData), { status: 200 }));
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (_input, init) => init?.method === "POST" ? new Response(JSON.stringify({ message: "Invited", correlationId: "corr-invite", invitationConfirmation: "confirmed", confirmedParticipantCount: 1, pendingConfirmationParticipantCount: 0 }), { status: 200 }) : new Response(JSON.stringify(inviteData), { status: 200 }));
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
     await screen.findByRole("button", { name: "Invite" });
     await userEvent.setup().click(screen.getByRole("button", { name: "Invite" }));
