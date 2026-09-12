@@ -230,7 +230,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   if (admission.kind !== "admitted") return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
   admittedCommand = { commandId: parsed.data.commandId, admissionToken: admission.admissionToken, revision: 1 };
   const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) {
-    await deps.invitationLedger.expireAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))());
+    await deps.invitationLedger.failAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))());
     return deliveryResult.response!;
   }
   const prepared = { session: sessionResult.session, delivery: deliveryResult.delivery };
@@ -339,7 +339,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   catch (error) {
     const failedExchange = exchange(error);
     if (!dispatchMarked) {
-      await deps.invitationLedger.expireAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))());
+      await deps.invitationLedger.failAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))());
       return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "Certalis could not prepare the native invitation request. Retry after reviewing support diagnostics.", error, undefined, [...completedExchanges, ...(failedExchange ? [failedExchange] : [])]);
     }
     if (acknowledgedInvite) {
