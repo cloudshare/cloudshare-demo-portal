@@ -49,6 +49,6 @@ describe("SalesParticipantWorkspace", () => {
     await screen.findByText("No Participants are registered for this Sales Session.");
     expect(screen.getByRole("button", { name: "Next" })).toBeTruthy();
     await userEvent.setup().click(screen.getByRole("button", { name: "Next" }));
-    await waitFor(() => expect(request.mock.calls.some(([url]) => String(url).includes("offset=25"))).toBe(true));
+    await waitFor(() => expect(request.mock.calls.some((call) => String(call[0] ?? "").includes("offset=25"))).toBe(true));
   });
 });
