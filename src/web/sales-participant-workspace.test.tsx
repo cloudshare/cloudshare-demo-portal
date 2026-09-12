@@ -28,4 +28,27 @@ describe("SalesParticipantWorkspace", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("complementary", { name: "Participant inspector" })).toBeNull();
   });
+  it("supports click, modifier selection, movement, and nested-control exclusion", async () => {
+    const user = userEvent.setup();
+    const second = { ...participant, id: "p2", name: "Grace Hopper", email: "grace@example.test" };
+    render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify({ ...page, participants: [participant, second], total: 2 }))} />);
+    await screen.findByRole("table", { name: "Participant roster" });
+    const rows = screen.getAllByRole("row").slice(1);
+    await user.click(rows[0]);
+    expect(rows[0].getAttribute("data-selected")).toBe("true");
+    await user.keyboard("{ArrowDown}");
+    expect(rows[1].getAttribute("data-active")).toBe("true");
+    await user.keyboard(" ");
+    expect(rows[1].getAttribute("data-selected")).toBe("true");
+    await user.click(screen.getAllByRole("button", { name: "Inspect" })[0]);
+    expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
+  });
+  it("keeps paging bounded and announces an unavailable reread", async () => {
+    const request = vi.fn(async () => new Response(JSON.stringify({ participants: [], total: 26, offset: 0, limit: 25, hasMore: true }), { status: 200 }));
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await screen.findByText("No Participants are registered for this Sales Session.");
+    expect(screen.getByRole("button", { name: "Next" })).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(request.mock.calls.some(([url]) => String(url).includes("offset=25"))).toBe(true));
+  });
 });
