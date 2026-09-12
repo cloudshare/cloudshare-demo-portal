@@ -38,10 +38,12 @@ export type ParticipantSelectionEvent =
   | { readonly type: "click"; readonly id: string; readonly additive?: boolean; readonly range?: boolean; readonly pageIds?: readonly string[] }
   | { readonly type: "move"; readonly direction: "next" | "previous"; readonly pageIds: readonly string[] }
   | { readonly type: "toggle"; readonly id: string; readonly range?: boolean }
+  | { readonly type: "nested_control"; readonly id: string; readonly control: "button" | "link" | "input" | "menu" | "dialog" }
   | { readonly type: "clear" };
 
 export function reduceParticipantSelection(state: ParticipantSelectionState, event: ParticipantSelectionEvent): ParticipantSelectionState {
   if (event.type === "clear") return { activeId: null, selectedIds: [], rangeAnchorId: null };
+  if (event.type === "nested_control") return state;
   if (event.type === "move") {
     const index = state.activeId ? event.pageIds.indexOf(state.activeId) : -1;
     const next = event.direction === "next" ? Math.min(event.pageIds.length - 1, index + 1) : Math.max(0, index < 0 ? 0 : index - 1);

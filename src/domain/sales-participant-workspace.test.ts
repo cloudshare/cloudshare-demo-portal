@@ -23,6 +23,7 @@ describe("sales participant workspace contract", () => {
   });
   it("does not treat nested controls as selection events", () => {
     const state = { activeId: "p1", selectedIds: ["p1"], rangeAnchorId: "p1" };
-    expect(reduceParticipantSelection(state, { type: "clear" })).toEqual({ activeId: null, selectedIds: [], rangeAnchorId: null });
+    expect(reduceParticipantSelection(state, { type: "nested_control", id: "p1", control: "button" })).toBe(state);
+    expect(reduceParticipantSelection(state, { type: "nested_control", id: "p1", control: "input" })).toBe(state);
   });
 });
