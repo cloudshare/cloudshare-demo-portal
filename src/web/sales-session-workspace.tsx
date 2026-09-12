@@ -20,7 +20,6 @@ export function SalesSessionWorkspace(props: { readonly sessionId: string; reado
 function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly sessionId: string; readonly area: Area; readonly queueHref: string }) {
   const router = useRouter();
   const [workspace, setWorkspace] = useState<SalesSessionWorkspaceResponse | null>(null);
-  const [lastSafeWorkspace, setLastSafeWorkspace] = useState<SalesSessionWorkspaceResponse | null>(null);
   const lastSafeWorkspaceRef = useRef<SalesSessionWorkspaceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
