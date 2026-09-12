@@ -286,8 +286,14 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     await Promise.all(confirmedParticipants.map(({ stored, participant }) => deps.participants.save({ ...stored, cloudShareParticipantId: participant.id, invitationStatus: participant.invitationStatus, lastInvitedAt: participant.invitationStatus === "sent" ? now : stored.lastInvitedAt, invitedBy: participant.invitedBy, participationStatus: participant.participationStatus, firstJoined: participant.firstJoined, cloudShareEnvironmentId: participant.environmentId, environmentStatus: participant.envStatus ?? null, lastReconciledAt: now, updatedAt: now })));
     // The timestamp records this explicit request only after CloudShare has
     // acknowledged it and the authoritative follow-up roster confirms sent.
-    const confirmedParticipantCount = confirmedParticipants.filter(({ before, participant }) => before.invitationStatus === "notSent" && participant.invitationStatus === "sent").length;
-    const pendingConfirmationParticipantCount = confirmedParticipants.length - confirmedParticipantCount;
+    const targetOutcomes = confirmedParticipants.map(({ stored, before, participant }) => {
+      const sent = participant.invitationStatus === "sent";
+      if (stored.invitationStatus === "notSent" && sent) return { participantId: stored.id, outcome: "confirmed" as const, reason: null };
+      if (stored.invitationStatus === "sent" && sent) return { participantId: stored.id, outcome: "accepted_unconfirmed" as const, reason: "confirmation_required" as const };
+      return { participantId: stored.id, outcome: "confirmation_required" as const, reason: "confirmation_required" as const };
+    });
+    const confirmedParticipantCount = targetOutcomes.filter((target) => target.outcome === "confirmed").length;
+    const pendingConfirmationParticipantCount = targetOutcomes.filter((target) => target.outcome !== "confirmed").length;
     const alreadySentParticipantCount = confirmedParticipants.filter(({ before, participant }) => before.invitationStatus === "sent" && participant.invitationStatus === "sent").length;
     const invitationConfirmation = pendingConfirmationParticipantCount === 0 ? "confirmed" : "pending";
     await deps.invitationLedger.finishBatch({
@@ -295,9 +301,9 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
       commandId: admittedCommand.commandId,
       expectedRevision: 2,
       expectedPhase: "dispatching",
-      phase: invitationConfirmation === "confirmed" ? "settled" : "evaluating_confirmation",
+      phase: targetOutcomes.every((target) => target.outcome === "confirmed" || target.outcome === "accepted_unconfirmed") ? "settled" : "evaluating_confirmation",
       correlationId,
-      targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: invitationConfirmation === "confirmed" ? "confirmed" as const : "confirmation_required" as const, reason: invitationConfirmation === "confirmed" ? null : "confirmation_required" as const })),
+      targetOutcomes,
     });
     const message = invitationConfirmation === "confirmed"
       ? "CloudShare confirmed native invitations for selected Sales Participants."
