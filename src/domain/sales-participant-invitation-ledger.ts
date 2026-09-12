@@ -10,7 +10,7 @@ export type InvitationSafeReason = "provider_rejected" | "ambiguous_after_dispat
 export type RevisionedInvitationCommand = { readonly customerId: string; readonly commandId: string; readonly phase: InvitationPhase; readonly revision: number; readonly correlationId: string | null };
 export type CurrentInvitationState = { readonly command: RevisionedInvitationCommand; readonly outcome: ReturnType<typeof invitationResult> };
 export type Admission = { readonly kind: "admitted" | "same_command" | "blocked"; readonly commandId: string; readonly admissionToken?: string; readonly command?: RevisionedInvitationCommand };
-export type FinishInvitationCommand = { readonly commandId: string; readonly expectedRevision: number; readonly expectedPhase: "dispatching" | "evaluating_confirmation"; readonly phase: "evaluating_confirmation" | "settled"; readonly correlationId: string | null };
+export type FinishInvitationCommand = { readonly commandId: string; readonly expectedRevision: number; readonly expectedPhase: "dispatching" | "evaluating_confirmation" | "settled"; readonly phase: "evaluating_confirmation" | "settled"; readonly correlationId: string | null };
 export interface SalesParticipantInvitationLedger {
   admitBatch(input: { customerId: string; sessionId: string; targets: readonly InvitationTarget[]; commandId: string; at: Date }): Promise<Admission>;
   markBatchDispatching(customerId: string, commandId: string, admissionToken: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;

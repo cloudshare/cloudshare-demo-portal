@@ -202,7 +202,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     if (currents.some((current) => !current || current.command.commandId !== parsed.data.commandId)) return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
     const first = currents[0]!;
     const outcomes = currents.flatMap((current) => current!.outcome.targets).filter((target, index, all) => all.findIndex((candidate) => candidate.participantId === target.participantId) === index);
-    if (first.outcome.outcome === "confirmation_required" && parsed.data.targets.every((target) => target.intent === "invite") && (first.command.phase === "evaluating_confirmation")) {
+    if (["confirmation_required", "blocked"].includes(first.outcome.outcome) && parsed.data.targets.every((target) => target.intent === "invite") && ["evaluating_confirmation", "settled"].includes(first.command.phase)) {
       const deliveryResult = await resolveDelivery(deps, request);
       if (!("response" in deliveryResult)) {
         try {
@@ -214,7 +214,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
             return stored && stored.updatedAt.toISOString() === target.participantRevision && remote?.length === 1 && remote[0]!.invitationStatus === "sent";
           });
           if (exact) {
-            await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: parsed.data.commandId, expectedRevision: first.command.revision, expectedPhase: "evaluating_confirmation", phase: "settled", correlationId: first.command.correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmed_by_reconciliation" as const, reason: null })) });
+            await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: parsed.data.commandId, expectedRevision: first.command.revision, expectedPhase: first.command.phase, phase: "settled", correlationId: first.command.correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmed_by_reconciliation" as const, reason: null })) });
             return { status: 200, body: { code: "command_reconciled", commandId: parsed.data.commandId, phase: "settled", outcome: "completed", correlationId: first.command.correlationId } };
           }
         } catch { /* retained state is fail-closed when the read or CAS precondition is not provable */ }
