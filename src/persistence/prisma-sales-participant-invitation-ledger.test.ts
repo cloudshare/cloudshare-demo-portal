@@ -39,4 +39,16 @@ describe("Prisma invitation ledger", () => {
     await expect(ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets: [target, target], commandId: randomUUID(), at: new Date() })).resolves.toMatchObject({ kind: "blocked" });
     await expect(prisma.salesParticipantInvitationCommand.count({ where: { customerId: f.customerId } })).resolves.toBe(0);
   });
+
+  it("rejects wrong admission credentials and expires an admitted command fail-closed", async () => {
+    const f = await fixture(); const ledger = createPrismaSalesParticipantInvitationLedger(prisma); const at = new Date("2026-09-12T10:00:00.000Z"); const commandId = randomUUID();
+    const admission = await ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets: [{ participantId: f.participant.id, intent: "invite", expectedInvitationStatus: "notSent", participantRevision: f.participant.updatedAt.toISOString() }], commandId, at });
+    expect(admission.kind).toBe("admitted");
+    await expect(ledger.markBatchDispatching(f.customerId, commandId, "wrong-token", 1, new Date(at.getTime() + 1))).rejects.toThrow();
+    const expired = await ledger.expireAdmitted(f.customerId, commandId, 1, new Date(at.getTime() + 31_000));
+    expect(expired.phase).toBe("settled");
+    await expect(ledger.markBatchDispatching(f.customerId, commandId, admission.admissionToken!, 1, new Date(at.getTime() + 32_000))).rejects.toThrow();
+    await expect(prisma.salesParticipantInvitationFence.count({ where: { customerId: f.customerId } })).resolves.toBe(0);
+    await expect(prisma.salesParticipantInvitationTarget.findFirst({ where: { customerId: f.customerId } })).resolves.toMatchObject({ outcome: "failed_retryable" });
+  });
 });
