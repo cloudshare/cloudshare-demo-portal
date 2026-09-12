@@ -73,7 +73,7 @@ export function SalesParticipantWorkspace(props: {
       const invite = action === "invite" || action === "resend";
       const url = invite ? `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/invite` : `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/${encodeURIComponent(participant.id)}/launch-link`;
       const body = invite ? JSON.stringify({ commandId: crypto.randomUUID(), targets: [{ participantId: participant.id, intent: action, expectedInvitationStatus: participant.invitationStatus, participantRevision: participant.participantRevision }] }) : undefined;
-      const response = await request(url, { method: action === "revoke_launch" ? "DELETE" : "POST", headers: body ? { "Content-Type": "application/json" } : undefined, body });
+      const response = await request(url, { method: "POST", headers: body ? { "Content-Type": "application/json" } : undefined, body });
       const result = (await response.json()) as { error?: string; correlationId?: string; launchUrl?: string };
       if (!response.ok) throw new Error(result.error ?? `Action failed (${response.status}).`);
       setFeedback((current) => ({ ...current, [participant.id]: result.launchUrl ? `Launch link ready: ${result.launchUrl}` : result.correlationId ? `Completed. Correlation ${result.correlationId}.` : "Completed." }));
