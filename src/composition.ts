@@ -44,6 +44,8 @@ import { createPrismaCohortMonitoringObservationRepository } from "@/persistence
 import { createPrismaExamAttemptRepository } from "@/persistence/prisma-exam-attempt-repository";
 import { createPrismaLabLaunchRepository } from "@/persistence/prisma-lab-launch-repository";
 import { createPrismaSalesTrialEnrollmentRepository } from "@/persistence/prisma-sales-trial-enrollment-repository";
+import { createPrismaSalesParticipantInvitationLedger } from "@/persistence/prisma-sales-participant-invitation-ledger";
+import type { SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
 import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 import { createPrismaAdminMonitoringAttemptRepository } from "@/persistence/prisma-admin-monitoring-attempt-repository";
 import { createPrismaAdminCandidateRepository } from "@/persistence/prisma-admin-candidate-repository";
@@ -372,6 +374,7 @@ export interface Services {
   /** Typed, append-only diagnostic log — the Support read model (ADR-004). */
   diagnostics: DiagnosticLogRepository;
   salesTrialEnrollments: SalesTrialEnrollmentRepository;
+  invitationLedger: SalesParticipantInvitationLedger;
   /** Redaction-applying write seam every instrumented flow records through. */
   diagnosticRecorder: DiagnosticRecorder;
   adminMonitoringAttempts: AdminMonitoringAttemptRepository;
@@ -409,6 +412,7 @@ export function getServices(): Services {
   const prisma = new PrismaClient();
   const diagnostics = createPrismaDiagnosticLogRepository(prisma);
   const salesTrialEnrollments = createPrismaSalesTrialEnrollmentRepository(prisma);
+  const invitationLedger = createPrismaSalesParticipantInvitationLedger(prisma);
   const logger = createLogger({
     secrets: secretValues(config),
     sink: (line: string) => {
@@ -629,6 +633,7 @@ export function getServices(): Services {
     eventLog,
     diagnostics,
     salesTrialEnrollments,
+    invitationLedger,
     diagnosticRecorder,
     adminMonitoringAttempts,
     adminCandidates,
