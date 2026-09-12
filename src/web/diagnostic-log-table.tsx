@@ -151,7 +151,8 @@ function deriveV3OperationSurface(entry: DiagnosticLogTableEntry, surface: strin
   if (/^\/api\/v3\/projects\/[^/]+\/policies$/.test(path)) return "cloudshare.v3.projects.policies";
   if (/^\/api\/v3\/regions$/.test(path)) return "cloudshare.v3.regions";
   if (/^\/api\/v3\/teams$/.test(path)) return "cloudshare.v3.teams";
-  if (/^\/api\/v3\/envs\/actions\/(suspend|resume|archive)$/.test(path)) {
+  if (/^\/api\/v3\/envs$/.test(path)) return "cloudshare.v3.envs";
+  if (/^\/api\/v3\/envs\/actions\/(suspend|resume|archive|getextended|extend)$/.test(path)) {
     return `cloudshare.v3.env.action.${path.split("/").at(-1)}`;
   }
   if (/^\/api\/v3\/envs\/[^/]+$/.test(path)) return "cloudshare.v3.env.get";

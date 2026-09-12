@@ -43,6 +43,17 @@ describe("DiagnosticLogTable Support hints", () => {
     expect(container.textContent).toContain("Attempted operation: cloudshare.request");
   });
 
+  it("derives specific v3 labels for retained Trial environment evidence", () => {
+    const { container } = render(<DiagnosticLogTable entries={[
+      { ...baseEntry, id: "trial-environment-list", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/api/v3/envs" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v3" } },
+      { ...baseEntry, id: "trial-environment-status", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/api/v3/envs/actions/getextended" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v3" } },
+      { ...baseEntry, id: "trial-environment-extend", operation: "sales_trial.cloudshare.request", request: { method: "PUT", path: "/api/v3/envs/actions/extend" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v3" } },
+    ]} expandedDiagnosticId={null} onToggleExpanded={() => undefined} />);
+    expect(container.textContent).toContain("cloudshare.v3.envs");
+    expect(container.textContent).toContain("cloudshare.v3.env.action.getextended");
+    expect(container.textContent).toContain("cloudshare.v3.env.action.extend");
+  });
+
   it("renders explicit transport, semantic, and legacy evidence labels with timing metadata", () => {
     const { container } = render(<DiagnosticLogTable entries={[
       { ...baseEntry, id: "transport", details: { evidenceKind: "transport", exchangeId: "ex-1", attemptStartSequence: 2, completedAt: "2026-09-10T12:00:01Z", durationMs: 12 } },
