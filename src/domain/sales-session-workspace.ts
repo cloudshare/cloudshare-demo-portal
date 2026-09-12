@@ -24,12 +24,13 @@ export function projectParticipantActionState(input: { readonly access: "before_
 }
 export type SalesParticipantBrowserActionResult =
   | { readonly ok: true; readonly action: "invite" | "resend" | "launch" | "revoke"; readonly correlationId?: string; readonly launchUrl?: `/sales/launch/${string}`; readonly invitationConfirmation?: "confirmed" | "pending"; readonly confirmedParticipantCount?: number; readonly pendingConfirmationParticipantCount?: number }
-  | { readonly ok: false; readonly action: "invite" | "resend" | "launch" | "revoke"; readonly error: string; readonly correlationId?: string };
+  | { readonly ok: false; readonly action: "invite" | "resend" | "launch" | "revoke"; readonly error: string; readonly correlationId?: string; readonly retryDisposition?: "no-replay" };
 
-export function projectSalesParticipantBrowserActionResult(input: { readonly ok: boolean; readonly action: SalesParticipantBrowserActionResult["action"]; readonly correlationId?: unknown; readonly launchUrl?: unknown; readonly invitationConfirmation?: unknown; readonly confirmedParticipantCount?: unknown; readonly pendingConfirmationParticipantCount?: unknown; readonly error?: unknown }): SalesParticipantBrowserActionResult {
+export function projectSalesParticipantBrowserActionResult(input: { readonly ok: boolean; readonly action: SalesParticipantBrowserActionResult["action"]; readonly responseStatus?: number; readonly correlationId?: unknown; readonly launchUrl?: unknown; readonly invitationConfirmation?: unknown; readonly confirmedParticipantCount?: unknown; readonly pendingConfirmationParticipantCount?: unknown; readonly error?: unknown }): SalesParticipantBrowserActionResult {
   const correlationId = typeof input.correlationId === "string" ? input.correlationId : undefined;
+  const noReplay = (input.action === "invite" || input.action === "resend") && input.responseStatus === 502 && Boolean(correlationId);
   const confirmation = input.invitationConfirmation === "confirmed" || input.invitationConfirmation === "pending" ? input.invitationConfirmation : undefined;
-  if (!input.ok) return { ok: false, action: input.action, error: typeof input.error === "string" ? input.error : "Participant action failed.", ...(correlationId ? { correlationId } : {}) };
+  if (!input.ok) return { ok: false, action: input.action, error: typeof input.error === "string" ? input.error : "Participant action failed.", ...(correlationId ? { correlationId } : {}), ...(noReplay ? { retryDisposition: "no-replay" as const } : {}) };
   const launchUrl = typeof input.launchUrl === "string" && /^\/sales\/launch\/[A-Za-z0-9_-]+$/.test(input.launchUrl) ? input.launchUrl as `/sales/launch/${string}` : undefined;
   if (input.action === "launch" && !launchUrl) return { ok: false, action: input.action, error: "CloudShare returned no valid local launch capability.", ...(correlationId ? { correlationId } : {}) };
   if (input.action === "invite" || input.action === "resend") {
