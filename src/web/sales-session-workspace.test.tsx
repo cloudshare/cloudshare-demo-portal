@@ -350,6 +350,7 @@ describe("Sales Session workspace", () => {
     rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
     expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();
     expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("refresh?mode=automatic"))).toHaveLength(1);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
   });
 
   it("clears the refresh owner without updating state after unmount", async () => {
