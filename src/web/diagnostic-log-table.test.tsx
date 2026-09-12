@@ -58,9 +58,37 @@ describe("DiagnosticLogTable Support hints", () => {
     const { container } = render(<DiagnosticLogTable entries={[
       { ...baseEntry, id: "trial-sales", operation: "sales_trial.cloudshare.request", request: { method: "POST", path: "/v4/sales" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
       { ...baseEntry, id: "trial-participants", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/v4/sales/sales-private/participants" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
+      { ...baseEntry, id: "trial-participant-detail", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/v4/sales/sales-private/participants/participant-private" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
+      { ...baseEntry, id: "trial-participant-invite", operation: "sales_trial.cloudshare.request", request: { method: "POST", path: "/v4/sales/sales-private/participants/invite" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
+      { ...baseEntry, id: "trial-sales-pros", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/v4/sales/sales-private/salespros" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
+      { ...baseEntry, id: "trial-sales-pro-detail", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/v4/sales/sales-private/salespros/pro-private" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
+      { ...baseEntry, id: "trial-unknown", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/v4/sales/sales-private/unknown-route" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
     ]} expandedDiagnosticId={null} onToggleExpanded={() => undefined} />);
-    expect(container.textContent).toContain("cloudshare.v4.sales");
-    expect(container.textContent).toContain("cloudshare.v4.sales.participants");
+    expect(screen.getByText("cloudshare.v4.sales")).toBeTruthy();
+    expect(screen.getByText("cloudshare.v4.sales.participants")).toBeTruthy();
+    expect(screen.getByText("cloudshare.v4.sales.participants.detail")).toBeTruthy();
+    expect(screen.getByText("cloudshare.v4.sales.participants.invite")).toBeTruthy();
+    expect(screen.getByText("cloudshare.v4.sales.salespros")).toBeTruthy();
+    expect(screen.getByText("cloudshare.v4.sales.salespros.detail")).toBeTruthy();
+    expect(screen.getAllByText("cloudshare.v4")).toHaveLength(1);
+    expect(screen.getByText("cloudshare.v4.sales.participants").closest("td")?.textContent).not.toContain("sales-private");
+  });
+
+  it("covers every documented Sales route family and keeps unknown v4 routes generic", () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ["/v4/sales/sales-private/salespros/invite", "cloudshare.v4.sales.salespros.invite"],
+      ["/v4/sales/sales-private/salespros/email-template", "cloudshare.v4.sales.salespros.email_template"],
+      ["/v4/sales/sales-private/participants/email-template", "cloudshare.v4.sales.participants.email_template"],
+      ["/v4/sales/sales-private/participants/unassigned-environment", "cloudshare.v4.sales.participants.unassigned_environment"],
+      ["/v4/sales/sales-private/participants/participant-private/unassigned-environment", "cloudshare.v4.sales.participants.unassigned_environment"],
+      ["/v4/sales/sales-private/users/properties", "cloudshare.v4.sales.user_properties"],
+      ["/v4/sales/sales-private/users/properties/property-private", "cloudshare.v4.sales.user_properties.detail"],
+      ["/v4/sales/sales-private/sponsored-link", "cloudshare.v4.sales.sponsored_link"],
+      ["/v4/sales/sales-private/students/participants/participant-private/environment", "cloudshare.v4.sales.students.participants.environment"],
+      ["/v4/sales/sales-private/assign-shared-env-controlling-user", "cloudshare.v4.sales.assign_shared_env_controlling_user"],
+    ];
+    render(<DiagnosticLogTable entries={cases.map(([path], index) => ({ ...baseEntry, id: `v4-${index}`, operation: "sales_trial.cloudshare.request", request: { method: "GET", path }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } }))} expandedDiagnosticId={null} onToggleExpanded={() => undefined} />);
+    for (const [, label] of cases) expect(screen.getAllByText(label).length).toBeGreaterThan(0);
   });
 
   it("renders explicit transport, semantic, and legacy evidence labels with timing metadata", () => {

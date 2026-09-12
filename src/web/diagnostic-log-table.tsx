@@ -163,9 +163,21 @@ function deriveV4OperationSurface(entry: DiagnosticLogTableEntry, surface: strin
   if (surface !== "cloudshare.v4" || typeof entry.request?.path !== "string") return surface;
   const path = entry.request.path;
   if (path === "/v4/sales") return "cloudshare.v4.sales";
+  if (/^\/v4\/sales\/[^/]+\/salespros$/.test(path)) return "cloudshare.v4.sales.salespros";
+  if (/^\/v4\/sales\/[^/]+\/salespros\/invite$/.test(path)) return "cloudshare.v4.sales.salespros.invite";
+  if (/^\/v4\/sales\/[^/]+\/salespros\/email-template$/.test(path)) return "cloudshare.v4.sales.salespros.email_template";
+  if (/^\/v4\/sales\/[^/]+\/salespros\/[^/]+$/.test(path)) return "cloudshare.v4.sales.salespros.detail";
   if (/^\/v4\/sales\/[^/]+\/participants$/.test(path)) return "cloudshare.v4.sales.participants";
+  if (/^\/v4\/sales\/[^/]+\/participants\/invite$/.test(path)) return "cloudshare.v4.sales.participants.invite";
+  if (/^\/v4\/sales\/[^/]+\/participants\/email-template$/.test(path)) return "cloudshare.v4.sales.participants.email_template";
+  if (/^\/v4\/sales\/[^/]+\/participants\/unassigned-environment$/.test(path)) return "cloudshare.v4.sales.participants.unassigned_environment";
+  if (/^\/v4\/sales\/[^/]+\/participants\/[^/]+\/unassigned-environment$/.test(path)) return "cloudshare.v4.sales.participants.unassigned_environment";
+  if (/^\/v4\/sales\/[^/]+\/participants\/[^/]+$/.test(path)) return "cloudshare.v4.sales.participants.detail";
   if (/^\/v4\/sales\/[^/]+\/users\/properties$/.test(path)) return "cloudshare.v4.sales.user_properties";
+  if (/^\/v4\/sales\/[^/]+\/users\/properties\/[^/]+$/.test(path)) return "cloudshare.v4.sales.user_properties.detail";
   if (/^\/v4\/sales\/[^/]+\/sponsored-link$/.test(path)) return "cloudshare.v4.sales.sponsored_link";
+  if (/^\/v4\/sales\/[^/]+\/students\/participants\/[^/]+\/environment$/.test(path)) return "cloudshare.v4.sales.students.participants.environment";
+  if (/^\/v4\/sales\/[^/]+\/assign-shared-env-controlling-user$/.test(path)) return "cloudshare.v4.sales.assign_shared_env_controlling_user";
   if (/^\/v4\/sales\/[^/]+$/.test(path)) return "cloudshare.v4.sales.detail";
   return surface;
 }
