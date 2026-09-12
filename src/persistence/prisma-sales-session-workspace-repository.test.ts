@@ -8,7 +8,7 @@ describe("Prisma Sales Session workspace repository", () => {
   it("owns Customer and active relationship predicates and never selects protected diagnostic JSON", async () => {
     const findFirst = vi.fn().mockResolvedValue(null);
     const findMany = vi.fn();
-    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst }, salesSessionParticipant: participantModel(), diagnosticLogEntry: { findMany } } as never);
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst }, salesSessionParticipant: participantModel(), salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([]) }, diagnosticLogEntry: { findMany } } as never);
 
     await expect(repository.read("customer-a", "session-b")).resolves.toBeNull();
 
@@ -18,7 +18,7 @@ describe("Prisma Sales Session workspace repository", () => {
 
   it("reads Activity through safe metadata columns only", async () => {
     const findMany = vi.fn().mockResolvedValue([{ occurredAt: new Date("2026-07-24T09:00:00Z"), operation: "sales.demo_session.created", outcome: "failure", message: "Bearer token loginUrl=https://unsafe.example", requestJson: "Authorization: secret", responseJson: "envId=provider-reference", actorType: "admin", subjectType: "sales_demo_session", subjectId: "session-1", correlationId: "corr-1" }]);
-    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-1", customerId: "customer-a", cloudShareSalesExperienceId: "sales-1", sessionName: "Acme", revision: 1, start: "2026-07-25T09:00:00.000Z", end: "2026-07-25T10:00:00.000Z", timeZone: "UTC", operationalStatus: "active", attentionReason: null, experienceStatus: null, experienceStatusObservedAt: null, sendInvitations: "dontSend", opportunity: { name: "Evaluation", account: { name: "Acme" } }, item: { name: "Item" }, participants: [] }) }, salesSessionParticipant: participantModel(), diagnosticLogEntry: { findMany } } as never);
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-1", customerId: "customer-a", cloudShareSalesExperienceId: "sales-1", sessionName: "Acme", revision: 1, start: "2026-07-25T09:00:00.000Z", end: "2026-07-25T10:00:00.000Z", timeZone: "UTC", operationalStatus: "active", attentionReason: null, experienceStatus: null, experienceStatusObservedAt: null, sendInvitations: "dontSend", opportunity: { name: "Evaluation", account: { name: "Acme" } }, item: { name: "Item" }, participants: [] }) }, salesSessionParticipant: participantModel(), salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([]) }, diagnosticLogEntry: { findMany } } as never);
 
     const result = await repository.read("customer-a", "session-1");
 
@@ -32,7 +32,7 @@ describe("Prisma Sales Session workspace repository", () => {
   });
 
   it("marks only a persisted pending pre-dispatch reservation as stale", async () => {
-    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-pending", cloudShareSalesExperienceId: "pending:reservation", operationalStatus: "provisioning", opportunity: { account: {} } }) }, salesSessionParticipant: participantModel(), diagnosticLogEntry: { findMany: vi.fn() } } as never);
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-pending", cloudShareSalesExperienceId: "pending:reservation", operationalStatus: "provisioning", opportunity: { account: {} } }) }, salesSessionParticipant: participantModel(), salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([]) }, diagnosticLogEntry: { findMany: vi.fn() } } as never);
     await expect(repository.read("customer-a", "session-pending")).resolves.toEqual({ state: "stale" });
   });
 
@@ -41,7 +41,7 @@ describe("Prisma Sales Session workspace repository", () => {
     const rows = Array.from({ length: 101 }, (_, i) => row(`child-${i}`, "corr-one", `2026-07-24T09:00:${String(i % 60).padStart(2, "0")}.${String(i).padStart(3, "0")}Z`, childOperations[i % childOperations.length]))
       .concat([row("terminal", "corr-one", "2026-07-24T09:02:00.000Z", "sales.demo_session.participants.registered")]);
     const findMany = vi.fn().mockResolvedValue(rows);
-    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session()) }, salesSessionParticipant: participantModel(), diagnosticLogEntry: { findMany } } as never);
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session()) }, salesSessionParticipant: participantModel(), salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([]) }, diagnosticLogEntry: { findMany } } as never);
     const result = await repository.read("customer-a", "session-1");
     expect(result).toMatchObject({ state: "available", workspace: { activityGroups: [{ correlationId: "corr-one", count: 102, outcome: "success" }], activityHistory: { presentedWorkflowCount: 1, totalWorkflowCount: 1, hasMore: false, complete: true } } });
   });
@@ -49,7 +49,7 @@ describe("Prisma Sales Session workspace repository", () => {
   it("keeps workflows distinct and omits the probe row while marking a boundary workflow incomplete", async () => {
     const rows = [...Array.from({ length: 5500 }, (_, i) => row(`row-${i}`, i === 5499 ? "boundary" : `corr-${i}`, "2026-07-24T09:00:00.000Z")), row("probe", "boundary", "2026-07-24T09:00:00.000Z")];
     const findMany = vi.fn().mockResolvedValue(rows);
-    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session()) }, salesSessionParticipant: participantModel(), diagnosticLogEntry: { findMany } } as never);
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session()) }, salesSessionParticipant: participantModel(), salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([]) }, diagnosticLogEntry: { findMany } } as never);
     const result = await repository.read("customer-a", "session-1");
     if (!result || result.state !== "available") throw new Error("expected workspace");
     expect(result.workspace.activity.some((entry) => entry.activityId === "probe")).toBe(false);
@@ -61,7 +61,7 @@ describe("Prisma Sales Session workspace repository", () => {
   it("scopes retained ambiguity to the persisted creation correlation", async () => {
     const rows = [row("ambiguous", "corr-ambiguous", "2026-07-24T09:00:00.000Z", "sales.demo_session.created", "failure"), row("duplicate", "corr-duplicate", "2026-07-24T09:01:00.000Z", "sales.demo_session.created", "failure")];
     const findFirst = vi.fn().mockResolvedValue(session({ operationalStatus: "needs_attention", attentionReason: "cloudshare_v4_post_sales_ambiguous: unknown outcome correlationId:corr-ambiguous" }));
-    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst }, salesSessionParticipant: participantModel(), diagnosticLogEntry: { findMany: vi.fn().mockResolvedValue(rows) } } as never);
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst }, salesSessionParticipant: participantModel(), salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([]) }, diagnosticLogEntry: { findMany: vi.fn().mockResolvedValue(rows) } } as never);
     const result = await repository.read("customer-a", "session-1");
     if (!result || result.state !== "available") throw new Error("expected workspace");
     expect(result.workspace.activityGroups).toEqual(expect.arrayContaining([
@@ -73,7 +73,7 @@ describe("Prisma Sales Session workspace repository", () => {
   it("keeps every plausible legacy failed creation correlation distinct and incomplete", async () => {
     const rows = [row("later", "corr-duplicate", "2026-07-24T09:01:00.000Z", "sales.demo_session.created", "failure"), row("earlier", "corr-ambiguous", "2026-07-24T09:00:00.000Z", "sales.demo_session.created", "failure")];
     const findFirst = vi.fn().mockResolvedValue(session({ operationalStatus: "needs_attention", attentionReason: "cloudshare_v4_post_sales_ambiguous: legacy retained reason" }));
-    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst }, salesSessionParticipant: participantModel(), diagnosticLogEntry: { findMany: vi.fn().mockResolvedValue(rows) } } as never);
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst }, salesSessionParticipant: participantModel(), salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([]) }, diagnosticLogEntry: { findMany: vi.fn().mockResolvedValue(rows) } } as never);
     const result = await repository.read("customer-a", "session-1");
     if (!result || result.state !== "available") throw new Error("expected workspace");
     expect(result.workspace.activityGroups).toEqual(expect.arrayContaining([
@@ -84,7 +84,7 @@ describe("Prisma Sales Session workspace repository", () => {
 
   it("reports a truthful workflow presentation limit after complete source grouping", async () => {
     const rows = Array.from({ length: 101 }, (_, index) => row(`workflow-${index}`, `corr-${index}`, `2026-07-24T09:00:${String(index % 60).padStart(2, "0")}.${String(index).padStart(3, "0")}Z`));
-    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session()) }, salesSessionParticipant: participantModel(), diagnosticLogEntry: { findMany: vi.fn().mockResolvedValue(rows) } } as never);
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session()) }, salesSessionParticipant: participantModel(), salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([]) }, diagnosticLogEntry: { findMany: vi.fn().mockResolvedValue(rows) } } as never);
     const result = await repository.read("customer-a", "session-1");
     if (!result || result.state !== "available") throw new Error("expected workspace");
     expect(result.workspace.activityGroups).toHaveLength(100);
@@ -93,8 +93,16 @@ describe("Prisma Sales Session workspace repository", () => {
 
   it("uses persisted ids as the deterministic tie breaker and fails closed across Customers", async () => {
     const findFirst = vi.fn().mockResolvedValue(null);
-    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst }, salesSessionParticipant: participantModel(), diagnosticLogEntry: { findMany: vi.fn() } } as never);
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst }, salesSessionParticipant: participantModel(), salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([]) }, diagnosticLogEntry: { findMany: vi.fn() } } as never);
     await expect(repository.read("customer-b", "session-1")).resolves.toBeNull();
     expect(findFirst.mock.calls[0][0].where).toEqual({ customerId: "customer-b", id: "session-1", opportunity: { archivedAt: null, account: { archivedAt: null } } });
+  });
+  it("projects eligibility and an active launch link from persisted Customer-scoped records", async () => {
+    const participant = { id: "participant-1", createdAt: new Date(), invitationStatus: "sent", participationStatus: "pending", contact: { firstName: "Ada", lastName: "Lovelace", email: "ada@example.test" }, environmentStatus: null, environmentId: null, environmentObservedAt: null };
+    const findMany = vi.fn().mockResolvedValue([]);
+    const repository = createPrismaSalesSessionWorkspaceRepository({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session({ sendInvitations: "salesProsAndParticipants", participants: [participant] })) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1) }, salesParticipantLaunchLink: { findMany: vi.fn().mockResolvedValue([{ salesSessionParticipantId: "participant-1" }]) }, diagnosticLogEntry: { findMany } } as never);
+    const result = await repository.read("customer-a", "session-1");
+    if (!result || result.state !== "available") throw new Error("expected workspace");
+    expect(result.workspace.participants[0]?.actionState).toMatchObject({ primary: "launch", canInvite: true, canLaunch: true, canRevoke: true, hasActiveLaunchLink: true });
   });
 });
