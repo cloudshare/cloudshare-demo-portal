@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => router }));
 const data = { summary: { id: "session-1", sessionName: "Acme enablement", revision: 3, start: "2026-07-24T09:00:00.000Z", end: "2026-07-24T10:00:00.000Z", timeZone: "Europe/London", operation: { value: "correlated", source: "certalis_persistence" }, experience: { value: "notStarted", source: "cloudshare_v4_get_sales", freshness: "fresh", observedAt: "2026-07-24T08:59:00.000Z" } }, participants: [{ id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", environment: { value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" }, actionState: { primary: "invite", canInvite: true, canLaunch: true, canRevoke: true, hasActiveLaunchLink: true, reason: "" } }], activity: [{ occurredAt: "2026-07-23T09:00:00.000Z", kind: "session_provision", summary: "Sales Session provision completed.", outcome: "success", actor: { type: "admin" }, subject: { type: "sales_demo_session", id: "session-1" }, correlationId: "corr-1" }], details: { accountName: "Acme", opportunityName: "Evaluation", itemName: "Enablement item", invitationMode: "Sales Pros and participants" } };
 
 describe("Sales Session workspace", () => {
-  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); window.history.replaceState({}, "", "/sales/sessions/session-1"); });
 
   it("selects whole participant rows with pointer and keyboard focus", async () => {
     const user = userEvent.setup();
@@ -555,9 +555,60 @@ describe("Participant workspace seam matrix", () => {
     r[3].focus(); await user.keyboard("{Shift>}{ }{/Shift}");
     expect(r.map((row) => row.getAttribute("aria-selected"))).toEqual(["true", "true", "true", "true"]);
   });
-  it("resets page on search and preserves durable failed mutation feedback", async () => {
-    const user = userEvent.setup(); const calls: string[] = []; vi.spyOn(window, "fetch").mockImplementation(async (input, init) => { calls.push(String(input)); if (init?.method === "POST") return new Response(JSON.stringify({ error: "Unavailable", correlationId: "corr-fail" }), { status: 503 }); return new Response(JSON.stringify({ ...roster, participantPage: { total: 40, hasMore: true } }), { status: 200 }); });
-    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />); await screen.findByRole("row", { name: /Participant 0/ });
-    await user.type(screen.getByRole("textbox"), "ada"); await waitFor(() => expect(calls.some((url) => url.includes("participantQuery=ada"))).toBe(true));
+  it("shows pending invite confirmation and blocks replay", async () => {
+    let resolveInvite!: (response: Response) => void;
+    const invite = new Promise<Response>((resolve) => { resolveInvite = resolve; });
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (_input, init) => init?.method === "POST" ? invite : new Response(JSON.stringify(roster), { status: 200 }));
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("button", { name: "Invite" });
+    const button = screen.getByRole("button", { name: "Invite" });
+    await userEvent.setup().click(button); await userEvent.setup().click(button);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    resolveInvite(new Response(JSON.stringify({ invitationConfirmation: "pending", confirmedParticipantCount: 2, pendingConfirmationParticipantCount: 1, correlationId: "invite-1" }), { status: 200 }));
+    expect(await screen.findByText("Invitation pending confirmation (1 pending, 2 confirmed). Do not retry.")).not.toBeNull();
+  });
+
+  it("rereads the exact bounded roster after action success", async () => {
+    window.history.replaceState({}, "", "/sales/sessions/session-1?participantPage=2&participantQuery=ada");
+    const calls: string[] = [];
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => { calls.push(String(input)); if (init?.method === "POST") return new Response(JSON.stringify({ message: "Invited", invitationConfirmation: "confirmed", confirmedParticipantCount: 1, pendingConfirmationParticipantCount: 0, correlationId: "invite-1" }), { status: 200 }); return new Response(JSON.stringify(roster), { status: 200 }); });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("button", { name: "Invite" }); await userEvent.setup().click(screen.getByRole("button", { name: "Invite" }));
+    await screen.findByText("Invited");
+    expect(calls).toContain("/api/sales/enablement-sessions/session-1/workspace?participantPage=2&participantPageSize=25&participantQuery=ada");
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("<html>"))).toBe(false);
+  });
+
+  it("does not let stale action reread replace a newer search", async () => {
+    window.history.replaceState({}, "", "/sales/sessions/session-1");
+    let resolveReread!: (response: Response) => void; const reread = new Promise<Response>((resolve) => { resolveReread = resolve; });
+    const old = { ...roster, participants: [{ ...roster.participants[0], name: "Old result" }] }; const newer = { ...roster, participants: [{ ...roster.participants[0], name: "New result" }] };
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => { const url = String(input); if (init?.method === "POST") return new Response(JSON.stringify({ message: "Invited", invitationConfirmation: "confirmed", confirmedParticipantCount: 1, pendingConfirmationParticipantCount: 0, correlationId: "invite-3" }), { status: 200 }); if (url.includes("participantQuery=new")) return new Response(JSON.stringify(newer), { status: 200 }); if (url.includes("participantPageSize")) return reread; return new Response(JSON.stringify(old), { status: 200 }); });
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />); await screen.findByRole("button", { name: "Invite" }); await userEvent.setup().click(screen.getByRole("button", { name: "Invite" }));
+    const input = screen.getByRole("textbox"); await userEvent.setup().type(input, "new"); await screen.findAllByText("New result"); resolveReread(new Response(JSON.stringify(old), { status: 200 }));
+    expect(screen.getAllByText("New result").length).toBeGreaterThan(0); expect(screen.queryByText("Old result")).toBeNull();
+  });
+
+  it("preserves action success and warns when reread fails", async () => {
+    window.history.replaceState({}, "", "/sales/sessions/session-1");
+    let reads = 0; const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (_input, init) => init?.method === "POST" ? new Response(JSON.stringify({ message: "Invited", invitationConfirmation: "confirmed", confirmedParticipantCount: 1, pendingConfirmationParticipantCount: 0, correlationId: "invite-2" }), { status: 200 }) : (++reads === 1 ? new Response(JSON.stringify(roster), { status: 200 }) : new Response(JSON.stringify({ error: "Roster unavailable" }), { status: 503 })));
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />); await screen.findByRole("button", { name: "Invite" }); await userEvent.setup().click(screen.getByRole("button", { name: "Invite" }));
+    await waitFor(() => { const alert = screen.getByRole("alert"); expect(alert.textContent).toContain("Invited"); expect(alert.textContent).toContain("Roster unavailable"); }); expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("fails closed without action state while keeping diagnostics primary", async () => {
+    const missing = { ...roster, participants: [{ ...roster.participants[0], actionState: undefined }] };
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(missing), { status: 200 })); render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />); await screen.findByRole("heading", { name: "Participant 0" });
+    expect((screen.getByRole("button", { name: "Invite" }) as HTMLButtonElement).disabled).toBe(true); expect(screen.getByRole("link", { name: "Diagnostics" }).getAttribute("href")).toContain("support");
+  });
+
+  it("restores exact row focus through inspector and revoke dialog trap", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(roster), { status: 200 })); const user = userEvent.setup(); render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    const row = await screen.findByRole("row", { name: /Participant 0/ }); row.focus(); await user.keyboard("{Enter}"); const inspector = screen.getByRole("complementary", { name: "Participant inspector" }); await waitFor(() => expect(document.activeElement).toBe(inspector)); await user.keyboard("{Escape}"); await waitFor(() => expect(document.activeElement).toBe(row));
+    const trigger = screen.getByRole("button", { name: "Revoke launch link" }); await user.click(trigger); const dialog = screen.getByRole("dialog"); const revoke = screen.getByRole("button", { name: "Revoke" }); expect(document.activeElement).toBe(revoke); await user.keyboard("{Tab}"); expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" })); await user.keyboard("{Shift>}{Tab}{/Shift}"); expect(document.activeElement).toBe(revoke); await user.keyboard("{Escape}"); expect(document.activeElement).toBe(trigger);
+  });
+
+  it("does not toggle row selection when an inspector action is clicked", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(roster), { status: 200 })); const user = userEvent.setup(); render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />); const row = await screen.findByRole("row", { name: /Participant 0/ }); await user.click(row); expect(row.getAttribute("aria-selected")).toBe("true"); const revoke = screen.getByRole("button", { name: "Revoke launch link" }); await user.click(revoke); expect(row.getAttribute("aria-selected")).toBe("true");
   });
 });
