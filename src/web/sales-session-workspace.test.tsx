@@ -13,6 +13,20 @@ const data = { summary: { id: "session-1", sessionName: "Acme enablement", revis
 describe("Sales Session workspace", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+  it("selects whole participant rows with pointer and keyboard focus", async () => {
+    const user = userEvent.setup();
+    const two = { ...data, participants: [data.participants[0], { ...data.participants[0], id: "p2", name: "Grace Hopper", email: "grace@example.test" }] };
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(two), { status: 200 }));
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    const ada = await screen.findByRole("row", { name: /Ada Lovelace/ });
+    expect(screen.getByRole("complementary", { name: "Participant inspector" }).textContent).toContain("Ada Lovelace");
+    await user.click(screen.getByRole("row", { name: /Grace Hopper/ }));
+    expect(screen.getByRole("complementary", { name: "Participant inspector" }).textContent).toContain("Grace Hopper");
+    ada.focus();
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement?.getAttribute("id")).toBe("participant-p2");
+  });
+
   it("refreshes an estimated workspace, exposes failure support, and retries with a local reread", async () => {
     const user = userEvent.setup();
     let releaseFailure!: () => void;
