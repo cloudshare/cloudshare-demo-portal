@@ -35,7 +35,7 @@ export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, no
 
 export type ParticipantSelectionState = { readonly activeId: string | null; readonly selectedIds: readonly string[]; readonly rangeAnchorId: string | null };
 export type ParticipantSelectionEvent =
-  | { readonly type: "click"; readonly id: string; readonly additive?: boolean; readonly range?: boolean }
+  | { readonly type: "click"; readonly id: string; readonly additive?: boolean; readonly range?: boolean; readonly pageIds?: readonly string[] }
   | { readonly type: "move"; readonly direction: "next" | "previous"; readonly pageIds: readonly string[] }
   | { readonly type: "toggle"; readonly id: string; readonly range?: boolean }
   | { readonly type: "clear" };
@@ -45,15 +45,26 @@ export function reduceParticipantSelection(state: ParticipantSelectionState, eve
   if (event.type === "move") {
     const index = state.activeId ? event.pageIds.indexOf(state.activeId) : -1;
     const next = event.direction === "next" ? Math.min(event.pageIds.length - 1, index + 1) : Math.max(0, index < 0 ? 0 : index - 1);
-    return { ...state, activeId: event.pageIds[next] ?? null, rangeAnchorId: event.pageIds[next] ?? null };
+    return { ...state, activeId: event.pageIds[next] ?? null };
   }
-  const index = event.type === "click" || event.type === "toggle" ? undefined : undefined;
   if (event.type === "toggle" || event.type === "click") {
     const selected = new Set(state.selectedIds);
-    if (event.range) return { activeId: event.id, selectedIds: [...selected, event.id], rangeAnchorId: state.rangeAnchorId ?? event.id };
+    if (event.range && "pageIds" in event) {
+      const anchor = state.rangeAnchorId ?? event.id;
+      const pageIds = event.pageIds ?? [];
+      const start = pageIds.indexOf(anchor), end = pageIds.indexOf(event.id);
+      if (start >= 0 && end >= 0) for (const id of pageIds.slice(Math.min(start, end), Math.max(start, end) + 1)) selected.add(id);
+      return { activeId: event.id, selectedIds: [...selected], rangeAnchorId: anchor };
+    }
     if (event.type === "toggle" || event.additive) selected.has(event.id) ? selected.delete(event.id) : selected.add(event.id);
     else { selected.clear(); selected.add(event.id); }
     return { activeId: event.id, selectedIds: [...selected], rangeAnchorId: state.rangeAnchorId ?? event.id };
   }
   return state;
+}
+
+export function validateParticipantPage(input: { readonly query?: string; readonly offset?: number; readonly limit?: number }): { readonly query: string; readonly offset: number; readonly limit: number } | null {
+  const query = (input.query ?? "").trim();
+  const offset = input.offset ?? 0, limit = input.limit ?? 25;
+  return query.length > 100 || !Number.isInteger(offset) || offset < 0 || offset > 10_000 || !Number.isInteger(limit) || limit < 1 || limit > 50 ? null : { query, offset, limit };
 }

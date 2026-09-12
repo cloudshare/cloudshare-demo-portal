@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eligibleParticipantActions, reduceParticipantSelection, type SalesParticipantWorkspaceRow } from "./sales-participant-workspace";
+import { eligibleParticipantActions, reduceParticipantSelection, validateParticipantPage, type SalesParticipantWorkspaceRow } from "./sales-participant-workspace";
 
 const row: SalesParticipantWorkspaceRow = { id: "p1", participantRevision: "r1", name: "Ada", email: "ada@example.test", invitationStatus: "notSent", participationStatus: "pending", sessionEndsAt: "2026-09-12T12:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false };
 
@@ -9,10 +9,20 @@ describe("sales participant workspace contract", () => {
     expect(eligibleParticipantActions({ ...row, invitationStatus: "sent", activeLaunchCapability: true }, new Date("2026-09-12T13:00:00Z"))).toMatchObject({ resend: false, generate_launch: false, revoke_launch: true });
   });
   it("supports deterministic row navigation and additive selection", () => {
-    let state = { activeId: null, selectedIds: [], rangeAnchorId: null };
+    let state: import("./sales-participant-workspace").ParticipantSelectionState = { activeId: null, selectedIds: [], rangeAnchorId: null };
     state = reduceParticipantSelection(state, { type: "click", id: "p1" });
     state = reduceParticipantSelection(state, { type: "click", id: "p2", additive: true });
+    state = reduceParticipantSelection(state, { type: "click", id: "p3", range: true, pageIds: ["p1", "p2", "p3"] });
     state = reduceParticipantSelection(state, { type: "move", direction: "next", pageIds: ["p1", "p2", "p3"] });
-    expect(state).toMatchObject({ activeId: "p3", selectedIds: ["p1", "p2"], rangeAnchorId: "p3" });
+    expect(state).toMatchObject({ activeId: "p3", selectedIds: ["p1", "p2", "p3"], rangeAnchorId: "p1" });
+  });
+  it("bounds and trims page reads", () => {
+    expect(validateParticipantPage({ query: "  Ada ", offset: 25, limit: 25 })).toEqual({ query: "Ada", offset: 25, limit: 25 });
+    expect(validateParticipantPage({ offset: -1 })).toBeNull();
+    expect(validateParticipantPage({ limit: 51 })).toBeNull();
+  });
+  it("does not treat nested controls as selection events", () => {
+    const state = { activeId: "p1", selectedIds: ["p1"], rangeAnchorId: "p1" };
+    expect(reduceParticipantSelection(state, { type: "clear" })).toEqual({ activeId: null, selectedIds: [], rangeAnchorId: null });
   });
 });
