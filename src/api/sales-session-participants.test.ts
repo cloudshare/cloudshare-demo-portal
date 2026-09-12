@@ -681,16 +681,18 @@ describe("Sales Session participant invitation", () => {
   it("rejects an invite when the selected participant revision is stale", async () => {
     const participant = storedParticipant();
     const inviteParticipants = vi.fn();
+    const save = vi.fn();
     const diagnostics = { record: vi.fn() };
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() },
-      participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() },
+      participants: { list: vi.fn().mockResolvedValue([participant]), save },
       connections: { findByCustomerId: vi.fn() },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn(), listParticipants: vi.fn(), inviteParticipants }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor, body: { ...explicitInviteBody(participant), targets: [{ ...explicitInviteBody(participant).targets[0], participantRevision: "2026-07-19T08:00:00.000Z" }] } });
 
     expect(result).toMatchObject({ status: 409, body: { code: "participant_revision_stale" } });
     expect(inviteParticipants).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
   });
 
   it("rejects an invite when intent and expected status do not match the stored participant", async () => {
