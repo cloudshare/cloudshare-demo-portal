@@ -107,6 +107,15 @@ function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly s
     finally { if (lifecycle.current.active && lifecycle.current.token === token) { requestInFlight.current = false; setRefreshBusy(false); } }
   };
   useEffect(() => { if (revokeOpen) revokeConfirmRef.current?.focus(); }, [revokeOpen]);
+  useEffect(() => {
+    const restoreOrigin = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !inspectorRef.current?.contains(document.activeElement)) return;
+      event.preventDefault();
+      requestAnimationFrame(() => document.getElementById(`participant-${originRow.current ?? ""}`)?.focus());
+    };
+    document.addEventListener("keydown", restoreOrigin, true);
+    return () => document.removeEventListener("keydown", restoreOrigin, true);
+  }, []);
   if (sessionExpired) return <main aria-live="polite"><p>Your session has expired. Sign in again to continue.</p></main>;
   if (error) return <section role="alert" className={styles.error}><h1>Sales Session unavailable</h1><p>{error}</p><a href={queueHref}>Back to Sessions</a></section>;
   if (!workspace) return <section aria-busy="true" aria-label="Sales Session workspace loading" className={styles.loading}>Loading Sales Session…</section>;
