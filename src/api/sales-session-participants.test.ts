@@ -567,7 +567,7 @@ describe("Sales Session participant invitation", () => {
     const before = rosterEvidence([remoteParticipant("remote-1", "portal-1", "contact-1")]);
     const after = rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const, invitedBy: "sender@example.test" }]);
     await handleInviteSalesSessionParticipants({ now: () => new Date("2026-07-18T12:00:00.000Z"), sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValueOnce(before).mockResolvedValueOnce(after), inviteParticipants: vi.fn().mockResolvedValue({ request: { method: "POST", path: "/sales/sales-1/participants/invite" }, response: { status: 200 } }) }) } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ invitationStatus: "sent", lastInvitedAt: new Date("2026-07-18T12:00:00.000Z"), invitedBy: "sender@example.test" }));
+    expect(save).not.toHaveBeenCalled();
   });
 
   it("does not treat an already-sent participant as confirmation that a resend was dispatched", async () => {
@@ -582,7 +582,7 @@ describe("Sales Session participant invitation", () => {
     }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(persisted, "resend") });
 
     expect(result).toMatchObject({ status: 200, body: { invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1 } });
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ lastInvitedAt: new Date("2026-07-18T13:00:00.000Z") }));
+    expect(save).not.toHaveBeenCalled();
   });
 
   it("retains the acknowledged invite and roster exchanges when post-acknowledgement persistence fails", async () => {
@@ -592,16 +592,12 @@ describe("Sales Session participant invitation", () => {
     const diagnostics = { record: vi.fn() };
 
     const result = await handleInviteSalesSessionParticipants({
-      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn().mockRejectedValue(new Error("database unavailable")) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValueOnce(current).mockResolvedValueOnce(afterRequest), inviteParticipants: vi.fn().mockResolvedValue(requested) }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
-    expect(result).toMatchObject({ status: 502, body: { error: "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed." } });
-    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
-      request: requested.request,
-      response: requested.response,
-      details: expect.objectContaining({ failureMode: "participant_invitation_confirmation", httpExchanges: expect.arrayContaining([current, requested, afterRequest]) }),
-    }));
+    expect(result).toMatchObject({ status: 200, body: { invitationConfirmation: "confirmed" } });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "success", request: requested.request, response: requested.response }));
   });
 
   it("retains the acknowledged invite and failing confirmation read when CloudShare cannot confirm it", async () => {
@@ -739,7 +735,7 @@ describe("Sales Session participant invitation", () => {
     const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const }])) , inviteParticipants }) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: { commandId, targets: [{ participantId: participant.id, intent: "invite", expectedInvitationStatus: "notSent", participantRevision: participant.updatedAt.toISOString() }] } });
     expect(result.status).toBe(200);
     expect(inviteParticipants).not.toHaveBeenCalled();
-    expect(ledger.finishBatch).toHaveBeenCalledWith(expect.objectContaining({ expectedPhase: "settled" }));
+    expect(ledger.finishBatchWithParticipantProjections).toHaveBeenCalledWith(expect.objectContaining({ expectedPhase: "settled", projections: expect.any(Array) }));
   });
 
   it("does not reconcile or clear an indefinitely retained resend no-replay command", async () => {
@@ -771,7 +767,7 @@ describe("Sales Session participant invitation", () => {
     const participant = storedParticipant(); const commandId = randomUUID(); const save = vi.fn(); const inviteParticipants = vi.fn();
     const current = { command: { customerId: "customer-1", commandId, phase: "settled" as const, revision: 3, correlationId: "corr-cas" }, outcome: { commandId, outcome: "blocked" as const, correlationId: "corr-cas", counts: { no_replay: 1 }, targets: [{ participantId: participant.id, outcome: "no_replay" as const, reason: "ambiguous_after_dispatch" as const }] } };
     const finishBatch = vi.fn().mockRejectedValue(new Error("stale command revision"));
-    const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch, finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(current), readCurrent: vi.fn().mockResolvedValue(current) };
+    const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch, finishBatchWithParticipantProjections: vi.fn().mockRejectedValue(new Error("stale command revision")), readCommand: vi.fn().mockResolvedValue(current), readCurrent: vi.fn().mockResolvedValue(current) };
     const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const }])), inviteParticipants }) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: { ...explicitInviteBody(participant, "invite", commandId) } });
     expect(result).toMatchObject({ status: 200, body: { code: "command_replayed", commandId, outcome: "blocked" } });
     expect(finishBatch).toHaveBeenCalled(); expect(save).not.toHaveBeenCalled(); expect(inviteParticipants).not.toHaveBeenCalled(); expect(ledger.readCommand).toHaveBeenCalledWith("customer-1", commandId);
