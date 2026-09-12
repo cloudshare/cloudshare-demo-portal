@@ -236,6 +236,27 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     const requested = await prepared.delivery.inviteParticipants!(prepared.session.cloudShareSalesExperienceId, selected.map((participant) => participant!.cloudShareParticipantId));
     acknowledgedInvite = requested;
     completedExchanges.push(requested);
+    if (requested.dispatchOutcome !== undefined && requested.dispatchOutcome !== "acknowledged") {
+      const ambiguous = requested.dispatchOutcome === "ambiguous_after_dispatch";
+      await deps.invitationLedger.finishBatch({
+        customerId: request.customerId,
+        commandId: admittedCommand.commandId,
+        expectedRevision: 2,
+        expectedPhase: "dispatching",
+        phase: "settled",
+        correlationId,
+        targetOutcomes: parsed.data.targets.map((target) => ({
+          participantId: target.participantId,
+          outcome: ambiguous ? "no_replay" as const : "failed_retryable" as const,
+          reason: ambiguous ? "ambiguous_after_dispatch" as const : "provider_rejected" as const,
+        })),
+      });
+      const message = ambiguous
+        ? "Certalis could not prove whether CloudShare received the invitation request. Do not retry until support diagnostics are reviewed."
+        : "CloudShare rejected the native invitation request. Retry after reviewing support diagnostics.";
+      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", message, requested, { failureMode: requested.dispatchOutcome, participantIds, httpExchanges: completedExchanges });
+      return { status: ambiguous ? 502 : 409, body: { code: ambiguous ? "invitation_no_replay" : "provider_rejected", error: message, correlationId } };
+    }
     // The documented endpoint acknowledges with an empty 200 response. Treat a
     // subsequent roster read as the only authority for the participant's
     // invitation state, rather than claiming that acknowledgement is delivery.

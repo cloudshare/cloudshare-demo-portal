@@ -675,4 +675,47 @@ describe("Sales Session participant invitation", () => {
     expect(persisted).not.toContain("private-secret");
     expect(persisted).not.toContain("private-token");
   });
+
+  it("rejects an invite when the selected participant revision is stale", async () => {
+    const participant = storedParticipant();
+    const inviteParticipants = vi.fn();
+    const diagnostics = { record: vi.fn() };
+    const result = await handleInviteSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() },
+      participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() },
+      connections: { findByCustomerId: vi.fn() },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn(), listParticipants: vi.fn(), inviteParticipants }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: { ...explicitInviteBody(participant), targets: [{ ...explicitInviteBody(participant).targets[0], participantRevision: "2026-07-19T08:00:00.000Z" }] } });
+
+    expect(result).toMatchObject({ status: 409, body: { code: "participant_revision_stale" } });
+    expect(inviteParticipants).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invite when intent and expected status do not match the stored participant", async () => {
+    const participant = storedParticipant();
+    const inviteParticipants = vi.fn();
+    const result = await handleInviteSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() },
+      participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() },
+      connections: { findByCustomerId: vi.fn() },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn(), listParticipants: vi.fn(), inviteParticipants }) }, diagnostics: { record: vi.fn() },
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: { ...explicitInviteBody(participant), targets: [{ ...explicitInviteBody(participant).targets[0], intent: "resend", expectedInvitationStatus: "sent" }] } });
+
+    expect(result).toMatchObject({ status: 409, body: { code: "participant_revision_stale" } });
+    expect(inviteParticipants).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid resend precondition for an already-sent participant", async () => {
+    const participant = { ...storedParticipant(), invitationStatus: "sent" as const, lastInvitedAt: new Date("2026-07-18T08:00:00.000Z") };
+    const inviteParticipants = vi.fn().mockResolvedValue({ request: { method: "POST", path: "/invite" }, response: { status: 200 }, dispatchOutcome: "acknowledged" as const });
+    const roster = rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const }]);
+    const result = await handleInviteSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() },
+      participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(roster), inviteParticipants }) }, diagnostics: { record: vi.fn() },
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "resend") });
+
+    expect(result.status).toBe(200);
+    expect(inviteParticipants).toHaveBeenCalledWith("remote-sales-1", ["remote-1"]);
+  });
 });
