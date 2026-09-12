@@ -43,6 +43,7 @@ function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly s
   const selectionAnchor = useRef<string | null>(null);
   const inspectorRef = useRef<HTMLElement>(null);
   const requestInFlight = useRef(false);
+  const participantActionsInFlight = useRef(new Set<string>());
   const lifecycle = useRef({ active: false, token: 0 });
   const shellExpiry = useContext(SalesWorkspaceExpiryContext);
   const areaHeading = useRef<HTMLHeadingElement>(null);
@@ -102,7 +103,6 @@ function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly s
     } catch (cause) { if (lifecycle.current.active && lifecycle.current.token === token) { setRefreshOutcome("failure"); setAutomaticRefresh(cause instanceof Error ? cause.message : "Automatic refresh failed. Retry or open Sales support."); } }
     finally { if (lifecycle.current.active && lifecycle.current.token === token) { requestInFlight.current = false; setRefreshBusy(false); } }
   };
-  useEffect(() => { if (revokeOpen) revokeConfirmRef.current?.focus(); }, [revokeOpen]);
   useEffect(() => { if (revokeOpen) revokeConfirmRef.current?.focus(); }, [revokeOpen]);
   if (sessionExpired) return <main aria-live="polite"><p>Your session has expired. Sign in again to continue.</p></main>;
   if (error) return <section role="alert" className={styles.error}><h1>Sales Session unavailable</h1><p>{error}</p><a href={queueHref}>Back to Sessions</a></section>;
