@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { projectSalesSessionStatus } from "@/domain/sales-session-status";
-import { groupSafeSalesSessionActivity, projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity, type ParticipantActionState, type SalesSessionWorkspaceRead } from "@/domain/sales-session-workspace";
+import { groupSafeSalesSessionActivity, projectParticipantActionState, projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity, type SalesSessionWorkspaceRead } from "@/domain/sales-session-workspace";
 import { projectSalesSessionAccessWindow } from "@/domain/sales-session-access-window";
 
 export interface SalesSessionWorkspaceRepository {
