@@ -104,7 +104,7 @@ describe("SalesParticipantWorkspace", () => {
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("could not be loaded"));
   });
   it("sends the explicit resend contract and retains correlation feedback after reread", async () => {
-    const row = { ...participant, providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, activeLaunchCapability: false, launchOperation: null, environmentAttention: null };
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, activeLaunchCapability: false, launchOperation: null, environmentAttention: null };
     const request = vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === "POST") return new Response(JSON.stringify({ correlationId: "corr-resend", outcome: "completed" }), { status: 200 });
       return new Response(JSON.stringify({ participants: [row], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 });
