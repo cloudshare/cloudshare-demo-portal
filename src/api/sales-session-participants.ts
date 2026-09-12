@@ -246,7 +246,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     completedExchanges.push(capability);
     if (!capability.participantInvitationsEnabled) {
       await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare native invitations are disabled for this Sales Experience.", capability, { failureMode: "native_invitations_disabled", sendInvitations: capability.sendInvitations, participantIds, httpExchanges: completedExchanges });
-      await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "settled", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "failed_retryable" as const, reason: "provider_rejected" as const })) });
+      await deps.invitationLedger.failAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))());
       return { status: 409, body: { code: "native_invitations_disabled", error: "CloudShare has native invitations disabled for this Sales Experience. Enable invitations in CloudShare before sending or resending.", correlationId } };
     }
     // A persisted mapping alone is not sufficient authority to resend an invite:
@@ -259,6 +259,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
       return !remote || participantProperties(remote).certalisSalesParticipantId !== participant!.id || participantProperties(remote).certalisOpportunityContactId !== participant!.opportunityContactId;
     })) {
       await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "One or more selected Sales Participants no longer has its Certalis correlation values in CloudShare. Refresh monitoring and investigate the correlated diagnostics before inviting.", current, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds, httpExchanges: completedExchanges });
+      await deps.invitationLedger.failAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))());
       return { status: 409, body: { error: "One or more selected Sales Participants need attention and cannot be invited. Refresh monitoring and investigate the correlated diagnostics.", correlationId } };
     }
     if (admittedCommand.admissionToken) {
