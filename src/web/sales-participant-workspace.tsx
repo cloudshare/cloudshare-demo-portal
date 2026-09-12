@@ -44,7 +44,7 @@ export function SalesParticipantWorkspace(props: {
     if (active) headingRef.current?.focus();
   }, [active]);
   useEffect(() => {
-    const onPop = () => { const params = new URLSearchParams(window.location.search); setQuery(params.get("participantQuery") ?? ""); setOffset(Number(params.get("participantOffset") ?? 0) || 0); window.scrollTo(0, window.history.state?.participantScrollY ?? 0); };
+    const onPop = () => { const params = new URLSearchParams(window.location.search); setQuery(params.get("participantQuery") ?? ""); setOffset(Number(params.get("participantOffset") ?? 0) || 0); const scrollY = window.history.state?.participantScrollY; if (typeof scrollY === "number" && typeof window.scrollTo === "function") window.scrollTo(0, scrollY); };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
