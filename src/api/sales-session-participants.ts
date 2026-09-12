@@ -199,9 +199,11 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   let admittedCommand: { commandId: string; admissionToken?: string; revision: number } | undefined;
   const admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
   if (admission.kind === "same_command") {
-    const currents = await Promise.all(parsed.data.targets.map((target) => deps.invitationLedger.readCurrent(request.customerId, target.participantId)));
-    if (currents.some((current) => !current || current.command.commandId !== parsed.data.commandId)) return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
-    const first = currents[0]!;
+    const commandState = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
+    if (!commandState) return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
+    const first = commandState;
+    const currents = parsed.data.targets.map(() => commandState);
+    if (first.command.commandId !== parsed.data.commandId || first.command.customerId !== request.customerId) return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
     const outcomes = currents.flatMap((current) => current!.outcome.targets).filter((target, index, all) => all.findIndex((candidate) => candidate.participantId === target.participantId) === index);
     const replayPhase = first.command.phase === "evaluating_confirmation" || first.command.phase === "settled" ? first.command.phase : null;
     if (["confirmation_required", "blocked"].includes(first.outcome.outcome) && parsed.data.targets.every((target) => target.intent === "invite") && replayPhase) {

@@ -11,6 +11,15 @@ const toCommand = (row: { customerId: string; commandId: string; phase: string; 
 };
 
 export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClient): SalesParticipantInvitationLedger {
+  const projectCommand = (row: { customerId: string; commandId: string; phase: string; revision: number; correlationId: string | null; targets: readonly { salesSessionParticipantId: string; outcome: string | null; reason: string | null }[] }): CurrentInvitationState => {
+    const command = toCommand(row);
+    const outcomes = row.targets.map((target) => {
+      if (target.outcome !== null && !invitationOutcomes.includes(target.outcome as never)) throw new Error("invalid persisted invitation outcome");
+      if (target.reason !== null && !safeReasons.includes(target.reason as never)) throw new Error("invalid persisted invitation reason");
+      return { participantId: target.salesSessionParticipantId, outcome: target.outcome as never, reason: target.reason };
+    });
+    return { command, outcome: invitationResult({ commandId: command.commandId, outcomes, correlationId: command.correlationId }) };
+  };
   return {
     async admitBatch(input): Promise<Admission> {
       if (!input.targets.length || new Set(input.targets.map((target) => target.participantId)).size !== input.targets.length) return { kind: "blocked", commandId: input.commandId };
@@ -66,6 +75,15 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
         return toCommand(updated);
       });
     },
-    async readCurrent(customerId, participantId): Promise<CurrentInvitationState | null> { const fence = await prisma.salesParticipantInvitationFence.findUnique({ where: { customerId_salesSessionParticipantId: { customerId, salesSessionParticipantId: participantId } }, include: { command: { include: { targets: true } } } }); if (!fence) return null; const command = toCommand(fence.command); const outcomes = fence.command.targets.map((target) => { if (target.outcome !== null && !invitationOutcomes.includes(target.outcome as never)) throw new Error("invalid persisted invitation outcome"); if (target.reason !== null && !safeReasons.includes(target.reason as never)) throw new Error("invalid persisted invitation reason"); return { participantId: target.salesSessionParticipantId, outcome: target.outcome as never, reason: target.reason }; }); return { command, outcome: invitationResult({ commandId: command.commandId, outcomes, correlationId: command.correlationId }) }; },
+    async readCommand(customerId, commandId): Promise<CurrentInvitationState | null> {
+      const command = await prisma.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId, commandId } }, include: { targets: true } });
+      return command ? projectCommand(command) : null;
+    },
+    async readCurrent(customerId, participantId): Promise<CurrentInvitationState | null> {
+      const fence = await prisma.salesParticipantInvitationFence.findUnique({ where: { customerId_salesSessionParticipantId: { customerId, salesSessionParticipantId: participantId } }, select: { commandId: true } });
+      if (!fence) return null;
+      const command = await prisma.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId, commandId: fence.commandId } }, include: { targets: true } });
+      return command ? projectCommand(command) : null;
+    },
   };
 }

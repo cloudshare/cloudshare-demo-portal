@@ -16,6 +16,9 @@ export interface SalesParticipantInvitationLedger {
   markBatchDispatching(customerId: string, commandId: string, admissionToken: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
   expireAdmitted(customerId: string, commandId: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
   finishBatch(input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[] }): Promise<RevisionedInvitationCommand>;
+  /** Command identity is the replay boundary; unlike participant-current
+   * reads it remains available after individual fences are released. */
+  readCommand(customerId: string, commandId: string): Promise<CurrentInvitationState | null>;
   readCurrent(customerId: string, participantId: string): Promise<CurrentInvitationState | null>;
 }
 export function invitationScopeHash(input: { customerId: string; sessionId: string; targets: readonly InvitationTarget[] }): string {
