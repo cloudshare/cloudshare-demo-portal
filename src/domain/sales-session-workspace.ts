@@ -31,7 +31,7 @@ export function projectSalesParticipantBrowserActionResult(input: { readonly ok:
   const confirmation = input.invitationConfirmation === "confirmed" || input.invitationConfirmation === "pending" ? input.invitationConfirmation : undefined;
   if (!input.ok) return { ok: false, action: input.action, error: typeof input.error === "string" ? input.error : "Participant action failed.", ...(correlationId ? { correlationId } : {}) };
   const launchUrl = typeof input.launchUrl === "string" && /^\/sales\/launch\/[A-Za-z0-9_-]+$/.test(input.launchUrl) ? input.launchUrl as `/sales/launch/${string}` : undefined;
-  if (input.action === "launch" && !launchUrl) return { ok: false, action: input.action, error: "CloudShare returned no valid local launch capability." };
+  if (input.action === "launch" && !launchUrl) return { ok: false, action: input.action, error: "CloudShare returned no valid local launch capability.", ...(correlationId ? { correlationId } : {}) };
   if (input.action === "invite" || input.action === "resend") {
     if (confirmation === undefined || !Number.isInteger(input.confirmedParticipantCount) || Number(input.confirmedParticipantCount) < 0 || !Number.isInteger(input.pendingConfirmationParticipantCount) || Number(input.pendingConfirmationParticipantCount) < 0) return { ok: false, action: input.action, error: "Invitation confirmation was incomplete; do not retry until support reviews the current evidence.", ...(correlationId ? { correlationId } : {}) };
   }

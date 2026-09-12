@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { groupSafeSalesSessionActivity, projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity } from "./sales-session-workspace";
+import { groupSafeSalesSessionActivity, projectParticipantActionState, projectSalesParticipantBrowserActionResult, projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity } from "./sales-session-workspace";
 
 describe("safe Sales Session Activity projection", () => {
+  it("fails closed for invalid launch tokens while retaining correlation and validates pending invitation counts", () => {
+    expect(projectSalesParticipantBrowserActionResult({ ok: true, action: "launch", launchUrl: "/sales/launch/not valid", correlationId: "corr" })).toMatchObject({ ok: false, correlationId: "corr" });
+    expect(projectSalesParticipantBrowserActionResult({ ok: true, action: "invite", invitationConfirmation: "pending", confirmedParticipantCount: 1, pendingConfirmationParticipantCount: 2, correlationId: "corr" })).toMatchObject({ ok: true, invitationConfirmation: "pending", confirmedParticipantCount: 1, pendingConfirmationParticipantCount: 2 });
+    expect(projectParticipantActionState({ access: "open", sendInvitations: "dontSend", concluded: false, hasActiveLaunchLink: false, invitationSent: false })).toMatchObject({ canInvite: false, canLaunch: true, primary: "launch" });
+  });
   const activity = (kind: string, correlationId: string | null, outcome: "success" | "failure", at: string, id = `${kind}-${at}`) => ({ activityId: id, occurredAt: at, kind: kind as never, summary: `${kind} ${outcome}`, outcome, actor: { type: "system" as const }, subject: { type: "sales_demo_session" as const, id: "session-1" }, ...(correlationId ? { correlationId } : {}) });
 
   it("collapses minimized creation plus OAuth evidence into one provision workflow", () => {
