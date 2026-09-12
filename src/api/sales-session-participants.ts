@@ -7,7 +7,7 @@ import type { SalesDemoSession, SalesDemoSessionRepository } from "@/domain/sale
 import type { SalesRecordRepository } from "@/domain/sales-records";
 import type { SalesSessionParticipantRepository } from "@/domain/sales-session-participant";
 import { projectSalesSessionAccessWindow } from "@/domain/sales-session-access-window";
-import { createCloudShareSalesDelivery, type SalesDelivery, type SalesDeliveryEvidence } from "@/integrations/cloudshare/sales-delivery";
+import { createCloudShareSalesDelivery, type SalesDelivery, type SalesDeliveryEvidence, type SalesDeliveryDispatchEvidence } from "@/integrations/cloudshare/sales-delivery";
 import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
 import { projectCloudShareFailureContext, projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import type { EnvironmentStateEvidenceSource } from "@/domain/environment";
@@ -189,7 +189,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) return deliveryResult.response!;
   const prepared = { session: sessionResult.session, delivery: deliveryResult.delivery };
   const correlationId = randomUUID();
-  let acknowledgedInvite: SalesDeliveryEvidence | undefined;
+  let acknowledgedInvite: SalesDeliveryDispatchEvidence | undefined;
   const completedExchanges: Array<{ readonly request: unknown; readonly response: unknown }> = [];
   try {
     if (admittedCommand.admissionToken) await deps.invitationLedger.markBatchDispatching(request.customerId, admittedCommand.commandId, admittedCommand.admissionToken, admittedCommand.revision, (deps.now ?? (() => new Date()))());

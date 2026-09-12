@@ -10,6 +10,7 @@ import { CloudShareResponseError } from "./errors";
 export interface SalesDeliveryRequestEvidence extends CloudShareRequestDiagnostics {}
 export interface SalesDeliveryResponseEvidence extends CloudShareResponseDiagnostics {}
 export interface SalesDeliveryEvidence { readonly request: SalesDeliveryRequestEvidence; readonly response: SalesDeliveryResponseEvidence; readonly exchangeId?: string; }
+export type SalesDeliveryDispatchEvidence = SalesDeliveryEvidence & ({ readonly dispatchOutcome: "not_dispatched" | "provider_rejected" | "ambiguous_after_dispatch" } | { readonly dispatchOutcome: "acknowledged" });
 export interface CreateSalesDemoSessionInput {
   readonly name: string;
   readonly type: SalesExperienceType;
@@ -68,7 +69,7 @@ export interface SalesDelivery {
    * from the pre-correlation roster. */
   updateParticipantCorrelation(salesExperienceId: string, participantId: string, input: Pick<SalesParticipantInput, "firstName" | "lastName" | "customProperties">): Promise<SalesDeliveryEvidence>;
   listParticipants(salesExperienceId: string): Promise<{ readonly participants: readonly SalesParticipant[] } & SalesDeliveryEvidence>;
-  inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryEvidence>;
+  inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryDispatchEvidence>;
   createSponsoredLink(salesExperienceId: string, participant: Pick<SalesParticipantInput, "firstName" | "lastName" | "email">): Promise<{ readonly loginUrl: string } & SalesDeliveryEvidence>;
 }
 export interface SalesProContact { readonly name?: string; readonly email: string; readonly type: "mainSalesPro" | "salesPro"; }
@@ -367,7 +368,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async inviteParticipants(salesExperienceId, participantIds) {
       const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });
-      return participantEvidence(evidence);
+      return { ...participantEvidence(evidence), dispatchOutcome: "acknowledged" as const };
     },
     async createSponsoredLink(salesExperienceId, participant) {
       const { data, evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/sponsored-link`, body: { ...participant, preRegisteredStudent: false }, schema: sponsoredLinkSchema });
