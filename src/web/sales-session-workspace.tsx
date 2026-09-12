@@ -276,6 +276,9 @@ function SalesSessionWorkspaceState({
     Array.from(document.querySelectorAll<HTMLElement>("tr[data-participant-id]")).find((row) => row.dataset.participantId === participantSelection.activeId)?.focus();
   }, [area, participantInspectorOpen, participantSelection.activeId]);
   useEffect(() => {
+    if (participantInspectorOpen) participantInspectorRef.current?.focus();
+  }, [participantInspectorOpen]);
+  useEffect(() => {
     if (
       area === "activity" ||
       !workspace ||
@@ -820,7 +823,7 @@ function SalesSessionWorkspaceState({
         </section>
       ) : null}
       {area === "participants" && participantInspectorOpen && activeParticipant ? (
-        <aside ref={participantInspectorRef} className={styles.panel} aria-label="Participant inspector" onKeyDown={(event) => {
+        <aside ref={participantInspectorRef} tabIndex={-1} className={styles.panel} aria-label="Participant inspector" onKeyDown={(event) => {
           if (event.key === "Escape") { event.preventDefault(); setParticipantInspectorOpen(false); announceParticipant(`Inspector closed for ${activeParticipant.name}.`); }
         }}>
           <div className={styles.panelHeading}><div><h2>Participant inspector</h2><p>{activeParticipant.name} · {activeParticipant.email}</p></div><button type="button" onClick={() => setParticipantInspectorOpen(false)}>Close</button></div>
