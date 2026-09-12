@@ -103,4 +103,20 @@ describe("SalesParticipantWorkspace", () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => { throw new Error("network down"); }} />);
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("could not be loaded"));
   });
+  it("sends the explicit resend contract and retains correlation feedback after reread", async () => {
+    const row = { ...participant, providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, activeLaunchCapability: false, launchOperation: null, environmentAttention: null };
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") return new Response(JSON.stringify({ correlationId: "corr-resend", outcome: "completed" }), { status: 200 });
+      return new Response(JSON.stringify({ participants: [row], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 });
+    });
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await screen.findByRole("row", { name: /Ada Lovelace/ });
+    await user.click(screen.getByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Resend" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("corr-resend"));
+    const call = request.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(call?.[0]).toContain("/participants/invite");
+    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ targets: [{ participantId: "p1", intent: "resend", expectedInvitationStatus: "sent", participantRevision: participant.participantRevision }] });
+  });
 });
