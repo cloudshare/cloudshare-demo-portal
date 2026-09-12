@@ -61,8 +61,8 @@ function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly s
     const token = lifecycle.current.token;
     void authenticatedRequest(token)(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/page?offset=0&limit=25`, { cache: "no-store" }).then(async (response) => {
       const body = await response.json() as ParticipantPage;
-      if (response.ok && lifecycle.current.active && lifecycle.current.token === token) setParticipantPage(body);
-    });
+      if (response.ok && Array.isArray(body.participants) && lifecycle.current.active && lifecycle.current.token === token) setParticipantPage(body);
+    }).catch(() => undefined);
   }, [area, authenticatedRequest, sessionId]);
   useEffect(() => {
     if (area === "activity" || !workspace || workspace.summary.experience.freshness === "fresh" || requestInFlight.current) return;
