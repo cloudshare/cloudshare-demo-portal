@@ -39,7 +39,6 @@ function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly s
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<Set<string>>(new Set());
   const [participantFeedback, setParticipantFeedback] = useState<Record<string, { message: string; correlationId?: string; launchUrl?: string; ok: boolean }>>({});
   const [revokeOpen, setRevokeOpen] = useState(false);
-  const revokeCancelRef = useRef<HTMLButtonElement>(null);
   const revokeConfirmRef = useRef<HTMLButtonElement>(null);
   const revokeTriggerRef = useRef<HTMLButtonElement>(null);
   const originRow = useRef<string | null>(null);
