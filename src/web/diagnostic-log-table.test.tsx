@@ -57,6 +57,7 @@ describe("DiagnosticLogTable Support hints", () => {
   it("derives specific v4 Sales labels from retained Trial request evidence", () => {
     const { container } = render(<DiagnosticLogTable entries={[
       { ...baseEntry, id: "trial-sales", operation: "sales_trial.cloudshare.request", request: { method: "POST", path: "/v4/sales" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
+      { ...baseEntry, id: "trial-sales-detail", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/v4/sales/sales-private" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
       { ...baseEntry, id: "trial-participants", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/v4/sales/sales-private/participants" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
       { ...baseEntry, id: "trial-participant-detail", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/v4/sales/sales-private/participants/participant-private" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
       { ...baseEntry, id: "trial-participant-invite", operation: "sales_trial.cloudshare.request", request: { method: "POST", path: "/v4/sales/sales-private/participants/invite" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
@@ -65,6 +66,7 @@ describe("DiagnosticLogTable Support hints", () => {
       { ...baseEntry, id: "trial-unknown", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/v4/sales/sales-private/unknown-route" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
     ]} expandedDiagnosticId={null} onToggleExpanded={() => undefined} />);
     expect(screen.getByText("cloudshare.v4.sales")).toBeTruthy();
+    expect(screen.getByText("cloudshare.v4.sales.detail")).toBeTruthy();
     expect(screen.getByText("cloudshare.v4.sales.participants")).toBeTruthy();
     expect(screen.getByText("cloudshare.v4.sales.participants.detail")).toBeTruthy();
     expect(screen.getByText("cloudshare.v4.sales.participants.invite")).toBeTruthy();
