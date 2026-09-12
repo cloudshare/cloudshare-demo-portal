@@ -71,6 +71,17 @@ export function reduceParticipantSelection(state: ParticipantSelectionState, eve
   return state;
 }
 
+/** Keep selection local to the currently rendered page. When the focused row
+ * disappears, focus the first visible row so keyboard users never lose the
+ * workspace's logical focus. */
+export function pruneParticipantSelection(state: ParticipantSelectionState, pageIds: readonly string[]): ParticipantSelectionState {
+  const visible = new Set(pageIds);
+  const selectedIds = state.selectedIds.filter((id) => visible.has(id));
+  const rangeAnchorId = state.rangeAnchorId && visible.has(state.rangeAnchorId) ? state.rangeAnchorId : null;
+  const activeId = state.activeId && visible.has(state.activeId) ? state.activeId : pageIds[0] ?? null;
+  return { activeId, selectedIds, rangeAnchorId };
+}
+
 export function validateParticipantPage(input: { readonly query?: string; readonly offset?: number; readonly limit?: number }): { readonly query: string; readonly offset: number; readonly limit: number } | null {
   const query = (input.query ?? "").trim();
   const offset = input.offset ?? 0, limit = input.limit ?? 25;

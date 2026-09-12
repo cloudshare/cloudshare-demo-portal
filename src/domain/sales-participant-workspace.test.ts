@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eligibleParticipantActions, reduceParticipantSelection, validateParticipantPage, type SalesParticipantWorkspaceRow } from "./sales-participant-workspace";
+import { eligibleParticipantActions, pruneParticipantSelection, reduceParticipantSelection, validateParticipantPage, type SalesParticipantWorkspaceRow } from "./sales-participant-workspace";
 
 const row: SalesParticipantWorkspaceRow = { id: "p1", participantRevision: "r1", name: "Ada", email: "ada@example.test", invitationStatus: "notSent", participationStatus: "pending", sessionEndsAt: "2026-09-12T12:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environment: { value: null, source: "not_observed" }, environmentAttention: null };
 
@@ -25,5 +25,11 @@ describe("sales participant workspace contract", () => {
     const state = { activeId: "p1", selectedIds: ["p1"], rangeAnchorId: "p1" };
     expect(reduceParticipantSelection(state, { type: "nested_control", id: "p1", control: "button" })).toBe(state);
     expect(reduceParticipantSelection(state, { type: "nested_control", id: "p1", control: "input" })).toBe(state);
+  });
+  it("prunes selection and anchor when the visible page changes", () => {
+    expect(pruneParticipantSelection({ activeId: "p2", selectedIds: ["p1", "p2", "gone"], rangeAnchorId: "gone" }, ["p1", "p2"]))
+      .toEqual({ activeId: "p2", selectedIds: ["p1", "p2"], rangeAnchorId: null });
+    expect(pruneParticipantSelection({ activeId: "gone", selectedIds: ["gone"], rangeAnchorId: "gone" }, ["p1"]))
+      .toEqual({ activeId: "p1", selectedIds: [], rangeAnchorId: null });
   });
 });
