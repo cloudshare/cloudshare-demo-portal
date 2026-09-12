@@ -533,7 +533,7 @@ describe("Sales Session workspace", () => {
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
     await screen.findByRole("button", { name: "Revoke launch link" });
     const trigger = screen.getByRole("button", { name: "Revoke launch link" }); await userEvent.setup().click(trigger);
-    expect(screen.getByRole("dialog")).not.toBeNull(); await userEvent.setup().click(screen.getByRole("button", { name: "Revoke", exact: true }));
+    expect(screen.getByRole("dialog")).not.toBeNull(); await userEvent.setup().click(screen.getByRole("button", { name: /^Revoke$/ }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(true));
     expect(document.activeElement).toBe(trigger);
   });
