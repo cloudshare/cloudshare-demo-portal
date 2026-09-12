@@ -1,0 +1,18 @@
+import { describe, expect, it } from "vitest";
+import { eligibleParticipantActions, reduceParticipantSelection, type SalesParticipantWorkspaceRow } from "./sales-participant-workspace";
+
+const row: SalesParticipantWorkspaceRow = { id: "p1", participantRevision: "r1", name: "Ada", email: "ada@example.test", invitationStatus: "notSent", participationStatus: "pending", sessionEndsAt: "2026-09-12T12:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false };
+
+describe("sales participant workspace contract", () => {
+  it("keeps invitation and launch eligibility independent", () => {
+    expect(eligibleParticipantActions(row, new Date("2026-09-12T11:00:00Z"))).toMatchObject({ invite: true, generate_launch: true, revoke_launch: false });
+    expect(eligibleParticipantActions({ ...row, invitationStatus: "sent", activeLaunchCapability: true }, new Date("2026-09-12T13:00:00Z"))).toMatchObject({ resend: false, generate_launch: false, revoke_launch: true });
+  });
+  it("supports deterministic row navigation and additive selection", () => {
+    let state = { activeId: null, selectedIds: [], rangeAnchorId: null };
+    state = reduceParticipantSelection(state, { type: "click", id: "p1" });
+    state = reduceParticipantSelection(state, { type: "click", id: "p2", additive: true });
+    state = reduceParticipantSelection(state, { type: "move", direction: "next", pageIds: ["p1", "p2", "p3"] });
+    expect(state).toMatchObject({ activeId: "p3", selectedIds: ["p1", "p2"], rangeAnchorId: "p3" });
+  });
+});
