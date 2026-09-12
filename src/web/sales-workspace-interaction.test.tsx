@@ -666,9 +666,9 @@ describe("SalesWorkspace interaction", () => {
     await user.click(screen.getByRole("button", { name: "Apply Filters" }));
     expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=support&operation=cloudshare.request");
     await waitFor(() => expect(diagnosticsRequests.at(-1)?.searchParams.get("operation")).toBe("cloudshare.request"));
-    view.rerender(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "support", operation: "cloudshare.request" }} />);
-    expect((await screen.findByLabelText("Operation")) as HTMLInputElement).toHaveProperty("value", "cloudshare.request");
-    await waitFor(() => expect(diagnosticsRequests.at(-1)?.searchParams.get("operation")).toBe("cloudshare.request"));
+    view.rerender(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "support", operation: "cloudshare.oauth.token" }} />);
+    expect((await screen.findByLabelText("Operation")) as HTMLInputElement).toHaveProperty("value", "cloudshare.oauth.token");
+    await waitFor(() => expect(diagnosticsRequests.at(-1)?.searchParams.get("operation")).toBe("cloudshare.oauth.token"));
   });
 
   it("keeps a successfully-created needs-attention Session non-retryable and linked to Sales Support", async () => {
