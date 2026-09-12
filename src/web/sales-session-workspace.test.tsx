@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import React, { StrictMode } from "react";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionWorkspace } from "./sales-session-workspace";
@@ -546,9 +546,14 @@ describe("Participant workspace seam matrix", () => {
     const user = userEvent.setup(); vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(roster), { status: 200 }));
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
     const rows = await screen.findAllByRole("row"); const r = rows.slice(1);
-    await user.click(r[0]); await user.click(r[2], { ctrlKey: true }); expect(r[2].getAttribute("aria-selected")).toBe("true");
-    await user.click(r[3], { shiftKey: true }); expect(r[3].getAttribute("aria-selected")).toBeDefined();
-    r[0].focus(); await user.keyboard(" "); r[3].focus(); await user.keyboard("{Shift>}{ }{/Shift}"); expect(r[1].getAttribute("aria-selected")).toBeDefined();
+    fireEvent.click(r[0]); fireEvent.click(r[2], { ctrlKey: true });
+    expect(r.map((row) => row.getAttribute("aria-selected"))).toEqual(["true", "false", "true", "false"]);
+    fireEvent.click(r[3], { shiftKey: true });
+    expect(r.map((row) => row.getAttribute("aria-selected"))).toEqual(["false", "false", "true", "true"]);
+    r[0].focus(); await user.keyboard(" ");
+    expect(r.map((row) => row.getAttribute("aria-selected"))).toEqual(["true", "false", "true", "true"]);
+    r[3].focus(); await user.keyboard("{Shift>}{ }{/Shift}");
+    expect(r.map((row) => row.getAttribute("aria-selected"))).toEqual(["true", "true", "true", "true"]);
   });
   it("resets page on search and preserves durable failed mutation feedback", async () => {
     const user = userEvent.setup(); const calls: string[] = []; vi.spyOn(window, "fetch").mockImplementation(async (input, init) => { calls.push(String(input)); if (init?.method === "POST") return new Response(JSON.stringify({ error: "Unavailable", correlationId: "corr-fail" }), { status: 503 }); return new Response(JSON.stringify({ ...roster, participantPage: { total: 40, hasMore: true } }), { status: 200 }); });
