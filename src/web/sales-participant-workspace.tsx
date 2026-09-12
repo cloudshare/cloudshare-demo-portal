@@ -59,8 +59,11 @@ export function SalesParticipantWorkspace(props: {
   }, [active, offset, query, selection]);
   useEffect(() => {
     if (!active) return;
+    let disposed = false;
     void request(href(), { cache: "no-store" }).then(async (response) => {
+      if (disposed) return;
       const body = (await response.json()) as ParticipantPage;
+      if (disposed) return;
       if (!response.ok || !Array.isArray(body.participants)) { setFeedback((current) => ({ ...current, _announcement: "Participant roster could not be loaded; retry or open Support." })); return; }
       setPage(body);
       setSelection((current) => {
@@ -70,7 +73,8 @@ export function SalesParticipantWorkspace(props: {
         }
         return next;
       });
-    }).catch(() => setFeedback((messages) => ({ ...messages, _announcement: "Participant roster could not be loaded; retry or open Support." })));
+    }).catch(() => { if (!disposed) setFeedback((messages) => ({ ...messages, _announcement: "Participant roster could not be loaded; retry or open Support." })); });
+    return () => { disposed = true; };
   }, [active, href, request]);
   useEffect(() => {
     if (inspectorOpen) inspectorRef.current?.focus();
