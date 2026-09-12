@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { createPrismaSalesParticipantInvitationLedger } from "./prisma-sales-participant-invitation-ledger";
 
-const prisma = new PrismaClient();
+const databasePath = path.join(os.tmpdir(), `cloudshare-stage3-ledger-${randomUUID()}.sqlite`);
+fs.copyFileSync(path.resolve("prisma/test.db"), databasePath);
+const prisma = new PrismaClient({ datasources: { db: { url: `file:${databasePath.replaceAll("\\", "/")}` } } });
 const customers = new Set<string>();
-afterAll(() => prisma.$disconnect());
+afterAll(async () => { await prisma.$disconnect(); fs.rmSync(databasePath, { force: true }); });
 afterEach(async () => { for (const id of customers) await prisma.customer.delete({ where: { id } }).catch(() => undefined); customers.clear(); });
 
 async function fixture() {
