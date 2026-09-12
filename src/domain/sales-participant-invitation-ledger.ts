@@ -19,7 +19,20 @@ export interface SalesParticipantInvitationLedger {
   readCurrent(customerId: string, participantId: string): Promise<CurrentInvitationState | null>;
 }
 export function invitationScopeHash(input: { customerId: string; sessionId: string; targets: readonly InvitationTarget[] }): string {
-  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+  // Canonicalize the scope deliberately. Callers pass admission metadata
+  // (`commandId`, `at`) in the same object at runtime, but neither belongs to
+  // the idempotency scope: a retried command must compare only the Customer,
+  // Session, and ordered target intent/preconditions.
+  return createHash("sha256").update(JSON.stringify({
+    customerId: input.customerId,
+    sessionId: input.sessionId,
+    targets: input.targets.map((target) => ({
+      participantId: target.participantId,
+      intent: target.intent,
+      expectedInvitationStatus: target.expectedInvitationStatus,
+      participantRevision: target.participantRevision,
+    })),
+  })).digest("hex");
 }
 export function invitationResult(input: { commandId: string; outcomes: readonly (InvitationTargetOutcome | { readonly participantId: string; readonly outcome: null; readonly reason: null })[]; correlationId: string | null }) {
   for (const target of input.outcomes) if (target.outcome !== null && !invitationOutcomes.includes(target.outcome)) throw new Error("invalid invitation outcome");

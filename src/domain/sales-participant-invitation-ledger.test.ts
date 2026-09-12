@@ -9,6 +9,12 @@ describe("Sales Participant invitation ledger", () => {
     expect(invitationScopeHash(base)).not.toBe(invitationScopeHash({ ...base, targets: [{ ...base.targets[0], intent: "resend" }] }));
   });
 
+  it("does not bind idempotency scope to admission metadata", () => {
+    const base = { customerId: "c1", sessionId: "s1", targets: [{ participantId: "p1", intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: "r1" }] };
+    expect(invitationScopeHash({ ...base, commandId: "command-a", at: new Date("2026-01-01T00:00:00Z") } as never))
+      .toBe(invitationScopeHash({ ...base, commandId: "command-b", at: new Date("2026-01-02T00:00:00Z") } as never));
+  });
+
   it("reconstructs a closed safe aggregate and rejects arbitrary evidence", () => {
     const outcomes: InvitationTargetOutcome[] = [
       { participantId: "p1", outcome: "confirmed", reason: null },
