@@ -8,17 +8,16 @@ import type { SalesParticipantInvitationLedger } from "@/domain/sales-participan
 const fixedNow = () => new Date("2026-07-19T08:00:00.000Z");
 const handleRegisterSalesSessionParticipants: typeof registerSalesSessionParticipants = (deps, request) => registerSalesSessionParticipants({ now: fixedNow, ...deps }, request);
 const handleListSalesSessionParticipants: typeof listSalesSessionParticipants = (deps, request) => listSalesSessionParticipants({ now: fixedNow, ...deps }, request);
-const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof inviteSalesSessionParticipants>[0], "invitationLedger"> & { invitationLedger?: SalesParticipantInvitationLedger }, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
-  const body = request.body as { participantIds?: string[] } | undefined;
-  const normalizedBody = body?.participantIds ? { commandId: randomUUID(), targets: body.participantIds.map((participantId) => ({ participantId, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: new Date().toISOString() })) } : request.body;
-  const invitationLedger: SalesParticipantInvitationLedger = deps.invitationLedger ?? {
+const explicitInviteBody = (participant: ReturnType<typeof storedParticipant>, intent: "invite" | "resend" = "invite", commandId = randomUUID()) => ({ commandId, targets: [{ participantId: participant.id, intent, expectedInvitationStatus: intent === "invite" ? "notSent" as const : "sent" as const, participantRevision: participant.updatedAt.toISOString() }] });
+const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof inviteSalesSessionParticipants>[0], "invitationLedger">, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
+  const invitationLedger: SalesParticipantInvitationLedger = {
     admitBatch: vi.fn(async ({ commandId }) => ({ kind: "admitted" as const, commandId, admissionToken: "test-admission-token" })),
     markBatchDispatching: vi.fn(async (customerId, commandId) => ({ customerId, commandId, phase: "dispatching" as const, revision: 2, correlationId: null })),
     expireAdmitted: vi.fn(async (customerId, commandId) => ({ customerId, commandId, phase: "settled" as const, revision: 2, correlationId: null })),
     finishBatch: vi.fn(async ({ customerId, commandId, phase, correlationId }) => ({ customerId, commandId, phase, revision: 3, correlationId })),
     readCurrent: vi.fn(async () => null),
   };
-  return inviteSalesSessionParticipants({ now: fixedNow, ...deps, invitationLedger } as Parameters<typeof inviteSalesSessionParticipants>[0], { ...request, body: normalizedBody });
+  return inviteSalesSessionParticipants({ now: fixedNow, ...deps, invitationLedger } as Parameters<typeof inviteSalesSessionParticipants>[0], request);
 };
 
 const actor = { type: "admin" as const, id: "admin-1", email: "sales-admin@certalis.demo" };
@@ -44,7 +43,7 @@ const remoteParticipant = (id: string, portalId?: string, contactId?: string, em
   id, firstName: "Ada", lastName: "Lovelace", email, invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, environmentId: null, envStatus: null,
   customProperties: portalId && contactId ? { certalisSalesParticipantId: portalId, certalisOpportunityContactId: contactId } : {},
 });
-const storedParticipant = (id = "portal-1", contactId = "contact-1", cloudShareParticipantId = "remote-1") => ({ id, customerId: "customer-1", salesDemoSessionId: "session-1", opportunityContactId: contactId, cloudShareParticipantId, invitationStatus: "notSent" as const, lastInvitedAt: null as Date | null, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, cloudShareEnvironmentId: null, environmentStatus: null, lastReconciledAt: new Date(), createdAt: new Date(), updatedAt: new Date() });
+const storedParticipant = (id = "portal-1", contactId = "contact-1", cloudShareParticipantId = "remote-1") => ({ id, customerId: "customer-1", salesDemoSessionId: "session-1", opportunityContactId: contactId, cloudShareParticipantId, invitationStatus: "notSent" as const, lastInvitedAt: null as Date | null, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, cloudShareEnvironmentId: null, environmentStatus: null, lastReconciledAt: new Date("2026-07-17T08:00:00.000Z"), createdAt: new Date("2026-07-17T08:00:00.000Z"), updatedAt: new Date("2026-07-17T08:00:00.000Z") });
 
 describe("Sales Session participant invitation", () => {
   it("blocks participant registration at the exact session end before integration setup", async () => {
@@ -84,7 +83,7 @@ describe("Sales Session participant invitation", () => {
       now: () => new Date("2026-07-17T10:00:00.000Z"),
       sessions: { findById: vi.fn().mockResolvedValue({ ...session, start: "2026-07-17T09:00", end: "2026-07-17T10:00" }) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId },
       deliveryFactory: { forConnection }, diagnostics, audit,
-    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
     expect(result).toMatchObject({ status: 409, body: { code: "sales_session_ended", error: "Native invitations are unavailable after this Sales Session has ended.", correlationId: expect.any(String) } });
     expect(readParticipantInvitationCapability).not.toHaveBeenCalled();
@@ -105,14 +104,14 @@ describe("Sales Session participant invitation", () => {
       now: () => new Date("2026-07-17T08:00:00.000Z"),
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability, listParticipants: vi.fn().mockResolvedValue(roster), inviteParticipants: vi.fn().mockResolvedValue({ request: { method: "POST", path: "/invite" }, response: { status: 200 } }) }) },
-    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
     expect(result.status).toBe(200);
     expect(readParticipantInvitationCapability).toHaveBeenCalledOnce();
   });
   it("rejects a mixed concluded and eligible invite atomically before CloudShare", async () => {
     const readParticipantInvitationCapability = vi.fn(); const listParticipants = vi.fn(); const inviteParticipants = vi.fn(); const forConnection = vi.fn();
-    const result = await handleInviteSalesSessionParticipants({ now: () => new Date("2026-07-19T09:30:00.000Z"), sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant("eligible"), { ...storedParticipant("concluded", "contact-2", "remote-2"), participationStatus: "concluded" }]), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["eligible", "concluded"] } });
+    const result = await handleInviteSalesSessionParticipants({ now: () => new Date("2026-07-19T09:30:00.000Z"), sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant("eligible"), { ...storedParticipant("concluded", "contact-2", "remote-2"), participationStatus: "concluded" }]), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: { ...explicitInviteBody(storedParticipant("eligible")), targets: [explicitInviteBody(storedParticipant("eligible")).targets[0], { participantId: "concluded", intent: "invite", expectedInvitationStatus: "notSent", participantRevision: storedParticipant("concluded", "contact-2", "remote-2").updatedAt.toISOString() }] } });
     expect(result).toMatchObject({ status: 409, body: { code: "sales_participant_concluded", error: "Concluded Sales Participants cannot receive native invitations.", correlationId: expect.any(String) } });
     expect(forConnection).not.toHaveBeenCalled(); expect(readParticipantInvitationCapability).not.toHaveBeenCalled(); expect(listParticipants).not.toHaveBeenCalled(); expect(inviteParticipants).not.toHaveBeenCalled();
   });
@@ -511,7 +510,7 @@ describe("Sales Session participant invitation", () => {
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1", "portal-1", "contact-1")])), inviteParticipants }) },
-    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
     expect(result.status).toBe(200);
     expect(inviteParticipants).toHaveBeenCalledWith("remote-sales-1", ["remote-1"]);
@@ -526,7 +525,7 @@ describe("Sales Session participant invitation", () => {
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: readSession, listParticipants: vi.fn(), inviteParticipants }) }, diagnostics,
-    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
     expect(result).toMatchObject({ status: 409, body: { code: "native_invitations_disabled", error: "CloudShare has native invitations disabled for this Sales Experience. Enable invitations in CloudShare before sending or resending." } });
     expect(inviteParticipants).not.toHaveBeenCalled();
@@ -548,7 +547,7 @@ describe("Sales Session participant invitation", () => {
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants, inviteParticipants }) }, diagnostics,
-    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
     expect(result).toMatchObject({ status: 200, body: { invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1 } });
     expect(listParticipants).toHaveBeenCalledTimes(2);
@@ -562,7 +561,7 @@ describe("Sales Session participant invitation", () => {
     const save = vi.fn();
     const before = rosterEvidence([remoteParticipant("remote-1", "portal-1", "contact-1")]);
     const after = rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const, invitedBy: "sender@example.test" }]);
-    await handleInviteSalesSessionParticipants({ now: () => new Date("2026-07-18T12:00:00.000Z"), sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValueOnce(before).mockResolvedValueOnce(after), inviteParticipants: vi.fn().mockResolvedValue({ request: { method: "POST", path: "/sales/sales-1/participants/invite" }, response: { status: 200 } }) }) } }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+    await handleInviteSalesSessionParticipants({ now: () => new Date("2026-07-18T12:00:00.000Z"), sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValueOnce(before).mockResolvedValueOnce(after), inviteParticipants: vi.fn().mockResolvedValue({ request: { method: "POST", path: "/sales/sales-1/participants/invite" }, response: { status: 200 } }) }) } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ invitationStatus: "sent", lastInvitedAt: new Date("2026-07-18T12:00:00.000Z"), invitedBy: "sender@example.test" }));
   });
 
@@ -574,7 +573,7 @@ describe("Sales Session participant invitation", () => {
     const result = await handleInviteSalesSessionParticipants({
       now: () => new Date("2026-07-18T13:00:00.000Z"), sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant(), invitationStatus: "sent", lastInvitedAt: new Date("2026-07-17T13:00:00.000Z") }]), save }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants, inviteParticipants: vi.fn().mockResolvedValue({ request: { method: "POST", path: "/v4/sales/remote-sales-1/participants/invite" }, response: { status: 200 } }) }) },
-    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
     expect(result).toMatchObject({ status: 200, body: { invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1 } });
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ lastInvitedAt: new Date("2026-07-18T13:00:00.000Z") }));
@@ -589,7 +588,7 @@ describe("Sales Session participant invitation", () => {
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn().mockRejectedValue(new Error("database unavailable")) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValueOnce(current).mockResolvedValueOnce(afterRequest), inviteParticipants: vi.fn().mockResolvedValue(requested) }) }, diagnostics,
-    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
     expect(result).toMatchObject({ status: 502, body: { error: "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed." } });
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
@@ -609,7 +608,7 @@ describe("Sales Session participant invitation", () => {
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValueOnce(current).mockRejectedValueOnce(confirmationFailure), inviteParticipants: vi.fn().mockResolvedValue(requested) }) }, diagnostics,
-    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
     expect(result).toMatchObject({ status: 502, body: { error: "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed." } });
     expect(save).not.toHaveBeenCalled();
@@ -628,7 +627,7 @@ describe("Sales Session participant invitation", () => {
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(capability), listParticipants: vi.fn().mockResolvedValue(roster), inviteParticipants }) }, diagnostics,
-    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
     expect(result.status).toBe(409);
     expect(inviteParticipants).not.toHaveBeenCalled();

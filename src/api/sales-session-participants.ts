@@ -182,6 +182,19 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "sales_participant_concluded", participantIds }, {}, false);
     return { status: 409, body: { code: "sales_participant_concluded", error, correlationId } };
   }
+  const preconditionMismatch = parsed.data.targets.some((target, index) => {
+    const participant = selected[index]!;
+    return participant.invitationStatus !== target.expectedInvitationStatus
+      || participant.updatedAt.toISOString() !== target.participantRevision
+      || (target.intent === "invite" && participant.invitationStatus !== "notSent")
+      || (target.intent === "resend" && participant.invitationStatus !== "sent");
+  });
+  if (preconditionMismatch) {
+    const correlationId = randomUUID();
+    const error = "One or more selected Sales Participants changed. Refresh the participant workspace before retrying.";
+    await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "participant_revision_stale", participantIds }, {}, false);
+    return { status: 409, body: { code: "participant_revision_stale", error, correlationId } };
+  }
   let admittedCommand: { commandId: string; admissionToken?: string; revision: number } | undefined;
   const admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
   if (admission.kind === "same_command") {
