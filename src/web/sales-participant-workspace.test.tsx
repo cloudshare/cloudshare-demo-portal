@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import React from "react";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesParticipantWorkspace } from "./sales-participant-workspace";
@@ -55,16 +55,30 @@ describe("SalesParticipantWorkspace", () => {
     await screen.findByRole("table", { name: "Participant roster" });
     const getRows = () => screen.getAllByRole("row").slice(1);
     await user.click(getRows()[0]);
-    await user.click(getRows()[1], { ctrlKey: true });
-    await waitFor(() => expect(getRows()[1].getAttribute("data-selected")).toBe("true"));
-    await user.click(getRows()[2], { metaKey: true });
-    await waitFor(() => expect(getRows()[2].getAttribute("data-selected")).toBe("true"));
+    await waitFor(() => expect(new URL(window.location.href).searchParams.get("participantAnchor")).toBe("p1"));
+    fireEvent.click(getRows()[1], { ctrlKey: true });
+    fireEvent.click(getRows()[2], { metaKey: true });
+    await waitFor(() => {
+      expect(getRows().every((row) => row.getAttribute("data-selected") === "true")).toBe(true);
+      expect(new URL(window.location.href).searchParams.get("participantAnchor")).toBe("p1");
+    });
+
+    // A plain click resets the set but preserves the established anchor.
     await user.click(getRows()[0]);
-    await user.click(getRows()[2], { shiftKey: true });
-    await waitFor(() => expect(getRows()[2].getAttribute("data-selected")).toBe("true"));
-    getRows()[0].focus();
+    fireEvent.click(getRows()[2], { shiftKey: true });
+    await waitFor(() => {
+      expect(getRows().every((row) => row.getAttribute("data-selected") === "true")).toBe(true);
+      const url = new URL(window.location.href);
+      expect(url.searchParams.get("participantActive")).toBe("p3");
+      expect(url.searchParams.get("participantAnchor")).toBe("p1");
+      expect(url.searchParams.get("participantSelected")).toBe("p1,p2,p3");
+    });
+
+    // Keyboard range selection uses the same anchor and selects the full range.
+    await user.click(getRows()[0]);
+    getRows()[2].focus();
     await user.keyboard("{Shift>}{ }{/Shift}");
-    expect(getRows()[0]).toBeTruthy();
+    await waitFor(() => expect(getRows().every((row) => row.getAttribute("data-selected") === "true")).toBe(true));
   });
   it("keeps paging bounded and announces an unavailable reread", async () => {
     const request = vi.fn(async (url: string) => new Response(JSON.stringify({ participants: [], total: 26, offset: url.includes("offset=25") ? 25 : 0, limit: 25, hasMore: true }), { status: 200 }));
