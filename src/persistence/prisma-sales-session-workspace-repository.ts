@@ -5,7 +5,7 @@ import { groupSafeSalesSessionActivity, projectSafeSalesParticipantAttention, pr
 export interface SalesSessionWorkspaceRepository {
   /** Returns a single safe, local projection or null. Customer and archived-record
    * predicates are intentionally owned here so ordinary callers cannot weaken them. */
-  read(customerId: string, sessionId: string): Promise<SalesSessionWorkspaceRead | null>;
+  read(customerId: string, sessionId: string, options?: { readonly participantQuery?: string; readonly participantPage?: number; readonly participantPageSize?: number }): Promise<SalesSessionWorkspaceRead | null>;
 }
 
 /** The source scan is bounded, then a separate workflow presentation limit is applied. */
@@ -20,10 +20,14 @@ const MAX_PRESENTED_ACTIVITY_GROUPS = 100;
  */
 export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient): SalesSessionWorkspaceRepository {
   return {
-    async read(customerId, sessionId) {
+    async read(customerId, sessionId, options = {}) {
+      const pageSize = Math.min(Math.max(options.participantPageSize ?? 25, 1), 100);
+      const page = Math.max(options.participantPage ?? 0, 0);
+      const query = options.participantQuery?.trim();
+      const participantWhere = query ? { contact: { OR: [{ firstName: { contains: query, mode: "insensitive" as const } }, { lastName: { contains: query, mode: "insensitive" as const } }, { email: { contains: query, mode: "insensitive" as const } }] } } : undefined;
       const session = await prisma.salesDemoSession.findFirst({
         where: { customerId, id: sessionId, opportunity: { archivedAt: null, account: { archivedAt: null } } },
-        include: { opportunity: { include: { account: true } }, item: true, participants: { include: { contact: true }, orderBy: { createdAt: "asc" } } },
+        include: { opportunity: { include: { account: true } }, item: true, participants: { where: participantWhere, include: { contact: true }, orderBy: { createdAt: "asc" }, skip: page * pageSize, take: pageSize } },
       });
       if (!session) return null;
       // A pending reference is a pre-dispatch reservation. It cannot safely be
