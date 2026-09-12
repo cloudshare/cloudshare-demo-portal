@@ -21,9 +21,9 @@ export interface SalesParticipantInvitationLedger {
 export function invitationScopeHash(input: { customerId: string; sessionId: string; targets: readonly InvitationTarget[] }): string {
   return createHash("sha256").update(JSON.stringify(input)).digest("hex");
 }
-export function invitationResult(input: { commandId: string; outcomes: readonly InvitationTargetOutcome[]; correlationId: string | null }) {
-  for (const target of input.outcomes) if (!invitationOutcomes.includes(target.outcome)) throw new Error("invalid invitation outcome");
+export function invitationResult(input: { commandId: string; outcomes: readonly (InvitationTargetOutcome | { readonly participantId: string; readonly outcome: null; readonly reason: null })[]; correlationId: string | null }) {
+  for (const target of input.outcomes) if (target.outcome !== null && !invitationOutcomes.includes(target.outcome)) throw new Error("invalid invitation outcome");
   const counts = Object.fromEntries(invitationOutcomes.map((value) => [value, input.outcomes.filter((target) => target.outcome === value).length]));
-  const outcome = counts.no_replay ? "blocked" : counts.confirmation_required ? "confirmation_required" : counts.failed_retryable ? "failed_retryable" : counts.accepted_unconfirmed ? "completed_with_unconfirmed" : "completed";
+  const outcome = input.outcomes.some((target) => target.outcome === null) ? "in_progress" : counts.no_replay ? "blocked" : counts.confirmation_required ? "confirmation_required" : counts.failed_retryable ? "failed_retryable" : counts.accepted_unconfirmed ? "completed_with_unconfirmed" : "completed";
   return { commandId: input.commandId, outcome, correlationId: input.correlationId, counts, targets: input.outcomes };
 }

@@ -32,7 +32,7 @@ describe("Prisma invitation ledger", () => {
     const f = await fixture(); const p2 = await secondParticipant(f); const ledger = createPrismaSalesParticipantInvitationLedger(prisma); const at = new Date("2026-09-12T10:00:00.000Z");
     const input = { customerId: f.customerId, sessionId: f.sessionId, targets: [f.participant, p2].map((p) => ({ participantId: p.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: p.updatedAt.toISOString() })), commandId: randomUUID(), at };
     await expect(ledger.admitBatch(input)).resolves.toMatchObject({ kind: "admitted" });
-    await expect(ledger.readCurrent(f.customerId, p2.id)).rejects.toThrow("invalid persisted invitation outcome");
+    await expect(ledger.readCurrent(f.customerId, p2.id)).resolves.toMatchObject({ command: { phase: "admitted" }, outcome: { outcome: "in_progress" } });
     await expect(ledger.admitBatch({ ...input, commandId: randomUUID(), targets: input.targets.map((t, i) => i ? { ...t, participantRevision: "stale" } : t) })).resolves.toMatchObject({ kind: "blocked" });
   });
 
@@ -73,7 +73,7 @@ describe("Prisma invitation ledger", () => {
     const input = { customerId: f.customerId, sessionId: f.sessionId, targets: [{ participantId: f.participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: f.participant.updatedAt.toISOString() }], commandId: randomUUID(), at: new Date("2026-09-12T10:00:00.000Z") };
     const admission = await ledger.admitBatch(input);
     expect(admission.kind).toBe("admitted");
-    await expect(ledger.readCurrent(f.customerId, f.participant.id)).rejects.toThrow("invalid persisted invitation outcome");
+    await expect(ledger.readCurrent(f.customerId, f.participant.id)).resolves.toMatchObject({ command: { phase: "admitted" }, outcome: { outcome: "in_progress" } });
     await expect(ledger.admitBatch(input)).resolves.toMatchObject({ kind: "same_command", commandId: input.commandId });
   });
 
