@@ -35,6 +35,14 @@ describe("DiagnosticLogTable Support hints", () => {
     expect(container.textContent).toContain("sales_trial.cloudshare.oauth_token");
   });
 
+  it("derives a specific v3 label from retained Session request evidence without rewriting the entry", () => {
+    const { container } = render(<DiagnosticLogTable entries={[
+      { ...baseEntry, id: "historical-session", operation: "cloudshare.request", request: { method: "GET", path: "/api/v3/projects/project-private/blueprints" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v3" } },
+    ]} expandedDiagnosticId={null} onToggleExpanded={() => undefined} />);
+    expect(container.textContent).toContain("cloudshare.v3.projects.blueprints");
+    expect(container.textContent).toContain("Attempted operation: cloudshare.request");
+  });
+
   it("renders explicit transport, semantic, and legacy evidence labels with timing metadata", () => {
     const { container } = render(<DiagnosticLogTable entries={[
       { ...baseEntry, id: "transport", details: { evidenceKind: "transport", exchangeId: "ex-1", attemptStartSequence: 2, completedAt: "2026-09-10T12:00:01Z", durationMs: 12 } },

@@ -136,6 +136,28 @@ function readIntegrationSurface(details: DiagnosticLogTableEntry["details"]): st
   return surface.length > 0 ? surface : null;
 }
 
+/**
+ * Older development diagnostics recorded the v3 client family but retained the
+ * protected request path. Recover a stable, resource-level label from the
+ * documented path shape without exposing path identifiers in the Operation
+ * column. Unknown paths deliberately retain their captured generic surface.
+ */
+function deriveV3OperationSurface(entry: DiagnosticLogTableEntry, surface: string | null): string | null {
+  if (surface !== "cloudshare.v3" || typeof entry.request?.path !== "string") return surface;
+  const path = entry.request.path;
+  if (/^\/api\/v3\/projects\/[^/]+\/blueprints$/.test(path)) return "cloudshare.v3.projects.blueprints";
+  if (/^\/api\/v3\/projects\/[^/]+\/blueprints\/[^/]+$/.test(path)) return "cloudshare.v3.projects.blueprint_detail";
+  if (/^\/api\/v3\/projects\/[^/]+\/policies\/[^/]+$/.test(path)) return "cloudshare.v3.projects.policy_detail";
+  if (/^\/api\/v3\/projects\/[^/]+\/policies$/.test(path)) return "cloudshare.v3.projects.policies";
+  if (/^\/api\/v3\/regions$/.test(path)) return "cloudshare.v3.regions";
+  if (/^\/api\/v3\/teams$/.test(path)) return "cloudshare.v3.teams";
+  if (/^\/api\/v3\/envs\/actions\/(suspend|resume|archive)$/.test(path)) {
+    return `cloudshare.v3.env.action.${path.split("/").at(-1)}`;
+  }
+  if (/^\/api\/v3\/envs\/[^/]+$/.test(path)) return "cloudshare.v3.env.get";
+  return surface;
+}
+
 function summariseRequestResponse(entry: DiagnosticLogTableEntry): string {
   const method = typeof entry.request?.method === "string" ? entry.request.method : null;
   const path = typeof entry.request?.path === "string" ? entry.request.path : null;
@@ -273,7 +295,7 @@ function renderTextValue(value: string | null | undefined, monospace = false): R
  * operation, so Support retains both comparable resource specificity and
  * correlation terminology. */
 function operationLabel(entry: DiagnosticLogTableEntry): string {
-  const surface = readIntegrationSurface(entry.details);
+  const surface = deriveV3OperationSurface(entry, readIntegrationSurface(entry.details));
   if ((entry.operation === "cloudshare.request" || entry.operation === "sales_trial.cloudshare.request" || entry.operation === "cloudshare.oauth.token" || entry.operation === "sales_trial.cloudshare.oauth_token") && surface) return surface;
   return entry.operation;
 }
