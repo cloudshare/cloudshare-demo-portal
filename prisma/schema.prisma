@@ -245,9 +245,30 @@ model SalesSessionParticipant {
   session                     SalesDemoSession @relation(fields: [customerId, salesDemoSessionId], references: [customerId, id], onDelete: Cascade)
   contact                     OpportunityContact @relation(fields: [customerId, opportunityContactId], references: [customerId, id], onDelete: Restrict)
   launchLinks                 SalesParticipantLaunchLink[]
+  operationStates             SalesParticipantOperationState[]
 
   @@unique([customerId, salesDemoSessionId, opportunityContactId])
+  @@unique([customerId, id])
   @@index([customerId, salesDemoSessionId, updatedAt])
+}
+
+/// Customer-scoped, durable outcome of a participant capability operation.
+/// This stores only safe metadata; provider evidence remains in protected diagnostics.
+model SalesParticipantOperationState {
+  id                    String   @id
+  customerId            String
+  salesSessionParticipantId String
+  capability            String
+  disposition           String
+  correlationId         String?
+  resultMetadata        Json
+  startedAt             DateTime?
+  updatedAt             DateTime
+  confirmedAt           DateTime?
+  participant           SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
+
+  @@unique([customerId, salesSessionParticipantId, capability])
+  @@index([customerId, salesSessionParticipantId])
 }
 
 /// Opaque public launch capability. Only a SHA-256 digest is persisted; the

@@ -28,7 +28,7 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
       const participantWhere = query ? { contact: { OR: [{ firstName: { contains: query, mode: "insensitive" as const } }, { lastName: { contains: query, mode: "insensitive" as const } }, { email: { contains: query, mode: "insensitive" as const } }] } } : undefined;
       const session = await prisma.salesDemoSession.findFirst({
         where: { customerId, id: sessionId, opportunity: { archivedAt: null, account: { archivedAt: null } } },
-        include: { opportunity: { include: { account: true } }, item: true, participants: { where: participantWhere, include: { contact: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], skip: page * pageSize, take: pageSize } },
+        include: { opportunity: { include: { account: true } }, item: true, participants: { where: participantWhere, include: { contact: true, operationStates: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], skip: page * pageSize, take: pageSize } },
       });
       if (!session) return null;
       const participantTotal = await prisma.salesSessionParticipant.count({ where: { customerId, salesDemoSessionId: session.id, ...(participantWhere ?? {}) } });
@@ -77,7 +77,9 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
           const window = projectSalesSessionAccessWindow(session, new Date());
           const concluded = participant.participationStatus === "concluded";
           const available = window.nativeInvitationsAvailable && session.sendInvitations === "salesProsAndParticipants" && !concluded;
-          const actionState = projectParticipantActionState({ access: window.value, sendInvitations: session.sendInvitations, concluded, hasActiveLaunchLink, invitationSent: participant.invitationStatus === "sent" });
+          const projectedActionState = projectParticipantActionState({ access: window.value, sendInvitations: session.sendInvitations, concluded, hasActiveLaunchLink, invitationSent: participant.invitationStatus === "sent" });
+          const emailFence = participant.operationStates.find((state) => state.capability === "email" && (state.disposition === "pending_confirmation" || state.disposition === "no_replay"));
+          const actionState = emailFence ? { ...projectedActionState, canInvite: false, primary: projectedActionState.canLaunch ? "launch" as const : "diagnostics" as const, reason: emailFence.disposition === "no_replay" ? "Invitation outcome is ambiguous; do not retry. Open Diagnostics with the recorded correlation." : "Invitation is awaiting authoritative CloudShare confirmation; do not resend." } : projectedActionState;
           return { id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" as const : "notSent" as const, participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant), environmentAttention: projectSafeSalesParticipantAttention(participant), actionState };
         });
         })()),
