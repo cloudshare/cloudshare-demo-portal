@@ -20,6 +20,7 @@ export interface SalesParticipantWorkspacePage {
   readonly limit: number;
   readonly hasMore: boolean;
 }
+export interface SalesParticipantWorkspaceReader { readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspacePage | null>; }
 
 export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, now: Date): Readonly<Record<SalesParticipantAction, boolean>> {
   const open = new Date(row.sessionEndsAt).getTime() > now.getTime();
