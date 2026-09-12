@@ -46,6 +46,7 @@ function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly s
   const selectionAnchor = useRef<string | null>(null);
   const inspectorRef = useRef<HTMLElement>(null);
   const requestInFlight = useRef(false);
+  const workspaceAbort = useRef<AbortController | null>(null);
   const participantActionsInFlight = useRef(new Set<string>());
   const lifecycle = useRef({ active: false, token: 0 });
   const shellExpiry = useContext(SalesWorkspaceExpiryContext);
@@ -64,15 +65,19 @@ function SalesSessionWorkspaceState({ sessionId, area, queueHref }: { readonly s
     return () => { owner.active = false; };
   }, []);
   useEffect(() => {
+    workspaceAbort.current?.abort();
+    const abort = new AbortController();
+    workspaceAbort.current = abort;
     const token = ++lifecycle.current.token;
     requestInFlight.current = false;
     const request = authenticatedRequest(token);
     const query = participantPage === 0 && !participantQuery.trim() ? "" : `?participantPage=${participantPage}&participantPageSize=25${participantQuery.trim() ? `&participantQuery=${encodeURIComponent(participantQuery.trim())}` : ""}`;
-    void request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace${query}`, { cache: "no-store" }).then(async (response) => {
+    void request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace${query}`, { cache: "no-store", signal: abort.signal }).then(async (response) => {
       const body = await response.json() as SalesSessionWorkspaceResponse & { error?: string };
       if (!response.ok) throw new Error(body.error ?? "The Sales Session could not be loaded.");
       if (lifecycle.current.active && lifecycle.current.token === token) { setWorkspace(body); lastSafeWorkspaceRef.current = body; setError(null); }
-    }).catch((cause) => { if (lifecycle.current.active && lifecycle.current.token === token) { setError(cause instanceof Error ? cause.message : "The Sales Session could not be loaded."); if (lastSafeWorkspaceRef.current) setWorkspace(lastSafeWorkspaceRef.current); } });
+    }).catch((cause) => { if (cause instanceof DOMException && cause.name === "AbortError") return; if (lifecycle.current.active && lifecycle.current.token === token) { setError(cause instanceof Error ? cause.message : "The Sales Session could not be loaded."); if (lastSafeWorkspaceRef.current) setWorkspace(lastSafeWorkspaceRef.current); } });
+    return () => abort.abort();
   }, [authenticatedRequest, sessionId, participantQuery, participantPage, workspaceRetry]);
   useEffect(() => {
     if (area === "activity" || !workspace || workspace.summary.experience.freshness === "fresh" || requestInFlight.current) return;
