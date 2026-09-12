@@ -53,7 +53,7 @@ export type ParticipantSelectionState = { readonly activeId: string | null; read
 export type ParticipantSelectionEvent =
   | { readonly type: "click"; readonly id: string; readonly additive?: boolean; readonly range?: boolean; readonly pageIds?: readonly string[] }
   | { readonly type: "move"; readonly direction: "next" | "previous"; readonly pageIds: readonly string[] }
-  | { readonly type: "toggle"; readonly id: string; readonly range?: boolean }
+  | { readonly type: "toggle"; readonly id: string; readonly range?: boolean; readonly pageIds?: readonly string[] }
   | { readonly type: "nested_control"; readonly id: string; readonly control: "button" | "link" | "input" | "menu" | "dialog" }
   | { readonly type: "clear" };
 

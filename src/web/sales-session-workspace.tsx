@@ -272,6 +272,10 @@ function SalesSessionWorkspaceState({
     participantPageHref,
   ]);
   useEffect(() => {
+    if (area !== "participants" || participantInspectorOpen || !participantSelection.activeId) return;
+    document.querySelector<HTMLElement>(`tr[data-participant-id="${CSS.escape(participantSelection.activeId)}"]`)?.focus();
+  }, [area, participantInspectorOpen, participantSelection.activeId]);
+  useEffect(() => {
     if (
       area === "activity" ||
       !workspace ||
@@ -701,6 +705,7 @@ function SalesSessionWorkspaceState({
                     return (
                       <tr
                         key={participant.id}
+                        data-participant-id={participant.id}
                         data-active={active ? "true" : undefined}
                         data-selected={selected ? "true" : undefined}
                         tabIndex={active ? 0 : -1}
@@ -746,8 +751,10 @@ function SalesSessionWorkspaceState({
                             event.preventDefault();
                             setParticipantSelection((current) =>
                               reduceParticipantSelection(current, {
-                                type: "toggle",
-                                id: participant.id,
+                              type: "toggle",
+                              id: participant.id,
+                              range: event.shiftKey,
+                              pageIds,
                               }),
                             );
                           } else if (event.key === "Enter") {
