@@ -85,10 +85,15 @@ export function SalesParticipantWorkspace(props: {
       const url = invite ? `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/invite` : `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/${encodeURIComponent(participant.id)}/launch-link`;
       const body = invite ? JSON.stringify({ commandId: crypto.randomUUID(), targets: [{ participantId: participant.id, intent: action, expectedInvitationStatus: participant.invitationStatus, participantRevision: participant.participantRevision }] }) : undefined;
       const response = await request(url, { method: "POST", headers: body ? { "Content-Type": "application/json" } : undefined, body });
-      const result = (await response.json()) as { error?: string; correlationId?: string; launchUrl?: string };
-      if (!response.ok) throw new Error(result.error ?? `Action failed (${response.status}).`);
-      setFeedback((current) => ({ ...current, [participant.id]: result.launchUrl ? `Launch link ready: ${result.launchUrl}` : result.correlationId ? `Completed. Correlation ${result.correlationId}.` : "Completed." }));
-      if (result.launchUrl) window.open(result.launchUrl, "_blank", "noopener,noreferrer");
+      const result = (await response.json()) as { error?: string; code?: string; outcome?: string; correlationId?: string; launchUrl?: string };
+      if (!response.ok) throw new Error(result.code === "no_replay" ? "No replay permitted: provider outcome is ambiguous; open Support." : result.error ?? `Action failed (${response.status}).`);
+      if (result.launchUrl) {
+        const launch = new URL(result.launchUrl, window.location.origin);
+        if (launch.origin !== window.location.origin || !launch.pathname.startsWith("/sales/launch/")) throw new Error("Launch link was rejected because it was not a Certalis portal link.");
+      }
+      const message = result.code === "confirmation_required" || result.outcome === "in_progress" ? "Action admitted; confirmation is still in progress." : result.outcome === "failed_retryable" ? "Action failed temporarily; retry is available." : result.launchUrl ? "Launch link ready." : result.correlationId ? `Completed. Correlation ${result.correlationId}.` : "Completed.";
+      setFeedback((current) => ({ ...current, [participant.id]: message }));
+      if (result.launchUrl) window.open(new URL(result.launchUrl, window.location.origin).toString(), "_blank", "noopener,noreferrer");
       const reread = await request(href(), { cache: "no-store" });
       const next = (await reread.json()) as ParticipantPage;
       if (reread.ok && Array.isArray(next.participants)) setPage(next);
