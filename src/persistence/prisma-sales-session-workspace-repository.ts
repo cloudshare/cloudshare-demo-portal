@@ -30,7 +30,7 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         include: { opportunity: { include: { account: true } }, item: true, participants: { where: participantWhere, include: { contact: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], skip: page * pageSize, take: pageSize } },
       });
       if (!session) return null;
-      const participantTotal = await prisma.salesSessionParticipant.count({ where: { salesDemoSessionId: session.id, ...participantWhere } });
+      const participantTotal = await prisma.salesSessionParticipant.count({ where: { customerId, salesDemoSessionId: session.id, ...(participantWhere ?? {}) } });
       // A pending reference is a pre-dispatch reservation. It cannot safely be
       // treated as a real Sales Experience or a valid workspace target.
       if (session.operationalStatus === "provisioning" && session.cloudShareSalesExperienceId.startsWith("pending:")) return { state: "stale" };

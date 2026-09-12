@@ -14,7 +14,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ sess
   const query = new URL(request.url).searchParams;
   const participantPage = Number(query.get("participantPage") ?? "0");
   const participantPageSize = Number(query.get("participantPageSize") ?? "25");
-  const requestInput = { customerId: session.customerId, sessionId: (await params).sessionId, ...(query.get("participantQuery") ? { participantQuery: query.get("participantQuery")! } : {}), ...(query.has("participantPage") ? { participantPage: Number.isFinite(participantPage) ? participantPage : 0 } : {}), ...(query.has("participantPageSize") ? { participantPageSize: Number.isFinite(participantPageSize) ? participantPageSize : 25 } : {}) };
+  const requestInput = { customerId: session.customerId, sessionId: (await params).sessionId, ...(query.has("participantQuery") ? { participantQuery: query.get("participantQuery") ?? "" } : {}), ...(query.has("participantPage") ? { participantPage } : {}), ...(query.has("participantPageSize") ? { participantPageSize } : {}) };
   const result = await handleReadSalesSessionWorkspace({ workspace: createPrismaSalesSessionWorkspaceRepository(services.prisma) }, requestInput);
   return NextResponse.json(result.body, { status: result.status });
 }
