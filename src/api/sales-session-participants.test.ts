@@ -761,4 +761,14 @@ describe("Sales Session participant invitation", () => {
     expect(inviteParticipants).not.toHaveBeenCalled();
     expect(ledger.finishBatch).not.toHaveBeenCalled();
   });
+
+  it("retains the command and leaves projection untouched when reconciliation CAS rejects", async () => {
+    const participant = storedParticipant(); const commandId = randomUUID(); const save = vi.fn(); const inviteParticipants = vi.fn();
+    const current = { command: { customerId: "customer-1", commandId, phase: "settled" as const, revision: 3, correlationId: "corr-cas" }, outcome: { commandId, outcome: "blocked" as const, correlationId: "corr-cas", counts: { no_replay: 1 }, targets: [{ participantId: participant.id, outcome: "no_replay" as const, reason: "ambiguous_after_dispatch" as const }] } };
+    const finishBatch = vi.fn().mockRejectedValue(new Error("stale command revision"));
+    const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), finishBatch, readCurrent: vi.fn().mockResolvedValue(current) };
+    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const }])), inviteParticipants }) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: { ...explicitInviteBody(participant, "invite", commandId) } });
+    expect(result).toMatchObject({ status: 200, body: { code: "command_replayed", commandId, outcome: "blocked" } });
+    expect(finishBatch).toHaveBeenCalled(); expect(save).not.toHaveBeenCalled(); expect(inviteParticipants).not.toHaveBeenCalled(); expect(ledger.readCurrent).toHaveBeenCalledWith("customer-1", participant.id);
+  });
 });
