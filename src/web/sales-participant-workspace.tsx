@@ -37,6 +37,11 @@ export function SalesParticipantWorkspace(props: {
   const [revokeTarget, setRevokeTarget] = useState<SalesParticipantWorkspaceRow | null>(null);
   const originRef = useRef<HTMLElement | null>(null);
   const logicalFocus = useRef<"row" | "inspector">("row");
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setSelection({ activeId: params.get("participantActive"), selectedIds: (params.get("participantSelected") ?? "").split(",").filter(Boolean).slice(0, 25), rangeAnchorId: params.get("participantAnchor") });
+    logicalFocus.current = params.get("participantFocus") === "inspector" ? "inspector" : "row";
+  }, []);
   const href = useCallback(() => `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/page?${query ? `query=${encodeURIComponent(query)}&` : ""}offset=${offset}&limit=25`, [offset, query, sessionId]);
   const activeParticipant = page?.participants.find((row) => row.id === selection.activeId) ?? null;
 
@@ -50,9 +55,9 @@ export function SalesParticipantWorkspace(props: {
   }, []);
   useEffect(() => {
     if (!active) return;
-    const url = new URL(window.location.href); query ? url.searchParams.set("participantQuery", query) : url.searchParams.delete("participantQuery"); offset ? url.searchParams.set("participantOffset", String(offset)) : url.searchParams.delete("participantOffset");
+    const url = new URL(window.location.href); query ? url.searchParams.set("participantQuery", query) : url.searchParams.delete("participantQuery"); offset ? url.searchParams.set("participantOffset", String(offset)) : url.searchParams.delete("participantOffset"); selection.activeId ? url.searchParams.set("participantActive", selection.activeId) : url.searchParams.delete("participantActive"); selection.selectedIds.length ? url.searchParams.set("participantSelected", selection.selectedIds.slice(0, 25).join(",")) : url.searchParams.delete("participantSelected"); selection.rangeAnchorId ? url.searchParams.set("participantAnchor", selection.rangeAnchorId) : url.searchParams.delete("participantAnchor"); url.searchParams.set("participantFocus", logicalFocus.current);
     window.history.replaceState({ ...window.history.state, participantScrollY: window.scrollY }, "", url);
-  }, [active, offset, query]);
+  }, [active, offset, query, selection]);
   useEffect(() => {
     if (!active) return;
     void request(href(), { cache: "no-store" }).then(async (response) => {
