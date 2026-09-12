@@ -27,6 +27,8 @@ describe("Sales workspace shell routes", () => {
     expect(parseSalesWorkspaceRouteState({ tab: "support", correlationId: "corr-sales-429" })).toMatchObject({ tab: "support", correlationId: "corr-sales-429" });
     expect(buildSalesWorkspaceHref({ tab: "support", source: "sales-trial-offerings", subjectId: "offering-1" })).toBe("/sales?tab=support&source=sales-trial-offerings&subjectId=offering-1");
     expect(parseSalesWorkspaceRouteState({ tab: "support", source: "sales-trial-offerings", subjectId: "offering-1" })).toMatchObject({ tab: "support", source: "sales-trial-offerings", subjectId: "offering-1" });
+    expect(buildSalesWorkspaceHref({ tab: "support", operation: "cloudshare.request" })).toBe("/sales?tab=support&operation=cloudshare.request");
+    expect(parseSalesWorkspaceRouteState({ tab: "support", operation: "cloudshare.request" })).toMatchObject({ tab: "support", operation: "cloudshare.request" });
   });
 
   it("keeps colliding IDs distinct by typed investigation subject", () => {

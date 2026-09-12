@@ -31,6 +31,7 @@ export interface SalesWorkspaceRouteState {
   readonly source?: string;
   readonly subjectId?: string;
   readonly subjectType?: string;
+  readonly operation?: string;
 }
 
 /** A feature requests a Sales destination; only the shell turns it into browser history. */
@@ -98,6 +99,7 @@ export function buildSalesWorkspaceHref(route: SalesNavigationIntent): string {
     }
   }
   if (route.tab === "support") { if (route.correlationId) params.set("correlationId", route.correlationId); if (route.source) params.set("source", route.source); if (route.subjectType) params.set("subjectType", route.subjectType); if (route.subjectId) params.set("subjectId", route.subjectId); }
+  if (route.tab === "support" && route.operation) params.set("operation", route.operation);
   return `/sales?${params.toString()}`;
 }
 
@@ -115,6 +117,7 @@ export function parseSalesWorkspaceRouteState(input: {
   readonly source?: string | readonly string[];
   readonly subjectId?: string | readonly string[];
   readonly subjectType?: string | readonly string[];
+  readonly operation?: string | readonly string[];
   readonly sessionId?: string | readonly string[];
   readonly status?: string | readonly string[];
   readonly participants?: string | readonly string[];
@@ -143,6 +146,7 @@ export function parseSalesWorkspaceRouteState(input: {
   const source = tab === "support" ? readValue(input.source) : undefined;
   const subjectId = tab === "support" ? readValue(input.subjectId) : undefined;
   const subjectType = tab === "support" ? readValue(input.subjectType) : undefined;
+  const operation = tab === "support" ? readValue(input.operation) : undefined;
   return {
     tab,
     itemView,
@@ -157,6 +161,7 @@ export function parseSalesWorkspaceRouteState(input: {
     ...(correlationId ? { correlationId } : {}),
     ...(source ? { source } : {}), ...(subjectId ? { subjectId } : {}),
     ...(subjectType ? { subjectType } : {}),
+    ...(operation ? { operation } : {}),
   };
 }
 
