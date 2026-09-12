@@ -46,6 +46,7 @@ describe("SalesParticipantWorkspace", () => {
     expect(rows[1].getAttribute("data-selected")).toBe("true");
     await user.click(screen.getAllByRole("button", { name: "Inspect" })[0]);
     expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
+    expect(rows[0].getAttribute("data-selected")).toBe("true");
   });
   it("applies modifier and range selection through the public row events", async () => {
     const user = userEvent.setup();
