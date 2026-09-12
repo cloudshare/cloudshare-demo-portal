@@ -2,10 +2,12 @@ import { createHash } from "node:crypto";
 
 export const invitationOutcomes = ["confirmed", "confirmed_by_reconciliation", "accepted_unconfirmed", "confirmation_required", "no_replay", "failed_retryable"] as const;
 export type InvitationOutcome = typeof invitationOutcomes[number];
+export const invitationPhases = ["admitted", "dispatching", "evaluating_confirmation", "settled"] as const;
+export type InvitationPhase = typeof invitationPhases[number];
 export type InvitationTarget = { readonly participantId: string; readonly intent: "invite" | "resend"; readonly expectedInvitationStatus: "notSent" | "sent"; readonly participantRevision: string };
 export type InvitationTargetOutcome = { readonly participantId: string; readonly outcome: InvitationOutcome; readonly reason: string | null };
 export type InvitationSafeReason = "provider_rejected" | "ambiguous_after_dispatch" | "confirmation_required" | "failed_retryable" | "stale_revision" | "blocked_by_fence";
-export type RevisionedInvitationCommand = { readonly customerId: string; readonly commandId: string; readonly phase: string; readonly revision: number; readonly correlationId: string | null };
+export type RevisionedInvitationCommand = { readonly customerId: string; readonly commandId: string; readonly phase: InvitationPhase; readonly revision: number; readonly correlationId: string | null };
 export type CurrentInvitationState = { readonly command: RevisionedInvitationCommand; readonly outcome: ReturnType<typeof invitationResult> };
 export type Admission = { readonly kind: "admitted" | "same_command" | "blocked"; readonly commandId: string; readonly admissionToken?: string; readonly command?: RevisionedInvitationCommand };
 export type FinishInvitationCommand = { readonly commandId: string; readonly expectedRevision: number; readonly expectedPhase: "dispatching" | "evaluating_confirmation"; readonly phase: "evaluating_confirmation" | "settled"; readonly correlationId: string | null };
