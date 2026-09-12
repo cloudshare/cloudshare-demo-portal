@@ -37,6 +37,7 @@ type Request = { readonly customerId: string; readonly sessionId: string; readon
 type ParticipantDelivery = Pick<SalesDelivery, "createSession" | "readSession"> & Partial<SalesDelivery>;
 type ResolutionResponse = { readonly status: number; readonly body: Record<string, unknown> };
 type Deps = { sessions: Pick<SalesDemoSessionRepository, "findById">; items?: Pick<ItemRepository, "findById">; records: Pick<SalesRecordRepository, "findContact"> & Partial<Pick<SalesRecordRepository, "listContacts">>; participants: Pick<SalesSessionParticipantRepository, "save" | "list"> & Partial<Pick<SalesSessionParticipantRepository, "recordEnvironmentObservation">>; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; invitationLedger?: SalesParticipantInvitationLedger; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): ParticipantDelivery }; environmentFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): EnvironmentStateEvidenceSource }; salesEnvironmentFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): SalesEnvironmentSource }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write">; now?: () => Date };
+type InviteDeps = Omit<Deps, "invitationLedger"> & { invitationLedger: SalesParticipantInvitationLedger };
 
 /** Deep handler interface: contacts are resolved server-side before the typed
  * CloudShare adapter is crossed. Browser-provided emails and provider URLs are
@@ -162,7 +163,7 @@ export async function handleRegisterSalesSessionParticipants(deps: Deps, request
   } catch (error) { const classifiedError = completedRemote && !hasParticipantFailureContext(error) ? participantMappingPersistenceFailed(error) : error; const failedExchange = exchange(error); return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "CloudShare could not register selected Sales Participants.", classifiedError, completedRemote, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]); }
 }
 
-export async function handleInviteSalesSessionParticipants(deps: Deps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {
+export async function handleInviteSalesSessionParticipants(deps: InviteDeps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {
   const parsed = invitationCommandSchema.safeParse(request.body); if (!parsed.success) return { status: 400, body: { error: "Provide a valid invitation command with ordered participant targets." } };
   const participantIds = parsed.data.targets.map((target) => target.participantId);
   const sessionResult = await resolveSession(deps, request); if ("response" in sessionResult) return sessionResult.response!;
@@ -182,18 +183,16 @@ export async function handleInviteSalesSessionParticipants(deps: Deps, request: 
     return { status: 409, body: { code: "sales_participant_concluded", error, correlationId } };
   }
   let admittedCommand: { commandId: string; admissionToken?: string; revision: number } | undefined;
-  if (deps.invitationLedger) {
-    const admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
-    if (admission.kind !== "admitted") return { status: 409, body: { code: admission.kind === "same_command" ? "command_replayed" : "invitation_blocked", commandId: parsed.data.commandId } };
-    admittedCommand = { commandId: parsed.data.commandId, admissionToken: admission.admissionToken, revision: 1 };
-  }
+  const admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
+  if (admission.kind !== "admitted") return { status: 409, body: { code: admission.kind === "same_command" ? "command_replayed" : "invitation_blocked", commandId: parsed.data.commandId } };
+  admittedCommand = { commandId: parsed.data.commandId, admissionToken: admission.admissionToken, revision: 1 };
   const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) return deliveryResult.response!;
   const prepared = { session: sessionResult.session, delivery: deliveryResult.delivery };
   const correlationId = randomUUID();
   let acknowledgedInvite: SalesDeliveryEvidence | undefined;
   const completedExchanges: Array<{ readonly request: unknown; readonly response: unknown }> = [];
   try {
-    if (deps.invitationLedger && admittedCommand?.admissionToken) await deps.invitationLedger.markBatchDispatching(request.customerId, admittedCommand.commandId, admittedCommand.admissionToken, admittedCommand.revision, (deps.now ?? (() => new Date()))());
+    if (admittedCommand.admissionToken) await deps.invitationLedger.markBatchDispatching(request.customerId, admittedCommand.commandId, admittedCommand.admissionToken, admittedCommand.revision, (deps.now ?? (() => new Date()))());
     // CloudShare's invite endpoint acknowledges disabled invitations with an
     // empty 200. Read the documented Experience configuration first so
     // Certalis can return the actual prerequisite rather than a false success.

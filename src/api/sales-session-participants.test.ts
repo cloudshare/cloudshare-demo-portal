@@ -3,14 +3,22 @@ import { describe, expect, it, vi } from "vitest";
 import { CloudShareAuthError, CloudShareResponseError } from "@/integrations/cloudshare/errors";
 import { handleInviteSalesSessionParticipants as inviteSalesSessionParticipants, handleListSalesSessionParticipants as listSalesSessionParticipants, handleRegisterSalesSessionParticipants as registerSalesSessionParticipants } from "./sales-session-participants";
 import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales-environment";
+import type { SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
 
 const fixedNow = () => new Date("2026-07-19T08:00:00.000Z");
 const handleRegisterSalesSessionParticipants: typeof registerSalesSessionParticipants = (deps, request) => registerSalesSessionParticipants({ now: fixedNow, ...deps }, request);
 const handleListSalesSessionParticipants: typeof listSalesSessionParticipants = (deps, request) => listSalesSessionParticipants({ now: fixedNow, ...deps }, request);
-const handleInviteSalesSessionParticipants: typeof inviteSalesSessionParticipants = (deps, request) => {
+const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof inviteSalesSessionParticipants>[0], "invitationLedger"> & { invitationLedger?: SalesParticipantInvitationLedger }, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
   const body = request.body as { participantIds?: string[] } | undefined;
   const normalizedBody = body?.participantIds ? { commandId: randomUUID(), targets: body.participantIds.map((participantId) => ({ participantId, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: new Date().toISOString() })) } : request.body;
-  return inviteSalesSessionParticipants({ now: fixedNow, ...deps }, { ...request, body: normalizedBody });
+  const invitationLedger: SalesParticipantInvitationLedger = deps.invitationLedger ?? {
+    admitBatch: vi.fn(async ({ commandId }) => ({ kind: "admitted" as const, commandId, admissionToken: "test-admission-token" })),
+    markBatchDispatching: vi.fn(async (customerId, commandId) => ({ customerId, commandId, phase: "dispatching" as const, revision: 2, correlationId: null })),
+    expireAdmitted: vi.fn(async (customerId, commandId) => ({ customerId, commandId, phase: "settled" as const, revision: 2, correlationId: null })),
+    finishBatch: vi.fn(async ({ customerId, commandId, phase, correlationId }) => ({ customerId, commandId, phase, revision: 3, correlationId })),
+    readCurrent: vi.fn(async () => null),
+  };
+  return inviteSalesSessionParticipants({ now: fixedNow, ...deps, invitationLedger } as Parameters<typeof inviteSalesSessionParticipants>[0], { ...request, body: normalizedBody });
 };
 
 const actor = { type: "admin" as const, id: "admin-1", email: "sales-admin@certalis.demo" };
