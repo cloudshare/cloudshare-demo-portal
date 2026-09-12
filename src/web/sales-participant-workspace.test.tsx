@@ -44,7 +44,7 @@ describe("SalesParticipantWorkspace", () => {
     expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
   });
   it("keeps paging bounded and announces an unavailable reread", async () => {
-    const request = vi.fn(async () => new Response(JSON.stringify({ participants: [], total: 26, offset: 0, limit: 25, hasMore: true }), { status: 200 }));
+    const request = vi.fn(async (url: string) => new Response(JSON.stringify({ participants: [], total: 26, offset: url.includes("offset=25") ? 25 : 0, limit: 25, hasMore: true }), { status: 200 }));
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
     await screen.findByText("No Participants are registered for this Sales Session.");
     expect(screen.getByRole("button", { name: "Next" })).toBeTruthy();
