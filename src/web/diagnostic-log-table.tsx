@@ -159,6 +159,17 @@ function deriveV3OperationSurface(entry: DiagnosticLogTableEntry, surface: strin
   return surface;
 }
 
+function deriveV4OperationSurface(entry: DiagnosticLogTableEntry, surface: string | null): string | null {
+  if (surface !== "cloudshare.v4" || typeof entry.request?.path !== "string") return surface;
+  const path = entry.request.path;
+  if (path === "/v4/sales") return "cloudshare.v4.sales";
+  if (/^\/v4\/sales\/[^/]+\/participants$/.test(path)) return "cloudshare.v4.sales.participants";
+  if (/^\/v4\/sales\/[^/]+\/users\/properties$/.test(path)) return "cloudshare.v4.sales.user_properties";
+  if (/^\/v4\/sales\/[^/]+\/sponsored-link$/.test(path)) return "cloudshare.v4.sales.sponsored_link";
+  if (/^\/v4\/sales\/[^/]+$/.test(path)) return "cloudshare.v4.sales.detail";
+  return surface;
+}
+
 function summariseRequestResponse(entry: DiagnosticLogTableEntry): string {
   const method = typeof entry.request?.method === "string" ? entry.request.method : null;
   const path = typeof entry.request?.path === "string" ? entry.request.path : null;
@@ -296,7 +307,7 @@ function renderTextValue(value: string | null | undefined, monospace = false): R
  * operation, so Support retains both comparable resource specificity and
  * correlation terminology. */
 function operationLabel(entry: DiagnosticLogTableEntry): string {
-  const surface = deriveV3OperationSurface(entry, readIntegrationSurface(entry.details));
+  const surface = deriveV4OperationSurface(entry, deriveV3OperationSurface(entry, readIntegrationSurface(entry.details)));
   if ((entry.operation === "cloudshare.request" || entry.operation === "sales_trial.cloudshare.request" || entry.operation === "cloudshare.oauth.token" || entry.operation === "sales_trial.cloudshare.oauth_token") && surface) return surface;
   return entry.operation;
 }

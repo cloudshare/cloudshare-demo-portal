@@ -54,6 +54,15 @@ describe("DiagnosticLogTable Support hints", () => {
     expect(container.textContent).toContain("cloudshare.v3.env.action.extend");
   });
 
+  it("derives specific v4 Sales labels from retained Trial request evidence", () => {
+    const { container } = render(<DiagnosticLogTable entries={[
+      { ...baseEntry, id: "trial-sales", operation: "sales_trial.cloudshare.request", request: { method: "POST", path: "/v4/sales" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
+      { ...baseEntry, id: "trial-participants", operation: "sales_trial.cloudshare.request", request: { method: "GET", path: "/v4/sales/sales-private/participants" }, details: { evidenceKind: "transport", integrationSurface: "cloudshare.v4" } },
+    ]} expandedDiagnosticId={null} onToggleExpanded={() => undefined} />);
+    expect(container.textContent).toContain("cloudshare.v4.sales");
+    expect(container.textContent).toContain("cloudshare.v4.sales.participants");
+  });
+
   it("renders explicit transport, semantic, and legacy evidence labels with timing metadata", () => {
     const { container } = render(<DiagnosticLogTable entries={[
       { ...baseEntry, id: "transport", details: { evidenceKind: "transport", exchangeId: "ex-1", attemptStartSequence: 2, completedAt: "2026-09-10T12:00:01Z", durationMs: 12 } },
