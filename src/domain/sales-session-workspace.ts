@@ -14,6 +14,14 @@ export interface SalesSessionWorkspaceResponse {
 export type SalesSessionWorkspaceRead = { readonly state: "available"; readonly workspace: SalesSessionWorkspaceResponse } | { readonly state: "stale" };
 export type SafeSalesParticipantAttention = { readonly reason: string; readonly source: string };
 export type ParticipantActionState = { readonly primary: "invite" | "resend" | "launch" | "diagnostics"; readonly canInvite: boolean; readonly canLaunch: boolean; readonly canRevoke: boolean; readonly hasActiveLaunchLink: boolean; readonly reason: string };
+export function projectParticipantActionState(input: { readonly access: "before_window" | "open" | "closed" | "indeterminate"; readonly sendInvitations: string; readonly concluded: boolean; readonly hasActiveLaunchLink: boolean; readonly invitationSent: boolean }): ParticipantActionState {
+  const validWindow = input.access === "before_window" || input.access === "open";
+  const canLaunch = validWindow && !input.concluded;
+  const canInvite = canLaunch && input.sendInvitations === "salesProsAndParticipants";
+  const canRevoke = input.hasActiveLaunchLink && validWindow && !input.concluded;
+  const primary = canInvite ? (input.invitationSent ? "launch" : "invite") : canLaunch ? "launch" : "diagnostics";
+  return { primary, canInvite, canLaunch, canRevoke, hasActiveLaunchLink: input.hasActiveLaunchLink, reason: input.concluded ? "Participation is concluded; invitation and launch are unavailable." : !validWindow ? "The named Session time window is not open; mutation actions are unavailable." : !canInvite ? "Native invitations are disabled for this Session; direct launch remains available." : input.invitationSent ? "Participant is invited and may launch independently of native invitation status." : "Participant is eligible for a native invitation or direct launch." };
+}
 export type SalesParticipantBrowserActionResult =
   | { readonly ok: true; readonly action: "invite" | "resend" | "launch" | "revoke"; readonly correlationId?: string; readonly launchUrl?: `/sales/launch/${string}`; readonly invitationConfirmation?: "confirmed" | "pending"; readonly confirmedParticipantCount?: number; readonly pendingConfirmationParticipantCount?: number }
   | { readonly ok: false; readonly action: "invite" | "resend" | "launch" | "revoke"; readonly error: string; readonly correlationId?: string };
