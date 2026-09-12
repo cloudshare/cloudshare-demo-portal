@@ -230,8 +230,9 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     completedExchanges.push(afterRequest);
     const afterByProviderId = new Map(afterRequest.participants.map((participant) => [participant.id, participant]));
     const confirmed = selected.map((stored) => {
+      const matches = afterRequest.participants.filter((participant) => participantProperties(participant).certalisSalesParticipantId === stored!.id && participantProperties(participant).certalisOpportunityContactId === stored!.opportunityContactId);
       const participant = afterByProviderId.get(stored!.cloudShareParticipantId);
-      return participant && participantProperties(participant).certalisSalesParticipantId === stored!.id && participantProperties(participant).certalisOpportunityContactId === stored!.opportunityContactId
+      return matches.length === 1 && participant && participantProperties(participant).certalisSalesParticipantId === stored!.id && participantProperties(participant).certalisOpportunityContactId === stored!.opportunityContactId
         ? { stored: stored!, before: currentByProviderId.get(stored!.cloudShareParticipantId)!, participant }
         : undefined;
     });
