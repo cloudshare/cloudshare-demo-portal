@@ -8,5 +8,4 @@ export interface SalesParticipantLaunchLinkRepository {
   regenerate(link: SalesParticipantLaunchLink, at: Date): Promise<void>;
   revokeActive(customerId: string, salesDemoSessionId: string, participantId: string, at: Date): Promise<void>;
   findByTokenHash(tokenHash: string): Promise<SalesParticipantLaunchLink | null>;
-  hasActive(customerId: string, salesDemoSessionId: string, participantId: string): Promise<boolean>;
 }
