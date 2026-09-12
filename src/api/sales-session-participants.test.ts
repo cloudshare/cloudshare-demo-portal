@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { CloudShareAuthError, CloudShareResponseError } from "@/integrations/cloudshare/errors";
 import { handleInviteSalesSessionParticipants as inviteSalesSessionParticipants, handleListSalesSessionParticipants as listSalesSessionParticipants, handleRegisterSalesSessionParticipants as registerSalesSessionParticipants } from "./sales-session-participants";
@@ -6,7 +7,11 @@ import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales
 const fixedNow = () => new Date("2026-07-19T08:00:00.000Z");
 const handleRegisterSalesSessionParticipants: typeof registerSalesSessionParticipants = (deps, request) => registerSalesSessionParticipants({ now: fixedNow, ...deps }, request);
 const handleListSalesSessionParticipants: typeof listSalesSessionParticipants = (deps, request) => listSalesSessionParticipants({ now: fixedNow, ...deps }, request);
-const handleInviteSalesSessionParticipants: typeof inviteSalesSessionParticipants = (deps, request) => inviteSalesSessionParticipants({ now: fixedNow, ...deps }, request);
+const handleInviteSalesSessionParticipants: typeof inviteSalesSessionParticipants = (deps, request) => {
+  const body = request.body as { participantIds?: string[] } | undefined;
+  const normalizedBody = body?.participantIds ? { commandId: randomUUID(), targets: body.participantIds.map((participantId) => ({ participantId, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: new Date().toISOString() })) } : request.body;
+  return inviteSalesSessionParticipants({ now: fixedNow, ...deps }, { ...request, body: normalizedBody });
+};
 
 const actor = { type: "admin" as const, id: "admin-1", email: "sales-admin@certalis.demo" };
 const session = { id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active" as const, start: "2026-07-19T09:00", end: "2026-07-19T10:00", timeZone: "UTC" };

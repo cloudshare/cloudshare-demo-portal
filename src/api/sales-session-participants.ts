@@ -16,7 +16,22 @@ import { SalesEnvironmentResolutionError, type SalesEnvironmentSource } from "@/
 import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
 
 const contactsSchema = z.object({ contactIds: z.array(z.string().trim().min(1)).min(1).max(100) });
-const participantIdsSchema = z.object({ participantIds: z.array(z.string().trim().min(1)).min(1).max(100) });
+const invitationCommandSchema = z.object({
+  commandId: z.string().uuid(),
+  targets: z.array(z.object({
+    participantId: z.string().trim().min(1),
+    intent: z.enum(["invite", "resend"]),
+    expectedInvitationStatus: z.enum(["notSent", "sent"]),
+    participantRevision: z.string().trim().min(1),
+  })).min(1).max(100).superRefine((targets, context) => {
+    const ids = new Set<string>();
+    targets.forEach((target, index) => {
+      if (ids.has(target.participantId)) context.addIssue({ code: z.ZodIssueCode.custom, path: [index, "participantId"], message: "Duplicate participant target." });
+      ids.add(target.participantId);
+      if ((target.intent === "invite" && target.expectedInvitationStatus !== "notSent") || (target.intent === "resend" && target.expectedInvitationStatus !== "sent")) context.addIssue({ code: z.ZodIssueCode.custom, path: [index], message: "Invitation intent does not match expected status." });
+    });
+  }),
+});
 type Request = { readonly customerId: string; readonly sessionId: string; readonly actor: DiagnosticActor; readonly body?: unknown };
 type ParticipantDelivery = Pick<SalesDelivery, "createSession" | "readSession"> & Partial<SalesDelivery>;
 type ResolutionResponse = { readonly status: number; readonly body: Record<string, unknown> };
@@ -147,21 +162,22 @@ export async function handleRegisterSalesSessionParticipants(deps: Deps, request
 }
 
 export async function handleInviteSalesSessionParticipants(deps: Deps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {
-  const parsed = participantIdsSchema.safeParse(request.body); if (!parsed.success) return { status: 400, body: { error: "Select one or more registered Sales Participants." } };
+  const parsed = invitationCommandSchema.safeParse(request.body); if (!parsed.success) return { status: 400, body: { error: "Provide a valid invitation command with ordered participant targets." } };
+  const participantIds = parsed.data.targets.map((target) => target.participantId);
   const sessionResult = await resolveSession(deps, request); if ("response" in sessionResult) return sessionResult.response!;
   const invitationWindow = projectSalesSessionAccessWindow(sessionResult.session, (deps.now ?? (() => new Date()))());
   if (!invitationWindow.nativeInvitationsAvailable) {
     const correlationId = randomUUID();
     const error = "Native invitations are unavailable after this Sales Session has ended.";
-    await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "sales_session_ended", participantIds: parsed.data.participantIds }, {}, false);
+    await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "sales_session_ended", participantIds }, {}, false);
     return { status: 409, body: { code: "sales_session_ended", error, correlationId } };
   }
   const registered = await deps.participants.list(request.customerId, sessionResult.session.id);
-  const selected = parsed.data.participantIds.map((id) => registered.find((participant) => participant.id === id));
+  const selected = participantIds.map((id) => registered.find((participant) => participant.id === id));
   if (selected.some((participant) => !participant)) return denied(deps, request, sessionResult.session, 404, "Selected registered Sales Participant was not found for this Session.", "participant_not_found");
   if (selected.some((participant) => participant!.participationStatus === "concluded")) {
     const correlationId = randomUUID(); const error = "Concluded Sales Participants cannot receive native invitations.";
-    await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "sales_participant_concluded", participantIds: parsed.data.participantIds }, {}, false);
+    await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "sales_participant_concluded", participantIds }, {}, false);
     return { status: 409, body: { code: "sales_participant_concluded", error, correlationId } };
   }
   const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) return deliveryResult.response!;
@@ -176,7 +192,7 @@ export async function handleInviteSalesSessionParticipants(deps: Deps, request: 
     const capability = await prepared.delivery.readParticipantInvitationCapability!(prepared.session.cloudShareSalesExperienceId);
     completedExchanges.push(capability);
     if (!capability.participantInvitationsEnabled) {
-      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare native invitations are disabled for this Sales Experience.", capability, { failureMode: "native_invitations_disabled", sendInvitations: capability.sendInvitations, participantIds: parsed.data.participantIds, httpExchanges: completedExchanges });
+      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare native invitations are disabled for this Sales Experience.", capability, { failureMode: "native_invitations_disabled", sendInvitations: capability.sendInvitations, participantIds, httpExchanges: completedExchanges });
       return { status: 409, body: { code: "native_invitations_disabled", error: "CloudShare has native invitations disabled for this Sales Experience. Enable invitations in CloudShare before sending or resending.", correlationId } };
     }
     // A persisted mapping alone is not sufficient authority to resend an invite:
@@ -188,7 +204,7 @@ export async function handleInviteSalesSessionParticipants(deps: Deps, request: 
       const remote = currentByProviderId.get(participant!.cloudShareParticipantId);
       return !remote || participantProperties(remote).certalisSalesParticipantId !== participant!.id || participantProperties(remote).certalisOpportunityContactId !== participant!.opportunityContactId;
     })) {
-      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "One or more selected Sales Participants no longer has its Certalis correlation values in CloudShare. Refresh monitoring and investigate the correlated diagnostics before inviting.", current, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds: parsed.data.participantIds, httpExchanges: completedExchanges });
+      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "One or more selected Sales Participants no longer has its Certalis correlation values in CloudShare. Refresh monitoring and investigate the correlated diagnostics before inviting.", current, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds, httpExchanges: completedExchanges });
       return { status: 409, body: { error: "One or more selected Sales Participants need attention and cannot be invited. Refresh monitoring and investigate the correlated diagnostics.", correlationId } };
     }
     const requested = await prepared.delivery.inviteParticipants!(prepared.session.cloudShareSalesExperienceId, selected.map((participant) => participant!.cloudShareParticipantId));
@@ -207,7 +223,7 @@ export async function handleInviteSalesSessionParticipants(deps: Deps, request: 
         : undefined;
     });
     if (confirmed.some((value) => !value)) {
-      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare accepted the native invitation request but did not return one or more selected Sales Participant mappings during confirmation.", requested, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds: parsed.data.participantIds, httpExchanges: completedExchanges });
+      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare accepted the native invitation request but did not return one or more selected Sales Participant mappings during confirmation.", requested, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds, httpExchanges: completedExchanges });
       return { status: 409, body: { error: "CloudShare could not confirm one or more selected Sales Participants after the invitation request. Refresh monitoring and investigate the correlated diagnostics before retrying.", correlationId } };
     }
     const confirmedParticipants = confirmed.filter((value): value is NonNullable<typeof value> => value !== undefined);
@@ -222,7 +238,7 @@ export async function handleInviteSalesSessionParticipants(deps: Deps, request: 
     const message = invitationConfirmation === "confirmed"
       ? "CloudShare confirmed native invitations for selected Sales Participants."
       : "CloudShare accepted the native invitation request, but has not yet confirmed the invitation as sent.";
-    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "success", message, requested, { participantIds: parsed.data.participantIds, confirmedParticipantCount, pendingConfirmationParticipantCount, ...(alreadySentParticipantCount > 0 ? { alreadySentParticipantCount } : {}), httpExchanges: completedExchanges });
+    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "success", message, requested, { participantIds, confirmedParticipantCount, pendingConfirmationParticipantCount, ...(alreadySentParticipantCount > 0 ? { alreadySentParticipantCount } : {}), httpExchanges: completedExchanges });
     return { status: 200, body: { correlationId, invitationConfirmation, confirmedParticipantCount, pendingConfirmationParticipantCount } };
   }
   catch (error) {
