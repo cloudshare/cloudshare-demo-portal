@@ -114,7 +114,7 @@ describe("SalesParticipantWorkspace", () => {
     await screen.findByRole("row", { name: /Ada Lovelace/ });
     await user.click(screen.getByRole("button", { name: "Inspect" }));
     await user.click(screen.getByRole("button", { name: "Resend" }));
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("corr-resend"));
+    await waitFor(() => expect(screen.getByText("Completed. Correlation corr-resend.")).toBeTruthy());
     const call = request.mock.calls.find(([, init]) => init?.method === "POST");
     expect(call?.[0]).toContain("/participants/invite");
     expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ targets: [{ participantId: "p1", intent: "resend", expectedInvitationStatus: "sent", participantRevision: participant.participantRevision }] });
