@@ -97,11 +97,11 @@ describe("SalesParticipantWorkspace", () => {
     await user.click(first);
     const search = screen.getByRole("textbox", { name: "Search Participants" });
     await user.type(search, "grace");
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("roster changed"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("roster changed"));
   });
   it("shows a visible status when the bounded roster fetch fails", async () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => { throw new Error("network down"); }} />);
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("could not be loaded"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("could not be loaded"));
   });
   it("sends the explicit resend contract and retains correlation feedback after reread", async () => {
     const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, activeLaunchCapability: false, launchOperation: null, environmentAttention: null };
@@ -148,5 +148,22 @@ describe("SalesParticipantWorkspace", () => {
     await user.click(screen.getByRole("button", { name: "Revoke" }));
     await waitFor(() => expect(request.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(true));
     expect(tableRow).toBeTruthy();
+  });
+  it("keeps the roster contained at constrained width and exposes keyboard actions without console errors", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify({ ...page, participants: [{ ...participant, providerCorrelation: true, nativeInvitationsEnabled: true, sessionEndsAt: "2099-01-01T00:00:00.000Z" }] }))} />);
+    const table = await screen.findByRole("table", { name: "Participant roster" });
+    Object.defineProperty(table.parentElement, "clientWidth", { configurable: true, value: 320 });
+    Object.defineProperty(table.parentElement, "scrollWidth", { configurable: true, value: 320 });
+    expect((table.parentElement as HTMLElement).scrollWidth).toBeLessThanOrEqual((table.parentElement as HTMLElement).clientWidth);
+    const row = screen.getByRole("row", { name: /Ada Lovelace/ });
+    row.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Resend" })).toBeTruthy();
+    expect(errors).not.toHaveBeenCalled();
+    expect(warnings).not.toHaveBeenCalled();
   });
 });
