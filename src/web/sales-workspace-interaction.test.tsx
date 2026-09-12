@@ -647,6 +647,23 @@ describe("SalesWorkspace interaction", () => {
     expect(fetchMock).toHaveBeenCalled();
   });
 
+  it("keeps the typed operation filter when a Support route renders", async () => {
+    const diagnosticsRequests: URL[] = [];
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://localhost:3000");
+      if (url.pathname === "/api/sales/diagnostics") {
+        diagnosticsRequests.push(url);
+        return json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: false, nextOffset: null } });
+      }
+      return json({ error: `Unexpected request ${url.pathname}` }, 500);
+    });
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "support", operation: "cloudshare.request" }} />);
+
+    expect((await screen.findByLabelText("Operation")) as HTMLInputElement).toHaveProperty("value", "cloudshare.request");
+    await waitFor(() => expect(diagnosticsRequests.at(-1)?.searchParams.get("operation")).toBe("cloudshare.request"));
+  });
+
   it("keeps a successfully-created needs-attention Session non-retryable and linked to Sales Support", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
