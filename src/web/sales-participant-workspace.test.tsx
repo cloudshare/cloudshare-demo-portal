@@ -88,4 +88,19 @@ describe("SalesParticipantWorkspace", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(request.mock.calls.some((call) => String(call[0] ?? "").includes("offset=25"))).toBe(true));
   });
+  it("announces selection pruning after a query changes the visible roster", async () => {
+    const second = { ...participant, id: "p2", name: "Grace Hopper" };
+    const request = vi.fn(async (url: string) => new Response(JSON.stringify({ participants: url.includes("query=grace") ? [second] : [participant], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    const first = await screen.findByRole("row", { name: /Ada Lovelace/ });
+    await user.click(first);
+    const search = screen.getByRole("textbox", { name: "Search Participants" });
+    await user.type(search, "grace");
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("roster changed"));
+  });
+  it("shows a visible status when the bounded roster fetch fails", async () => {
+    render(<SalesParticipantWorkspace sessionId="s1" active request={async () => { throw new Error("network down"); }} />);
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("could not be loaded"));
+  });
 });
