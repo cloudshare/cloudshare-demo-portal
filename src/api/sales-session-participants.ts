@@ -204,13 +204,16 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   }
   if (admission.kind !== "admitted") return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
   admittedCommand = { commandId: parsed.data.commandId, admissionToken: admission.admissionToken, revision: 1 };
-  const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) return deliveryResult.response!;
+  const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) {
+    await deps.invitationLedger.expireAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))());
+    return deliveryResult.response!;
+  }
   const prepared = { session: sessionResult.session, delivery: deliveryResult.delivery };
   const correlationId = randomUUID();
   let acknowledgedInvite: SalesDeliveryDispatchEvidence | undefined;
+  let dispatchMarked = false;
   const completedExchanges: Array<{ readonly request: unknown; readonly response: unknown }> = [];
   try {
-    if (admittedCommand.admissionToken) await deps.invitationLedger.markBatchDispatching(request.customerId, admittedCommand.commandId, admittedCommand.admissionToken, admittedCommand.revision, (deps.now ?? (() => new Date()))());
     // CloudShare's invite endpoint acknowledges disabled invitations with an
     // empty 200. Read the documented Experience configuration first so
     // Certalis can return the actual prerequisite rather than a false success.
@@ -232,6 +235,10 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     })) {
       await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "One or more selected Sales Participants no longer has its Certalis correlation values in CloudShare. Refresh monitoring and investigate the correlated diagnostics before inviting.", current, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds, httpExchanges: completedExchanges });
       return { status: 409, body: { error: "One or more selected Sales Participants need attention and cannot be invited. Refresh monitoring and investigate the correlated diagnostics.", correlationId } };
+    }
+    if (admittedCommand.admissionToken) {
+      await deps.invitationLedger.markBatchDispatching(request.customerId, admittedCommand.commandId, admittedCommand.admissionToken, admittedCommand.revision, (deps.now ?? (() => new Date()))());
+      dispatchMarked = true;
     }
     const requested = await prepared.delivery.inviteParticipants!(prepared.session.cloudShareSalesExperienceId, selected.map((participant) => participant!.cloudShareParticipantId));
     acknowledgedInvite = requested;
@@ -300,6 +307,10 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   }
   catch (error) {
     const failedExchange = exchange(error);
+    if (!dispatchMarked) {
+      await deps.invitationLedger.expireAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))());
+      return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "Certalis could not prepare the native invitation request. Retry after reviewing support diagnostics.", error, undefined, [...completedExchanges, ...(failedExchange ? [failedExchange] : [])]);
+    }
     if (acknowledgedInvite) {
       const dispatchOutcome = acknowledgedInvite.dispatchOutcome;
       const outcome = dispatchOutcome === "ambiguous_after_dispatch" ? "no_replay" as const : "failed_retryable" as const;
