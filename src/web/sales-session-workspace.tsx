@@ -14,26 +14,13 @@ import { SalesWorkspaceExpiryContext } from "./sales-workspace-chrome";
 import { statusBadgeStyle } from "./status-badge";
 import styles from "./sales-session-workspace.module.css";
 import type { SalesSessionWorkspaceResponse } from "@/domain/sales-session-workspace";
-import type { SalesParticipantWorkspaceRow } from "@/domain/sales-participant-workspace";
-import {
-  participantActionReason,
-  pruneParticipantSelection,
-  reduceParticipantSelection,
-  type ParticipantSelectionState,
-} from "@/domain/sales-participant-workspace";
 import type { SalesSessionVerifyResponse } from "@/api/sales-session-reconciliation";
+import { SalesParticipantWorkspace } from "./sales-participant-workspace";
 
 type Area = "participants" | "activity" | "details";
 type DiagnosticRecord = {
   readonly correlationId: string;
   readonly occurredAt: string;
-};
-type ParticipantPage = {
-  readonly participants: readonly SalesParticipantWorkspaceRow[];
-  readonly total: number;
-  readonly offset: number;
-  readonly limit: number;
-  readonly hasMore: boolean;
 };
 
 export function SalesSessionWorkspace(props: {
@@ -56,22 +43,6 @@ function SalesSessionWorkspaceState({
   const router = useRouter();
   const [workspace, setWorkspace] =
     useState<SalesSessionWorkspaceResponse | null>(null);
-  const [participantPage, setParticipantPage] =
-    useState<ParticipantPage | null>(null);
-  const [participantQuery, setParticipantQuery] = useState("");
-  const [participantOffset, setParticipantOffset] = useState(0);
-  const [participantSelection, setParticipantSelection] =
-    useState<ParticipantSelectionState>({
-      activeId: null,
-      selectedIds: [],
-      rangeAnchorId: null,
-    });
-  const [participantInspectorOpen, setParticipantInspectorOpen] =
-    useState(false);
-  const [participantFeedback, setParticipantFeedback] = useState<
-    Record<string, string>
-  >({});
-  const participantInspectorRef = useRef<HTMLElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [verification, setVerification] = useState<string | null>(null);
@@ -116,90 +87,13 @@ function SalesSessionWorkspaceState({
       }),
     [fallbackExpiry, shellExpiry],
   );
+  const participantRequest = useCallback(
+    (url: string, init?: RequestInit) =>
+      authenticatedRequest(lifecycle.current.token)(url, init),
+    [authenticatedRequest],
+  );
   const handleSessionExpired = () => {
     if (lifecycle.current.active) (shellExpiry ?? fallbackExpiry)();
-  };
-  const activeParticipant =
-    participantPage?.participants.find(
-      (row) => row.id === participantSelection.activeId,
-    ) ?? null;
-  const participantPageHref = useCallback(
-    () =>
-      `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/page?${participantQuery ? `query=${encodeURIComponent(participantQuery)}&` : ""}offset=${participantOffset}&limit=25`,
-    [participantOffset, participantQuery, sessionId],
-  );
-  const announceParticipant = (message: string) =>
-    setParticipantFeedback((current) => ({
-      ...current,
-      _announcement: message,
-    }));
-  const runParticipantAction = async (
-    participant: SalesParticipantWorkspaceRow,
-    action: "invite" | "resend" | "generate_launch" | "revoke_launch",
-  ) => {
-    const token = lifecycle.current.token;
-    setParticipantFeedback((current) => ({
-      ...current,
-      [participant.id]: "Working…",
-    }));
-    const request = authenticatedRequest(token);
-    try {
-      const url =
-        action === "invite" || action === "resend"
-          ? `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/invite`
-          : `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/${encodeURIComponent(participant.id)}/launch-link`;
-      const body =
-        action === "invite" || action === "resend"
-          ? {
-              commandId: crypto.randomUUID(),
-              targets: [
-                {
-                  participantId: participant.id,
-                  intent: action,
-                  expectedInvitationStatus: participant.invitationStatus,
-                  participantRevision: participant.participantRevision,
-                },
-              ],
-            }
-          : undefined;
-      const response = await request(url, {
-        method: action === "revoke_launch" ? "DELETE" : "POST",
-        headers: body ? { "Content-Type": "application/json" } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      const result = (await response.json()) as {
-        error?: string;
-        correlationId?: string;
-        launchUrl?: string;
-      };
-      if (!response.ok)
-        throw new Error(result.error ?? `Action failed (${response.status}).`);
-      setParticipantFeedback((current) => ({
-        ...current,
-        [participant.id]: result.launchUrl
-          ? `Launch link ready: ${result.launchUrl}`
-          : result.correlationId
-            ? `Completed. Correlation ${result.correlationId}.`
-            : "Completed.",
-      }));
-      if (result.launchUrl)
-        window.open(result.launchUrl, "_blank", "noopener,noreferrer");
-      const reread = await request(
-        participantPageHref(),
-        { cache: "no-store" },
-      );
-      const next = (await reread.json()) as ParticipantPage;
-      if (reread.ok && Array.isArray(next.participants))
-        setParticipantPage(next);
-    } catch (cause) {
-      setParticipantFeedback((current) => ({
-        ...current,
-        [participant.id]:
-          cause instanceof Error
-            ? cause.message
-            : "Action failed; retry or open Support.",
-      }));
-    }
   };
   useEffect(() => {
     const owner = lifecycle.current;
@@ -238,46 +132,6 @@ function SalesSessionWorkspaceState({
           );
       });
   }, [authenticatedRequest, sessionId]);
-  useEffect(() => {
-    if (area !== "participants") return;
-    const token = lifecycle.current.token;
-    void authenticatedRequest(token)(
-      participantPageHref(),
-      { cache: "no-store" },
-    )
-      .then(async (response) => {
-        const body = (await response.json()) as ParticipantPage;
-        if (
-          response.ok &&
-          Array.isArray(body.participants) &&
-          lifecycle.current.active &&
-          lifecycle.current.token === token
-        ) {
-          setParticipantPage(body);
-          setParticipantSelection((current) =>
-            pruneParticipantSelection(
-              current,
-              body.participants.map((participant) => participant.id),
-            ),
-          );
-        }
-      })
-      .catch(() => undefined);
-  }, [
-    area,
-    authenticatedRequest,
-    participantOffset,
-    participantQuery,
-    sessionId,
-    participantPageHref,
-  ]);
-  useEffect(() => {
-    if (area !== "participants" || participantInspectorOpen || !participantSelection.activeId) return;
-    Array.from(document.querySelectorAll<HTMLElement>("tr[data-participant-id]")).find((row) => row.dataset.participantId === participantSelection.activeId)?.focus();
-  }, [area, participantInspectorOpen, participantSelection.activeId]);
-  useEffect(() => {
-    if (participantInspectorOpen) participantInspectorRef.current?.focus();
-  }, [participantInspectorOpen]);
   useEffect(() => {
     if (
       area === "activity" ||
@@ -664,180 +518,7 @@ function SalesSessionWorkspaceState({
         </div>
       </nav>
       {area === "participants" ? (
-        <section className={styles.panel}>
-          <div className={styles.panelHeading}>
-            <div>
-              <h2 ref={areaHeading} tabIndex={-1}>
-                Participants
-              </h2>
-              <p>Bounded Participant workspace page.</p>
-            </div>
-            <span className={styles.count}>
-              {participantPage?.total ?? 0} participants
-            </span>
-          </div>
-          <label htmlFor="participant-query">Search Participants</label>
-          <input
-            id="participant-query"
-            value={participantQuery}
-            onChange={(event) => {
-              setParticipantQuery(event.target.value);
-              setParticipantOffset(0);
-            }}
-            placeholder="Search name or email"
-          />
-          {participantPage?.participants.length ? (
-            <div className={styles.tableWrap}>
-              <table aria-label="Participant roster" className={styles.roster}>
-                <thead>
-                  <tr>
-                    <th>Participant</th>
-                    <th>Invitation</th>
-                    <th>Participation</th>
-                    <th>Participant Environment</th>
-                    <th>Environment source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {participantPage.participants.map((participant, index) => {
-                    const selected = participantSelection.selectedIds.includes(
-                      participant.id,
-                    );
-                    const active =
-                      participantSelection.activeId === participant.id;
-                    return (
-                      <tr
-                        key={participant.id}
-                        data-participant-id={participant.id}
-                        data-active={active ? "true" : undefined}
-                        data-selected={selected ? "true" : undefined}
-                        tabIndex={active ? 0 : -1}
-                        onClick={(event) => {
-                          if (
-                            (event.target as HTMLElement).closest(
-                              "button,a,input,select,textarea",
-                            )
-                          )
-                            return;
-                          setParticipantSelection((current) =>
-                            reduceParticipantSelection(current, {
-                              type: "click",
-                              id: participant.id,
-                              additive: event.ctrlKey || event.metaKey,
-                              range: event.shiftKey,
-                              pageIds: participantPage.participants.map(
-                                (row) => row.id,
-                              ),
-                            }),
-                          );
-                        }}
-                        onKeyDown={(event) => {
-                          const pageIds = participantPage.participants.map(
-                            (row) => row.id,
-                          );
-                          if (
-                            event.key === "ArrowDown" ||
-                            event.key === "ArrowUp"
-                          ) {
-                            event.preventDefault();
-                            setParticipantSelection((current) =>
-                              reduceParticipantSelection(current, {
-                                type: "move",
-                                direction:
-                                  event.key === "ArrowDown"
-                                    ? "next"
-                                    : "previous",
-                                pageIds,
-                              }),
-                            );
-                          } else if (event.key === " ") {
-                            event.preventDefault();
-                            setParticipantSelection((current) =>
-                              reduceParticipantSelection(current, {
-                              type: "toggle",
-                              id: participant.id,
-                              range: event.shiftKey,
-                              pageIds,
-                              }),
-                            );
-                          } else if (event.key === "Enter") {
-                            event.preventDefault();
-                            setParticipantInspectorOpen(true);
-                          }
-                        }}
-                      >
-                        <th scope="row">
-                          <strong>{participant.name}</strong>
-                          <span>{participant.email}</span>
-                          <button type="button" onClick={() => { setParticipantSelection((current) => ({ ...current, activeId: participant.id })); setParticipantInspectorOpen(true); }}>Inspect</button>
-                        </th>
-                        <td>
-                          <span className={styles.inlineBadge}>
-                            {humanInvitation(participant.invitationStatus)}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={styles.inlineBadge}>
-                            {humanParticipation(
-                              participant.participationStatus,
-                            )}
-                          </span>
-                        </td>
-                        <td>
-                          {participant.environment.value ?? "Not observed"}
-                        </td>
-                        <td>
-                          {humanEnvironmentSource(
-                            participant.environment.source,
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className={styles.empty}>
-              No Participants are registered for this Sales Session.
-            </p>
-          )}
-          {participantPage?.offset && participantPage.offset > 0 ? (
-            <button
-              type="button"
-              onClick={() =>
-                setParticipantOffset(Math.max(0, participantOffset - 25))
-              }
-            >
-              Previous
-            </button>
-          ) : null}
-          {participantPage?.hasMore ? (
-            <button
-              type="button"
-              onClick={() => setParticipantOffset(participantOffset + 25)}
-            >
-              Next
-            </button>
-          ) : null}
-        </section>
-      ) : null}
-      {area === "participants" && participantInspectorOpen && activeParticipant ? (
-        <aside ref={participantInspectorRef} tabIndex={-1} className={styles.panel} aria-label="Participant inspector" onKeyDown={(event) => {
-          if (event.key === "Escape") { event.preventDefault(); setParticipantInspectorOpen(false); announceParticipant(`Inspector closed for ${activeParticipant.name}.`); }
-        }}>
-          <div className={styles.panelHeading}><div><h2>Participant inspector</h2><p>{activeParticipant.name} · {activeParticipant.email}</p></div><button type="button" onClick={() => setParticipantInspectorOpen(false)}>Close</button></div>
-          <p>Invitation: <strong>{humanInvitation(activeParticipant.invitationStatus)}</strong> · Participation: <strong>{humanParticipation(activeParticipant.participationStatus)}</strong></p>
-          <div role="group" aria-label="Participant actions" className={styles.inspectorActions}>
-            {(["invite", "resend", "generate_launch", "revoke_launch"] as const).map((action) => {
-              const reason = participantActionReason(activeParticipant, action, new Date());
-              const label = action === "generate_launch" ? "Generate launch link" : action === "revoke_launch" ? "Revoke launch link" : action[0].toUpperCase() + action.slice(1);
-              return <button key={action} type="button" disabled={Boolean(reason)} title={reason ?? undefined} onClick={() => void runParticipantAction(activeParticipant, action)}>{label}</button>;
-            })}
-          </div>
-          {participantFeedback[activeParticipant.id] ? <p role="status" aria-live="polite">{participantFeedback[activeParticipant.id]}</p> : null}
-          <p><a href={`/sales?tab=activity&sessionId=${encodeURIComponent(sessionId)}${activeParticipant.launchOperation?.correlationId ? `&correlationId=${encodeURIComponent(activeParticipant.launchOperation.correlationId)}` : ""}`}>View Activity</a> · <a href="/sales?tab=support">Open Support</a></p>
-        </aside>
+        <SalesParticipantWorkspace sessionId={sessionId} active request={participantRequest} />
       ) : null}
       {area === "activity" ? (
         <section className={styles.panel}>
