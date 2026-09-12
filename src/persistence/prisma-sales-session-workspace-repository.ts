@@ -27,9 +27,10 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
       const participantWhere = query ? { contact: { OR: [{ firstName: { contains: query, mode: "insensitive" as const } }, { lastName: { contains: query, mode: "insensitive" as const } }, { email: { contains: query, mode: "insensitive" as const } }] } } : undefined;
       const session = await prisma.salesDemoSession.findFirst({
         where: { customerId, id: sessionId, opportunity: { archivedAt: null, account: { archivedAt: null } } },
-        include: { opportunity: { include: { account: true } }, item: true, participants: { where: participantWhere, include: { contact: true }, orderBy: { createdAt: "asc" }, skip: page * pageSize, take: pageSize } },
+        include: { opportunity: { include: { account: true } }, item: true, participants: { where: participantWhere, include: { contact: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], skip: page * pageSize, take: pageSize } },
       });
       if (!session) return null;
+      const participantTotal = await prisma.salesSessionParticipant.count({ where: { salesDemoSessionId: session.id, ...participantWhere } });
       // A pending reference is a pre-dispatch reservation. It cannot safely be
       // treated as a real Sales Experience or a valid workspace target.
       if (session.operationalStatus === "provisioning" && session.cloudShareSalesExperienceId.startsWith("pending:")) return { state: "stale" };
@@ -68,6 +69,7 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
       return { state: "available", workspace: {
         summary: { id: session.id, sessionName: session.sessionName || "Sales Enablement Session", revision: session.revision, start: session.start, end: session.end, timeZone: session.timeZone, operation: status.operation, experience: status.experience },
         participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant), environmentAttention: projectSafeSalesParticipantAttention(participant) })),
+        participantPage: { page, pageSize, total: participantTotal, hasMore: (page + 1) * pageSize < participantTotal, query: query ?? "" },
         activity: projectedActivity,
         activityGroups,
         activityHistory: sourceCapped

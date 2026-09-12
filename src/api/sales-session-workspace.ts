@@ -7,7 +7,10 @@ export interface SalesSessionWorkspaceHandlerRequest { readonly customerId: stri
 /** Framework-agnostic Customer-scoped, local-only read. The repository's
  * metadata-only projection makes protected diagnostic evidence unreachable to
  * this ordinary API and its browser callers. */
-export async function handleReadSalesSessionWorkspace(deps: SalesSessionWorkspaceHandlerDeps, request: SalesSessionWorkspaceHandlerRequest): Promise<{ readonly status: 200; readonly body: SalesSessionWorkspaceResponse } | { readonly status: 404 | 409; readonly body: { readonly error: string } }> {
+export async function handleReadSalesSessionWorkspace(deps: SalesSessionWorkspaceHandlerDeps, request: SalesSessionWorkspaceHandlerRequest): Promise<{ readonly status: 200; readonly body: SalesSessionWorkspaceResponse } | { readonly status: 400 | 404 | 409; readonly body: { readonly error: string } }> {
+  if (request.participantQuery !== undefined && request.participantQuery.length > 200) return { status: 400, body: { error: "participantQuery is too long." } };
+  if (request.participantPage !== undefined && (!Number.isInteger(request.participantPage) || request.participantPage < 0)) return { status: 400, body: { error: "participantPage must be a non-negative integer." } };
+  if (request.participantPageSize !== undefined && (!Number.isInteger(request.participantPageSize) || request.participantPageSize < 1 || request.participantPageSize > 100)) return { status: 400, body: { error: "participantPageSize must be an integer from 1 to 100." } };
   const workspace = request.participantQuery !== undefined || request.participantPage !== undefined || request.participantPageSize !== undefined
     ? await deps.workspace.read(request.customerId, request.sessionId, request)
     : await deps.workspace.read(request.customerId, request.sessionId);
