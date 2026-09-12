@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { projectSalesSessionStatus } from "@/domain/sales-session-status";
-import { groupSafeSalesSessionActivity, projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity, type SalesSessionWorkspaceRead } from "@/domain/sales-session-workspace";
+import { groupSafeSalesSessionActivity, projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity, type ParticipantActionState, type SalesSessionWorkspaceRead } from "@/domain/sales-session-workspace";
+import { projectSalesSessionAccessWindow } from "@/domain/sales-session-access-window";
 
 export interface SalesSessionWorkspaceRepository {
   /** Returns a single safe, local projection or null. Customer and archived-record
@@ -68,7 +69,17 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
       const presentationCapped = allActivityGroups.length > MAX_PRESENTED_ACTIVITY_GROUPS;
       return { state: "available", workspace: {
         summary: { id: session.id, sessionName: session.sessionName || "Sales Enablement Session", revision: session.revision, start: session.start, end: session.end, timeZone: session.timeZone, operation: status.operation, experience: status.experience },
-        participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant), environmentAttention: projectSafeSalesParticipantAttention(participant) })),
+        participants: await Promise.all(session.participants.map(async (participant) => {
+          const activeLaunchLink = await prisma.salesParticipantLaunchLink.findFirst({ where: { customerId, salesDemoSessionId: session.id, salesSessionParticipantId: participant.id, revokedAt: null }, select: { id: true } });
+          const hasActiveLaunchLink = Boolean(activeLaunchLink);
+          const window = projectSalesSessionAccessWindow(session, new Date());
+          const concluded = participant.participationStatus === "concluded";
+          const available = window.nativeInvitationsAvailable && !concluded;
+          const actionState: ParticipantActionState = concluded || window.value === "closed"
+            ? { primary: "diagnostics", canInvite: false, canLaunch: false, canRevoke: hasActiveLaunchLink, hasActiveLaunchLink, reason: concluded ? "Participation is concluded; invitation and launch are unavailable." : "The named Session time window has ended; invitation and launch are unavailable." }
+            : { primary: participant.invitationStatus === "sent" ? "launch" : "invite", canInvite: available, canLaunch: available, canRevoke: hasActiveLaunchLink, hasActiveLaunchLink, reason: available ? (participant.invitationStatus === "sent" ? "Participant is invited and may launch independently of native invitation status." : "Participant is eligible for a native invitation or direct launch.") : "Native invitations are unavailable for this Session." };
+          return { id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" as const : "notSent" as const, participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant), environmentAttention: projectSafeSalesParticipantAttention(participant), actionState };
+        })),
         participantPage: { page, pageSize, total: participantTotal, hasMore: (page + 1) * pageSize < participantTotal, query: query ?? "" },
         activity: projectedActivity,
         activityGroups,
