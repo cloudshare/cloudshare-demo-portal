@@ -14,6 +14,16 @@ export interface SalesSessionWorkspaceResponse {
 export type SalesSessionWorkspaceRead = { readonly state: "available"; readonly workspace: SalesSessionWorkspaceResponse } | { readonly state: "stale" };
 export type SafeSalesParticipantAttention = { readonly reason: string; readonly source: string };
 export type ParticipantActionState = { readonly primary: "invite" | "resend" | "launch" | "diagnostics"; readonly canInvite: boolean; readonly canLaunch: boolean; readonly canRevoke: boolean; readonly hasActiveLaunchLink: boolean; readonly reason: string };
+export type SalesParticipantBrowserActionResult =
+  | { readonly ok: true; readonly action: "invite" | "resend" | "launch" | "revoke"; readonly correlationId?: string; readonly launchUrl?: `/sales/launch/${string}` }
+  | { readonly ok: false; readonly action: "invite" | "resend" | "launch" | "revoke"; readonly error: string; readonly correlationId?: string };
+
+export function projectSalesParticipantBrowserActionResult(input: { readonly ok: boolean; readonly action: SalesParticipantBrowserActionResult["action"]; readonly correlationId?: unknown; readonly launchUrl?: unknown; readonly error?: unknown }): SalesParticipantBrowserActionResult {
+  const correlationId = typeof input.correlationId === "string" ? input.correlationId : undefined;
+  if (!input.ok) return { ok: false, action: input.action, error: typeof input.error === "string" ? input.error : "Participant action failed.", ...(correlationId ? { correlationId } : {}) };
+  const launchUrl = typeof input.launchUrl === "string" && input.launchUrl.startsWith("/sales/launch/") ? input.launchUrl as `/sales/launch/${string}` : undefined;
+  return { ok: true, action: input.action, ...(correlationId ? { correlationId } : {}), ...(launchUrl ? { launchUrl } : {}) };
+}
 
 export type SafeSalesSessionActivity = {
   /** Persisted diagnostic identity used only to keep uncorrelated rows stable. */
