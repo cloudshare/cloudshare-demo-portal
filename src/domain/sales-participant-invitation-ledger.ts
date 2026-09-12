@@ -9,6 +9,23 @@ export type InvitationTargetOutcome = { readonly participantId: string; readonly
 export type InvitationSafeReason = "provider_rejected" | "ambiguous_after_dispatch" | "confirmation_required" | "failed_retryable" | "stale_revision" | "blocked_by_fence";
 export type RevisionedInvitationCommand = { readonly customerId: string; readonly commandId: string; readonly phase: InvitationPhase; readonly revision: number; readonly correlationId: string | null };
 export type CurrentInvitationState = { readonly command: RevisionedInvitationCommand; readonly outcome: ReturnType<typeof invitationResult> };
+export type ParticipantInvitationProjection = {
+  readonly participantId: string;
+  readonly expectedParticipantRevision: string;
+  readonly cloudShareParticipantId: string;
+  readonly invitationStatus: "sent" | "notSent";
+  readonly lastInvitedAt: string | null;
+  readonly invitedBy: string | null;
+  readonly participationStatus: "pending" | "inProgress" | "concluded";
+  readonly firstJoined: string | null;
+  readonly cloudShareRosterEnvironmentReference: string | null;
+  readonly environmentStatus: string | null;
+  readonly environmentStatusCode: number | null;
+  readonly environmentObservedAt: string | null;
+  readonly environmentAttentionReason: string | null;
+  readonly environmentAttentionSource: string | null;
+  readonly lastReconciledAt: string;
+};
 export type Admission = { readonly kind: "admitted" | "same_command" | "blocked"; readonly commandId: string; readonly admissionToken?: string; readonly command?: RevisionedInvitationCommand };
 export type FinishInvitationCommand = { readonly commandId: string; readonly expectedRevision: number; readonly expectedPhase: "dispatching" | "evaluating_confirmation" | "settled"; readonly phase: "evaluating_confirmation" | "settled"; readonly correlationId: string | null };
 export interface SalesParticipantInvitationLedger {
@@ -17,6 +34,7 @@ export interface SalesParticipantInvitationLedger {
   expireAdmitted(customerId: string, commandId: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
   failAdmitted(customerId: string, commandId: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
   finishBatch(input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[] }): Promise<RevisionedInvitationCommand>;
+  finishBatchWithParticipantProjections(input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[]; projections: readonly ParticipantInvitationProjection[] }): Promise<RevisionedInvitationCommand>;
   /** Command identity is the replay boundary; unlike participant-current
    * reads it remains available after individual fences are released. */
   readCommand(customerId: string, commandId: string): Promise<CurrentInvitationState | null>;

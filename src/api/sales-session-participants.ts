@@ -329,7 +329,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     const pendingConfirmationParticipantCount = targetOutcomes.filter((target) => target.outcome !== "confirmed").length;
     const alreadySentParticipantCount = confirmedParticipants.filter(({ before, participant }) => before.invitationStatus === "sent" && participant.invitationStatus === "sent").length;
     const invitationConfirmation = pendingConfirmationParticipantCount === 0 ? "confirmed" : "pending";
-    await deps.invitationLedger.finishBatch({
+    await deps.invitationLedger.finishBatchWithParticipantProjections({
       customerId: request.customerId,
       commandId: admittedCommand.commandId,
       expectedRevision: 2,
@@ -337,8 +337,24 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
       phase: targetOutcomes.every((target) => target.outcome === "confirmed" || target.outcome === "accepted_unconfirmed") ? "settled" : "evaluating_confirmation",
       correlationId,
       targetOutcomes,
+      projections: confirmedParticipants.map(({ stored, participant }) => ({
+        participantId: stored.id,
+        expectedParticipantRevision: stored.updatedAt.toISOString(),
+        cloudShareParticipantId: participant.id,
+        invitationStatus: participant.invitationStatus,
+        lastInvitedAt: participant.invitationStatus === "sent" ? now.toISOString() : stored.lastInvitedAt?.toISOString() ?? null,
+        invitedBy: participant.invitedBy,
+        participationStatus: participant.participationStatus,
+        firstJoined: participant.firstJoined,
+        cloudShareRosterEnvironmentReference: participant.environmentId ?? null,
+        environmentStatus: participant.envStatus ?? null,
+        environmentStatusCode: null,
+        environmentObservedAt: null,
+        environmentAttentionReason: null,
+        environmentAttentionSource: null,
+        lastReconciledAt: now.toISOString(),
+      })),
     });
-    await Promise.all(confirmedParticipants.map(({ stored, participant }) => deps.participants.save({ ...stored, cloudShareParticipantId: participant.id, invitationStatus: participant.invitationStatus, lastInvitedAt: participant.invitationStatus === "sent" ? now : stored.lastInvitedAt, invitedBy: participant.invitedBy, participationStatus: participant.participationStatus, firstJoined: participant.firstJoined, cloudShareEnvironmentId: participant.environmentId, environmentStatus: participant.envStatus ?? null, lastReconciledAt: now, updatedAt: now })));
     const message = invitationConfirmation === "confirmed"
       ? "CloudShare confirmed native invitations for selected Sales Participants."
       : "CloudShare accepted the native invitation request, but has not yet confirmed the invitation as sent.";

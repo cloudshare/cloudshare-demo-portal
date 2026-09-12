@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { PrismaClient } from "@prisma/client";
-import { invitationOutcomes, invitationPhases, invitationResult, invitationScopeHash, type Admission, type CurrentInvitationState, type FinishInvitationCommand, type InvitationPhase, type InvitationTargetOutcome, type RevisionedInvitationCommand, type SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
+import type { Prisma, PrismaClient } from "@prisma/client";
+import { invitationOutcomes, invitationPhases, invitationResult, invitationScopeHash, type Admission, type CurrentInvitationState, type FinishInvitationCommand, type InvitationPhase, type InvitationTargetOutcome, type ParticipantInvitationProjection, type RevisionedInvitationCommand, type SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
 
 const LEASE_MS = 30_000;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -19,6 +19,24 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
       return { participantId: target.salesSessionParticipantId, outcome: target.outcome as never, reason: target.reason };
     });
     return { command, outcome: invitationResult({ commandId: command.commandId, outcomes, correlationId: command.correlationId }) };
+  };
+  const finishInTransaction = async (tx: Prisma.TransactionClient, input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[]; projections?: readonly ParticipantInvitationProjection[] }) => {
+    const command = await tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, include: { targets: true } });
+    const ids = input.targetOutcomes.map((o) => o.participantId);
+    if (command.revision !== input.expectedRevision || command.phase !== input.expectedPhase || !["evaluating_confirmation", "settled"].includes(input.phase) || command.targets.length !== ids.length || new Set(ids).size !== ids.length || command.targets.some((target) => !ids.includes(target.salesSessionParticipantId)) || input.targetOutcomes.some((outcome) => !invitationOutcomes.includes(outcome.outcome) || (outcome.reason !== null && !safeReasons.includes(outcome.reason as never)))) throw new Error("invitation command is no longer current");
+    invitationResult({ commandId: input.commandId, outcomes: input.targetOutcomes, correlationId: input.correlationId });
+    if (input.projections) {
+      if (input.projections.length !== ids.length || new Set(input.projections.map((p) => p.participantId)).size !== ids.length || input.projections.some((p) => !ids.includes(p.participantId))) throw new Error("participant projection set is incomplete");
+      for (const projection of input.projections) {
+        const updated = await tx.salesSessionParticipant.updateMany({ where: { customerId: input.customerId, id: projection.participantId, salesDemoSessionId: command.sessionId, updatedAt: new Date(projection.expectedParticipantRevision) }, data: { cloudShareParticipantId: projection.cloudShareParticipantId, invitationStatus: projection.invitationStatus, lastInvitedAt: projection.lastInvitedAt ? new Date(projection.lastInvitedAt) : null, invitedBy: projection.invitedBy, participationStatus: projection.participationStatus, firstJoined: projection.firstJoined, cloudShareRosterEnvironmentReference: projection.cloudShareRosterEnvironmentReference, environmentStatus: projection.environmentStatus, environmentStatusCode: projection.environmentStatusCode, environmentObservedAt: projection.environmentObservedAt ? new Date(projection.environmentObservedAt) : null, environmentAttentionReason: projection.environmentAttentionReason, environmentAttentionSource: projection.environmentAttentionSource, lastReconciledAt: new Date(projection.lastReconciledAt), updatedAt: new Date() } });
+        if (updated.count !== 1) throw new Error("participant projection is no longer current");
+      }
+    }
+    const updated = await tx.salesParticipantInvitationCommand.update({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, data: { phase: input.phase, correlationId: input.correlationId, revision: { increment: 1 }, updatedAt: new Date() } });
+    for (const outcome of input.targetOutcomes) await tx.salesParticipantInvitationTarget.update({ where: { customerId_commandId_salesSessionParticipantId: { customerId: input.customerId, commandId: input.commandId, salesSessionParticipantId: outcome.participantId } }, data: { outcome: outcome.outcome, reason: outcome.reason } });
+    const releasable = new Set(input.targetOutcomes.filter((outcome) => !["no_replay", "confirmation_required"].includes(outcome.outcome)).map((outcome) => outcome.participantId));
+    if (releasable.size) await tx.salesParticipantInvitationFence.deleteMany({ where: { customerId: input.customerId, commandId: input.commandId, salesSessionParticipantId: { in: [...releasable] } } });
+    return toCommand(updated);
   };
   return {
     async admitBatch(input): Promise<Admission> {
@@ -67,17 +85,10 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
       return { customerId: updated.customerId, commandId: updated.commandId, phase: updated.phase as InvitationPhase, revision: updated.revision, correlationId: updated.correlationId };
     },
     async finishBatch(input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[] }): Promise<RevisionedInvitationCommand> {
-      return prisma.$transaction(async (tx) => {
-        const command = await tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, include: { targets: true } });
-        const ids = input.targetOutcomes.map((o) => o.participantId);
-        if (command.revision !== input.expectedRevision || command.phase !== input.expectedPhase || !["evaluating_confirmation", "settled"].includes(input.phase) || command.targets.length !== ids.length || new Set(ids).size !== ids.length || command.targets.some((target) => !ids.includes(target.salesSessionParticipantId)) || input.targetOutcomes.some((outcome) => !invitationOutcomes.includes(outcome.outcome) || (outcome.reason !== null && !safeReasons.includes(outcome.reason as never)))) throw new Error("invitation command is no longer current");
-        invitationResult({ commandId: input.commandId, outcomes: input.targetOutcomes, correlationId: input.correlationId });
-        const updated = await tx.salesParticipantInvitationCommand.update({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, data: { phase: input.phase, correlationId: input.correlationId, revision: { increment: 1 }, updatedAt: new Date() } });
-        for (const outcome of input.targetOutcomes) await tx.salesParticipantInvitationTarget.update({ where: { customerId_commandId_salesSessionParticipantId: { customerId: input.customerId, commandId: input.commandId, salesSessionParticipantId: outcome.participantId } }, data: { outcome: outcome.outcome, reason: outcome.reason } });
-        const releasable = new Set(input.targetOutcomes.filter((outcome) => !["no_replay", "confirmation_required"].includes(outcome.outcome)).map((outcome) => outcome.participantId));
-        if (releasable.size) await tx.salesParticipantInvitationFence.deleteMany({ where: { customerId: input.customerId, commandId: input.commandId, salesSessionParticipantId: { in: [...releasable] } } });
-        return toCommand(updated);
-      });
+      return prisma.$transaction(async (tx) => finishInTransaction(tx, input));
+    },
+    async finishBatchWithParticipantProjections(input) {
+      return prisma.$transaction(async (tx) => finishInTransaction(tx, input));
     },
     async readCommand(customerId, commandId): Promise<CurrentInvitationState | null> {
       const command = await prisma.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId, commandId } }, include: { targets: true } });
