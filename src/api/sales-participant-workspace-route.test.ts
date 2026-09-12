@@ -1,0 +1,13 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+const state = vi.hoisted(() => ({ session: null as any, services: null as any, handler: vi.fn(), reader: {} }));
+vi.mock("next/headers", () => ({ cookies: vi.fn(async () => ({ get: () => ({ value: "cookie" }) })) }));
+vi.mock("@/composition", () => ({ getServices: () => state.services }));
+vi.mock("@/auth/portal-session", () => ({ getPortalAdminSession: vi.fn(async () => state.session) }));
+vi.mock("@/api/sales-participant-workspace", () => ({ handleReadSalesParticipantWorkspacePage: state.handler }));
+vi.mock("@/persistence/prisma-sales-participant-workspace-reader", () => ({ createPrismaSalesParticipantWorkspaceReader: vi.fn(() => state.reader) }));
+import { GET } from "../../app/api/sales/enablement-sessions/[sessionId]/participants/page/route";
+const params = () => ({ params: Promise.resolve({ sessionId: "s1" }) });
+describe("bounded participant page route", () => { beforeEach(() => { state.session = null; state.handler.mockReset().mockResolvedValue({ status: 200, body: { participants: [] } }); state.services = { prisma: {} }; });
+  it("denies wrong workspace before handler", async () => { state.session = { role: "admin", workspace: "candidate", customerId: "c1" }; expect((await GET(new Request("http://x"), params())).status).toBe(401); expect(state.handler).not.toHaveBeenCalled(); });
+  it("derives Customer/session and sets no-store", async () => { state.session = { role: "admin", workspace: "sales", customerId: "c1" }; const response = await GET(new Request("http://x?query=Ada&offset=25&limit=25&customerId=bad"), params()); expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toBe("no-store"); expect(state.handler).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ customerId: "c1", sessionId: "s1", query: "Ada", offset: 25, limit: 25 })); });
+});
