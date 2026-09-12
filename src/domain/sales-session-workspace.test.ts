@@ -16,6 +16,11 @@ describe("safe Sales Session Activity projection", () => {
     expect(groups[0]).toMatchObject({ outcome: "success", count: 2 });
   });
 
+  it("fails closed for ended or concluded participant mutations while retaining active-link evidence", () => {
+    expect(projectParticipantActionState({ access: "closed", sendInvitations: "dontSend", concluded: false, hasActiveLaunchLink: true, invitationSent: true })).toMatchObject({ primary: "diagnostics", canInvite: false, canLaunch: false, canRevoke: true, hasActiveLaunchLink: true });
+    expect(projectParticipantActionState({ access: "open", sendInvitations: "dontSend", concluded: true, hasActiveLaunchLink: true, invitationSent: true })).toMatchObject({ primary: "diagnostics", canInvite: false, canLaunch: false, canRevoke: false, hasActiveLaunchLink: true });
+  });
+
   it("collapses the complete #431 transport sequence into one provision workflow", () => {
     const children = Array.from({ length: 12 }, (_, index) => activity(index === 11 ? "session_provision" : "unknown", "corr", "success", `2026-07-24T09:00:${String(index).padStart(2, "0")}.000Z`, `row-${index}`));
     expect(groupSafeSalesSessionActivity(children)).toHaveLength(1);
