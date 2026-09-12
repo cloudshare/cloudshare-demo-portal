@@ -305,7 +305,6 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     }
     const confirmedParticipants = confirmed.filter((value): value is NonNullable<typeof value> => value !== undefined);
     const now = (deps.now ?? (() => new Date()))();
-    await Promise.all(confirmedParticipants.map(({ stored, participant }) => deps.participants.save({ ...stored, cloudShareParticipantId: participant.id, invitationStatus: participant.invitationStatus, lastInvitedAt: participant.invitationStatus === "sent" ? now : stored.lastInvitedAt, invitedBy: participant.invitedBy, participationStatus: participant.participationStatus, firstJoined: participant.firstJoined, cloudShareEnvironmentId: participant.environmentId, environmentStatus: participant.envStatus ?? null, lastReconciledAt: now, updatedAt: now })));
     // The timestamp records this explicit request only after CloudShare has
     // acknowledged it and the authoritative follow-up roster confirms sent.
     const targetOutcomes = confirmedParticipants.map(({ stored, before, participant }) => {
@@ -327,6 +326,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
       correlationId,
       targetOutcomes,
     });
+    await Promise.all(confirmedParticipants.map(({ stored, participant }) => deps.participants.save({ ...stored, cloudShareParticipantId: participant.id, invitationStatus: participant.invitationStatus, lastInvitedAt: participant.invitationStatus === "sent" ? now : stored.lastInvitedAt, invitedBy: participant.invitedBy, participationStatus: participant.participationStatus, firstJoined: participant.firstJoined, cloudShareEnvironmentId: participant.environmentId, environmentStatus: participant.envStatus ?? null, lastReconciledAt: now, updatedAt: now })));
     const message = invitationConfirmation === "confirmed"
       ? "CloudShare confirmed native invitations for selected Sales Participants."
       : "CloudShare accepted the native invitation request, but has not yet confirmed the invitation as sent.";
