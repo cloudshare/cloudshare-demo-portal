@@ -273,7 +273,7 @@ function SalesSessionWorkspaceState({
   ]);
   useEffect(() => {
     if (area !== "participants" || participantInspectorOpen || !participantSelection.activeId) return;
-    document.querySelector<HTMLElement>(`tr[data-participant-id="${CSS.escape(participantSelection.activeId)}"]`)?.focus();
+    Array.from(document.querySelectorAll<HTMLElement>("tr[data-participant-id]")).find((row) => row.dataset.participantId === participantSelection.activeId)?.focus();
   }, [area, participantInspectorOpen, participantSelection.activeId]);
   useEffect(() => {
     if (
