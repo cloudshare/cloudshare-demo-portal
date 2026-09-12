@@ -29,19 +29,18 @@ export function SalesParticipantWorkspace(props: {
   const initial = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
   const [query, setQuery] = useState(initial?.get("participantQuery") ?? "");
   const [offset, setOffset] = useState(Number(initial?.get("participantOffset") ?? 0) || 0);
-  const [selection, setSelection] = useState<ParticipantSelectionState>({ activeId: null, selectedIds: [], rangeAnchorId: null });
+  const [selection, setSelection] = useState<ParticipantSelectionState>(() => {
+    if (typeof window === "undefined") return { activeId: null, selectedIds: [], rangeAnchorId: null };
+    const params = new URLSearchParams(window.location.search);
+    return { activeId: params.get("participantActive"), selectedIds: (params.get("participantSelected") ?? "").split(",").filter(Boolean).slice(0, 25), rangeAnchorId: params.get("participantAnchor") };
+  });
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [feedback, setFeedback] = useState<Record<string, string>>({});
   const inspectorRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [revokeTarget, setRevokeTarget] = useState<SalesParticipantWorkspaceRow | null>(null);
   const originRef = useRef<HTMLElement | null>(null);
-  const logicalFocus = useRef<"row" | "inspector">("row");
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setSelection({ activeId: params.get("participantActive"), selectedIds: (params.get("participantSelected") ?? "").split(",").filter(Boolean).slice(0, 25), rangeAnchorId: params.get("participantAnchor") });
-    logicalFocus.current = params.get("participantFocus") === "inspector" ? "inspector" : "row";
-  }, []);
+  const logicalFocus = useRef<"row" | "inspector">(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("participantFocus") === "inspector" ? "inspector" : "row");
   const href = useCallback(() => `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/page?${query ? `query=${encodeURIComponent(query)}&` : ""}offset=${offset}&limit=25`, [offset, query, sessionId]);
   const activeParticipant = page?.participants.find((row) => row.id === selection.activeId) ?? null;
 
