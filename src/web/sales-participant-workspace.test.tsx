@@ -119,4 +119,34 @@ describe("SalesParticipantWorkspace", () => {
     expect(call?.[0]).toContain("/participants/invite");
     expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ targets: [{ participantId: "p1", intent: "resend", expectedInvitationStatus: "sent", participantRevision: participant.participantRevision }] });
   });
+  it("sends the explicit initial invite contract", async () => {
+    const row = { ...participant, invitationStatus: "notSent" as const, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, activeLaunchCapability: false, launchOperation: null, environmentAttention: null };
+    const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST" ? new Response(JSON.stringify({ correlationId: "corr-invite", outcome: "completed" }), { status: 200 }) : new Response(JSON.stringify({ participants: [row], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await screen.findByRole("row", { name: /Ada Lovelace/ });
+    await user.click(screen.getByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Invite" }));
+    await waitFor(() => expect(screen.getByText("Completed. Correlation corr-invite.")).toBeTruthy());
+    const call = request.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ targets: [{ participantId: "p1", intent: "invite", expectedInvitationStatus: "notSent", participantRevision: participant.participantRevision }] });
+  });
+  it("allows revoke from an ended participant and returns focus after Escape", async () => {
+    const row = { ...participant, sessionEndsAt: "2020-01-01T00:00:00.000Z", activeLaunchCapability: true, providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null };
+    const request = vi.fn(async (url: string, init?: RequestInit) => init?.method === "DELETE" ? new Response(JSON.stringify({}), { status: 200 }) : new Response(JSON.stringify({ participants: [row], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    const tableRow = await screen.findByRole("row", { name: /Ada Lovelace/ });
+    await user.click(screen.getByRole("button", { name: "Inspect" }));
+    const revoke = screen.getByRole("button", { name: "Revoke launch link" });
+    await user.click(revoke);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(revoke);
+    await user.click(revoke);
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(request.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(true));
+    expect(tableRow).toBeTruthy();
+  });
 });
