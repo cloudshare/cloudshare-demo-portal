@@ -104,7 +104,7 @@ describe("Sales Session participant invitation", () => {
       now: () => new Date("2026-07-17T08:00:00.000Z"),
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability, listParticipants: vi.fn().mockResolvedValue(roster), inviteParticipants: vi.fn().mockResolvedValue({ request: { method: "POST", path: "/invite" }, response: { status: 200 } }) }) },
-    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody({ ...storedParticipant(), invitationStatus: "sent" }, "resend") });
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
     expect(result.status).toBe(200);
     expect(readParticipantInvitationCapability).toHaveBeenCalledOnce();
