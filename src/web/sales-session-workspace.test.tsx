@@ -345,7 +345,7 @@ describe("Sales Session workspace", () => {
     await screen.findByRole("heading", { name: "Participants" });
     await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("refresh?mode=automatic"))).toHaveLength(1));
     rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
-    rejectPost(new Error("CloudShare unavailable"));
+    await act(async () => { rejectPost(new Error("CloudShare unavailable")); });
     await screen.findByText("CloudShare unavailable");
     rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
     expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();

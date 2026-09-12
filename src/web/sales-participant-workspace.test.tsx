@@ -166,4 +166,16 @@ describe("SalesParticipantWorkspace", () => {
     expect(errors).not.toHaveBeenCalled();
     expect(warnings).not.toHaveBeenCalled();
   });
+  it("opens only a portal launch path and preserves its correlation feedback", async () => {
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null };
+    const opened = vi.spyOn(window, "open").mockImplementation(() => null);
+    const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST" ? new Response(JSON.stringify({ launchUrl: "/sales/launch/portal-token", correlationId: "launch-corr" }), { status: 201 }) : new Response(JSON.stringify({ participants: [row], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await screen.findByRole("row", { name: /Ada Lovelace/ });
+    await user.click(screen.getByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Generate launch link" }));
+    await waitFor(() => expect(opened).toHaveBeenCalledWith(expect.stringContaining("/sales/launch/portal-token"), "_blank", "noopener,noreferrer"));
+    expect(screen.getByText("Launch link ready.")).toBeTruthy();
+  });
 });
