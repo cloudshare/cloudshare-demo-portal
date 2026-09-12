@@ -156,6 +156,8 @@ All routes require the existing authenticated `admin` session in the `sales` wor
 
 ### Bounded Participant page
 
+The bounded local workspace page is served at `GET /api/sales/enablement-sessions/{sessionId}/participants/page?...`. The existing provider-backed `GET .../participants` route remains unchanged. A future dedicated route-consolidation ticket may move the page to the shorter path only after relocating/versioning the provider-backed GET; `/participants/page` remains the compatibility alias during that deprecation.
+
 - `GET /api/sales/enablement-sessions/{sessionId}/participants?query={0..100}&offset={0..10000}&limit={1..50}`
 - `200`: `{ participants: SafeParticipantRow[], total, offset, limit, hasMore }`; rows contain portal IDs and `participantRevision`, controlled names/email, three independent status projections/sources, `available_to_attempt` guidance/reasons, active local launch-capability boolean, safe `currentCommandId` attribution/outcome metadata, and latest safe launch operation/outcome/correlation metadata. `participantRevision` is an opaque wire encoding of the persisted `updatedAt` instant and is compared against exact `updatedAt` by the handler; no new Participant revision column is required.
 - `400`: invalid query/page; `401`: unauthenticated/wrong workspace; `404`: missing, archived, or cross-Customer Session.
