@@ -11,6 +11,9 @@ export interface SalesDeliveryRequestEvidence extends CloudShareRequestDiagnosti
 export interface SalesDeliveryResponseEvidence extends CloudShareResponseDiagnostics {}
 export interface SalesDeliveryEvidence { readonly request: SalesDeliveryRequestEvidence; readonly response: SalesDeliveryResponseEvidence; readonly exchangeId?: string; }
 export type SalesDeliveryDispatchEvidence = SalesDeliveryEvidence & ({ readonly dispatchOutcome: "not_dispatched" | "provider_rejected" | "ambiguous_after_dispatch" } | { readonly dispatchOutcome: "acknowledged" });
+export type CompleteSalesParticipantRoster = { readonly participants: readonly SalesParticipant[]; readonly completeness: "complete"; readonly provenance: { readonly expectedCount: number; readonly returnedCount: number; readonly offsets: readonly number[] } } & SalesDeliveryEvidence;
+export type IncompleteSalesParticipantRoster = { readonly participants: readonly SalesParticipant[]; readonly completeness: "incomplete"; readonly provenance: { readonly expectedCount: number | null; readonly returnedCount: number; readonly offsets: readonly number[]; readonly reason: "count_missing" | "count_malformed" | "count_mismatch" | "pagination_incomplete" } } & SalesDeliveryEvidence;
+export type SalesParticipantRoster = CompleteSalesParticipantRoster | IncompleteSalesParticipantRoster;
 export interface CreateSalesDemoSessionInput {
   readonly name: string;
   readonly type: SalesExperienceType;
@@ -68,7 +71,7 @@ export interface SalesDelivery {
   /** Controlled migration of a Contact explicitly selected by a Sales Admin
    * from the pre-correlation roster. */
   updateParticipantCorrelation(salesExperienceId: string, participantId: string, input: Pick<SalesParticipantInput, "firstName" | "lastName" | "customProperties">): Promise<SalesDeliveryEvidence>;
-  listParticipants(salesExperienceId: string): Promise<{ readonly participants: readonly SalesParticipant[] } & SalesDeliveryEvidence>;
+  listParticipants(salesExperienceId: string): Promise<SalesParticipantRoster>;
   inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryDispatchEvidence>;
   createSponsoredLink(salesExperienceId: string, participant: Pick<SalesParticipantInput, "firstName" | "lastName" | "email">): Promise<{ readonly loginUrl: string } & SalesDeliveryEvidence>;
 }
@@ -343,7 +346,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const first = await detailed<z.output<typeof participantsEnvelopeSchema>>({ method: "GET", path, query: { offset: "0", limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
       const firstPage = participantPage(first.data);
       if (firstPage.count === undefined) {
-        return { participants: firstPage.participants.map(mapSalesParticipant), ...participantEvidence(first.evidence) };
+        return { participants: firstPage.participants.map(mapSalesParticipant), completeness: "incomplete", provenance: { expectedCount: null, returnedCount: firstPage.participants.length, offsets: [0], reason: "count_missing" }, ...participantEvidence(first.evidence) };
       }
       const expectedCount = firstPage.count;
       const rows = [...firstPage.participants];
@@ -364,7 +367,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         rows.push(...normalizedPage.participants);
         evidence = page.evidence;
       }
-      return { participants: rows.map(mapSalesParticipant), ...participantEvidence(evidence) };
+      return { participants: rows.map(mapSalesParticipant), completeness: "complete", provenance: { expectedCount, returnedCount: rows.length, offsets }, ...participantEvidence(evidence) };
     },
     async inviteParticipants(salesExperienceId, participantIds) {
       const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });

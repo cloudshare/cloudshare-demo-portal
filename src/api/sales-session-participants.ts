@@ -253,6 +253,10 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     // reconciliation may have already established that CloudShare no longer knows it.
     const current = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId);
     completedExchanges.push(current);
+    if (current.completeness === "incomplete") {
+      await deps.invitationLedger.failAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))());
+      return { status: 502, body: { code: "participant_roster_incomplete", error: "CloudShare participant roster could not be proven complete.", correlationId } };
+    }
     const currentByProviderId = new Map(current.participants.map((participant) => [participant.id, participant]));
     if (selected.some((participant) => {
       const remote = currentByProviderId.get(participant!.cloudShareParticipantId);
@@ -295,6 +299,10 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     // invitation state, rather than claiming that acknowledgement is delivery.
     const afterRequest = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId);
     completedExchanges.push(afterRequest);
+    if (afterRequest.completeness === "incomplete") {
+      await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "evaluating_confirmation", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmation_required" as const, reason: "confirmation_required" as const })) });
+      return { status: 502, body: { code: "participant_roster_incomplete", error: "CloudShare accepted the invitation request, but its participant roster could not be proven complete. Do not retry until support diagnostics are reviewed.", correlationId } };
+    }
     const afterByProviderId = new Map(afterRequest.participants.map((participant) => [participant.id, participant]));
     const confirmed = selected.map((stored) => {
       const matches = afterRequest.participants.filter((participant) => participantProperties(participant).certalisSalesParticipantId === stored!.id && participantProperties(participant).certalisOpportunityContactId === stored!.opportunityContactId);
