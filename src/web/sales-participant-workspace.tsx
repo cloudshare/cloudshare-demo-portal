@@ -36,6 +36,7 @@ export function SalesParticipantWorkspace(props: {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [revokeTarget, setRevokeTarget] = useState<SalesParticipantWorkspaceRow | null>(null);
   const originRef = useRef<HTMLElement | null>(null);
+  const logicalFocus = useRef<"row" | "inspector">("row");
   const href = useCallback(() => `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/page?${query ? `query=${encodeURIComponent(query)}&` : ""}offset=${offset}&limit=25`, [offset, query, sessionId]);
   const activeParticipant = page?.participants.find((row) => row.id === selection.activeId) ?? null;
 
@@ -63,11 +64,11 @@ export function SalesParticipantWorkspace(props: {
   }, [active, href, request]);
   useEffect(() => {
     if (inspectorOpen) inspectorRef.current?.focus();
-    else if (selection.activeId) Array.from(document.querySelectorAll<HTMLElement>("tr[data-participant-id]")).find((row) => row.dataset.participantId === selection.activeId)?.focus();
+    else if (logicalFocus.current === "row" && selection.activeId && !(document.activeElement instanceof HTMLButtonElement || document.activeElement instanceof HTMLInputElement)) Array.from(document.querySelectorAll<HTMLElement>("tr[data-participant-id]")).find((row) => row.dataset.participantId === selection.activeId)?.focus();
   }, [inspectorOpen, selection.activeId]);
 
   const runAction = async (participant: SalesParticipantWorkspaceRow, action: Action) => {
-    if (action === "revoke_launch") { originRef.current = document.activeElement as HTMLElement; setRevokeTarget(participant); return; }
+    if (action === "revoke_launch") { logicalFocus.current = "inspector"; originRef.current = document.activeElement as HTMLElement; setRevokeTarget(participant); return; }
     setFeedback((current) => ({ ...current, [participant.id]: "Working…" }));
     try {
       const invite = action === "invite" || action === "resend";
