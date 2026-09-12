@@ -76,7 +76,7 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
           const hasActiveLaunchLink = activeLinks.some((link) => link.salesSessionParticipantId === participant.id);
           const window = projectSalesSessionAccessWindow(session, new Date());
           const concluded = participant.participationStatus === "concluded";
-          const available = window.nativeInvitationsAvailable && !concluded;
+          const available = window.nativeInvitationsAvailable && session.sendInvitations === "salesProsAndParticipants" && !concluded;
           const actionState: ParticipantActionState = concluded || window.value === "closed"
             ? { primary: "diagnostics", canInvite: false, canLaunch: false, canRevoke: hasActiveLaunchLink, hasActiveLaunchLink, reason: concluded ? "Participation is concluded; invitation and launch are unavailable." : "The named Session time window has ended; invitation and launch are unavailable." }
             : { primary: participant.invitationStatus === "sent" ? "launch" : "invite", canInvite: available, canLaunch: available, canRevoke: hasActiveLaunchLink, hasActiveLaunchLink, reason: available ? (participant.invitationStatus === "sent" ? "Participant is invited and may launch independently of native invitation status." : "Participant is eligible for a native invitation or direct launch.") : "Native invitations are unavailable for this Session." };
