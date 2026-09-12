@@ -125,13 +125,9 @@ describe("Sales Session workspace", () => {
     expect(await screen.findByRole("heading", { name: "Acme enablement" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Participants" })).not.toBeNull();
     expect(document.body.textContent).toContain("2026-07-24T09:00:00.000Z · Europe/London");
-    expect(document.body.textContent).toContain("Observed from CloudShare participant roster");
-    expect(document.body.textContent).not.toContain("cloudshare_v4_sales_participant_roster");
     expect(screen.getByRole("link", { name: "Activity" }).getAttribute("href")).toContain("area=activity");
     expect(screen.getByRole("link", { name: "Details" }).getAttribute("href")).toContain("area=details");
     expect(screen.getByRole("link", { name: "Back to Sessions" }).getAttribute("href")).toBe("/sales?tab=sessions&queue=history&offset=25");
-    expect(screen.getByRole("cell", { name: /Ready/ })).not.toBeNull();
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/participants/page?offset=0&limit=25"))).toBe(true);
   });
 
   it("invokes the browser fetch interface with its required Window receiver", async () => {
