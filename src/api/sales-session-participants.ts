@@ -272,8 +272,11 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
       await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "settled", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome, reason })) });
       return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed.", participantInvitationConfirmationFailed(error), acknowledgedInvite, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]);
     }
-    await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "settled", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "failed_retryable" as const, reason: "failed_retryable" as const })) });
-    return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "CloudShare could not send the selected native invitations.", error, undefined, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]);
+    // Once the durable dispatch marker exists, an unclassified failure has no
+    // proof that the provider was never reached. Fail closed and retain the
+    // fence; retryability requires an explicit typed not_dispatched proof.
+    await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "settled", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "no_replay" as const, reason: "ambiguous_after_dispatch" as const })) });
+    return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "Certalis could not prove whether CloudShare received the invitation request. Do not retry until support diagnostics are reviewed.", error, undefined, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]);
   }
 }
 
