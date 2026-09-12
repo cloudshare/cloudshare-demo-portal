@@ -53,6 +53,7 @@ export interface SalesNavigationIntent {
   readonly source?: string | null;
   readonly subjectId?: string | null;
   readonly subjectType?: string | null;
+  readonly operation?: string | null;
   /** Ephemeral creation evidence carried across the Provision-to-queue transition. */
   readonly creationNotice?: {
     readonly message: string;
