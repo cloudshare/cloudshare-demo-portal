@@ -202,6 +202,24 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     if (currents.some((current) => !current || current.command.commandId !== parsed.data.commandId)) return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
     const first = currents[0]!;
     const outcomes = currents.flatMap((current) => current!.outcome.targets).filter((target, index, all) => all.findIndex((candidate) => candidate.participantId === target.participantId) === index);
+    if (first.outcome.outcome === "confirmation_required" && parsed.data.targets.every((target) => target.intent === "invite") && (first.command.phase === "evaluating_confirmation")) {
+      const deliveryResult = await resolveDelivery(deps, request);
+      if (!("response" in deliveryResult)) {
+        try {
+          const roster = await deliveryResult.delivery.listParticipants!(sessionResult.session.cloudShareSalesExperienceId);
+          const registered = await deps.participants.list(request.customerId, sessionResult.session.id);
+          const exact = parsed.data.targets.every((target) => {
+            const stored = registered.find((participant) => participant.id === target.participantId);
+            const remote = stored && roster.participants.filter((candidate) => participantProperties(candidate).certalisSalesParticipantId === stored.id && participantProperties(candidate).certalisOpportunityContactId === stored.opportunityContactId);
+            return stored && stored.updatedAt.toISOString() === target.participantRevision && remote?.length === 1 && remote[0]!.invitationStatus === "sent";
+          });
+          if (exact) {
+            await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: parsed.data.commandId, expectedRevision: first.command.revision, expectedPhase: "evaluating_confirmation", phase: "settled", correlationId: first.command.correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmed_by_reconciliation" as const, reason: null })) });
+            return { status: 200, body: { code: "command_reconciled", commandId: parsed.data.commandId, phase: "settled", outcome: "completed", correlationId: first.command.correlationId } };
+          }
+        } catch { /* retained state is fail-closed when the read or CAS precondition is not provable */ }
+      }
+    }
     const outcome = outcomes.some((target) => target.outcome === "no_replay") ? "blocked" : outcomes.some((target) => target.outcome === "confirmation_required") ? "confirmation_required" : outcomes.some((target) => target.outcome === "accepted_unconfirmed") ? "completed_with_unconfirmed" : "completed";
     return { status: 200, body: { code: "command_replayed", commandId: parsed.data.commandId, phase: first.command.phase, outcome, correlationId: first.outcome.correlationId, targets: outcomes } };
   }
