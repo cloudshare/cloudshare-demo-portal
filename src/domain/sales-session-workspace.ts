@@ -15,14 +15,16 @@ export type SalesSessionWorkspaceRead = { readonly state: "available"; readonly 
 export type SafeSalesParticipantAttention = { readonly reason: string; readonly source: string };
 export type ParticipantActionState = { readonly primary: "invite" | "resend" | "launch" | "diagnostics"; readonly canInvite: boolean; readonly canLaunch: boolean; readonly canRevoke: boolean; readonly hasActiveLaunchLink: boolean; readonly reason: string };
 export type SalesParticipantBrowserActionResult =
-  | { readonly ok: true; readonly action: "invite" | "resend" | "launch" | "revoke"; readonly correlationId?: string; readonly launchUrl?: `/sales/launch/${string}` }
+  | { readonly ok: true; readonly action: "invite" | "resend" | "launch" | "revoke"; readonly correlationId?: string; readonly launchUrl?: `/sales/launch/${string}`; readonly invitationConfirmation?: "confirmed" | "pending"; readonly confirmedParticipantCount?: number; readonly pendingConfirmationParticipantCount?: number }
   | { readonly ok: false; readonly action: "invite" | "resend" | "launch" | "revoke"; readonly error: string; readonly correlationId?: string };
 
-export function projectSalesParticipantBrowserActionResult(input: { readonly ok: boolean; readonly action: SalesParticipantBrowserActionResult["action"]; readonly correlationId?: unknown; readonly launchUrl?: unknown; readonly error?: unknown }): SalesParticipantBrowserActionResult {
+export function projectSalesParticipantBrowserActionResult(input: { readonly ok: boolean; readonly action: SalesParticipantBrowserActionResult["action"]; readonly correlationId?: unknown; readonly launchUrl?: unknown; readonly invitationConfirmation?: unknown; readonly confirmedParticipantCount?: unknown; readonly pendingConfirmationParticipantCount?: unknown; readonly error?: unknown }): SalesParticipantBrowserActionResult {
   const correlationId = typeof input.correlationId === "string" ? input.correlationId : undefined;
   if (!input.ok) return { ok: false, action: input.action, error: typeof input.error === "string" ? input.error : "Participant action failed.", ...(correlationId ? { correlationId } : {}) };
-  const launchUrl = typeof input.launchUrl === "string" && input.launchUrl.startsWith("/sales/launch/") ? input.launchUrl as `/sales/launch/${string}` : undefined;
-  return { ok: true, action: input.action, ...(correlationId ? { correlationId } : {}), ...(launchUrl ? { launchUrl } : {}) };
+  const launchUrl = typeof input.launchUrl === "string" && /^\/sales\/launch\/[^/?#]+$/.test(input.launchUrl) ? input.launchUrl as `/sales/launch/${string}` : undefined;
+  if (input.action === "launch" && !launchUrl) return { ok: false, action: input.action, error: "CloudShare returned no valid local launch capability." };
+  const confirmation = input.invitationConfirmation === "confirmed" || input.invitationConfirmation === "pending" ? input.invitationConfirmation : undefined;
+  return { ok: true, action: input.action, ...(correlationId ? { correlationId } : {}), ...(launchUrl ? { launchUrl } : {}), ...(confirmation ? { invitationConfirmation: confirmation } : {}), ...(typeof input.confirmedParticipantCount === "number" ? { confirmedParticipantCount: input.confirmedParticipantCount } : {}), ...(typeof input.pendingConfirmationParticipantCount === "number" ? { pendingConfirmationParticipantCount: input.pendingConfirmationParticipantCount } : {}) };
 }
 
 export type SafeSalesSessionActivity = {
