@@ -184,7 +184,12 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   }
   let admittedCommand: { commandId: string; admissionToken?: string; revision: number } | undefined;
   const admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
-  if (admission.kind !== "admitted") return { status: 409, body: { code: admission.kind === "same_command" ? "command_replayed" : "invitation_blocked", commandId: parsed.data.commandId } };
+  if (admission.kind === "same_command") {
+    const current = await deps.invitationLedger.readCurrent(request.customerId, parsed.data.targets[0]!.participantId);
+    if (!current || current.command.commandId !== parsed.data.commandId) return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
+    return { status: 200, body: { code: "command_replayed", commandId: parsed.data.commandId, phase: current.command.phase, outcome: current.outcome.outcome, correlationId: current.outcome.correlationId } };
+  }
+  if (admission.kind !== "admitted") return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
   admittedCommand = { commandId: parsed.data.commandId, admissionToken: admission.admissionToken, revision: 1 };
   const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) return deliveryResult.response!;
   const prepared = { session: sessionResult.session, delivery: deliveryResult.delivery };
@@ -200,6 +205,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     completedExchanges.push(capability);
     if (!capability.participantInvitationsEnabled) {
       await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare native invitations are disabled for this Sales Experience.", capability, { failureMode: "native_invitations_disabled", sendInvitations: capability.sendInvitations, participantIds, httpExchanges: completedExchanges });
+      await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "settled", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "failed_retryable" as const, reason: "provider_rejected" as const })) });
       return { status: 409, body: { code: "native_invitations_disabled", error: "CloudShare has native invitations disabled for this Sales Experience. Enable invitations in CloudShare before sending or resending.", correlationId } };
     }
     // A persisted mapping alone is not sufficient authority to resend an invite:
@@ -242,6 +248,15 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     const pendingConfirmationParticipantCount = confirmedParticipants.length - confirmedParticipantCount;
     const alreadySentParticipantCount = confirmedParticipants.filter(({ before, participant }) => before.invitationStatus === "sent" && participant.invitationStatus === "sent").length;
     const invitationConfirmation = pendingConfirmationParticipantCount === 0 ? "confirmed" : "pending";
+    await deps.invitationLedger.finishBatch({
+      customerId: request.customerId,
+      commandId: admittedCommand.commandId,
+      expectedRevision: 2,
+      expectedPhase: "dispatching",
+      phase: invitationConfirmation === "confirmed" ? "settled" : "evaluating_confirmation",
+      correlationId,
+      targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: invitationConfirmation === "confirmed" ? "confirmed" as const : "confirmation_required" as const, reason: invitationConfirmation === "confirmed" ? null : "confirmation_required" as const })),
+    });
     const message = invitationConfirmation === "confirmed"
       ? "CloudShare confirmed native invitations for selected Sales Participants."
       : "CloudShare accepted the native invitation request, but has not yet confirmed the invitation as sent.";
@@ -251,8 +266,13 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   catch (error) {
     const failedExchange = exchange(error);
     if (acknowledgedInvite) {
+      const dispatchOutcome = acknowledgedInvite.dispatchOutcome;
+      const outcome = dispatchOutcome === "ambiguous_after_dispatch" ? "no_replay" as const : "failed_retryable" as const;
+      const reason = dispatchOutcome === "ambiguous_after_dispatch" ? "ambiguous_after_dispatch" as const : "failed_retryable" as const;
+      await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "settled", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome, reason })) });
       return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed.", participantInvitationConfirmationFailed(error), acknowledgedInvite, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]);
     }
+    await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "settled", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "failed_retryable" as const, reason: "failed_retryable" as const })) });
     return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "CloudShare could not send the selected native invitations.", error, undefined, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]);
   }
 }
