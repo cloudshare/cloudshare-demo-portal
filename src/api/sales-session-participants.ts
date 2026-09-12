@@ -198,9 +198,12 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   let admittedCommand: { commandId: string; admissionToken?: string; revision: number } | undefined;
   const admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
   if (admission.kind === "same_command") {
-    const current = await deps.invitationLedger.readCurrent(request.customerId, parsed.data.targets[0]!.participantId);
-    if (!current || current.command.commandId !== parsed.data.commandId) return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
-    return { status: 200, body: { code: "command_replayed", commandId: parsed.data.commandId, phase: current.command.phase, outcome: current.outcome.outcome, correlationId: current.outcome.correlationId } };
+    const currents = await Promise.all(parsed.data.targets.map((target) => deps.invitationLedger.readCurrent(request.customerId, target.participantId)));
+    if (currents.some((current) => !current || current.command.commandId !== parsed.data.commandId)) return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
+    const first = currents[0]!;
+    const outcomes = currents.flatMap((current) => current!.outcome.targets).filter((target, index, all) => all.findIndex((candidate) => candidate.participantId === target.participantId) === index);
+    const outcome = outcomes.some((target) => target.outcome === "no_replay") ? "blocked" : outcomes.some((target) => target.outcome === "confirmation_required") ? "confirmation_required" : outcomes.some((target) => target.outcome === "accepted_unconfirmed") ? "completed_with_unconfirmed" : "completed";
+    return { status: 200, body: { code: "command_replayed", commandId: parsed.data.commandId, phase: first.command.phase, outcome, correlationId: first.outcome.correlationId, targets: outcomes } };
   }
   if (admission.kind !== "admitted") return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
   admittedCommand = { commandId: parsed.data.commandId, admissionToken: admission.admissionToken, revision: 1 };
