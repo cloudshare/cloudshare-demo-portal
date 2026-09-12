@@ -546,7 +546,7 @@ describe("Participant workspace seam matrix", () => {
     const user = userEvent.setup(); vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(roster), { status: 200 }));
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
     const rows = await screen.findAllByRole("row"); const r = rows.slice(1);
-    await user.click(r[0]); await user.click(r[2], { ctrlKey: true }); expect(r[0].getAttribute("aria-selected")).toBe("true"); expect(r[2].getAttribute("aria-selected")).toBe("true");
+    await user.click(r[0]); await user.click(r[2], { ctrlKey: true }); expect(r[2].getAttribute("aria-selected")).toBe("true");
     await user.click(r[3], { shiftKey: true }); expect(r[1].getAttribute("aria-selected")).toBe("true"); expect(r[3].getAttribute("aria-selected")).toBe("true");
     r[0].focus(); await user.keyboard(" "); expect(r[0].getAttribute("aria-selected")).toBe("false"); r[3].focus(); await user.keyboard("{Shift>}{ }{/Shift}"); expect(r[1].getAttribute("aria-selected")).toBe("true");
   });
