@@ -131,7 +131,55 @@ function formatExternalIds(externalIds: DiagnosticLogTableEntry["externalIds"]):
 }
 
 function readIntegrationSurface(details: DiagnosticLogTableEntry["details"]): string | null {
-  return typeof details?.integrationSurface === "string" ? details.integrationSurface : null;
+  if (typeof details?.integrationSurface !== "string") return null;
+  const surface = details.integrationSurface.trim();
+  return surface.length > 0 ? surface : null;
+}
+
+/**
+ * Older development diagnostics recorded the v3 client family but retained the
+ * protected request path. Recover a stable, resource-level label from the
+ * documented path shape without exposing path identifiers in the Operation
+ * column. Unknown paths deliberately retain their captured generic surface.
+ */
+function deriveV3OperationSurface(entry: DiagnosticLogTableEntry, surface: string | null): string | null {
+  if (surface !== "cloudshare.v3" || typeof entry.request?.path !== "string") return surface;
+  const path = entry.request.path;
+  if (/^\/api\/v3\/projects\/[^/]+\/blueprints$/.test(path)) return "cloudshare.v3.projects.blueprints";
+  if (/^\/api\/v3\/projects\/[^/]+\/blueprints\/[^/]+$/.test(path)) return "cloudshare.v3.projects.blueprint_detail";
+  if (/^\/api\/v3\/projects\/[^/]+\/policies\/[^/]+$/.test(path)) return "cloudshare.v3.projects.policy_detail";
+  if (/^\/api\/v3\/projects\/[^/]+\/policies$/.test(path)) return "cloudshare.v3.projects.policies";
+  if (/^\/api\/v3\/regions$/.test(path)) return "cloudshare.v3.regions";
+  if (/^\/api\/v3\/teams$/.test(path)) return "cloudshare.v3.teams";
+  if (/^\/api\/v3\/envs$/.test(path)) return "cloudshare.v3.envs";
+  if (/^\/api\/v3\/envs\/actions\/(suspend|resume|archive|getextended|extend)$/.test(path)) {
+    return `cloudshare.v3.env.action.${path.split("/").at(-1)}`;
+  }
+  if (/^\/api\/v3\/envs\/[^/]+$/.test(path)) return "cloudshare.v3.env.get";
+  return surface;
+}
+
+function deriveV4OperationSurface(entry: DiagnosticLogTableEntry, surface: string | null): string | null {
+  if (surface !== "cloudshare.v4" || typeof entry.request?.path !== "string") return surface;
+  const path = entry.request.path;
+  if (path === "/v4/sales") return "cloudshare.v4.sales";
+  if (/^\/v4\/sales\/[^/]+\/salespros$/.test(path)) return "cloudshare.v4.sales.salespros";
+  if (/^\/v4\/sales\/[^/]+\/salespros\/invite$/.test(path)) return "cloudshare.v4.sales.salespros.invite";
+  if (/^\/v4\/sales\/[^/]+\/salespros\/email-template$/.test(path)) return "cloudshare.v4.sales.salespros.email_template";
+  if (/^\/v4\/sales\/[^/]+\/salespros\/[^/]+$/.test(path)) return "cloudshare.v4.sales.salespros.detail";
+  if (/^\/v4\/sales\/[^/]+\/participants$/.test(path)) return "cloudshare.v4.sales.participants";
+  if (/^\/v4\/sales\/[^/]+\/participants\/invite$/.test(path)) return "cloudshare.v4.sales.participants.invite";
+  if (/^\/v4\/sales\/[^/]+\/participants\/email-template$/.test(path)) return "cloudshare.v4.sales.participants.email_template";
+  if (/^\/v4\/sales\/[^/]+\/participants\/unassigned-environment$/.test(path)) return "cloudshare.v4.sales.participants.unassigned_environment";
+  if (/^\/v4\/sales\/[^/]+\/participants\/[^/]+\/unassigned-environment$/.test(path)) return "cloudshare.v4.sales.participants.unassigned_environment";
+  if (/^\/v4\/sales\/[^/]+\/participants\/[^/]+$/.test(path)) return "cloudshare.v4.sales.participants.detail";
+  if (/^\/v4\/sales\/[^/]+\/users\/properties$/.test(path)) return "cloudshare.v4.sales.user_properties";
+  if (/^\/v4\/sales\/[^/]+\/users\/properties\/[^/]+$/.test(path)) return "cloudshare.v4.sales.user_properties.detail";
+  if (/^\/v4\/sales\/[^/]+\/sponsored-link$/.test(path)) return "cloudshare.v4.sales.sponsored_link";
+  if (/^\/v4\/sales\/[^/]+\/students\/participants\/[^/]+\/environment$/.test(path)) return "cloudshare.v4.sales.students.participants.environment";
+  if (/^\/v4\/sales\/[^/]+\/assign-shared-env-controlling-user$/.test(path)) return "cloudshare.v4.sales.assign_shared_env_controlling_user";
+  if (/^\/v4\/sales\/[^/]+$/.test(path)) return "cloudshare.v4.sales.detail";
+  return surface;
 }
 
 function summariseRequestResponse(entry: DiagnosticLogTableEntry): string {
@@ -264,6 +312,16 @@ function renderTextValue(value: string | null | undefined, monospace = false): R
       {value}
     </span>
   );
+}
+
+/** CloudShare transport rows use the captured integration surface as their
+ * primary label. The raw operation remains visible as the attempted portal
+ * operation, so Support retains both comparable resource specificity and
+ * correlation terminology. */
+function operationLabel(entry: DiagnosticLogTableEntry): string {
+  const surface = deriveV4OperationSurface(entry, deriveV3OperationSurface(entry, readIntegrationSurface(entry.details)));
+  if ((entry.operation === "cloudshare.request" || entry.operation === "sales_trial.cloudshare.request" || entry.operation === "cloudshare.oauth.token" || entry.operation === "sales_trial.cloudshare.oauth_token") && surface) return surface;
+  return entry.operation;
 }
 
 export function DiagnosticLogTable({
@@ -416,12 +474,21 @@ export function DiagnosticLogTable({
                   </td>
                   <td style={BODY_CELL_STYLE}>{renderTextValue(entry.source)}</td>
                   <td style={{ ...BODY_CELL_STYLE, fontFamily: "monospace" }}>
-                    <div style={{ wordBreak: "break-word" }}>{entry.operation}</div>
-                    {integrationSurface ? (
+                    {(() => {
+                      const displayedOperation = operationLabel(entry);
+                      return <>
+                    <div style={{ wordBreak: "break-word" }}>{displayedOperation}</div>
+                    {displayedOperation !== entry.operation ? (
+                      <div style={{ marginTop: "0.2rem", ...MUTED_TEXT_STYLE }}>
+                        Attempted operation: {entry.operation}
+                      </div>
+                    ) : integrationSurface ? (
                       <div style={{ marginTop: "0.2rem", ...MUTED_TEXT_STYLE }}>
                         Surface: {integrationSurface}
                       </div>
                     ) : null}
+                      </>;
+                    })()}
                   </td>
                   <td style={BODY_CELL_STYLE}>
                     <span style={statusBadgeStyle(getOutcomeTone(entry.outcome))}>
