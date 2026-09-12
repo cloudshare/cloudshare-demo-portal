@@ -23,13 +23,19 @@ export async function handleCreateSalesParticipantLaunchLink(deps: Deps, request
   if (!end || end <= now) return adminDenied(deps, request, "sales_session_ended", "Instant launch link creation is unavailable after this Sales Session has ended.");
   if (owned.participant.participationStatus === "concluded") return adminDenied(deps, request, "sales_participant_concluded", "Instant launch links are unavailable for concluded Sales Participants.");
   const token = randomBytes(32).toString("base64url"); const correlationId = randomUUID();
-  await deps.links.regenerate({ id: randomUUID(), customerId: request.customerId, salesDemoSessionId: request.sessionId, salesSessionParticipantId: owned.participant.id, tokenHash: hash(token), revokedAt: null, createdAt: now }, now);
+  try {
+    await deps.links.regenerate({ id: randomUUID(), customerId: request.customerId, salesDemoSessionId: request.sessionId, salesSessionParticipantId: owned.participant.id, tokenHash: hash(token), revokedAt: null, createdAt: now }, now);
+  } catch (error) {
+    return adminPersistenceFailure(deps, request, "generated", correlationId, error);
+  }
   await adminEvidence(deps, request, correlationId, "sales.demo_session.participant_launch.generated", "success");
   return { status: 201, body: { launchUrl: `/sales/launch/${token}`, correlationId } };
 }
 export async function handleRevokeSalesParticipantLaunchLink(deps: Deps, request: AdminRequest): Promise<{ status: number; body: Record<string, string> }> {
   if (!await ownedParticipant(deps, request)) return generic;
-  const correlationId = randomUUID(); await deps.links.revokeActive(request.customerId, request.sessionId, request.participantId, (deps.now ?? (() => new Date()))());
+  const correlationId = randomUUID();
+  try { await deps.links.revokeActive(request.customerId, request.sessionId, request.participantId, (deps.now ?? (() => new Date()))()); }
+  catch (error) { return adminPersistenceFailure(deps, request, "revoked", correlationId, error); }
   await adminEvidence(deps, request, correlationId, "sales.demo_session.participant_launch.revoked", "success"); return { status: 200, body: { correlationId } };
 }
 export async function handleSalesParticipantLaunch(deps: Deps, token: string): Promise<{ status: number; redirect?: string; body?: { error: string; correlationId?: string; denialContext?: SalesLaunchDenialContext | null } }> {
@@ -52,6 +58,14 @@ export async function handleSalesParticipantLaunch(deps: Deps, token: string): P
 async function ownedParticipant(deps: Deps, request: AdminRequest) { const session = await deps.sessions.findById(request.customerId, request.sessionId); if (!session) return null; const participant = (await deps.participants.list(request.customerId, request.sessionId)).find((value) => value.id === request.participantId); return participant ? { session, participant } : null; }
 async function adminDenied(deps: Deps, request: AdminRequest, code: "sales_session_ended" | "sales_participant_concluded", error: string) { const correlationId = randomUUID(); await deps.diagnostics?.record({ source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.generated", outcome: "failure", customerId: request.customerId, actor: request.actor, subject: { type: "sales_session_participant", id: request.participantId }, message: error, correlationId, details: { sessionId: request.sessionId, failureMode: code } }); await deps.audit?.write({ id: randomUUID(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.participant_launch.generated", subjectType: "sales_session_participant", subjectId: request.participantId, outcome: "failure", correlationId, occurredAt: new Date(), error }); return { status: 409, body: { code, error, correlationId } }; }
 async function adminEvidence(deps: Deps, request: AdminRequest, correlationId: string, operation: string, outcome: "success") { await deps.diagnostics?.record({ source: "sales-participant-launch", operation, outcome, customerId: request.customerId, actor: request.actor, subject: { type: "sales_session_participant", id: request.participantId }, message: "Sales participant launch capability updated.", correlationId, details: { sessionId: request.sessionId } }); await deps.audit?.write({ id: randomUUID(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: operation, subjectType: "sales_session_participant", subjectId: request.participantId, outcome, correlationId, occurredAt: new Date() }); }
+async function adminPersistenceFailure(deps: Deps, request: AdminRequest, action: "generated" | "revoked", correlationId: string, error: unknown) {
+  const operation = `sales.demo_session.participant_launch.${action}`;
+  const message = `Certalis could not persist the Sales Participant launch link ${action === "generated" ? "creation" : "revocation"}.`;
+  const failureMode = "persistence_failure";
+  try { await deps.diagnostics?.record({ source: "sales-participant-launch", operation, outcome: "failure", customerId: request.customerId, actor: request.actor, subject: { type: "sales_session_participant", id: request.participantId }, message, correlationId, details: { sessionId: request.sessionId, failureMode, errorName: error instanceof Error ? error.name : "unknown" } }); } catch { /* best effort */ }
+  try { await deps.audit?.write({ id: randomUUID(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: operation, subjectType: "sales_session_participant", subjectId: request.participantId, outcome: "failure", correlationId, occurredAt: new Date(), error: message }); } catch { /* best effort */ }
+  return { status: 503, body: { code: "persistence_failure", error: message, correlationId } };
+}
 async function launchEvidence(deps: Deps, link: Awaited<ReturnType<SalesParticipantLaunchLinkRepository["findByTokenHash"]>>, correlationId: string, outcome: "success" | "failure", sponsored?: { request: unknown; response: unknown }, failure?: unknown) {
   const context = failure && typeof failure === "object" && "context" in failure ? (failure as { context?: Record<string, unknown> }).context : undefined;
   const failureEvidence = projectCloudShareFailureEvidence(failure) ?? projectCloudShareFailureContext(context);

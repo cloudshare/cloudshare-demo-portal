@@ -30,6 +30,15 @@ describe("Sales participant instant launch", () => {
     const denied = await handleRevokeSalesParticipantLaunchLink(deps({ sessions: { findById: vi.fn().mockResolvedValue(null) } }), { customerId: "other", sessionId: "session-1", participantId: "participant-1", actor });
     expect(denied).toEqual({ status: 404, body: { error: "This Certalis launch link is unavailable." } });
   });
+  it.each([
+    ["create", "regenerate", () => handleCreateSalesParticipantLaunchLink(deps({ links: { ...deps().links, regenerate: vi.fn().mockRejectedValue(new Error("token persistence secret")) } }), { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor })],
+    ["revoke", "revokeActive", () => handleRevokeSalesParticipantLaunchLink(deps({ links: { ...deps().links, revokeActive: vi.fn().mockRejectedValue(new Error("revoke persistence secret")) } }), { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor })],
+  ])("returns a controlled correlated response when %s persistence fails", async (_action, _method, invoke) => {
+    const d = deps();
+    const result = await invoke();
+    expect(result).toMatchObject({ status: 503, body: { code: "persistence_failure", correlationId: expect.any(String) } });
+    expect(JSON.stringify(result.body)).not.toMatch(/secret|tokenHash|launchUrl|cloudshare/);
+  });
   it("redirects only in its active window and never returns the CloudShare URL in a body", async () => {
     const d = deps(); d.links.findByTokenHash.mockResolvedValue({ id: "link-1", customerId: "certalis", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: null, createdAt: now });
     const result = await handleSalesParticipantLaunch(d, "a".repeat(43));
