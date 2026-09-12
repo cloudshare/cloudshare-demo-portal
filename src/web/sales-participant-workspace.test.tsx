@@ -47,6 +47,24 @@ describe("SalesParticipantWorkspace", () => {
     await user.click(screen.getAllByRole("button", { name: "Inspect" })[0]);
     expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
   });
+  it("applies modifier and range selection through the public row events", async () => {
+    const user = userEvent.setup();
+    const rows = [participant, { ...participant, id: "p2", name: "Grace Hopper", email: "grace@example.test" }, { ...participant, id: "p3", name: "Katherine Johnson", email: "kat@example.test" }];
+    render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify({ ...page, participants: rows, total: 3 }))} />);
+    await screen.findByRole("table", { name: "Participant roster" });
+    const getRows = () => screen.getAllByRole("row").slice(1);
+    await user.click(getRows()[0]);
+    await user.click(getRows()[1], { ctrlKey: true });
+    await waitFor(() => expect(getRows()[1].getAttribute("data-selected")).toBe("true"));
+    await user.click(getRows()[2], { metaKey: true });
+    await waitFor(() => expect(getRows()[2].getAttribute("data-selected")).toBe("true"));
+    await user.click(getRows()[0]);
+    await user.click(getRows()[2], { shiftKey: true });
+    await waitFor(() => expect(getRows()[2].getAttribute("data-selected")).toBe("true"));
+    getRows()[0].focus();
+    await user.keyboard("{Shift>}{ }{/Shift}");
+    expect(getRows()[0]).toBeTruthy();
+  });
   it("keeps paging bounded and announces an unavailable reread", async () => {
     const request = vi.fn(async (url: string) => new Response(JSON.stringify({ participants: [], total: 26, offset: url.includes("offset=25") ? 25 : 0, limit: 25, hasMore: true }), { status: 200 }));
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
