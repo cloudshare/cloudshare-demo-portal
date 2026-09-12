@@ -273,7 +273,6 @@ model SalesParticipantInvitationCommand {
   fences              SalesParticipantInvitationFence[]
 
   @@id([customerId, commandId])
-  @@unique([customerId, commandId])
 }
 
 model SalesParticipantInvitationTarget {
