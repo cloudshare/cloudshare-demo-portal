@@ -198,7 +198,7 @@ describe("Sales Session workspace", () => {
     expect(await screen.findByText("Participant correlation requires support.")).not.toBeNull();
   });
 
-  it("presents Participants as a labelled read-only roster preview", async () => {
+  it("presents the bounded Participant table and inspector entry point", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(data), { status: 200 })));
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
 
@@ -206,6 +206,17 @@ describe("Sales Session workspace", () => {
     expect(screen.getByRole("columnheader", { name: "Participant" })).not.toBeNull();
     expect(screen.getByRole("columnheader", { name: "Environment source" })).not.toBeNull();
     expect(screen.getByText("Bounded Participant workspace page.")).not.toBeNull();
+  });
+
+  it("opens the persistent Participant inspector from a row and returns on Escape", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(data), { status: 200 })));
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("table", { name: "Participant roster" });
+    await user.click(screen.getByRole("button", { name: "Inspect" }));
+    expect(screen.getByRole("complementary", { name: "Participant inspector" })).not.toBeNull();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("complementary", { name: "Participant inspector" })).toBeNull();
   });
 
   it("explains persisted Participant Environment attention without exposing raw evidence", async () => {
