@@ -564,8 +564,8 @@ describe("Participant workspace seam matrix", () => {
     const button = screen.getByRole("button", { name: "Invite" });
     await userEvent.setup().click(button); await userEvent.setup().click(button);
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
-    resolveInvite(new Response(JSON.stringify({ invitationConfirmation: "pending", confirmedParticipantCount: 2, pendingConfirmationParticipantCount: 1, correlationId: "invite-1" }), { status: 200 }));
-    expect(await screen.findByText("Invitation pending confirmation (1 pending, 2 confirmed). Do not retry.")).not.toBeNull();
+    resolveInvite(new Response(JSON.stringify({ invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1, correlationId: "invite-1" }), { status: 200 }));
+    expect(await screen.findByText("Invitation pending confirmation (1 pending, 0 confirmed). Do not retry.")).not.toBeNull();
   });
 
   it("rereads the exact bounded roster after action success", async () => {
