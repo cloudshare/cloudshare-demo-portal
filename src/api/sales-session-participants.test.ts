@@ -10,7 +10,8 @@ const handleRegisterSalesSessionParticipants: typeof registerSalesSessionPartici
 const handleListSalesSessionParticipants: typeof listSalesSessionParticipants = (deps, request) => listSalesSessionParticipants({ now: fixedNow, ...deps }, request);
 type StoredParticipantFixture = Omit<ReturnType<typeof storedParticipant>, "invitationStatus"> & { readonly invitationStatus: "notSent" | "sent" };
 const explicitInviteBody = (participant: StoredParticipantFixture, intent: "invite" | "resend" = "invite", commandId = randomUUID()) => ({ commandId, targets: [{ participantId: participant.id, intent, expectedInvitationStatus: intent === "invite" ? "notSent" as const : "sent" as const, participantRevision: participant.updatedAt.toISOString() }] });
-const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof inviteSalesSessionParticipants>[0], "invitationLedger">, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
+const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof inviteSalesSessionParticipants>[0], "invitationLedger"> & { invitationLedger?: SalesParticipantInvitationLedger }, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
+  if (deps.invitationLedger) return inviteSalesSessionParticipants({ now: fixedNow, ...deps, invitationLedger: deps.invitationLedger } as Parameters<typeof inviteSalesSessionParticipants>[0], request);
   const invitationLedger: SalesParticipantInvitationLedger = {
     admitBatch: vi.fn(async ({ commandId }) => ({ kind: "admitted" as const, commandId, admissionToken: "test-admission-token" })),
     markBatchDispatching: vi.fn(async (customerId, commandId) => ({ customerId, commandId, phase: "dispatching" as const, revision: 2, correlationId: null })),
@@ -718,5 +719,20 @@ describe("Sales Session participant invitation", () => {
 
     expect(result.status).toBe(200);
     expect(inviteParticipants).toHaveBeenCalledWith("remote-sales-1", ["remote-1"]);
+  });
+
+  it("reconciles a retained initial invite without redispatching", async () => {
+    const participant = storedParticipant();
+    const inviteParticipants = vi.fn();
+    const commandId = randomUUID();
+    const ledger: SalesParticipantInvitationLedger = {
+      admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }),
+      markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), finishBatch: vi.fn().mockResolvedValue({ customerId: "customer-1", commandId, phase: "settled", revision: 4, correlationId: "corr-1" }),
+      readCurrent: vi.fn().mockResolvedValue({ command: { customerId: "customer-1", commandId, phase: "settled", revision: 3, correlationId: "corr-1" }, outcome: { commandId, outcome: "blocked", correlationId: "corr-1", counts: {}, targets: [{ participantId: participant.id, outcome: "no_replay", reason: "ambiguous_after_dispatch" }] } }),
+    };
+    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const }])) , inviteParticipants }) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: { commandId, targets: [{ participantId: participant.id, intent: "invite", expectedInvitationStatus: "notSent", participantRevision: participant.updatedAt.toISOString() }] } });
+    expect(result.status).toBe(200);
+    expect(inviteParticipants).not.toHaveBeenCalled();
+    expect(ledger.finishBatch).toHaveBeenCalledWith(expect.objectContaining({ expectedPhase: "settled" }));
   });
 });
