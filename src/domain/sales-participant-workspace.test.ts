@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eligibleParticipantActions, pruneParticipantSelection, reduceParticipantSelection, validateParticipantPage, type SalesParticipantWorkspaceRow } from "./sales-participant-workspace";
+import { eligibleParticipantActions, participantActionReason, pruneParticipantSelection, reduceParticipantSelection, validateParticipantPage, type SalesParticipantWorkspaceRow } from "./sales-participant-workspace";
 
 const row: SalesParticipantWorkspaceRow = { id: "p1", participantRevision: "r1", name: "Ada", email: "ada@example.test", invitationStatus: "notSent", participationStatus: "pending", sessionEndsAt: "2026-09-12T12:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environment: { value: null, source: "not_observed" }, environmentAttention: null };
 
@@ -31,5 +31,10 @@ describe("sales participant workspace contract", () => {
       .toEqual({ activeId: "p2", selectedIds: ["p1", "p2"], rangeAnchorId: null });
     expect(pruneParticipantSelection({ activeId: "gone", selectedIds: ["gone"], rangeAnchorId: "gone" }, ["p1"]))
       .toEqual({ activeId: "p1", selectedIds: [], rangeAnchorId: null });
+  });
+  it("explains unavailable primary actions from the current row", () => {
+    expect(participantActionReason({ ...row, participationStatus: "concluded" }, "invite", new Date("2026-09-12T11:00:00Z"))).toBe("Participant has concluded.");
+    expect(participantActionReason({ ...row, invitationStatus: "sent" }, "invite", new Date("2026-09-12T11:00:00Z"))).toBe("Invitation already sent; choose resend.");
+    expect(participantActionReason(row, "invite", new Date("2026-09-12T13:00:00Z"))).toBe("Session access window has ended.");
   });
 });

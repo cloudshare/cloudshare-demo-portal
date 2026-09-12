@@ -39,6 +39,16 @@ export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, no
   };
 }
 
+export function participantActionReason(row: SalesParticipantWorkspaceRow, action: SalesParticipantAction, now: Date): string | null {
+  if (eligibleParticipantActions(row, now)[action]) return null;
+  if (row.participationStatus === "concluded") return "Participant has concluded.";
+  if (new Date(row.sessionEndsAt).getTime() <= now.getTime()) return "Session access window has ended.";
+  if (action === "invite" && row.invitationStatus === "sent") return "Invitation already sent; choose resend.";
+  if (!row.providerCorrelation) return "Participant correlation is unavailable.";
+  if (!row.nativeInvitationsEnabled && (action === "invite" || action === "resend")) return "Native invitations are unavailable.";
+  return "Action is unavailable for the current Participant state.";
+}
+
 export type ParticipantSelectionState = { readonly activeId: string | null; readonly selectedIds: readonly string[]; readonly rangeAnchorId: string | null };
 export type ParticipantSelectionEvent =
   | { readonly type: "click"; readonly id: string; readonly additive?: boolean; readonly range?: boolean; readonly pageIds?: readonly string[] }
