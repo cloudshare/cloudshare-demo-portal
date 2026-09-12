@@ -8,7 +8,8 @@ import type { SalesParticipantInvitationLedger } from "@/domain/sales-participan
 const fixedNow = () => new Date("2026-07-19T08:00:00.000Z");
 const handleRegisterSalesSessionParticipants: typeof registerSalesSessionParticipants = (deps, request) => registerSalesSessionParticipants({ now: fixedNow, ...deps }, request);
 const handleListSalesSessionParticipants: typeof listSalesSessionParticipants = (deps, request) => listSalesSessionParticipants({ now: fixedNow, ...deps }, request);
-const explicitInviteBody = (participant: ReturnType<typeof storedParticipant>, intent: "invite" | "resend" = "invite", commandId = randomUUID()) => ({ commandId, targets: [{ participantId: participant.id, intent, expectedInvitationStatus: intent === "invite" ? "notSent" as const : "sent" as const, participantRevision: participant.updatedAt.toISOString() }] });
+type StoredParticipantFixture = Omit<ReturnType<typeof storedParticipant>, "invitationStatus"> & { readonly invitationStatus: "notSent" | "sent" };
+const explicitInviteBody = (participant: StoredParticipantFixture, intent: "invite" | "resend" = "invite", commandId = randomUUID()) => ({ commandId, targets: [{ participantId: participant.id, intent, expectedInvitationStatus: intent === "invite" ? "notSent" as const : "sent" as const, participantRevision: participant.updatedAt.toISOString() }] });
 const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof inviteSalesSessionParticipants>[0], "invitationLedger">, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
   const invitationLedger: SalesParticipantInvitationLedger = {
     admitBatch: vi.fn(async ({ commandId }) => ({ kind: "admitted" as const, commandId, admissionToken: "test-admission-token" })),
