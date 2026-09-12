@@ -8,11 +8,12 @@ import { SalesWorkspaceExpiryContext } from "./sales-workspace-chrome";
 import { statusBadgeStyle } from "./status-badge";
 import styles from "./sales-session-workspace.module.css";
 import type { SalesSessionWorkspaceResponse } from "@/domain/sales-session-workspace";
+import type { SalesParticipantWorkspaceRow } from "@/domain/sales-participant-workspace";
 import type { SalesSessionVerifyResponse } from "@/api/sales-session-reconciliation";
 
 type Area = "participants" | "activity" | "details";
 type DiagnosticRecord = { readonly correlationId: string; readonly occurredAt: string };
-type ParticipantPage = { readonly participants: SalesSessionWorkspaceResponse["participants"]; readonly total: number; readonly offset: number; readonly limit: number; readonly hasMore: boolean };
+type ParticipantPage = { readonly participants: readonly SalesParticipantWorkspaceRow[]; readonly total: number; readonly offset: number; readonly limit: number; readonly hasMore: boolean };
 
 export function SalesSessionWorkspace(props: { readonly sessionId: string; readonly area: Area; readonly queueHref: string }) {
   return <SalesSessionWorkspaceState key={props.sessionId} {...props} />;
