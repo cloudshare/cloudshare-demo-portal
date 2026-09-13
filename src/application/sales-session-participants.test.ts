@@ -158,6 +158,20 @@ describe("Sales Session participant invitation", () => {
     expect(JSON.stringify(result.body)).not.toContain("remote-1");
   });
 
+  it("projects registration through the workspace as a controlled safe result", async () => {
+    const registered: Array<{ readonly customProperties: readonly { readonly name: string; readonly value: string }[] }> = [];
+    const registerParticipants = vi.fn().mockImplementation(async (_salesId, participants) => { registered.push(...participants); return { request: { method: "POST", path: "/v4/sales/remote-sales-1/participants" }, response: { status: 201 } }; });
+    const listParticipants = vi.fn().mockImplementation(async () => rosterEvidence(registered.map((value, index) => remoteParticipant(`remote-${index + 1}`, value.customProperties.find((property) => property.name === "certalisSalesParticipantId")?.value, value.customProperties.find((property) => property.name === "certalisOpportunityContactId")?.value))));
+    const workspace = createSalesParticipantWorkspace({
+      now: fixedNow, reader: { readPage: vi.fn().mockResolvedValue(null) }, invitationStore: semanticStore(), sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), ensureParticipantCorrelationProperties: vi.fn().mockResolvedValue(correlationProperties()), registerParticipants, listParticipants, inviteParticipants: vi.fn() }) },
+    });
+    const result = await workspace.registerParticipants({ customerId: "customer-1", sessionId: session.id, actor, opportunityContactIds: [contact.id] });
+    expect(result).toEqual({ status: 201, body: { correlationId: expect.any(String) } });
+    expect(JSON.stringify(result)).not.toContain("participants");
+    expect(JSON.stringify(result)).not.toContain("remote-1");
+  });
+
   it("uses properties rather than email when CloudShare returns a renamed participant", async () => {
     const participant = remoteParticipant("remote-1", "portal-1", contact.id, "renamed@example.test");
     const save = vi.fn();
