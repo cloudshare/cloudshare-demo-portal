@@ -15,7 +15,7 @@ import type { ItemRepository } from "@/domain/item";
 import { SalesEnvironmentResolutionError, type SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
 import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
 import { invitationResult, type InvitationHandle, type InvitationStore, type InvitationTargetOutcome } from "@/domain/sales-participant-invitation-store";
-import { projectParticipantActionAvailability, type SalesParticipantWorkspace, type SalesParticipantWorkspaceBaseReader, type SalesParticipantWorkspaceInvitationRequest, type SalesParticipantWorkspaceInvitationResult } from "@/domain/sales-participant-workspace";
+import { projectParticipantActionAvailability, type SalesParticipantWorkspace, type SalesParticipantWorkspaceAddParticipantResult, type SalesParticipantWorkspaceBaseReader, type SalesParticipantWorkspaceInvitationRequest, type SalesParticipantWorkspaceInvitationResult } from "@/domain/sales-participant-workspace";
 
 const contactsSchema = z.object({ contactIds: z.array(z.string().trim().min(1)).min(1).max(100) });
 const invitationCommandSchema = z.object({
@@ -185,7 +185,21 @@ function createSalesParticipantWorkspaceReader(baseReader: SalesParticipantWorks
 }
 
 export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: SalesParticipantWorkspaceBaseReader }): SalesParticipantWorkspace {
-  return { ...createSalesParticipantWorkspaceReader(deps.reader, deps.invitationStore), submitInvitation: (input) => runInvitationLifecycle(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } }), registerParticipants: async (input) => { const result = await handleRegisterSalesSessionParticipants(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { contactIds: input.opportunityContactIds } }); const body = result.body; return { status: result.status, body: { ...(typeof body.error === "string" ? { error: body.error } : {}), ...(typeof body.code === "string" ? { code: body.code } : {}), ...(typeof body.correlationId === "string" ? { correlationId: body.correlationId } : {}) } }; } };
+  const registerParticipants = async (input: Parameters<NonNullable<SalesParticipantWorkspace["registerParticipants"]>>[0]) => { const result = await handleRegisterSalesSessionParticipants(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { contactIds: input.opportunityContactIds } }); const body = result.body; return { status: result.status, body: { ...(typeof body.error === "string" ? { error: body.error } : {}), ...(typeof body.code === "string" ? { code: body.code } : {}), ...(typeof body.correlationId === "string" ? { correlationId: body.correlationId } : {}) } }; };
+  const addParticipant = async (input: Parameters<NonNullable<SalesParticipantWorkspace["addParticipant"]>>[0]): Promise<SalesParticipantWorkspaceAddParticipantResult> => {
+    if (input.person.kind === "existingContact") { const result = await registerParticipants({ customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, opportunityContactIds: [input.person.contactId] }); return { status: result.status, body: { outcome: result.status >= 200 && result.status < 300 ? "registered" : "rejected", ...result.body } }; }
+    if (!deps.sessions.findById) return { status: 404, body: { outcome: "rejected", code: "session_not_found", error: "Sales Session was not found." } };
+    const session = await deps.sessions.findById(input.customerId, input.sessionId);
+    if (!session || !deps.records.listContacts) return { status: 404, body: { outcome: "rejected", code: "session_not_found", error: "Sales Session was not found." } };
+    const email = input.person.email.trim().toLowerCase();
+    const matches = (await deps.records.listContacts(input.customerId, session.opportunityId)).filter((contact) => (contact.normalizedEmail ?? contact.email.trim().toLowerCase()) === email && !contact.archivedAt);
+    if (matches.length > 1) return { status: 409, body: { outcome: "needs_attention", code: "ambiguous_contact", error: "More than one active Contact matches this email." } };
+    const contact = matches[0] ?? { id: randomUUID(), customerId: input.customerId, opportunityId: session.opportunityId, firstName: input.person.firstName.trim(), lastName: input.person.lastName.trim(), email: input.person.email.trim(), normalizedEmail: email, source: "ad_hoc" as const, syncStatus: "pending" as const, sourceSessionId: session.id, archivedAt: null, createdAt: new Date(), updatedAt: new Date() };
+    if (!matches[0]) await (deps.records as SalesRecordRepository).saveContact(contact);
+    const result = await registerParticipants({ customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, opportunityContactIds: [contact.id] });
+    return { status: result.status, body: { outcome: result.status >= 200 && result.status < 300 ? "registered" : "rejected", contactId: contact.id, ...result.body } };
+  };
+  return { ...createSalesParticipantWorkspaceReader(deps.reader, deps.invitationStore), submitInvitation: (input) => runInvitationLifecycle(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } }), registerParticipants, addParticipant };
 }
 
 async function runInvitationLifecycle(deps: InviteDeps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {
