@@ -49,12 +49,12 @@ describe("Prisma invitation ledger", () => {
     await expect(prisma.salesParticipantInvitationCommand.count({ where: { customerId: f.customerId } })).resolves.toBe(0);
   });
 
-  it("finishes mixed outcomes atomically and retains only blocked fences", async () => {
+  it("settles a uniformly rejected dispatch and releases every fence", async () => {
     const f = await fixture(); const p2 = await secondParticipant(f); const ledger = createPrismaSalesParticipantInvitationLedger(prisma); const at = new Date(); const targets = [f.participant, p2].map((p) => ({ participantId: p.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: p.updatedAt.toISOString() })); const commandId = randomUUID();
     const admitted = await ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets, commandId, at }); const dispatching = await ledger.markBatchDispatching(f.customerId, commandId, admitted.admissionToken!, 1, new Date(at.getTime() + 1));
-    await expect(ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: dispatching.revision, expectedPhase: "dispatching", phase: "settled", correlationId: "corr", httpStatus: 502, resultCode: "provider_rejected", targetOutcomes: [{ participantId: f.participant.id, outcome: "failed_retryable", reason: "provider_rejected" }, { participantId: p2.id, outcome: "no_replay", reason: "ambiguous_after_dispatch" }] })).resolves.toMatchObject({ phase: "settled", revision: 3 });
+    await expect(ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: dispatching.revision, expectedPhase: "dispatching", phase: "settled", correlationId: "corr", httpStatus: 502, resultCode: "provider_rejected", targetOutcomes: [{ participantId: f.participant.id, outcome: "failed_retryable", reason: "provider_rejected" }, { participantId: p2.id, outcome: "failed_retryable", reason: "provider_rejected" }] })).resolves.toMatchObject({ phase: "settled", revision: 3 });
     await expect(ledger.readCurrent(f.customerId, f.participant.id)).resolves.toBeNull();
-    await expect(ledger.readCurrent(f.customerId, p2.id)).resolves.toMatchObject({ outcome: { outcome: "blocked" } });
+    await expect(ledger.readCurrent(f.customerId, p2.id)).resolves.toBeNull();
   });
 
   it("rolls back ledger, fences, and every participant when one projection is stale", async () => {
@@ -92,6 +92,24 @@ describe("Prisma invitation ledger", () => {
     await expect(prisma.salesParticipantInvitationFence.count({ where: { customerId: f.customerId, commandId } })).resolves.toBe(1);
     await expect(ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: dispatching.revision, expectedPhase: "dispatching", phase: "settled", correlationId: "corr", httpStatus: 502, resultCode: "not_dispatched", targetOutcomes: [{ participantId: f.participant.id, outcome: "failed_retryable", reason: "not_dispatched" }] })).resolves.toMatchObject({ phase: "settled", httpStatus: 502, resultCode: "not_dispatched" });
     await expect(prisma.salesParticipantInvitationFence.count({ where: { customerId: f.customerId, commandId } })).resolves.toBe(0);
+  });
+
+  it("rejects non-uniform dispatch classifications and retains every fence", async () => {
+    const f = await fixture(); const p2 = await secondParticipant(f); const ledger = createPrismaSalesParticipantInvitationLedger(prisma); const at = new Date(); const commandId = randomUUID(); const targets = [f.participant, p2].map((participant) => ({ participantId: participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: participant.updatedAt.toISOString() }));
+    const admitted = await ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets, commandId, at }); const dispatching = await ledger.markBatchDispatching(f.customerId, commandId, admitted.admissionToken!, 1, at);
+    const noReplay = (participantId: string) => ({ participantId, outcome: "no_replay" as const, reason: "ambiguous_after_dispatch" as const });
+    const retry = (participantId: string, reason: "not_dispatched" | "provider_rejected") => ({ participantId, outcome: "failed_retryable" as const, reason });
+    const invalid = [
+      { httpStatus: 409, resultCode: "invitation_no_replay" as const, outcomes: [noReplay(f.participant.id), retry(p2.id, "provider_rejected")] },
+      { httpStatus: 502, resultCode: "provider_rejected" as const, outcomes: [retry(f.participant.id, "provider_rejected"), retry(p2.id, "not_dispatched")] },
+      { httpStatus: 502, resultCode: "provider_rejected" as const, outcomes: [noReplay(f.participant.id), noReplay(p2.id)] },
+      { httpStatus: 409, resultCode: "provider_rejected" as const, outcomes: [noReplay(f.participant.id), noReplay(p2.id)] },
+    ];
+    for (const attempt of invalid) await expect(ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: dispatching.revision, expectedPhase: "dispatching", phase: "settled", correlationId: "corr", httpStatus: attempt.httpStatus, resultCode: attempt.resultCode, targetOutcomes: attempt.outcomes })).rejects.toThrow("invitation command is no longer current");
+    await expect(ledger.readCommand(f.customerId, commandId)).resolves.toMatchObject({ command: { phase: "dispatching", revision: 2 } });
+    await expect(prisma.salesParticipantInvitationFence.count({ where: { customerId: f.customerId, commandId } })).resolves.toBe(2);
+    await expect(ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: dispatching.revision, expectedPhase: "dispatching", phase: "settled", correlationId: "corr", httpStatus: 409, resultCode: "invitation_no_replay", targetOutcomes: [noReplay(f.participant.id), noReplay(p2.id)] })).resolves.toMatchObject({ phase: "settled", httpStatus: 409, resultCode: "invitation_no_replay" });
+    await expect(prisma.salesParticipantInvitationFence.count({ where: { customerId: f.customerId, commandId } })).resolves.toBe(2);
   });
 
   it("fails closed for tampered persisted phase, outcome, and reason", async () => {
