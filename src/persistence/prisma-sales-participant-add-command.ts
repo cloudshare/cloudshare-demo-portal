@@ -17,22 +17,22 @@ export function createPrismaSalesParticipantAddCommandStore(prisma: PrismaClient
         if (existing.state === "dispatched" && !existing.resultJson) {
           const attention: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add requires attention." } };
           await prisma.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, state: "dispatched", resultJson: null }, data: { state: "needs_attention", status: 409, resultJson: JSON.stringify(attention), updatedAt: input.now } });
-          return { kind: "existing", state: "needs_attention", result: attention };
+          return { kind: "existing", commandId: existing.commandId, state: "needs_attention", result: attention };
         }
-        return { kind: "existing", state: existing.state as AddCommandState, result: result(existing.resultJson) };
+        return { kind: "existing", commandId: existing.commandId, state: existing.state as AddCommandState, result: result(existing.resultJson) };
       }
       if (target && target.commandId !== input.commandId) {
         if (target.state === "dispatched" && !target.resultJson) {
           const attention: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add requires attention." } };
           await prisma.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: target.commandId, state: "dispatched", resultJson: null }, data: { state: "needs_attention", status: 409, resultJson: JSON.stringify(attention), updatedAt: input.now } });
-          return { kind: "existing", state: "needs_attention", result: attention };
+          return { kind: "existing", commandId: target.commandId, state: "needs_attention", result: attention };
         }
         const targetResult = result(target.resultJson);
-        if (targetResult?.body.outcome === "registered") return { kind: "existing", state: target.state as AddCommandState, result: { status: 200, body: { ...targetResult.body, outcome: "already_registered", code: "already_registered" } } };
-        return { kind: "existing", state: target.state as AddCommandState, result: targetResult };
+        if (targetResult?.body.outcome === "registered") return { kind: "existing", commandId: target.commandId, state: target.state as AddCommandState, result: { status: 200, body: { ...targetResult.body, outcome: "already_registered", code: "already_registered" } } };
+        return { kind: "existing", commandId: target.commandId, state: target.state as AddCommandState, result: targetResult };
       }
       try { await prisma.salesParticipantAddCommand.create({ data: { customerId: input.customerId, commandId: input.commandId, sessionId: input.sessionId, targetKey: input.targetKey ?? `command:${input.commandId}`, payloadHash: hash(input.payloadHash), state: "admitted", createdAt: input.now, updatedAt: input.now } }); return { kind: "new" }; }
-      catch { const row = await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } }); const winner = row ?? (input.targetKey ? await prisma.salesParticipantAddCommand.findUniqueOrThrow({ where: { customerId_sessionId_targetKey: { customerId: input.customerId, sessionId: input.sessionId, targetKey: input.targetKey } } }) : null); if (!winner) throw new Error("Participant add admission failed"); return row && row.payloadHash !== hash(input.payloadHash) ? { kind: "mismatch" } : { kind: "existing", state: winner.state as AddCommandState, result: result(winner.resultJson) }; }
+      catch { const row = await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } }); const winner = row ?? (input.targetKey ? await prisma.salesParticipantAddCommand.findUniqueOrThrow({ where: { customerId_sessionId_targetKey: { customerId: input.customerId, sessionId: input.sessionId, targetKey: input.targetKey } } }) : null); if (!winner) throw new Error("Participant add admission failed"); return row && row.payloadHash !== hash(input.payloadHash) ? { kind: "mismatch" } : { kind: "existing", commandId: winner.commandId, state: winner.state as AddCommandState, result: result(winner.resultJson) }; }
     },
     async markDispatched(input) { const changed = await prisma.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, state: "admitted" }, data: { state: "dispatched", updatedAt: input.now } }); return changed.count === 1; },
     async settle(input) {
@@ -41,6 +41,11 @@ export function createPrismaSalesParticipantAddCommandStore(prisma: PrismaClient
       const preDispatch = current.state === "admitted" || (input.provenNotDispatched === true && current.state === "dispatched");
       const changed = await prisma.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, state: current.state, targetKey: current.targetKey }, data: { state: input.state, targetKey: preDispatch ? `command:${input.commandId}` : current.targetKey, status: input.result.status, resultJson: JSON.stringify(input.result), correlationId: input.result.body.correlationId ?? null, updatedAt: input.now } });
       if (changed.count !== 1) throw new Error("Participant add command settlement lost its ownership fence");
+    },
+    async reclassifyProvenPreDispatch(input) {
+      const retryable: SalesParticipantWorkspaceAddParticipantResult = { status: 503, body: { outcome: "rejected", code: "participant_add_retryable", error: "CloudShare authentication failed before participant registration was sent. Retry is safe.", dispatchOutcome: "not_dispatched", correlationId: input.correlationId } };
+      const changed = await prisma.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, state: "needs_attention", correlationId: input.correlationId }, data: { state: "settled", status: 503, targetKey: `command:${input.commandId}`, resultJson: JSON.stringify(retryable), updatedAt: input.now } });
+      return changed.count === 1;
     },
   };
 }

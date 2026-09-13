@@ -77,7 +77,9 @@ describe("SalesParticipantWorkspace", () => {
     expect(screen.getByRole("link", { name: "Support diagnostics" }).getAttribute("href")).toContain("correlationId=corr-ambiguous");
     await user.click(screen.getByRole("button", { name: "Refresh evidence" }));
     await waitFor(() => expect(request.mock.calls.filter(([, init]) => init?.method !== "POST").length).toBeGreaterThan(1));
-    expect(bodies).toHaveLength(1);
+    expect(bodies).toHaveLength(2);
+    expect(request.mock.calls.filter(([url]) => String(url).endsWith("/participants/add"))).toHaveLength(1);
+    expect(request.mock.calls.filter(([url]) => String(url).endsWith("/participants/add/reconcile"))).toHaveLength(1);
   });
 
   it("offers an explicit fresh-command retry only when the provider write was not dispatched", async () => {
@@ -95,6 +97,26 @@ describe("SalesParticipantWorkspace", () => {
     await user.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(JSON.parse(bodies[0]).commandId).not.toBe(JSON.parse(bodies[1]).commandId);
+  });
+
+  it("refreshes a legacy no-replay command into explicit retry-safe state without adding a participant", async () => {
+    const user = userEvent.setup(); const posts: Array<{ url: string; body: string }> = [];
+    const durableCommandId = "11111111-1111-4111-8111-111111111111";
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/participants/add")) { posts.push({ url, body: String(init?.body) }); return new Response(JSON.stringify({ outcome: "needs_attention", code: "participant_add_no_replay", correlationId: "corr-legacy", commandId: durableCommandId }), { status: 409 }); }
+      if (url.endsWith("/participants/add/reconcile")) { posts.push({ url, body: String(init?.body) }); return new Response(JSON.stringify({ outcome: "rejected", code: "participant_add_retryable", dispatchOutcome: "not_dispatched", correlationId: "corr-legacy", commandId: durableCommandId }), { status: 503 }); }
+      return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-1", name: "Grace Hopper", email: "grace@example.test" }] }));
+    });
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
+    await user.click(screen.getByRole("button", { name: "Add participant" }));
+    await screen.findByText("Do not retry: CloudShare may have received the participant write.");
+    await user.click(screen.getByRole("button", { name: "Refresh evidence" }));
+    await screen.findByText("No CloudShare participant write was attempted. Retry is safe.");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(posts).toHaveLength(2);
+    expect(posts[1].url).toContain("/reconcile");
+    expect(JSON.parse(posts[1].body).commandId).toBe(durableCommandId);
   });
 
   it("hydrates bounded query and offset from the URL and rereads on popstate", async () => {

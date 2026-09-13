@@ -86,7 +86,7 @@ export type SalesParticipantWorkspaceAddParticipantInput = {
 };
 export type SalesParticipantWorkspaceAddParticipantResult = {
   readonly status: number;
-  readonly body: { readonly outcome: "registered" | "already_registered" | "rejected" | "needs_attention"; readonly participantId?: string; readonly contactId?: string; readonly error?: string; readonly code?: string; readonly correlationId?: string; readonly dispatchOutcome?: "not_dispatched" | "ambiguous_after_dispatch" };
+  readonly body: { readonly outcome: "registered" | "already_registered" | "rejected" | "needs_attention"; readonly commandId?: string; readonly participantId?: string; readonly contactId?: string; readonly error?: string; readonly code?: string; readonly correlationId?: string; readonly dispatchOutcome?: "not_dispatched" | "ambiguous_after_dispatch" };
 };
 export interface SalesParticipantWorkspace {
   readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspacePage | null>;
@@ -94,6 +94,7 @@ export interface SalesParticipantWorkspace {
   /** Canonical semantic participant-add operation. Optional during migration so
    * legacy callers remain source-compatible while routes move to this seam. */
   addParticipant(input: SalesParticipantWorkspaceAddParticipantInput): Promise<SalesParticipantWorkspaceAddParticipantResult>;
+  reconcileParticipantAdd?(input: SalesParticipantWorkspaceAddParticipantInput): Promise<SalesParticipantWorkspaceAddParticipantResult>;
 }
 
 export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, now: Date): Readonly<Record<SalesParticipantAction, boolean>> {

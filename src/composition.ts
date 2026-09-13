@@ -527,7 +527,7 @@ export function getServices(): Services {
     sessions: createPrismaSalesDemoSessionRepository(prisma), records: createPrismaSalesRecordRepository(prisma), participants: createPrismaSalesSessionParticipantRepository(prisma), addCommandStore: createPrismaSalesParticipantAddCommandStore(prisma),
     connections: cloudshareConnections,
     deliveryFactory: { forConnection: (connection) => createCloudShareSalesDelivery(cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })) },
-    diagnostics: diagnosticRecorder, audit,
+    diagnostics: diagnosticRecorder, diagnosticReader: diagnostics, audit,
   });
 
   // Heartbeat auto-suspend. The suspend function is pre-bound to the current

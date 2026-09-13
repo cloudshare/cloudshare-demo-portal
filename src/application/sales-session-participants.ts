@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { CloudShareConnectionRepository, CloudShareClientFactory } from "@/domain/cloudshare-connection";
-import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type { DiagnosticActor, DiagnosticLogRepository, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { SalesDemoSession, SalesDemoSessionRepository } from "@/domain/sales-demo-session";
 import type { SalesRecordRepository } from "@/domain/sales-records";
 import type { SalesSessionParticipantRepository } from "@/domain/sales-session-participant";
@@ -40,7 +40,7 @@ export type SalesSessionParticipantsRequest = { readonly customerId: string; rea
 type Request = SalesSessionParticipantsRequest;
 type ParticipantDelivery = Pick<SalesDelivery, "createSession" | "readSession"> & Partial<SalesDelivery>;
 type ResolutionResponse = { readonly status: number; readonly body: Record<string, unknown> };
-export type SalesSessionParticipantsDependencies = { sessions: Pick<SalesDemoSessionRepository, "findById">; items?: Pick<ItemRepository, "findById">; records: Pick<SalesRecordRepository, "findContact"> & Partial<Pick<SalesRecordRepository, "listContacts">>; participants: Pick<SalesSessionParticipantRepository, "save" | "list"> & Partial<Pick<SalesSessionParticipantRepository, "recordEnvironmentObservation">>; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): ParticipantDelivery }; environmentFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): EnvironmentStateEvidenceSource }; salesEnvironmentFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): SalesEnvironmentSource }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write">; now?: () => Date; addCommandStore?: SalesParticipantAddCommandStore };
+export type SalesSessionParticipantsDependencies = { sessions: Pick<SalesDemoSessionRepository, "findById">; items?: Pick<ItemRepository, "findById">; records: Pick<SalesRecordRepository, "findContact"> & Partial<Pick<SalesRecordRepository, "listContacts">>; participants: Pick<SalesSessionParticipantRepository, "save" | "list"> & Partial<Pick<SalesSessionParticipantRepository, "recordEnvironmentObservation">>; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): ParticipantDelivery }; environmentFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): EnvironmentStateEvidenceSource }; salesEnvironmentFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): SalesEnvironmentSource }; diagnostics?: DiagnosticRecorder; diagnosticReader?: Pick<DiagnosticLogRepository, "query">; audit?: Pick<AuditRepository, "write">; now?: () => Date; addCommandStore?: SalesParticipantAddCommandStore };
 type BaseDeps = SalesSessionParticipantsDependencies;
 type InviteDeps = BaseDeps & { invitationStore: InvitationStore };
 type Deps = BaseDeps;
@@ -226,7 +226,7 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
         return { status: 503, body: { outcome: "rejected", code: "participant_add_unavailable", error: "Participant add could not be started. Retry the operation." } };
       }
       if (admitted.kind === "mismatch") return { status: 409, body: { outcome: "rejected", code: "command_id_mismatch", error: "Command ID was already used for a different Participant." } };
-      if (admitted.kind === "existing") return admitted.result ?? { status: 202, body: { outcome: admitted.state === "needs_attention" ? "needs_attention" : "rejected", code: "command_in_progress" } };
+      if (admitted.kind === "existing") { const existing = admitted.result ?? { status: 202, body: { outcome: admitted.state === "needs_attention" ? "needs_attention" as const : "rejected" as const, code: "command_in_progress" } }; return { ...existing, body: { ...existing.body, commandId: admitted.commandId ?? input.commandId } }; }
       const settleBeforeDispatch = async (result: SalesParticipantWorkspaceAddParticipantResult) => {
         await deps.addCommandStore!.settle({ customerId: input.customerId, commandId: input.commandId, state: "settled", result, now: (deps.now ?? (() => new Date()))() });
         return result;
@@ -276,6 +276,39 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
     }
     return addParticipantUnfenced(input);
   };
+  const reconcileParticipantAdd = async (input: Parameters<NonNullable<SalesParticipantWorkspace["addParticipant"]>>[0]): Promise<SalesParticipantWorkspaceAddParticipantResult> => {
+    const unavailable: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add still requires attention." } };
+    if (!deps.addCommandStore?.reclassifyProvenPreDispatch || !deps.diagnosticReader || !deps.sessions.findById) return unavailable;
+    const admitted = await deps.addCommandStore.admit({ customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId, payloadHash: addParticipantPayloadHash(input), now: (deps.now ?? (() => new Date()))() });
+    const current = admitted.result;
+    if (admitted.kind !== "existing" || current?.body.code !== "participant_add_no_replay" || !current.body.correlationId) return current ?? unavailable;
+    const correlationId = current.body.correlationId;
+    const retained = { ...current, body: { ...current.body, commandId: input.commandId } };
+    try {
+      const entries = await deps.diagnosticReader.query({ customerId: input.customerId, correlationId, operation: "sales.demo_session.participants.registered", limit: 10 });
+      const containsParticipantPost = (entry: (typeof entries)[number]) => {
+        const details = entry.details;
+        const exchanges = Array.isArray(details?.httpExchanges) ? details.httpExchanges : [];
+        return exchanges.some((item) => { const request = item && typeof item === "object" ? (item as { request?: unknown }).request : null; if (!request || typeof request !== "object") return false; const value = request as { method?: unknown; path?: unknown }; return value.method === "POST" && typeof value.path === "string" && value.path.includes("/participants"); });
+      };
+      const provenPreDispatch = entries.some((entry) => entry.outcome === "failure" && entry.details?.integrationSurface === "cloudshare.v4.oauth.token" && (entry.details.failureMode === "transport_failure" || entry.details.failureMode === "http_failure")) && entries.every((entry) => !containsParticipantPost(entry));
+      if (!provenPreDispatch) return retained;
+      const session = await deps.sessions.findById(input.customerId, input.sessionId);
+      const connection = session ? await deps.connections.findByCustomerId(input.customerId) : null;
+      if (!session || !connection) return retained;
+      const adHocEmail = input.person.kind === "adHoc" ? input.person.email.trim().toLowerCase() : null;
+      const contact = input.person.kind === "existingContact"
+        ? await deps.records.findContact(input.customerId, input.person.contactId)
+        : (await deps.records.listContacts?.(input.customerId, session.opportunityId))?.find((candidate) => !candidate.archivedAt && (candidate.normalizedEmail?.trim() || candidate.email.trim().toLowerCase()) === adHocEmail);
+      const email = contact?.email.trim().toLowerCase() ?? adHocEmail ?? undefined;
+      if (!email || (!deps.deliveryFactory && !deps.cloudshare)) return retained;
+      const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" }));
+      const roster = await delivery.listParticipants?.(session.cloudShareSalesExperienceId);
+      if (!roster || roster.completeness !== "complete" || roster.participants.some((participant) => participant.email.trim().toLowerCase() === email || (contact && participantProperties(participant).certalisOpportunityContactId === contact.id))) return retained;
+      const changed = await deps.addCommandStore.reclassifyProvenPreDispatch({ customerId: input.customerId, commandId: input.commandId, correlationId, now: (deps.now ?? (() => new Date()))() });
+      return changed ? { status: 503, body: { outcome: "rejected", code: "participant_add_retryable", error: "CloudShare authentication failed before participant registration was sent. Retry is safe.", dispatchOutcome: "not_dispatched", correlationId, commandId: input.commandId } } : retained;
+    } catch { return retained; }
+  };
   const addParticipantUnfenced = async (input: Parameters<NonNullable<SalesParticipantWorkspace["addParticipant"]>>[0]): Promise<SalesParticipantWorkspaceAddParticipantResult> => {
     if (input.person.kind === "existingContact") {
       const contactId = input.person.contactId;
@@ -297,7 +330,7 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
     const result = await registerExisting({ customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, opportunityContactIds: [contact.id] });
     return { status: result.status, body: { outcome: result.status >= 200 && result.status < 300 ? "registered" : "rejected", contactId: contact.id, ...result.body } };
   };
-  return { ...createSalesParticipantWorkspaceReader(deps.reader, deps.invitationStore), submitInvitation: (input) => runInvitationLifecycle(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } }), addParticipant };
+  return { ...createSalesParticipantWorkspaceReader(deps.reader, deps.invitationStore), submitInvitation: (input) => runInvitationLifecycle(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } }), addParticipant, reconcileParticipantAdd };
 }
 
 async function runInvitationLifecycle(deps: InviteDeps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {

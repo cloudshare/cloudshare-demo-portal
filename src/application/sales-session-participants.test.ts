@@ -149,6 +149,41 @@ describe("Sales Session participant invitation", () => {
     expect(result.body.dispatchOutcome).toBeUndefined();
     expect(settle).toHaveBeenCalledWith(expect.objectContaining({ state: "needs_attention", result }));
   });
+  it("reclassifies a legacy no-replay command only after durable OAuth proof and complete roster absence", async () => {
+    const legacy = { status: 409, body: { outcome: "needs_attention" as const, code: "participant_add_no_replay", correlationId: "corr-legacy" } };
+    const reclassifyProvenPreDispatch = vi.fn().mockResolvedValue(true);
+    const workspace = createSalesParticipantWorkspace({
+      now: fixedNow, reader: { readPage: vi.fn().mockResolvedValue(null) }, invitationStore: semanticStore(),
+      addCommandStore: { admit: vi.fn().mockResolvedValue({ kind: "existing", commandId: "11111111-1111-4111-8111-111111111111", state: "needs_attention", result: legacy }), markDispatched: vi.fn(), settle: vi.fn(), reclassifyProvenPreDispatch },
+      diagnosticReader: { query: vi.fn().mockResolvedValue([{ outcome: "failure", details: { integrationSurface: "cloudshare.v4.oauth.token", failureMode: "transport_failure", httpExchanges: [{ request: null, response: null }] } }]) },
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([])) }) },
+    } as never);
+    const result = await workspace.reconcileParticipantAdd!({ customerId: "customer-1", sessionId: session.id, actor, commandId: "11111111-1111-4111-8111-111111111111", person: { kind: "existingContact", contactId: contact.id } });
+    expect(result).toMatchObject({ status: 503, body: { code: "participant_add_retryable", correlationId: "corr-legacy", dispatchOutcome: "not_dispatched" } });
+    expect(reclassifyProvenPreDispatch).toHaveBeenCalledWith(expect.objectContaining({ correlationId: "corr-legacy" }));
+  });
+
+  it("keeps legacy no-replay when durable evidence contains a participant POST", async () => {
+    const legacy = { status: 409, body: { outcome: "needs_attention" as const, code: "participant_add_no_replay", correlationId: "corr-crossed" } };
+    const reclassifyProvenPreDispatch = vi.fn(); const providerRead = vi.fn();
+    const workspace = createSalesParticipantWorkspace({
+      now: fixedNow, reader: { readPage: vi.fn().mockResolvedValue(null) }, invitationStore: semanticStore(),
+      addCommandStore: { admit: vi.fn().mockResolvedValue({ kind: "existing", commandId: "22222222-2222-4222-8222-222222222222", state: "needs_attention", result: legacy }), markDispatched: vi.fn(), settle: vi.fn(), reclassifyProvenPreDispatch },
+      diagnosticReader: { query: vi.fn().mockResolvedValue([{ outcome: "failure", details: { integrationSurface: "cloudshare.v4.oauth.token", httpExchanges: [{ request: { method: "POST", path: "/v4/sales/id/participants" }, response: { status: 201 } }] } }]) },
+      sessions: { findById: vi.fn() }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: providerRead }) },
+    } as never);
+    const result = await workspace.reconcileParticipantAdd!({ customerId: "customer-1", sessionId: session.id, actor, commandId: "22222222-2222-4222-8222-222222222222", person: { kind: "existingContact", contactId: contact.id } });
+    expect(result).toMatchObject({ status: 409, body: { code: "participant_add_no_replay" } });
+    expect(providerRead).not.toHaveBeenCalled(); expect(reclassifyProvenPreDispatch).not.toHaveBeenCalled();
+  });
+  it("keeps legacy no-replay when the complete provider roster contains the target", async () => {
+    const legacy = { status: 409, body: { outcome: "needs_attention" as const, code: "participant_add_no_replay", correlationId: "corr-present" } };
+    const reclassifyProvenPreDispatch = vi.fn();
+    const workspace = createSalesParticipantWorkspace({ now: fixedNow, reader: { readPage: vi.fn().mockResolvedValue(null) }, invitationStore: semanticStore(), addCommandStore: { admit: vi.fn().mockResolvedValue({ kind: "existing", commandId: "33333333-3333-4333-8333-333333333333", state: "needs_attention", result: legacy }), markDispatched: vi.fn(), settle: vi.fn(), reclassifyProvenPreDispatch }, diagnosticReader: { query: vi.fn().mockResolvedValue([{ outcome: "failure", details: { integrationSurface: "cloudshare.v4.oauth.token", failureMode: "transport_failure", httpExchanges: [] } }]) }, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-present", undefined, undefined, contact.email)])) }) } } as never);
+    const result = await workspace.reconcileParticipantAdd!({ customerId: "customer-1", sessionId: session.id, actor, commandId: "33333333-3333-4333-8333-333333333333", person: { kind: "existingContact", contactId: contact.id } });
+    expect(result).toMatchObject({ status: 409, body: { code: "participant_add_no_replay" } }); expect(reclassifyProvenPreDispatch).not.toHaveBeenCalled();
+  });
   it("blocks participant registration at the exact session end before integration setup", async () => {
     const findByCustomerId = vi.fn(() => { throw new Error("connection lookup must not run"); });
     const forConnection = vi.fn(() => { throw new Error("adapter construction must not run"); });
