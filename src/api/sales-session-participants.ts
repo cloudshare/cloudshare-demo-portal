@@ -7,7 +7,7 @@ import type { SalesDemoSession, SalesDemoSessionRepository } from "@/domain/sale
 import type { SalesRecordRepository } from "@/domain/sales-records";
 import type { SalesSessionParticipantRepository } from "@/domain/sales-session-participant";
 import { projectSalesSessionAccessWindow } from "@/domain/sales-session-access-window";
-import { createCloudShareSalesDelivery, type SalesDelivery, type SalesDeliveryEvidence, type SalesDeliveryDispatchEvidence } from "@/integrations/cloudshare/sales-delivery";
+import { createCloudShareSalesDelivery, requireCompleteSalesParticipantRoster, type SalesDelivery, type SalesDeliveryEvidence, type SalesDeliveryDispatchEvidence } from "@/integrations/cloudshare/sales-delivery";
 import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
 import { projectCloudShareFailureContext, projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import type { EnvironmentStateEvidenceSource } from "@/domain/environment";
@@ -74,6 +74,7 @@ export async function handleRegisterSalesSessionParticipants(deps: BaseDeps, req
     const remoteBeforeRegistration = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId);
     completedRemote = remoteBeforeRegistration;
     completedExchanges.push(...(remoteBeforeRegistration.exchanges ?? [remoteBeforeRegistration]));
+    requireCompleteSalesParticipantRoster(remoteBeforeRegistration);
     const persisted = persistedParticipants;
     const persistedByContactId = new Map(persisted.map((participant) => [participant.opportunityContactId, participant]));
     const persistedByProviderId = new Map(persisted.map((participant) => [participant.cloudShareParticipantId, participant]));
@@ -153,6 +154,7 @@ export async function handleRegisterSalesSessionParticipants(deps: BaseDeps, req
       : remoteBeforeRegistration;
     completedRemote = remoteAfterRegistration;
     if (remoteAfterRegistration !== remoteBeforeRegistration) completedExchanges.push(...(remoteAfterRegistration.exchanges ?? [remoteAfterRegistration]));
+    requireCompleteSalesParticipantRoster(remoteAfterRegistration);
     const participantByPortalId = new Map([...planned.values()].map((value) => [value.id, remoteAfterRegistration.participants.filter((participant) => participantProperties(participant).certalisSalesParticipantId === value.id && participantProperties(participant).certalisOpportunityContactId === value.contact.id)]));
     const remoteContactCounts = new Map<string, number>();
     for (const participant of remoteAfterRegistration.participants) { const contactId = participantProperties(participant).certalisOpportunityContactId; if (contactId) remoteContactCounts.set(contactId, (remoteContactCounts.get(contactId) ?? 0) + 1); }
@@ -214,7 +216,16 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     const outcomes = currents.flatMap((current) => current!.outcome.targets).filter((target, index, all) => all.findIndex((candidate) => candidate.participantId === target.participantId) === index);
     const replayPhase = first.command.phase === "evaluating_confirmation" || first.command.phase === "settled" ? first.command.phase : null;
     const retainedParticipantIds = new Set(first.outcome.targets.filter((target) => target.outcome === "no_replay" || target.outcome === "confirmation_required").map((target) => target.participantId));
-    if (["confirmation_required", "blocked"].includes(first.outcome.outcome) && parsed.data.targets.filter((target) => retainedParticipantIds.has(target.participantId)).every((target) => target.intent === "invite") && replayPhase) {
+    const retainedResends = parsed.data.targets.filter((target) => retainedParticipantIds.has(target.participantId) && target.intent === "resend");
+    const retainedInvites = parsed.data.targets.filter((target) => retainedParticipantIds.has(target.participantId) && target.intent === "invite");
+    if (first.command.phase === "evaluating_confirmation" && retainedResends.length > 0 && retainedInvites.length === 0) {
+      const settledOutcomes: InvitationTargetOutcome[] = parsed.data.targets.map((target) => retainedParticipantIds.has(target.participantId) ? { participantId: target.participantId, outcome: "accepted_unconfirmed", reason: null } : first.outcome.targets.find((outcome) => outcome.participantId === target.participantId) as InvitationTargetOutcome);
+      await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: parsed.data.commandId, expectedRevision: first.command.revision, expectedPhase: "evaluating_confirmation", phase: "settled", correlationId: first.command.correlationId, httpStatus: 200, resultCode: "invitation_completed", targetOutcomes: settledOutcomes });
+      const settled = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
+      if (!settled) throw new Error("settled invitation command was not found");
+      return { status: 200, body: { code: "invitation_completed", replayed: true, phase: "settled", ...settled.outcome } };
+    }
+    if (["confirmation_required", "blocked"].includes(first.outcome.outcome) && retainedInvites.length > 0 && replayPhase) {
       const deliveryResult = await resolveDelivery(deps, request);
       if (!("response" in deliveryResult)) {
         try {
@@ -236,9 +247,10 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
             exactRemoteByParticipantId.set(stored.id, remote[0]!);
             resolvedRetainedIds.add(stored.id);
           });
-          if (resolvedRetainedIds.size > 0) {
+          if (resolvedRetainedIds.size > 0 || (first.command.phase === "evaluating_confirmation" && retainedResends.length > 0)) {
             const reconciledOutcomes: InvitationTargetOutcome[] = parsed.data.targets.map((target) => {
               if (resolvedRetainedIds.has(target.participantId)) return { participantId: target.participantId, outcome: "confirmed_by_reconciliation", reason: null };
+              if (retainedResends.some((candidate) => candidate.participantId === target.participantId) && first.command.phase === "evaluating_confirmation") return { participantId: target.participantId, outcome: "accepted_unconfirmed", reason: null };
               const prior = first.outcome.targets.find((outcome) => outcome.participantId === target.participantId);
               if (!prior?.outcome) throw new Error("invitation target has no durable outcome");
               return { participantId: prior.participantId, outcome: prior.outcome, reason: prior.reason };
@@ -305,6 +317,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     const current = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId);
     completedExchanges.push(...(current.exchanges ?? [current]));
     if (current.completeness === "incomplete") {
+      await deps.invitationLedger.failAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))(), { httpStatus: 502, resultCode: "participant_roster_incomplete", reason: "failed_retryable" });
       await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare participant roster could not be proven complete before dispatch.", current, { failureMode: "participant_invitation_confirmation", participantIds, httpExchanges: completedExchanges });
       return { status: 502, body: { code: "participant_roster_incomplete", error: "CloudShare participant roster could not be proven complete.", correlationId } };
     }
@@ -471,6 +484,7 @@ export async function handleListSalesSessionParticipants(deps: BaseDeps, request
   try {
     const remote = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId);
     completedRemote = remote;
+    requireCompleteSalesParticipantRoster(remote);
     const local = await deps.participants.list(request.customerId, prepared.session.id);
     const now = (deps.now ?? (() => new Date()))();
     const connection = deps.salesEnvironmentFactory ? await deps.connections.findByCustomerId(request.customerId) : null;
@@ -565,7 +579,7 @@ export async function handleListSalesSessionParticipants(deps: BaseDeps, request
       : missingCloudShareParticipantCount > 0
         ? "CloudShare did not return one or more registered Sales Participants; those mappings need attention."
         : "Sales Participant monitoring state reconciled from CloudShare";
-    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.reconciled", reconciliationFailed ? "failure" : "success", reconciliationMessage, remote, { localParticipantCount: local.length, cloudShareParticipantCount: remote.participants.length, recoveredParticipantCount: recovery.recoveredParticipantCount, participantCount: reconciled.length, ...(missingCloudShareParticipantCount > 0 ? { missingCloudShareParticipantCount } : {}), ...(correlationRepairRequiredCount > 0 ? { correlationRepairRequiredCount } : {}) });
+    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.reconciled", reconciliationFailed ? "failure" : "success", reconciliationMessage, remote, { localParticipantCount: local.length, cloudShareParticipantCount: remote.participants.length, recoveredParticipantCount: recovery.recoveredParticipantCount, participantCount: reconciled.length, httpExchanges: remote.exchanges ?? [remote], ...(missingCloudShareParticipantCount > 0 ? { missingCloudShareParticipantCount } : {}), ...(correlationRepairRequiredCount > 0 ? { correlationRepairRequiredCount } : {}) });
     // Keep each mapping independently searchable. `externalIds` is deliberately a
     // string map, so a multi-participant reconciliation cannot be represented by
     // putting an array there without breaking diagnostics lookup semantics.

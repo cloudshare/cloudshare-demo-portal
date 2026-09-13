@@ -19,7 +19,7 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
     const outcomes = row.targets.map((target) => {
       if (target.outcome !== null && !invitationOutcomes.includes(target.outcome as never)) throw new Error("invalid persisted invitation outcome");
       if (target.reason !== null && !safeReasons.includes(target.reason as never)) throw new Error("invalid persisted invitation reason");
-      return { participantId: target.salesSessionParticipantId, outcome: target.outcome as never, reason: target.reason };
+      return { participantId: target.salesSessionParticipantId, outcome: target.outcome as never, reason: target.reason as typeof safeReasons[number] | null };
     });
     const targets = row.targets.map((target) => {
       if (!['invite', 'resend'].includes(target.intent) || !['notSent', 'sent'].includes(target.expectedInvitationStatus)) throw new Error("invalid persisted invitation target");
@@ -86,7 +86,7 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
         if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
           const winner = await prisma.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } });
           if (winner?.scopeHash === scopeHash) return { kind: "same_command", commandId: input.commandId, command: toCommand(winner) };
-          return { kind: "blocked", commandId: input.commandId, blockReason: "command_id_mismatch" };
+          return { kind: "blocked", commandId: input.commandId, blockReason: winner ? "command_id_mismatch" : "precondition_failed" };
         }
         throw error;
       }

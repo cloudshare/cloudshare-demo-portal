@@ -22,6 +22,7 @@ import type {
 } from "@/domain/sales-trial-offering";
 import {
   createCloudShareSalesDelivery,
+  requireCompleteSalesParticipantRoster,
   type SalesDelivery,
   type SalesDeliveryEvidence,
   type SalesParticipantCorrelationPropertyKey,
@@ -353,6 +354,7 @@ export async function handleEnterSalesTrialOffering(
     });
 
     const remoteBefore = await delivery.listParticipants(offering.cloudShareSalesExperienceId);
+    requireCompleteSalesParticipantRoster(remoteBefore);
     const resolved = await resolveEnrollment({
       delivery,
       salesExperienceId: offering.cloudShareSalesExperienceId,
@@ -514,6 +516,7 @@ export async function handleListSalesTrialOfferingParticipants(
       deps.enrollments.listByOffering(request.customerId, request.offeringId),
       delivery.listParticipants(offering.cloudShareSalesExperienceId),
     ]);
+    requireCompleteSalesParticipantRoster(remote);
     rosterObservedAt = new Date();
     reconciledEnrollments = await Promise.all(
       enrollments.map(async (enrollment) => {
@@ -1185,6 +1188,7 @@ async function resolveEnrollment(input: {
     },
   ]);
   const remoteAfter = await input.delivery.listParticipants(input.salesExperienceId);
+  requireCompleteSalesParticipantRoster(remoteAfter);
   const exactAfter = exactMatches(remoteAfter.participants, input.enrollment);
   if (exactAfter.length !== 1) {
     throw ambiguousRoster(remoteAfter, input.enrollment, "participant_reconciliation_failed");

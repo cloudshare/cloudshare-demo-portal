@@ -5,8 +5,9 @@ export type InvitationOutcome = typeof invitationOutcomes[number];
 export const invitationPhases = ["admitted", "dispatching", "evaluating_confirmation", "settled"] as const;
 export type InvitationPhase = typeof invitationPhases[number];
 export type InvitationTarget = { readonly participantId: string; readonly intent: "invite" | "resend"; readonly expectedInvitationStatus: "notSent" | "sent"; readonly participantRevision: string; readonly projectionRevision?: string };
-export type InvitationTargetOutcome = { readonly participantId: string; readonly outcome: InvitationOutcome; readonly reason: string | null };
 export type InvitationSafeReason = "not_dispatched" | "provider_rejected" | "ambiguous_after_dispatch" | "confirmation_required" | "failed_retryable" | "stale_revision" | "blocked_by_fence";
+export const invitationSafeReasons: readonly InvitationSafeReason[] = ["not_dispatched", "provider_rejected", "ambiguous_after_dispatch", "confirmation_required", "failed_retryable", "stale_revision", "blocked_by_fence"];
+export type InvitationTargetOutcome = { readonly participantId: string; readonly outcome: InvitationOutcome; readonly reason: InvitationSafeReason | null };
 export type RevisionedInvitationCommand = { readonly customerId: string; readonly commandId: string; readonly phase: InvitationPhase; readonly revision: number; readonly correlationId: string | null; readonly httpStatus?: number | null; readonly resultCode?: string | null };
 export type CurrentInvitationState = {
   readonly command: RevisionedInvitationCommand;
@@ -63,7 +64,10 @@ export function invitationScopeHash(input: { customerId: string; sessionId: stri
   })).digest("hex");
 }
 export function invitationResult(input: { commandId: string; outcomes: readonly (InvitationTargetOutcome | { readonly participantId: string; readonly outcome: null; readonly reason: null })[]; correlationId: string | null }) {
-  for (const target of input.outcomes) if (target.outcome !== null && !invitationOutcomes.includes(target.outcome)) throw new Error("invalid invitation outcome");
+  for (const target of input.outcomes) {
+    if (target.outcome !== null && !invitationOutcomes.includes(target.outcome)) throw new Error("invalid invitation outcome");
+    if (target.reason !== null && !invitationSafeReasons.includes(target.reason)) throw new Error("invalid invitation reason");
+  }
   const counts = Object.fromEntries(invitationOutcomes.map((value) => [value, input.outcomes.filter((target) => target.outcome === value).length]));
   const outcome = input.outcomes.some((target) => target.outcome === null) ? "in_progress" : counts.no_replay ? "blocked" : counts.confirmation_required ? "confirmation_required" : counts.failed_retryable ? "failed_retryable" : counts.accepted_unconfirmed ? "completed_with_unconfirmed" : "completed";
   return { commandId: input.commandId, outcome, correlationId: input.correlationId, counts, targets: input.outcomes };

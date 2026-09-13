@@ -18,10 +18,11 @@ describe("Sales Participant invitation ledger", () => {
   it("reconstructs a closed safe aggregate and rejects arbitrary evidence", () => {
     const outcomes: InvitationTargetOutcome[] = [
       { participantId: "p1", outcome: "confirmed", reason: null },
-      { participantId: "p2", outcome: "no_replay", reason: "Provider outcome is ambiguous; do not retry." },
+      { participantId: "p2", outcome: "no_replay", reason: "ambiguous_after_dispatch" },
     ];
     expect(invitationResult({ commandId: "cmd", outcomes, correlationId: "corr" })).toMatchObject({ outcome: "blocked", counts: { confirmed: 1, no_replay: 1 } });
     expect(() => invitationResult({ commandId: "cmd", outcomes: [{ participantId: "p", outcome: "provider_secret" as never, reason: null }], correlationId: null })).toThrow();
+    expect(() => invitationResult({ commandId: "cmd", outcomes: [{ participantId: "p", outcome: "no_replay", reason: "provider_secret" as never }], correlationId: null })).toThrow("invalid invitation reason");
   });
 
   it.each([
