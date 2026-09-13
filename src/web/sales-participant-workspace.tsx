@@ -63,7 +63,7 @@ export function SalesParticipantWorkspace(props: {
   const historyMode = useRef<"push" | "replace">("replace");
   const lastUrl = useRef<string | null>(null);
   const logicalFocus = useRef<"row" | "inspector">(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("participantFocus") === "inspector" ? "inspector" : "row");
-  const href = useCallback(() => `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/page?${query ? `query=${encodeURIComponent(query)}&` : ""}offset=${offset}&limit=25`, [offset, query, sessionId]);
+  const href = useCallback(() => `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants?${query ? `query=${encodeURIComponent(query)}&` : ""}offset=${offset}&limit=25`, [offset, query, sessionId]);
   const activeParticipant = page?.participants.find((row) => row.id === selection.activeId) ?? null;
 
   useEffect(() => {
