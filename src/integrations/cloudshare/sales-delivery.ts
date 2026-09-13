@@ -200,6 +200,8 @@ export function normalizeSalesParticipantPage(payload: unknown): unknown {
 }
 const participantsEnvelopeSchema = z.preprocess(normalizeSalesParticipantPage, z.object({ count: z.number().int().nonnegative().optional(), participants: z.array(salesParticipantSchema) }));
 const PARTICIPANT_PAGE_LIMIT = 100;
+const PARTICIPANT_MAX_PAGES = 100;
+const PARTICIPANT_MAX_ROWS = PARTICIPANT_PAGE_LIMIT * PARTICIPANT_MAX_PAGES;
 
 const requiredMutableSalesExperienceFields = ["name", "type", "projectId", "blueprintIds", "cloudshareRegionIds", "policyId", "opportunity", "mainSalesPro", "registrationType", "start", "timeZone"] as const;
 const optionalMutableSalesExperienceFields = ["teamId", "allowParticipantsSwitchSteps", "awsCloudRegion", "azureCloudRegion", "googleCloudProviderRegion", "googleCloudProviderZone", "additionalSalesPros", "passphrase", "description", "labels", "externalId", "allowMultipleEnvironmentActivations", "sendInvitations", "emailDomainBlocklist", "blockFreeEmailDomains", "customFields", "useCustomInvitationEmail", "preConfigureParticipantEnvironments", "sharedEnvBlueprintId", "sharedEnvPolicyId", "isSharedLabViewAccessEnabled", "allowAudioVideo", "end"] as const;
@@ -349,6 +351,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         return { participants: firstPage.participants.map(mapSalesParticipant), completeness: "incomplete", provenance: { expectedCount: null, returnedCount: firstPage.participants.length, offsets: [0], reason: "count_missing" }, ...participantEvidence(first.evidence) };
       }
       const expectedCount = firstPage.count;
+      if (expectedCount > PARTICIPANT_MAX_ROWS) throwParticipantPageFailure(first.evidence, expectedCount, firstPage.participants.length, [0], "participant_page_limit_exceeded");
       const rows = [...firstPage.participants];
       const offsets = [0];
       if (rows.length > expectedCount) throwParticipantPageFailure(first.evidence, expectedCount, rows.length, offsets, "participant_page_count_contradiction");
@@ -356,6 +359,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const participantIds = new Set(rows.map((participant) => participant.id));
       let evidence = first.evidence;
       while (rows.length < expectedCount) {
+        if (offsets.length >= PARTICIPANT_MAX_PAGES) throwParticipantPageFailure(evidence, expectedCount, rows.length, offsets, "participant_page_limit_exceeded");
         const offset = rows.length;
         const page = await detailed<z.output<typeof participantsEnvelopeSchema>>({ method: "GET", path, query: { offset: String(offset), limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
         const normalizedPage = participantPage(page.data);
@@ -375,7 +379,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         return { ...participantEvidence(evidence), dispatchOutcome: "acknowledged" as const };
       } catch (error) {
         const context = error instanceof Error && "context" in error && typeof error.context === "object" && error.context !== null ? error.context as Record<string, unknown> : {};
-        const evidence = { request: { method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds }, response: { status: typeof context.responseStatus === "number" ? context.responseStatus : typeof context.status === "number" ? context.status : 0, ...(Object.hasOwn(context, "responseBody") ? { body: context.responseBody } : {}) } } as SalesDeliveryEvidence;
+        const evidence = { request: { method: typeof context.method === "string" ? context.method : "POST", path: typeof context.path === "string" ? context.path : `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, ...(Object.hasOwn(context, "requestQuery") ? { query: context.requestQuery as Record<string, string> } : {}), ...(Object.hasOwn(context, "requestHeaders") ? { headers: context.requestHeaders as Record<string, string> } : {}), ...(Object.hasOwn(context, "requestBody") ? { body: context.requestBody } : { body: participantIds }) }, response: { status: typeof context.responseStatus === "number" ? context.responseStatus : typeof context.status === "number" ? context.status : 0, ...(Object.hasOwn(context, "responseHeaders") ? { headers: context.responseHeaders as Record<string, string> } : {}), ...(Object.hasOwn(context, "responseBody") ? { body: context.responseBody } : {}) } } as SalesDeliveryEvidence;
         const dispatchOutcome = error instanceof CloudShareAuthError
           ? "not_dispatched" as const
           : error instanceof CloudShareRequestError
@@ -423,11 +427,11 @@ function hasDuplicateParticipantIds(participants: readonly z.output<typeof sales
   return new Set(participants.map((participant) => participant.id)).size !== participants.length;
 }
 
-type ParticipantPageFailureMode = "participant_page_count_contradiction" | "participant_page_duplicate_id";
+type ParticipantPageFailureMode = "participant_page_count_contradiction" | "participant_page_duplicate_id" | "participant_page_limit_exceeded";
 
 function throwParticipantPageFailure(evidence: SalesDeliveryEvidence, expectedCount: number, returnedCount: number, pageOffsets: readonly number[], failureMode: ParticipantPageFailureMode): never {
   const safeEvidence = participantEvidence(evidence);
-  throw new CloudShareResponseError(failureMode === "participant_page_duplicate_id" ? "CloudShare participant page contains duplicate IDs." : "CloudShare participant page count contradicts the returned items.", {
+  throw new CloudShareResponseError(failureMode === "participant_page_duplicate_id" ? "CloudShare participant page contains duplicate IDs." : failureMode === "participant_page_limit_exceeded" ? "CloudShare participant roster exceeds the bounded read limit." : "CloudShare participant page count contradicts the returned items.", {
     method: safeEvidence.request.method,
     path: safeEvidence.request.path,
     ...(safeEvidence.request.query ? { requestQuery: safeEvidence.request.query } : {}),

@@ -226,4 +226,13 @@ describe("Prisma invitation ledger", () => {
     await expect(prisma.salesParticipantInvitationFence.count({ where: { customerId: f.customerId } })).resolves.toBe(0);
     await expect(prisma.salesParticipantInvitationTarget.findFirst({ where: { customerId: f.customerId } })).resolves.toMatchObject({ outcome: "failed_retryable" });
   });
+  it("durably preserves a typed pre-dispatch failure for exact replay and rejects corrupt metadata", async () => {
+    const f = await fixture(); const ledger = createPrismaSalesParticipantInvitationLedger(prisma); const commandId = randomUUID();
+    const admission = await ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets: [{ participantId: f.participant.id, intent: "invite", expectedInvitationStatus: "notSent", participantRevision: f.participant.updatedAt.toISOString() }], commandId, at: new Date() });
+    await ledger.failAdmitted(f.customerId, commandId, 1, new Date(), { httpStatus: 502, resultCode: "not_dispatched", reason: "not_dispatched" });
+    await expect(ledger.readCommand(f.customerId, commandId)).resolves.toMatchObject({ command: { httpStatus: 502, resultCode: "not_dispatched" }, outcome: { targets: [{ reason: "not_dispatched" }] } });
+    await prisma.salesParticipantInvitationCommand.update({ where: { customerId_commandId: { customerId: f.customerId, commandId } }, data: { httpStatus: 999 } });
+    await expect(ledger.readCommand(f.customerId, commandId)).rejects.toThrow("invalid persisted invitation status");
+    expect(admission.kind).toBe("admitted");
+  });
 });

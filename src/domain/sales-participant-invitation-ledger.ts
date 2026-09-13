@@ -6,7 +6,7 @@ export const invitationPhases = ["admitted", "dispatching", "evaluating_confirma
 export type InvitationPhase = typeof invitationPhases[number];
 export type InvitationTarget = { readonly participantId: string; readonly intent: "invite" | "resend"; readonly expectedInvitationStatus: "notSent" | "sent"; readonly participantRevision: string; readonly projectionRevision?: string };
 export type InvitationTargetOutcome = { readonly participantId: string; readonly outcome: InvitationOutcome; readonly reason: string | null };
-export type InvitationSafeReason = "provider_rejected" | "ambiguous_after_dispatch" | "confirmation_required" | "failed_retryable" | "stale_revision" | "blocked_by_fence";
+export type InvitationSafeReason = "not_dispatched" | "provider_rejected" | "ambiguous_after_dispatch" | "confirmation_required" | "failed_retryable" | "stale_revision" | "blocked_by_fence";
 export type RevisionedInvitationCommand = { readonly customerId: string; readonly commandId: string; readonly phase: InvitationPhase; readonly revision: number; readonly correlationId: string | null; readonly httpStatus?: number | null; readonly resultCode?: string | null };
 export type CurrentInvitationState = {
   readonly command: RevisionedInvitationCommand;
@@ -30,7 +30,7 @@ export type ParticipantInvitationProjection = {
   readonly environmentAttentionSource: string | null;
   readonly lastReconciledAt: string;
 };
-export type Admission = { readonly kind: "admitted" | "same_command" | "blocked"; readonly commandId: string; readonly admissionToken?: string; readonly command?: RevisionedInvitationCommand };
+export type Admission = { readonly kind: "admitted" | "same_command" | "blocked"; readonly commandId: string; readonly admissionToken?: string; readonly command?: RevisionedInvitationCommand; readonly blockReason?: "command_id_mismatch" | "precondition_failed" };
 export type FinishInvitationCommand = { readonly commandId: string; readonly expectedRevision: number; readonly expectedPhase: "dispatching" | "evaluating_confirmation" | "settled"; readonly phase: "evaluating_confirmation" | "settled"; readonly correlationId: string | null; readonly httpStatus?: number; readonly resultCode?: string };
 export interface SalesParticipantInvitationLedger {
   admitBatch(input: { customerId: string; sessionId: string; targets: readonly InvitationTarget[]; commandId: string; at: Date }): Promise<Admission>;
@@ -38,7 +38,7 @@ export interface SalesParticipantInvitationLedger {
   markBatchEvaluatingConfirmation?(input: { readonly customerId: string; readonly commandId: string; readonly admissionToken: string; readonly expectedRevision: number; readonly correlationId: string; readonly targetOutcomes: readonly InvitationTargetOutcome[]; readonly at: Date }): Promise<RevisionedInvitationCommand>;
   expireAdmitted(customerId: string, commandId: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
   recoverExpiredInvitationCommand?(input: { readonly customerId: string; readonly sessionId: string; readonly commandId: string; readonly expectedRevision: number; readonly at: Date }): Promise<RevisionedInvitationCommand | null>;
-  failAdmitted(customerId: string, commandId: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
+  failAdmitted(customerId: string, commandId: string, expectedRevision: number, at: Date, result?: { readonly httpStatus: number; readonly resultCode: string; readonly reason: InvitationSafeReason }): Promise<RevisionedInvitationCommand>;
   finishBatch(input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[] }): Promise<RevisionedInvitationCommand>;
   finishBatchWithParticipantProjections(input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[]; projections: readonly ParticipantInvitationProjection[] }): Promise<RevisionedInvitationCommand>;
   /** Command identity is the replay boundary; unlike participant-current

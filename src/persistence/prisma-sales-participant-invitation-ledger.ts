@@ -4,9 +4,12 @@ import { invitationOutcomes, invitationPhases, invitationResult, invitationScope
 
 const LEASE_MS = 30_000;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
-const safeReasons = ["provider_rejected", "ambiguous_after_dispatch", "confirmation_required", "failed_retryable", "stale_revision", "blocked_by_fence"] as const;
+const safeReasons = ["not_dispatched", "provider_rejected", "ambiguous_after_dispatch", "confirmation_required", "failed_retryable", "stale_revision", "blocked_by_fence"] as const;
+const safeResultCodes = ["participant_revision_stale", "native_invitations_disabled", "participant_roster_incomplete", "participant_mapping_missing_from_cloudshare", "invitation_ledger_unavailable", "invitation_no_replay", "provider_rejected", "not_dispatched", "invitation_confirmation_required", "invitation_completed", "command_reconciled", "command_id_mismatch"] as const;
 const toCommand = (row: { customerId: string; commandId: string; phase: string; revision: number; correlationId: string | null; httpStatus?: number | null; resultCode?: string | null }): RevisionedInvitationCommand => {
   if (!invitationPhases.includes(row.phase as never)) throw new Error("invalid persisted invitation phase");
+  if (row.httpStatus !== undefined && row.httpStatus !== null && (!Number.isInteger(row.httpStatus) || row.httpStatus < 200 || row.httpStatus > 599)) throw new Error("invalid persisted invitation status");
+  if (row.resultCode !== undefined && row.resultCode !== null && !safeResultCodes.includes(row.resultCode as never)) throw new Error("invalid persisted invitation result code");
   return { customerId: row.customerId, commandId: row.commandId, phase: row.phase as InvitationPhase, revision: row.revision, correlationId: row.correlationId, httpStatus: row.httpStatus ?? null, resultCode: row.resultCode ?? null };
 };
 
@@ -58,7 +61,7 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
       const lease = new Date(input.at.getTime() + LEASE_MS);
       const existing = await prisma.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } });
       if (existing) {
-        if (existing.scopeHash !== scopeHash) return { kind: "blocked", commandId: input.commandId };
+        if (existing.scopeHash !== scopeHash) return { kind: "blocked", commandId: input.commandId, blockReason: "command_id_mismatch" };
         if (!invitationPhases.includes(existing.phase as never)) throw new Error("invalid persisted invitation phase");
         return { kind: "same_command", commandId: input.commandId, command: { customerId: existing.customerId, commandId: existing.commandId, phase: existing.phase as never, revision: existing.revision, correlationId: existing.correlationId } };
       }
@@ -78,12 +81,12 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
         }
         return { kind: "admitted", commandId: input.commandId, admissionToken: token };
       } catch (error) {
-        if (error instanceof Error && error.message === "command_id_mismatch") return { kind: "blocked", commandId: input.commandId };
-        if (error instanceof Error && error.message === "blocked") return { kind: "blocked", commandId: input.commandId };
+        if (error instanceof Error && error.message === "command_id_mismatch") return { kind: "blocked", commandId: input.commandId, blockReason: "command_id_mismatch" };
+        if (error instanceof Error && error.message === "blocked") return { kind: "blocked", commandId: input.commandId, blockReason: "precondition_failed" };
         if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
           const winner = await prisma.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } });
           if (winner?.scopeHash === scopeHash) return { kind: "same_command", commandId: input.commandId, command: toCommand(winner) };
-          return { kind: "blocked", commandId: input.commandId };
+          return { kind: "blocked", commandId: input.commandId, blockReason: "command_id_mismatch" };
         }
         throw error;
       }
@@ -131,8 +134,8 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
         return toCommand(await tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } }));
       });
     },
-    async failAdmitted(customerId, commandId, expectedRevision, at) {
-      const updated = await prisma.$transaction(async (tx) => { const result = await tx.salesParticipantInvitationCommand.updateMany({ where: { customerId, commandId, revision: expectedRevision, phase: "admitted" }, data: { phase: "settled", revision: { increment: 1 }, updatedAt: at } }); if (result.count !== 1) throw new Error("admitted command is no longer current"); const targets = await tx.salesParticipantInvitationTarget.findMany({ where: { customerId, commandId } }); for (const target of targets) await tx.salesParticipantInvitationTarget.update({ where: { customerId_commandId_salesSessionParticipantId: { customerId, commandId, salesSessionParticipantId: target.salesSessionParticipantId } }, data: { outcome: "failed_retryable", reason: "failed_retryable" } }); await tx.salesParticipantInvitationFence.deleteMany({ where: { customerId, commandId } }); return tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId, commandId } } }); });
+    async failAdmitted(customerId, commandId, expectedRevision, at, failure) {
+      const updated = await prisma.$transaction(async (tx) => { const result = await tx.salesParticipantInvitationCommand.updateMany({ where: { customerId, commandId, revision: expectedRevision, phase: "admitted" }, data: { phase: "settled", httpStatus: failure?.httpStatus, resultCode: failure?.resultCode, revision: { increment: 1 }, updatedAt: at } }); if (result.count !== 1) throw new Error("admitted command is no longer current"); const targets = await tx.salesParticipantInvitationTarget.findMany({ where: { customerId, commandId } }); for (const target of targets) await tx.salesParticipantInvitationTarget.update({ where: { customerId_commandId_salesSessionParticipantId: { customerId, commandId, salesSessionParticipantId: target.salesSessionParticipantId } }, data: { outcome: "failed_retryable", reason: failure?.reason ?? "failed_retryable" } }); await tx.salesParticipantInvitationFence.deleteMany({ where: { customerId, commandId } }); return tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId, commandId } } }); });
       return { customerId: updated.customerId, commandId: updated.commandId, phase: updated.phase as InvitationPhase, revision: updated.revision, correlationId: updated.correlationId };
     },
     async finishBatch(input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[] }): Promise<RevisionedInvitationCommand> {
