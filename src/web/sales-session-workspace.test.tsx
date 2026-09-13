@@ -447,6 +447,7 @@ describe("Sales Session workspace", () => {
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.includes("/verify")) return verify;
+      if (url.includes("/participants/page")) return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false }), { status: 200 });
       return new Response(JSON.stringify(url.includes("session-2") ? next : data), { status: 200 });
     });
     const rendered = render(<StrictMode><SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
@@ -455,6 +456,7 @@ describe("Sales Session workspace", () => {
     expect(screen.getByRole("button", { name: "Verifying…" })).not.toBeNull();
     rendered.rerender(<StrictMode><SalesSessionWorkspace sessionId="session-2" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
     await screen.findByRole("heading", { name: "Replacement session" });
+    await screen.findByText("No Participants are registered for this Sales Session.");
     resolveVerify(new Response(JSON.stringify({ correlationId: "old-verify", experienceStatus: "inProgress", observedAt: "2026-07-24T09:01:00.000Z", freshness: "fresh", source: "cloudshare_v4_get_sales" }), { status: 200 }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByText(/Verifying this Sales Session/)).toBeNull();
