@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPrismaSalesParticipantWorkspaceReader } from "./prisma-sales-participant-workspace-reader";
+import { createPrismaSalesParticipantWorkspaceReader as createReader } from "./prisma-sales-participant-workspace-reader";
+function createPrismaSalesParticipantWorkspaceReader(prisma: Record<string, unknown>) {
+  return createReader({ opportunityContact: { findMany: vi.fn().mockResolvedValue([]) }, ...prisma } as never);
+}
 function row(i: number) { return { id: `p${i}`, updatedAt: new Date("2026-01-01T00:00:00Z"), createdAt: new Date(2026, 0, i + 1), invitationStatus: "notSent", participationStatus: "pending", cloudShareParticipantId: `provider-${i}`, cloudShareRosterEnvironmentReference: null, environmentStatus: null, environmentObservedAt: null, environmentAttentionReason: null, contact: { firstName: "Ada", lastName: `${i}`, email: `ada${i}@example.test` }, launchLinks: [] }; }
 describe("Prisma participant workspace reader", () => {
   it("projects only bounded, active, unregistered contacts for the exact session opportunity", async () => {
