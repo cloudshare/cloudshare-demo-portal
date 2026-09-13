@@ -193,12 +193,15 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
       // Resolve the scoped target before admission so existingContact and adHoc
       // requests for the same Contact share one durable fence key.
       let targetKey = input.person.kind === "existingContact" ? `contact:${input.person.contactId}` : `email:${input.person.email.trim().toLowerCase()}`;
-      if (input.person.kind === "adHoc" && deps.sessions.findById && deps.records.listContacts) {
-        const scoped = await deps.sessions.findById(input.customerId, input.sessionId);
-        if (scoped) {
-          const email = input.person.email.trim().toLowerCase();
-          const matches = (await deps.records.listContacts(input.customerId, scoped.opportunityId)).filter((c) => !c.archivedAt && (c.normalizedEmail?.trim() || c.email.trim().toLowerCase()) === email);
-          if (matches.length === 1) targetKey = `contact:${matches[0]!.id}`;
+      if (input.person.kind === "existingContact" && deps.sessions.findById) {
+        try {
+          const scoped = await deps.sessions.findById(input.customerId, input.sessionId);
+          const contact = scoped ? await deps.records.findContact(input.customerId, input.person.contactId) : null;
+          if (contact && !contact.archivedAt && contact.opportunityId === scoped?.opportunityId) {
+            targetKey = `email:${(contact.normalizedEmail?.trim() || contact.email.trim().toLowerCase()).toLowerCase()}`;
+          }
+        } catch {
+          return { status: 503, body: { outcome: "rejected", code: "participant_add_unavailable", error: "Participant add could not be started. Retry the operation." } };
         }
       }
       let admitted: Awaited<ReturnType<NonNullable<typeof deps.addCommandStore>["admit"]>>;
@@ -245,7 +248,11 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
         await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "settled", result: outcome, now: (deps.now ?? (() => new Date()))() });
         return outcome;
       }
-      catch { const outcome: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add requires attention." } }; await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "needs_attention", result: outcome, now: (deps.now ?? (() => new Date()))() }); return outcome; }
+      catch {
+        const outcome: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add requires attention." } };
+        try { await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "needs_attention", result: outcome, now: (deps.now ?? (() => new Date()))() }); } catch { /* The durable dispatched state still prevents replay and is recovered on reread. */ }
+        return outcome;
+      }
     }
     return addParticipantUnfenced(input);
   };
