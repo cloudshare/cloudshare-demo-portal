@@ -43,7 +43,7 @@ describe("SalesParticipantWorkspace", () => {
       return new Response(JSON.stringify(addedOnce ? { participants: [added], total: 1, offset: 0, limit: 25, hasMore: false, eligibleContacts: [] } : { participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-ad-hoc", name: "Available Contact", email: "available@example.test" }] }));
     });
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
-    await user.click(screen.getByLabelText(/New person/));
+    await user.click(await screen.findByLabelText(/New person/));
     await user.type(screen.getByLabelText("First name"), "Katherine");
     await user.type(screen.getByLabelText("Last name"), "Johnson");
     await user.type(screen.getByLabelText("Email"), "katherine@example.test");
@@ -57,6 +57,24 @@ describe("SalesParticipantWorkspace", () => {
     expect(request.mock.calls.some(([url]) => String(url).includes("/participants/invite"))).toBe(false);
     await user.click(screen.getByRole("button", { name: "Inspect" }));
     expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
+  });
+  it("reuses the same participant-add command after an uncertain response", async () => {
+    const user = userEvent.setup();
+    const bodies: string[] = [];
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/participants/add")) {
+        bodies.push(String(init?.body));
+        return new Response(JSON.stringify({ outcome: "needs_attention", code: "participant_add_no_replay", error: "Provider outcome is ambiguous." }), { status: 409 });
+      }
+      return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-1", name: "Grace Hopper", email: "grace@example.test" }] }));
+    });
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
+    await user.click(screen.getByRole("button", { name: "Add participant" }));
+    await screen.findByText("Provider outcome is ambiguous.");
+    await user.click(screen.getByRole("button", { name: "Add participant" }));
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(JSON.parse(bodies[0]).commandId).toBe(JSON.parse(bodies[1]).commandId);
   });
 
   it("hydrates bounded query and offset from the URL and rereads on popstate", async () => {
