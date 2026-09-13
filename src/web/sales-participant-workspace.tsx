@@ -174,6 +174,7 @@ export function SalesParticipantWorkspace(props: {
       const result = await readJsonObject(response);
       if (!response.ok) throw new Error(textField(result, "error") ?? `Registration failed (${response.status}).`);
       setRegistrationIds([]); setRegistrationFeedback("Participant registered. No CloudShare invitation was sent.");
+      if (query || offset) { historyMode.current = "push"; setQuery(""); setOffset(0); }
       await rereadWorkspace();
     } catch (cause) { setRegistrationFeedback(cause instanceof Error ? cause.message : "Registration failed; retry or open Support."); }
     finally { setRegistrationBusy(false); }
