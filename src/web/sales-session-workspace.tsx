@@ -313,6 +313,7 @@ function SalesSessionWorkspaceState({
   const queueIsHistory =
     new URLSearchParams(queueHref.split("?")[1] ?? "").get("queue") ===
     "history";
+  const registrationHref = `${queueHref}${queueHref.includes("?") ? "&" : "?"}sessionId=${encodeURIComponent(sessionId)}&participantsOpen=true`;
   const verifyNow = async () => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
@@ -518,7 +519,7 @@ function SalesSessionWorkspaceState({
         </div>
       </nav>
       {area === "participants" ? (
-        <SalesParticipantWorkspace sessionId={sessionId} active request={participantRequest} />
+        <SalesParticipantWorkspace sessionId={sessionId} active request={participantRequest} registrationHref={registrationHref} />
       ) : null}
       {area === "activity" ? (
         <section className={styles.panel}>

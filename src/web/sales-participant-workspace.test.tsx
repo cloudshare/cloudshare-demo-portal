@@ -111,6 +111,12 @@ describe("SalesParticipantWorkspace", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(request.mock.calls.some((call) => String(call[0] ?? "").includes("offset=25"))).toBe(true));
   });
+  it("offers the existing registration surface when the canonical roster is empty", async () => {
+    render(<SalesParticipantWorkspace sessionId="s1" active registrationHref="/sales?tab=sessions&sessionId=s1&participantsOpen=true" request={async () => new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false }))} />);
+    await screen.findByText("No Participants are registered for this Sales Session.");
+    expect(screen.getByText(/Register an eligible Opportunity Contact to add the first Participant/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Register an Opportunity Contact" }).getAttribute("href")).toBe("/sales?tab=sessions&sessionId=s1&participantsOpen=true");
+  });
   it("announces selection pruning after a query changes the visible roster", async () => {
     const second = { ...participant, id: "p2", name: "Grace Hopper" };
     const request = vi.fn(async (url: string) => new Response(JSON.stringify({ participants: url.includes("query=grace") ? [second] : [participant], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 }));
