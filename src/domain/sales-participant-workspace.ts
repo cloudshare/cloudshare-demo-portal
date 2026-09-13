@@ -77,10 +77,26 @@ export type SalesParticipantWorkspaceInvitationResult = {
 };
 export type SalesParticipantWorkspaceRegistrationRequest = { readonly customerId: string; readonly sessionId: string; readonly actor: DiagnosticActor; readonly opportunityContactIds: readonly string[] };
 export type SalesParticipantWorkspaceRegistrationResult = { readonly status: number; readonly body: { readonly error?: string; readonly code?: string; readonly correlationId?: string } };
+export type SalesParticipantWorkspaceAddParticipantInput = {
+  readonly customerId: string;
+  readonly sessionId: string;
+  readonly actor: DiagnosticActor;
+  readonly commandId: string;
+  readonly person:
+    | { readonly kind: "existingContact"; readonly contactId: string }
+    | { readonly kind: "adHoc"; readonly firstName: string; readonly lastName: string; readonly email: string };
+};
+export type SalesParticipantWorkspaceAddParticipantResult = {
+  readonly status: number;
+  readonly body: { readonly outcome: "registered" | "already_registered" | "rejected" | "needs_attention"; readonly participantId?: string; readonly contactId?: string; readonly error?: string; readonly code?: string; readonly correlationId?: string };
+};
 export interface SalesParticipantWorkspace {
   readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspacePage | null>;
   submitInvitation(input: SalesParticipantWorkspaceInvitationRequest): Promise<SalesParticipantWorkspaceInvitationResult>;
   registerParticipants(input: SalesParticipantWorkspaceRegistrationRequest): Promise<SalesParticipantWorkspaceRegistrationResult>;
+  /** Canonical semantic participant-add operation. Optional during migration so
+   * legacy callers remain source-compatible while routes move to this seam. */
+  addParticipant?(input: SalesParticipantWorkspaceAddParticipantInput): Promise<SalesParticipantWorkspaceAddParticipantResult>;
 }
 
 export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, now: Date): Readonly<Record<SalesParticipantAction, boolean>> {
