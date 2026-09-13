@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleReadSalesParticipantWorkspacePage } from "./sales-participant-workspace";
+import { handleAddSalesParticipantWorkspace } from "./sales-participant-registration";
 import type { SalesParticipantWorkspace } from "@/domain/sales-participant-workspace";
 describe("participant page handler", () => {
+  it("normalizes a valid add request and rejects malformed input at the API seam", async () => {
+    const addParticipant = vi.fn().mockResolvedValue({ status: 201, body: { outcome: "registered" } });
+    const workspace = { addParticipant } as unknown as SalesParticipantWorkspace;
+    await expect(handleAddSalesParticipantWorkspace({ workspace }, { customerId: "c1", sessionId: "s1", actor: { type: "admin", id: "a", email: "a@test" }, body: { commandId: " cmd-1 ", person: { kind: "existingContact", contactId: " contact-1 " } } })).resolves.toMatchObject({ status: 201 });
+    expect(addParticipant).toHaveBeenCalledWith(expect.objectContaining({ commandId: "cmd-1", person: { kind: "existingContact", contactId: "contact-1" } }));
+    await expect(handleAddSalesParticipantWorkspace({ workspace }, { customerId: "c1", sessionId: "s1", actor: { type: "admin", id: "a", email: "a@test" }, body: { commandId: "cmd-2", person: { kind: "adHoc", firstName: "", lastName: "B", email: "b@test" } } })).resolves.toMatchObject({ status: 400 });
+  });
   it("validates bounds and preserves Customer-scoped safe page", async () => {
     const workspace = { readPage: vi.fn().mockResolvedValue({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false }), submitInvitation: vi.fn() } as unknown as SalesParticipantWorkspace;
     expect(await handleReadSalesParticipantWorkspacePage({ workspace }, { customerId: "c1", sessionId: "s1", offset: -1 })).toMatchObject({ status: 400 });
