@@ -293,6 +293,7 @@ model SalesParticipantInvitationTarget {
   customerId String
   commandId String
   salesSessionParticipantId String
+  ordinal Int
   intent String
   expectedInvitationStatus String
   participantRevision String
@@ -301,6 +302,7 @@ model SalesParticipantInvitationTarget {
   command SalesParticipantInvitationCommand @relation(fields: [customerId, commandId], references: [customerId, commandId], onDelete: Cascade)
   participant SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
   @@id([customerId, commandId, salesSessionParticipantId])
+  @@unique([customerId, commandId, ordinal])
 }
 
 model SalesParticipantInvitationFence {
