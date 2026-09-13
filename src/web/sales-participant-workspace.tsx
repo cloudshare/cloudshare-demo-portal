@@ -111,7 +111,7 @@ export function SalesParticipantWorkspace(props: {
       });
     }).catch(() => { if (!disposed) { setLoadFailed(true); setPage(null); setFeedback((messages) => ({ ...messages, _announcement: "Participant roster could not be loaded; retry or open Support." })); } });
     return () => { disposed = true; };
-  }, [active, href, inspectorOpen, request]);
+  }, [active, href, inspectorOpen, offset, query, request]);
   useEffect(() => {
     if (!inspectorOpen || !selection.activeId || !page || page.participants.some((participant) => participant.id === selection.activeId)) return;
     const missingId = selection.activeId;
