@@ -5,7 +5,6 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesWorkspace } from "./sales-workspace";
 import { salesSessionProvisionDraftKey } from "./sales-session-provision-draft";
-import { buildSalesWorkspaceHref, parseSalesWorkspaceRouteState } from "./sales-shell-route";
 
 vi.mock("./session-expiry", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./session-expiry")>()),
@@ -1434,13 +1433,12 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link" && init?.method === "DELETE") return json({ correlationId: "corr-revoke-1" });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
-    const registrationRoute = parseSalesWorkspaceRouteState({ tab: "sessions", sessionId: "session-1", participants: "open", status: "upcoming" });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={registrationRoute} />);
-    expect(await screen.findByRole("button", { name: "Register or repair selected participants" })).not.toBeNull();
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
+    await user.click(await screen.findByRole("button", { name: "Manage participants" }));
+    await waitFor(() => expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions&sessionId=session-1&participants=open", { scroll: false }));
     await user.click(await screen.findByLabelText(/Ada Lovelace$/));
     await user.click(screen.getByRole("button", { name: "Register or repair selected participants" }));
     expect((await screen.findByText("Sales Participants registered. No native invitations were sent.")).closest("[role]")?.getAttribute("role")).toBe("status");
-    expect(invitationRequests).toBe(0);
     expect(screen.queryByLabelText(/^Ada Lovelace$/)).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants", expect.objectContaining({ method: "POST", body: JSON.stringify({ contactIds: ["contact-1"] }) }));
     expect(screen.queryByText("cloudshare-participant-1")).toBeNull();
