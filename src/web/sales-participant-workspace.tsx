@@ -90,7 +90,7 @@ export function SalesParticipantWorkspace(props: {
       if (disposed) return;
       if (!response.ok || !Array.isArray(body.participants)) { setLoadFailed(true); setPage(null); setFeedback((current) => ({ ...current, _announcement: "Participant roster could not be loaded; retry or open Support." })); return; }
       setLoadFailed(false);
-      setPage(body);
+      setPage(body.total === 0 && !query && offset === 0 ? body : { ...body, eligibleContacts: undefined });
       setSelection((current) => {
         const pageIds = body.participants.map((row) => row.id);
         const inspectorTargetMissing = inspectorOpen && Boolean(current.activeId) && !pageIds.includes(current.activeId as string);
