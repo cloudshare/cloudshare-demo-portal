@@ -4,7 +4,7 @@ import type { SalesParticipantWorkspaceAddParticipantResult } from "@/domain/sal
 
 function fakePrisma() {
   const rows = new Map<string, any>();
-  const key = (x: any) => `${x.customerId}:${x.commandId}`;
+  const key = (x: any) => `${x.customerId ?? x.customerId_commandId.customerId}:${x.commandId ?? x.customerId_commandId.commandId}`;
   return { salesParticipantAddCommand: {
     findUnique: vi.fn(async ({ where }: any) => rows.get(key(where.customerId_commandId)) ?? null),
     findUniqueOrThrow: vi.fn(async ({ where }: any) => rows.get(key(where.customerId_commandId))),
