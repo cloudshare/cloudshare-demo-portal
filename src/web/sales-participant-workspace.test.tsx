@@ -82,6 +82,32 @@ describe("SalesParticipantWorkspace", () => {
     expect(request.mock.calls.filter(([url]) => String(url).endsWith("/participants/add/reconcile"))).toHaveLength(1);
   });
 
+  it("unlocks Add for a different participant without replaying the failed target", async () => {
+    const user = userEvent.setup(); const addBodies: string[] = [];
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/participants/add")) {
+        addBodies.push(String(init?.body));
+        return addBodies.length === 1
+          ? new Response(JSON.stringify({ outcome: "needs_attention", code: "participant_add_no_replay", correlationId: "corr-user4", commandId: "11111111-1111-4111-8111-111111111111" }), { status: 409 })
+          : new Response(JSON.stringify({ outcome: "registered", participantId: "participant-5" }), { status: 201 });
+      }
+      return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-4", name: "Test User 4", email: "user4@example.test" }, { id: "contact-5", name: "Test User 5", email: "user5@example.test" }] }));
+    });
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    const select = await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" });
+    await user.selectOptions(select, "contact-4");
+    await user.click(screen.getByRole("button", { name: "Add participant" }));
+    await screen.findByText("Do not retry: CloudShare may have received the participant write.");
+    expect((screen.getByRole("button", { name: "Add participant" }) as HTMLButtonElement).disabled).toBe(true);
+    await user.selectOptions(select, "contact-5");
+    expect(screen.queryByText("corr-user4")).toBeNull();
+    expect((screen.getByRole("button", { name: "Add participant" }) as HTMLButtonElement).disabled).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Add participant" }));
+    await waitFor(() => expect(addBodies).toHaveLength(2));
+    expect(JSON.parse(addBodies[0]).person.contactId).toBe("contact-4");
+    expect(JSON.parse(addBodies[1]).person.contactId).toBe("contact-5");
+  });
+
   it("automatically retries with bounded backoff only when the provider write was not dispatched", async () => {
     const user = userEvent.setup(); const bodies: string[] = [];
     const request = vi.fn(async (url: string, init?: RequestInit) => {
