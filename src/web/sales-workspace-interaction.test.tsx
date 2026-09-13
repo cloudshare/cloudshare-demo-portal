@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesWorkspace } from "./sales-workspace";
 import { salesSessionProvisionDraftKey } from "./sales-session-provision-draft";
 import { buildSalesWorkspaceHref, parseSalesWorkspaceRouteState } from "./sales-shell-route";
-import { buildParticipantRegistrationHref } from "./sales-session-workspace";
 
 vi.mock("./session-expiry", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./session-expiry")>()),
@@ -1435,8 +1434,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link" && init?.method === "DELETE") return json({ correlationId: "corr-revoke-1" });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
-    const registrationHref = buildParticipantRegistrationHref("/sales?tab=sessions&queue=active&offset=25", "session-1", "upcoming");
-    const registrationRoute = parseSalesWorkspaceRouteState(Object.fromEntries(new URL(registrationHref, "http://localhost").searchParams));
+    const registrationRoute = parseSalesWorkspaceRouteState({ tab: "sessions", sessionId: "session-1", participants: "open", status: "upcoming" });
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={registrationRoute} />);
     expect(await screen.findByRole("button", { name: "Register or repair selected participants" })).not.toBeNull();
     await user.click(await screen.findByLabelText(/Ada Lovelace$/));

@@ -26,7 +26,6 @@ export function SalesParticipantWorkspace(props: {
   readonly sessionId: string;
   readonly active: boolean;
   readonly request: (url: string, init?: RequestInit) => Promise<Response>;
-  readonly registrationHref?: string;
 }) {
   const { sessionId, active, request } = props;
   const [page, setPage] = useState<ParticipantPage | null>(null);
