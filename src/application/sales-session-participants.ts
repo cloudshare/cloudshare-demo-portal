@@ -193,20 +193,28 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
       const admitted = await deps.addCommandStore.admit({ customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId, payloadHash: addParticipantPayloadHash(input), now: (deps.now ?? (() => new Date()))() });
       if (admitted.kind === "mismatch") return { status: 409, body: { outcome: "rejected", code: "command_id_mismatch", error: "Command ID was already used for a different Participant." } };
       if (admitted.kind === "existing") return admitted.result ?? { status: 202, body: { outcome: admitted.state === "needs_attention" ? "needs_attention" : "rejected", code: "command_in_progress" } };
+      const settleBeforeDispatch = async (result: SalesParticipantWorkspaceAddParticipantResult) => {
+        await deps.addCommandStore!.settle({ customerId: input.customerId, commandId: input.commandId, state: "settled", result, now: (deps.now ?? (() => new Date()))() });
+        return result;
+      };
       // Complete local target resolution before crossing the dispatch fence.
       // The unfenced path repeats these reads defensively; these checks ensure
       // a missing/ambiguous local target is never mislabeled post-dispatch.
-      if (!deps.sessions.findById) return { status: 500, body: { outcome: "rejected", code: "session_repository_unavailable" } };
-      const preflightSession = await deps.sessions.findById(input.customerId, input.sessionId);
-      if (!preflightSession) return { status: 404, body: { outcome: "rejected", code: "session_not_found", error: "Sales Session was not found." } };
-      if (input.person.kind === "existingContact") {
-        const contact = await deps.records.findContact(input.customerId, input.person.contactId);
-        if (!contact || contact.opportunityId !== preflightSession.opportunityId || contact.archivedAt) return { status: 404, body: { outcome: "rejected", code: "contact_not_found", error: "Eligible Opportunity Contact was not found." } };
-      } else if (deps.records.listContacts) {
-        const email = input.person.email.trim().toLowerCase();
-        const matches = (await deps.records.listContacts(input.customerId, preflightSession.opportunityId)).filter((contact) => (contact.normalizedEmail ?? contact.email.trim().toLowerCase()) === email && !contact.archivedAt);
-        if (matches.length > 1) return { status: 409, body: { outcome: "needs_attention", code: "ambiguous_contact", error: "More than one active Contact matches this email." } };
-      }
+      if (!deps.sessions.findById) return settleBeforeDispatch({ status: 500, body: { outcome: "rejected", code: "session_repository_unavailable" } });
+      let preflightSession: Awaited<ReturnType<NonNullable<typeof deps.sessions.findById>>>;
+      try { preflightSession = await deps.sessions.findById(input.customerId, input.sessionId); }
+      catch (error) { return settleBeforeDispatch({ status: 500, body: { outcome: "rejected", code: "session_lookup_failed", error: error instanceof Error ? error.message : "Sales Session could not be verified." } }); }
+      if (!preflightSession) return settleBeforeDispatch({ status: 404, body: { outcome: "rejected", code: "session_not_found", error: "Sales Session was not found." } });
+      try {
+        if (input.person.kind === "existingContact") {
+          const contact = await deps.records.findContact(input.customerId, input.person.contactId);
+          if (!contact || contact.opportunityId !== preflightSession.opportunityId || contact.archivedAt) return settleBeforeDispatch({ status: 404, body: { outcome: "rejected", code: "contact_not_found", error: "Eligible Opportunity Contact was not found." } });
+        } else if (deps.records.listContacts) {
+          const email = input.person.email.trim().toLowerCase();
+          const matches = (await deps.records.listContacts(input.customerId, preflightSession.opportunityId)).filter((contact) => (contact.normalizedEmail ?? contact.email.trim().toLowerCase()) === email && !contact.archivedAt);
+          if (matches.length > 1) return settleBeforeDispatch({ status: 409, body: { outcome: "needs_attention", code: "ambiguous_contact", error: "More than one active Contact matches this email." } });
+        }
+      } catch (error) { return settleBeforeDispatch({ status: 500, body: { outcome: "rejected", code: "contact_lookup_failed", error: error instanceof Error ? error.message : "Participant details could not be verified." } }); }
       await deps.addCommandStore.markDispatched({ customerId: input.customerId, commandId: input.commandId, now: (deps.now ?? (() => new Date()))() });
       try { const outcome = await addParticipantUnfenced(input); await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "settled", result: outcome, now: (deps.now ?? (() => new Date()))() }); return outcome; }
       catch (error) { const outcome: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: error instanceof Error ? error.message : "Participant add requires attention." } }; await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "needs_attention", result: outcome, now: (deps.now ?? (() => new Date()))() }); return outcome; }

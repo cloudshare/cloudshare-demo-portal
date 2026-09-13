@@ -49,6 +49,7 @@ export function SalesParticipantWorkspace(props: {
   const [registrationId, setRegistrationId] = useState("");
   const [adHoc, setAdHoc] = useState({ firstName: "", lastName: "", email: "" });
   const [registrationFeedback, setRegistrationFeedback] = useState<string | null>(null);
+  const registrationCommand = useRef<{ key: string; commandId: string } | null>(null);
   const [registrationBusy, setRegistrationBusy] = useState(false);
   const originRef = useRef<HTMLElement | null>(null);
   const clearedInspectorTarget = useRef(false);
@@ -172,11 +173,14 @@ export function SalesParticipantWorkspace(props: {
     setRegistrationBusy(true);
     setRegistrationFeedback("Registering…");
     try {
-      const commandId = crypto.randomUUID();
       const person = addMode === "existingContact" ? { kind: "existingContact", contactId: selectedId } : { kind: "adHoc", ...adHoc };
+      const key = JSON.stringify(person);
+      const commandId = registrationCommand.current?.key === key ? registrationCommand.current.commandId : crypto.randomUUID();
+      registrationCommand.current = { key, commandId };
       const response = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/add`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ commandId, person }) });
       const result = await readJsonObject(response);
       if (!response.ok) throw new Error(textField(result, "error") ?? `Registration failed (${response.status}).`);
+      registrationCommand.current = null;
       setRegistrationId(""); setAdHoc({ firstName: "", lastName: "", email: "" }); setRegistrationFeedback(textField(result, "outcome") === "already_registered" ? "Participant was already registered. No CloudShare invitation was sent." : "Participant registered. No CloudShare invitation was sent.");
       if (query || offset) { historyMode.current = "push"; setQuery(""); setOffset(0); }
       await rereadWorkspace();
