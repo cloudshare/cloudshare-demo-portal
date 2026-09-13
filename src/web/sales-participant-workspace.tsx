@@ -252,18 +252,19 @@ export function SalesParticipantWorkspace(props: {
   };
   const refreshRegistrationEvidence = async (automatic = false, person?: ParticipantAddPerson) => {
     if (registrationBusy || !registrationCommand.current) return;
+    const generation = registrationGeneration.current;
     setRegistrationBusy(true);
     setRegistrationFeedback("Checking CloudShare participant status…");
     try {
       const response = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/add/reconcile`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ commandId: registrationCommand.current.commandId }) });
       const result = await readJsonObject(response); const code = textField(result, "code"); const correlationId = textField(result, "correlationId");
+      if (registrationGeneration.current !== generation) return;
       const retryable = code === "participant_add_retryable" && result?.dispatchOutcome === "not_dispatched";
       if (retryable && automatic && person) {
         automaticRetryMode.current = "reconciled"; automaticRetryCount.current = 0;
         const delayMs = participantAddRecovery.reconciledRetryDelaysMs[0]; const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
         automaticRetryCount.current = 1;
         setRegistrationOutcome({ retryable: true, correlationId: correlationId ?? registrationOutcome?.correlationId ?? null, nextRetryAt, nextAction: "retry" });
-        const generation = registrationGeneration.current;
         automaticRetryTimer.current = setTimeout(() => { automaticRetryTimer.current = null; if (registrationGeneration.current === generation) void registerSelected(true, person); }, delayMs);
         setRegistrationFeedback(`CloudShare absence and pre-dispatch evidence agree. Recovered add retry 1 of 4 is scheduled for ${nextRetryAt}.`);
       } else {
@@ -271,8 +272,8 @@ export function SalesParticipantWorkspace(props: {
         setRegistrationFeedback(retryable ? "CloudShare absence and pre-dispatch evidence agree. Manual retry is safe." : "Do not retry: CloudShare may have received the participant write.");
       }
       await rereadWorkspace();
-    } catch { setRegistrationFeedback("CloudShare status check failed. Do not retry; open Support diagnostics."); }
-    finally { setRegistrationBusy(false); }
+    } catch { if (registrationGeneration.current === generation) setRegistrationFeedback("CloudShare status check failed. Do not retry; open Support diagnostics."); }
+    finally { if (registrationGeneration.current === generation) setRegistrationBusy(false); }
   };
   const cancelScheduledRecovery = () => {
     if (automaticRetryTimer.current) { clearTimeout(automaticRetryTimer.current); automaticRetryTimer.current = null; }

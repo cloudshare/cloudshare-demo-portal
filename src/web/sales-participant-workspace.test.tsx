@@ -218,6 +218,23 @@ describe("SalesParticipantWorkspace", () => {
     expect(calls.filter((value) => value.endsWith("/participants/add"))).toHaveLength(2);
   });
 
+  it.each(["unmount", "session change"])("does not schedule a recovered add when reconciliation finishes after %s", async (exit) => {
+    let release!: (response: Response) => void; const pendingReconcile = new Promise<Response>((resolve) => { release = resolve; }); const calls: string[] = [];
+    const request = vi.fn(async (url: string) => {
+      calls.push(url);
+      if (url.endsWith("/participants/add/reconcile")) return pendingReconcile;
+      if (url.endsWith("/participants/add")) return new Response(JSON.stringify({ outcome: "needs_attention", code: "participant_add_no_replay", correlationId: "corr-stale", commandId: "11111111-1111-4111-8111-111111111111" }), { status: 409 });
+      return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-1", name: "Grace Hopper", email: "grace@example.test" }] }));
+    });
+    const view = render(<SalesParticipantWorkspace sessionId="s1" active request={request} />); const select = await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" });
+    vi.useFakeTimers(); fireEvent.change(select, { target: { value: "contact-1" } }); fireEvent.click(screen.getByRole("button", { name: "Add participant" }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await vi.advanceTimersByTimeAsync(120_000); });
+    expect(calls.filter((value) => value.endsWith("/participants/add/reconcile"))).toHaveLength(1);
+    if (exit === "unmount") view.unmount(); else view.rerender(<SalesParticipantWorkspace sessionId="s2" active request={request} />);
+    await act(async () => { release(new Response(JSON.stringify({ outcome: "rejected", code: "participant_add_retryable", dispatchOutcome: "not_dispatched", correlationId: "corr-stale" }), { status: 503 })); await pendingReconcile; await vi.advanceTimersByTimeAsync(120_000); });
+    expect(calls.filter((value) => value.endsWith("/participants/add"))).toHaveLength(1);
+  });
+
   it("hydrates bounded query and offset from the URL and rereads on popstate", async () => {
     window.history.replaceState({}, "", "/sales?participantQuery=ada&participantOffset=25");
     const request = vi.fn(async () => new Response(JSON.stringify({ ...page, offset: 25 }), { status: 200 }));
