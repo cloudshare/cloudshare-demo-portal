@@ -76,7 +76,7 @@ export type SalesParticipantWorkspaceInvitationResult = {
   };
 };
 export type SalesParticipantWorkspaceRegistrationRequest = { readonly customerId: string; readonly sessionId: string; readonly actor: DiagnosticActor; readonly opportunityContactIds: readonly string[] };
-export type SalesParticipantWorkspaceRegistrationResult = { readonly status: number; readonly body: Record<string, unknown> };
+export type SalesParticipantWorkspaceRegistrationResult = { readonly status: number; readonly body: { readonly error?: string; readonly code?: string; readonly correlationId?: string; readonly participants?: readonly unknown[] } };
 export interface SalesParticipantWorkspace {
   readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspacePage | null>;
   submitInvitation(input: SalesParticipantWorkspaceInvitationRequest): Promise<SalesParticipantWorkspaceInvitationResult>;
