@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import React from "react";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesParticipantWorkspace } from "./sales-participant-workspace";
@@ -285,7 +285,8 @@ describe("SalesParticipantWorkspace", () => {
   it("exposes every disabled action reason through described visible text", async () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify(page))} />);
     await userEvent.setup().click(await screen.findByRole("button", { name: "Inspect" }));
-    for (const button of screen.getAllByRole("button").filter((candidate) => candidate.hasAttribute("disabled"))) {
+    const inspector = screen.getByRole("complementary", { name: "Participant inspector" });
+    for (const button of within(inspector).getAllByRole("button").filter((candidate) => candidate.hasAttribute("disabled"))) {
       const reasonId = button.getAttribute("aria-describedby");
       expect(reasonId).toBeTruthy();
       expect(document.getElementById(String(reasonId))?.textContent).toBeTruthy();

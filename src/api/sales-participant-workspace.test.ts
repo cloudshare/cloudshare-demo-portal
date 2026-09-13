@@ -6,8 +6,9 @@ describe("participant page handler", () => {
   it("normalizes a valid add request and rejects malformed input at the API seam", async () => {
     const addParticipant = vi.fn().mockResolvedValue({ status: 201, body: { outcome: "registered" } });
     const workspace = { addParticipant } as unknown as SalesParticipantWorkspace;
-    await expect(handleAddSalesParticipantWorkspace({ workspace }, { customerId: "c1", sessionId: "s1", actor: { type: "admin", id: "a", email: "a@test" }, body: { commandId: " cmd-1 ", person: { kind: "existingContact", contactId: " contact-1 " } } })).resolves.toMatchObject({ status: 201 });
-    expect(addParticipant).toHaveBeenCalledWith(expect.objectContaining({ commandId: "cmd-1", person: { kind: "existingContact", contactId: "contact-1" } }));
+    const commandId = "47ec2e7a-0e34-4ca6-9dd0-4e88ef8f2320";
+    await expect(handleAddSalesParticipantWorkspace({ workspace }, { customerId: "c1", sessionId: "s1", actor: { type: "admin", id: "a", email: "a@test" }, body: { commandId: ` ${commandId} `, person: { kind: "existingContact", contactId: " contact-1 " } } })).resolves.toMatchObject({ status: 201 });
+    expect(addParticipant).toHaveBeenCalledWith(expect.objectContaining({ commandId, person: { kind: "existingContact", contactId: "contact-1" } }));
     await expect(handleAddSalesParticipantWorkspace({ workspace }, { customerId: "c1", sessionId: "s1", actor: { type: "admin", id: "a", email: "a@test" }, body: { commandId: "cmd-2", person: { kind: "adHoc", firstName: "", lastName: "B", email: "b@test" } } })).resolves.toMatchObject({ status: 400 });
   });
   it("validates bounds and preserves Customer-scoped safe page", async () => {
