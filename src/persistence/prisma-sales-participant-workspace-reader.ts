@@ -1,34 +1,25 @@
 import type { PrismaClient } from "@prisma/client";
 import type {
-  SalesParticipantWorkspacePage,
-  SalesParticipantWorkspaceReader,
+  SalesParticipantWorkspaceBasePage,
+  SalesParticipantWorkspaceBaseReader,
 } from "@/domain/sales-participant-workspace";
 import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
-import { invitationOutcomes, type InvitationOutcome, type InvitationSafeReason } from "@/domain/sales-participant-invitation-ledger";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "@/domain/sales-participant-launch-operation";
-import { projectParticipantActionAvailability } from "@/domain/sales-participant-workspace";
 import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
 
-const invitationSafeReasons = new Set<InvitationSafeReason>(["not_dispatched", "provider_rejected", "ambiguous_after_dispatch", "confirmation_required", "failed_retryable", "stale_revision", "blocked_by_fence"]);
 const launchOperations = new Set<SalesParticipantLaunchOperationKind>(["generate", "revoke"]);
 const launchOutcomes = new Set<SalesParticipantLaunchOutcome>(["success", "failure"]);
 const participationStatuses = new Set(["pending", "inProgress", "concluded"] as const);
 const v3EnvironmentStatusCodes = new Set([0, 2, 3, 4, 5, 7, 8, 9]);
 const environmentAttentionReasons = new Set(["environment_ambiguous_for_project", "environment_not_found_for_project"]);
 
-function invitationOutcome(value: string | null | undefined): InvitationOutcome | null {
-  return invitationOutcomes.includes(value as InvitationOutcome) ? value as InvitationOutcome : null;
-}
-function invitationReason(value: string | null | undefined): InvitationSafeReason | null {
-  return invitationSafeReasons.has(value as InvitationSafeReason) ? value as InvitationSafeReason : null;
-}
 function safeLaunchOperation(value: { operation: string; outcome: string; safeReason: string | null; correlationId: string } | undefined) {
   if (!value || !launchOperations.has(value.operation as SalesParticipantLaunchOperationKind) || !launchOutcomes.has(value.outcome as SalesParticipantLaunchOutcome) || (value.safeReason !== null && value.safeReason !== "persistence_failure")) return null;
   return { operation: value.operation as SalesParticipantLaunchOperationKind, outcome: value.outcome as SalesParticipantLaunchOutcome, reason: value.safeReason as "persistence_failure" | null, correlationId: value.correlationId };
 }
 export function createPrismaSalesParticipantWorkspaceReader(
   prisma: PrismaClient,
-): SalesParticipantWorkspaceReader {
+): SalesParticipantWorkspaceBaseReader {
   return {
     async readPage(input) {
       const session = await prisma.salesDemoSession.findFirst({
@@ -89,76 +80,6 @@ export function createPrismaSalesParticipantWorkspaceReader(
         }),
       ]);
       const participantIds = rows.map((row) => row.id);
-      const fences = participantIds.length
-        ? await prisma.salesParticipantInvitationFence.findMany({
-            where: {
-              customerId: input.customerId,
-              salesSessionParticipantId: { in: participantIds },
-            },
-            select: {
-              salesSessionParticipantId: true,
-              commandId: true,
-              revision: true,
-            },
-          })
-        : [];
-      const commandIds = fences.map((fence) => fence.commandId);
-      const commands = commandIds.length
-        ? await prisma.salesParticipantInvitationCommand.findMany({
-            where: {
-              customerId: input.customerId,
-              commandId: { in: commandIds },
-              sessionId: input.sessionId,
-            },
-            select: {
-              commandId: true,
-              phase: true,
-              revision: true,
-              correlationId: true,
-              targets: {
-                select: {
-                  salesSessionParticipantId: true,
-                  outcome: true,
-                  reason: true,
-                },
-              },
-            },
-          })
-        : [];
-      const commandById = new Map(
-        commands.map((command) => [command.commandId, command]),
-      );
-      const fenceByParticipant = new Map(
-        fences.map((fence) => [fence.salesSessionParticipantId, fence]),
-      );
-      const latestTargets = (
-        await Promise.all(
-          participantIds.map((participantId) =>
-            prisma.salesParticipantInvitationTarget.findMany({
-              where: {
-                customerId: input.customerId,
-                salesSessionParticipantId: participantId,
-                command: { sessionId: input.sessionId },
-              },
-              orderBy: [{ command: { updatedAt: "desc" } }, { ordinal: "asc" }],
-              take: 1,
-              select: {
-                salesSessionParticipantId: true,
-                outcome: true,
-                reason: true,
-                command: { select: { correlationId: true } },
-              },
-            }),
-          ),
-        )
-      ).flat();
-      const latestByParticipant = new Map<
-        string,
-        (typeof latestTargets)[number]
-      >();
-      for (const target of latestTargets)
-        if (!latestByParticipant.has(target.salesSessionParticipantId))
-          latestByParticipant.set(target.salesSessionParticipantId, target);
       // Query one row per bounded page participant. Prisma distinct may be
       // applied in memory, which can read an unbounded operation history.
       const launchOperations = (
@@ -188,23 +109,13 @@ export function createPrismaSalesParticipantWorkspaceReader(
         )
       ).flat();
       const launchByParticipant = new Map(launchOperations.map((operation) => [operation.salesSessionParticipantId, operation]));
-      const page: SalesParticipantWorkspacePage = {
+      const page: SalesParticipantWorkspaceBasePage = {
         total,
         offset: input.offset,
         limit: input.limit,
         hasMore: input.offset + rows.length < total,
         participants: rows.map((row) => {
-          const fence = fenceByParticipant.get(row.id);
-          const command = fence ? commandById.get(fence.commandId) : undefined;
-          const outcomes =
-            command?.targets.filter(
-              (target) => target.salesSessionParticipantId === row.id,
-            ) ?? [];
-          const outcome = invitationOutcome(outcomes.find((target) => target.outcome)?.outcome);
-          const reason = outcome ? invitationReason(outcomes.find((target) => target.reason)?.reason) : null;
-          const latest = latestByParticipant.get(row.id);
           const launch = launchByParticipant.get(row.id);
-          const latestOutcome = invitationOutcome(latest?.outcome);
           if (!participationStatuses.has(row.participationStatus as "pending" | "inProgress" | "concluded")) throw new Error("Invalid persisted Participant participation status.");
           if (row.invitationStatus !== "sent" && row.invitationStatus !== "notSent") throw new Error("Invalid persisted Participant invitation status.");
           if (row.environmentStatus !== null && !isProjectableSalesParticipantRosterEnvironment(row.environmentStatus)) throw new Error("Invalid persisted Participant Environment status.");
@@ -215,7 +126,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
           const environment = isProjectableSalesParticipantRosterEnvironment(row.environmentStatus) && row.environmentObservedAt
             ? projectSalesParticipantRosterEnvironment(row.environmentStatus, row.environmentObservedAt)
             : projectSalesParticipantEnvironment(row.environmentStatusCode, row.environmentObservedAt ?? undefined);
-          const projected: Omit<import("@/domain/sales-participant-workspace").SalesParticipantWorkspaceRow, "actionAvailability" | "primaryAction"> = {
+          return {
             id: row.id,
             participantRevision: row.updatedAt.toISOString(),
             name: `${row.contact.firstName} ${row.contact.lastName}`.trim(),
@@ -227,15 +138,6 @@ export function createPrismaSalesParticipantWorkspaceReader(
               session.sendInvitations === "salesProsAndParticipants",
             providerCorrelation: Boolean(row.cloudShareParticipantId),
             activeLaunchCapability: row.launchLinks.length > 0,
-            currentCommandId: command?.commandId ?? null,
-            invitationOutcome: outcome,
-            invitationReason: reason,
-            invitationCorrelationId: command?.correlationId ?? null,
-            invitationRevision: command?.revision ?? null,
-            latestInvitationOutcome: latestOutcome,
-            latestInvitationReason: latestOutcome ? invitationReason(latest?.reason) : null,
-            latestInvitationCorrelationId:
-              latest?.command.correlationId ?? null,
             launchOperation: safeLaunchOperation(launch),
             environment,
             environmentAttention: row.environmentAttentionReason
@@ -245,7 +147,6 @@ export function createPrismaSalesParticipantWorkspaceReader(
                 }
               : null,
           };
-          return { ...projected, ...projectParticipantActionAvailability(projected, input.now) };
         }),
       };
       return page;

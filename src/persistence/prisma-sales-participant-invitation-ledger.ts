@@ -201,7 +201,8 @@ const semanticState = (value: CurrentInvitationState): InvitationState => ({
 
 /** Deep persistence interface. Lifecycle phases, revisions, leases, admission
  * tokens, and fence CAS rules stay inside this adapter. */
-export function createInvitationStoreFromLedger(ledger: SalesParticipantInvitationLedger): InvitationStore {
+type ParticipantProjectionReader = InvitationStore["readParticipantProjections"];
+export function createInvitationStoreFromLedger(ledger: SalesParticipantInvitationLedger, readParticipantProjections: ParticipantProjectionReader = async () => new Map()): InvitationStore {
   const read = async (customerId: string, commandId: string) => {
     const current = await ledger.readCommand(customerId, commandId);
     if (!current) throw new Error("invitation command was not found");
@@ -249,9 +250,41 @@ export function createInvitationStoreFromLedger(ledger: SalesParticipantInvitati
       const current = await ledger.readCommand(customerId, commandId);
       return current ? { handle: handleFor(current), state: semanticState(current) } : null;
     },
+    readParticipantProjections,
   };
 }
 
 export function createPrismaInvitationStore(prisma: PrismaClient): InvitationStore {
-  return createInvitationStoreFromLedger(createPrismaSalesParticipantInvitationLedger(prisma));
+  const readParticipantProjections: ParticipantProjectionReader = async (input) => {
+    if (input.participantIds.length > 50 || new Set(input.participantIds).size !== input.participantIds.length) throw new Error("invalid invitation projection scope");
+    if (!input.participantIds.length) return new Map();
+    const fences = await prisma.salesParticipantInvitationFence.findMany({ where: { customerId: input.customerId, salesSessionParticipantId: { in: [...input.participantIds] } }, select: { salesSessionParticipantId: true, commandId: true, revision: true } });
+    const commandIds = fences.map((fence) => fence.commandId);
+    const commands = commandIds.length ? await prisma.salesParticipantInvitationCommand.findMany({ where: { customerId: input.customerId, sessionId: input.sessionId, commandId: { in: commandIds } }, select: { commandId: true, revision: true, correlationId: true, targets: { select: { salesSessionParticipantId: true, outcome: true, reason: true } } } }) : [];
+    const commandById = new Map(commands.map((command) => [command.commandId, command]));
+    const fenceByParticipant = new Map(fences.map((fence) => [fence.salesSessionParticipantId, fence]));
+    const latestTargets = (await Promise.all(input.participantIds.map((participantId) => prisma.salesParticipantInvitationTarget.findMany({ where: { customerId: input.customerId, salesSessionParticipantId: participantId, command: { sessionId: input.sessionId } }, orderBy: [{ command: { updatedAt: "desc" } }, { ordinal: "asc" }], take: 1, select: { salesSessionParticipantId: true, outcome: true, reason: true, command: { select: { correlationId: true } } } })))).flat();
+    const latestByParticipant = new Map(latestTargets.map((target) => [target.salesSessionParticipantId, target]));
+    const safeOutcome = (value: string | null | undefined) => {
+      if (value === null || value === undefined) return null;
+      if (!invitationOutcomes.includes(value as never)) throw new Error("invalid persisted invitation outcome");
+      return value as InvitationTargetOutcome["outcome"];
+    };
+    const safeReason = (value: string | null | undefined) => {
+      if (value === null || value === undefined) return null;
+      if (!safeReasons.includes(value as never)) throw new Error("invalid persisted invitation reason");
+      return value as InvitationTargetOutcome["reason"];
+    };
+    return new Map(input.participantIds.map((participantId) => {
+      const fence = fenceByParticipant.get(participantId);
+      const command = fence ? commandById.get(fence.commandId) : undefined;
+      if (fence && (!command || command.revision !== fence.revision)) throw new Error("invalid persisted invitation fence");
+      const current = command?.targets.find((target) => target.salesSessionParticipantId === participantId);
+      const latest = latestByParticipant.get(participantId);
+      const currentOutcome = safeOutcome(current?.outcome);
+      const latestOutcome = safeOutcome(latest?.outcome);
+      return [participantId, { currentCommandId: command?.commandId ?? null, invitationOutcome: currentOutcome, invitationReason: currentOutcome ? safeReason(current?.reason) : null, invitationCorrelationId: command?.correlationId ?? null, invitationRevision: command?.revision ?? null, latestInvitationOutcome: latestOutcome, latestInvitationReason: latestOutcome ? safeReason(latest?.reason) : null, latestInvitationCorrelationId: latest?.command.correlationId ?? null }] as const;
+    }));
+  };
+  return createInvitationStoreFromLedger(createPrismaSalesParticipantInvitationLedger(prisma), readParticipantProjections);
 }

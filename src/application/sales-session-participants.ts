@@ -16,7 +16,7 @@ import { SalesEnvironmentResolutionError, type SalesEnvironmentSource } from "@/
 import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
 import { invitationResult, type InvitationTargetOutcome } from "@/domain/sales-participant-invitation-ledger";
 import type { InvitationHandle, InvitationStore } from "@/domain/sales-participant-invitation-store";
-import type { SalesParticipantWorkspace, SalesParticipantWorkspaceInvitationRequest, SalesParticipantWorkspaceInvitationResult } from "@/domain/sales-participant-workspace";
+import { projectParticipantActionAvailability, type SalesParticipantWorkspace, type SalesParticipantWorkspaceBaseReader, type SalesParticipantWorkspaceInvitationRequest, type SalesParticipantWorkspaceInvitationResult, type SalesParticipantWorkspaceReader } from "@/domain/sales-participant-workspace";
 
 const contactsSchema = z.object({ contactIds: z.array(z.string().trim().min(1)).min(1).max(100) });
 const invitationCommandSchema = z.object({
@@ -178,8 +178,23 @@ class InvitationLifecycle {
   }
 }
 
-export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: SalesParticipantWorkspace["readPage"] }): SalesParticipantWorkspace {
-  return { readPage: deps.reader, ...createSalesParticipantInvitationWorkspace(deps) };
+export function createSalesParticipantWorkspaceReader(baseReader: SalesParticipantWorkspaceBaseReader, invitationStore: InvitationStore): SalesParticipantWorkspaceReader {
+  return { async readPage(input) {
+    const page = await baseReader.readPage(input);
+    if (!page) return null;
+    const ids = page.participants.map((participant) => participant.id);
+    const invitations = await invitationStore.readParticipantProjections({ customerId: input.customerId, sessionId: input.sessionId, participantIds: ids });
+    if (invitations.size !== ids.length || ids.some((id) => !invitations.has(id))) throw new Error("Invitation projection did not cover the bounded Participant page.");
+    return { ...page, participants: page.participants.map((participant) => {
+      const invitation = invitations.get(participant.id)!;
+      const projected = { ...participant, ...invitation };
+      return { ...projected, ...projectParticipantActionAvailability(projected, input.now) };
+    }) };
+  } };
+}
+
+export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: SalesParticipantWorkspaceBaseReader }): SalesParticipantWorkspace {
+  return { ...createSalesParticipantWorkspaceReader(deps.reader, deps.invitationStore), ...createSalesParticipantInvitationWorkspace(deps) };
 }
 
 export function createSalesParticipantInvitationWorkspace(deps: InviteDeps): Pick<SalesParticipantWorkspace, "submitInvitation"> {

@@ -43,6 +43,11 @@ export interface SalesParticipantWorkspacePage {
   readonly hasMore: boolean;
 }
 export interface SalesParticipantWorkspaceReader { readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspacePage | null>; }
+export type SalesParticipantWorkspaceBaseRow = Omit<SalesParticipantWorkspaceRow,
+  "currentCommandId" | "invitationOutcome" | "invitationReason" | "invitationCorrelationId" | "invitationRevision" |
+  "latestInvitationOutcome" | "latestInvitationReason" | "latestInvitationCorrelationId" | "actionAvailability" | "primaryAction">;
+export type SalesParticipantWorkspaceBasePage = Omit<SalesParticipantWorkspacePage, "participants"> & { readonly participants: readonly SalesParticipantWorkspaceBaseRow[] };
+export interface SalesParticipantWorkspaceBaseReader { readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspaceBasePage | null>; }
 
 /** Application-facing participant workspace boundary. Persistence and ledger
  * lifecycle details stay behind this deliberately small caller contract. */

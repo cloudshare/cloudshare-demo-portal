@@ -54,26 +54,23 @@ describe("Prisma participant workspace reader", () => {
     expect(findMany.mock.calls[0][0].select).not.toHaveProperty("contact.opportunity");
     expect(findMany.mock.calls[0][0].select).not.toHaveProperty("cloudShareRosterEnvironmentReference");
   });
-  it("reads one latest invitation outcome for every page participant without skew starvation", async () => {
+  it("does not read invitation ledger tables while reading the bounded base page", async () => {
     const invitationFindMany = vi.fn(async (args: { where: { customerId: string; salesSessionParticipantId: string; command: { sessionId: string } }; take: number }) => [{ salesSessionParticipantId: args.where.salesSessionParticipantId, outcome: "completed", reason: null, command: { correlationId: `corr-${args.where.salesSessionParticipantId}` } }]);
     const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-a", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(2), findMany: vi.fn().mockResolvedValue([row(0), row(1)]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationTarget: { findMany: invitationFindMany }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([]) } } as never);
     const result = await reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() });
-    expect(result?.participants.map((item) => item.latestInvitationCorrelationId)).toEqual(["corr-p0", "corr-p1"]);
-    expect(invitationFindMany).toHaveBeenCalledTimes(2);
-    for (const call of invitationFindMany.mock.calls) expect(call[0]).toMatchObject({ where: { customerId: "customer-a", command: { sessionId: "session-a" } }, take: 1 });
+    expect(result?.participants).toHaveLength(2);
+    expect(invitationFindMany).not.toHaveBeenCalled();
   });
   it("fails closed instead of projecting arbitrary persisted invitation and launch values", async () => {
     const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-a", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([row(0)]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([{ salesSessionParticipantId: "p0", commandId: "cmd", revision: 1 }]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([{ commandId: "cmd", phase: "settled", revision: 1, correlationId: "current-corr", targets: [{ salesSessionParticipantId: "p0", outcome: "<script>bad</script>", reason: "secret database value" }] }]) }, salesParticipantInvitationTarget: { findMany: vi.fn().mockResolvedValue([{ salesSessionParticipantId: "p0", outcome: "invented", reason: "another arbitrary value", command: { correlationId: "latest-corr" } }]) }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([{ salesSessionParticipantId: "p0", operation: "redirect", outcome: "maybe", safeReason: "raw exception", correlationId: "launch-corr" }]) } } as never);
     const result = await reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() });
-    expect(result?.participants[0]).toMatchObject({ invitationOutcome: null, invitationReason: null, latestInvitationOutcome: null, latestInvitationReason: null, launchOperation: null });
-    expect(JSON.stringify(result)).not.toContain("script");
-    expect(JSON.stringify(result)).not.toContain("secret database value");
+    expect(result?.participants[0]).toMatchObject({ launchOperation: null });
     expect(JSON.stringify(result)).not.toContain("raw exception");
   });
-  it("projects the closed not-dispatched reason for controlled presentation", async () => {
+  it("leaves invitation feedback to the workspace projection module", async () => {
     const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-a", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([row(0)]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationTarget: { findMany: vi.fn().mockResolvedValue([{ salesSessionParticipantId: "p0", outcome: "failed_retryable", reason: "not_dispatched", command: { correlationId: "latest-corr" } }]) }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([]) } } as never);
     const result = await reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() });
-    expect(result?.participants[0]).toMatchObject({ latestInvitationOutcome: "failed_retryable", latestInvitationReason: "not_dispatched" });
+    expect(result?.participants[0]).not.toHaveProperty("latestInvitationOutcome");
   });
   it("accepts an absent attention pair when Prisma returns null values", async () => {
     const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-a", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([{ ...row(0), environmentAttentionReason: null, environmentAttentionSource: null }]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationTarget: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([]) } } as never);
