@@ -35,6 +35,49 @@ describe("SalesParticipantWorkspace", () => {
     const inspector = await screen.findByRole("complementary", { name: "Participant inspector" });
     await waitFor(() => expect(document.activeElement).toBe(inspector));
   });
+  it("restores a page-one inspector after browser Back waits for the matching page response", async () => {
+    const firstPage = Array.from({ length: 25 }, (_, index) => ({
+      ...participant,
+      id: `p${index + 1}`,
+      name: index === 0 ? "Ada Lovelace" : `Participant ${index + 1}`,
+      email: `participant-${index + 1}@example.test`,
+    }));
+    const secondPage = [{ ...participant, id: "p26", name: "Participant 26", email: "participant-26@example.test" }];
+    let pageOneReads = 0;
+    let resolveRestoredPage: ((response: Response) => void) | null = null;
+    const request = vi.fn(async (url: string) => {
+      if (url.includes("offset=25")) return new Response(JSON.stringify({ participants: secondPage, total: 26, offset: 25, limit: 25, hasMore: false }));
+      pageOneReads += 1;
+      if (pageOneReads === 1) return new Response(JSON.stringify({ participants: firstPage, total: 26, offset: 0, limit: 25, hasMore: true }));
+      return new Promise<Response>((resolve) => { resolveRestoredPage = resolve; });
+    });
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+
+    const adaRow = await screen.findByRole("row", { name: /Ada Lovelace/ });
+    await user.click(adaRow);
+    await waitFor(() => expect(new URL(window.location.href).searchParams.get("participantActive")).toBe("p1"));
+    await user.click(screen.getAllByRole("button", { name: "Inspect" })[0]);
+    await waitFor(() => expect(new URL(window.location.href).searchParams.get("participantFocus")).toBe("inspector"));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("row", { name: /Participant 26/ });
+    await waitFor(() => expect(new URL(window.location.href).searchParams.get("participantFocus")).toBe("row"));
+
+    await act(async () => { window.history.back(); });
+    await waitFor(() => expect(pageOneReads).toBe(2));
+    expect(new URL(window.location.href).searchParams.get("participantActive")).toBe("p1");
+    expect(new URL(window.location.href).searchParams.get("participantFocus")).toBe("inspector");
+
+    await act(async () => {
+      resolveRestoredPage?.(new Response(JSON.stringify({ participants: firstPage, total: 26, offset: 0, limit: 25, hasMore: true })));
+    });
+    const restoredInspector = await screen.findByRole("complementary", { name: "Participant inspector" });
+    const restoredRow = screen.getByRole("row", { name: /Ada Lovelace/ });
+    expect(restoredRow.getAttribute("data-selected")).toBe("true");
+    expect(restoredRow.getAttribute("data-active")).toBe("true");
+    await waitFor(() => expect(document.activeElement).toBe(restoredInspector));
+    expect(screen.queryByText("The Participant roster changed; the previous selection is no longer visible.")).toBeNull();
+  });
   it("opens and closes the inspector through the public keyboard seam", async () => {
     const user = userEvent.setup();
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify(page))} />);
