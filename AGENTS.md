@@ -25,6 +25,11 @@ Actor model (cosmetic names; see `CONTEXT.md`):
 **North star:** CloudShare is the only live integration. When a choice trades portal richness against
 showing real CloudShare behaviour, CloudShare wins.
 
+This is a focused demonstration platform for understanding CloudShare integration patterns, not an
+attempt to eliminate every conceivable production edge case. Keep modules deep, with small stable
+interfaces that hide provider, persistence, and workflow internals. Retire obsolete architecture
+unless an explicit, time-bounded deprecation reason requires its temporary preservation.
+
 ## Working rules
 
 1. Do not code before clarifying the requirement.
@@ -249,6 +254,24 @@ accumulate as local-only commits.
   flows. For behavior-preserving refactor slices with no UI change and no active CloudShare runtime
   behaviour change, human QA is not required when targeted tests and smoke evidence prove the changed
   path; the ticket task may merge after recording the evidence and human-QA decision.
+
+#### Anti-spiral accountability
+
+Workers send compact checkpoints to the parent after each material outcome and repair loop. Each
+checkpoint states the outcome, exact head, remaining acceptance gap, implementation/review/QA loop
+count, scope growth, and whether the work still aligns with the issue. The parent watches for spiral
+indicators: repeated rounds with shrinking findings; growing abstractions or edge cases; diff or test
+growth disproportionate to the visible outcome; accepted decisions being re-solved; or no measurable
+movement toward acceptance. Report disproportionate time, tokens, diff size, and loop growth with
+evidence.
+
+After a bounded number of repair loops, normally three, the worker pauses and escalates with the root
+cause, options, and a KISS recommendation. The parent explicitly chooses whether to simplify, re-scope,
+split, revert, accept a documented limitation, or continue. Ten silent loops are unacceptable. Green
+tests do not authorize unbounded hardening or speculative productization. Preserve the non-negotiable
+security, Customer-isolation, exact-correlation, secret-safety, and no-blind-replay safeguards for
+ambiguous provider writes; distinguish those from optional productization. Reaching the loop limit
+never authorizes merge: it requires the explicit parent scope decision.
 
 For each slice, before implementation starts:
 
