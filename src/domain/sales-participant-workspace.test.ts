@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eligibleParticipantActions, participantActionReason, pruneParticipantSelection, reduceParticipantSelection, validateParticipantPage, type SalesParticipantWorkspaceRow } from "./sales-participant-workspace";
+import { eligibleParticipantActions, participantActionReason, primaryParticipantAction, pruneParticipantSelection, reduceParticipantSelection, validateParticipantPage, type SalesParticipantWorkspaceRow } from "./sales-participant-workspace";
 
 const row: SalesParticipantWorkspaceRow = { id: "p1", participantRevision: "r1", name: "Ada", email: "ada@example.test", invitationStatus: "notSent", participationStatus: "pending", sessionEndsAt: "2026-09-12T12:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environment: { value: null, source: "not_observed" }, environmentAttention: null };
 
@@ -36,5 +36,16 @@ describe("sales participant workspace contract", () => {
     expect(participantActionReason({ ...row, participationStatus: "concluded" }, "invite", new Date("2026-09-12T11:00:00Z"))).toBe("Participant has concluded.");
     expect(participantActionReason({ ...row, invitationStatus: "sent" }, "invite", new Date("2026-09-12T11:00:00Z"))).toBe("Invitation already sent; choose resend.");
     expect(participantActionReason(row, "invite", new Date("2026-09-12T13:00:00Z"))).toBe("Session access window has ended.");
+  });
+  it("honours the durable invitation fence without suppressing launch", () => {
+    const fenced = { ...row, currentCommandId: "command-1" };
+    expect(eligibleParticipantActions(fenced, new Date("2026-09-12T11:00:00Z"))).toMatchObject({ invite: false, generate_launch: true });
+    expect(participantActionReason(fenced, "invite", new Date("2026-09-12T11:00:00Z"))).toContain("already in progress");
+  });
+  it("chooses exactly one primary action using the accepted precedence", () => {
+    const now = new Date("2026-09-12T11:00:00Z");
+    expect(primaryParticipantAction(row, now)).toBe("invite");
+    expect(primaryParticipantAction({ ...row, invitationStatus: "sent" }, now)).toBe("generate_launch");
+    expect(primaryParticipantAction({ ...row, invitationStatus: "sent", participationStatus: "concluded" }, now)).toBe("open_diagnostics");
   });
 });

@@ -37,14 +37,19 @@ export interface SalesParticipantWorkspaceReader { readPage(input: { customerId:
 
 export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, now: Date): Readonly<Record<SalesParticipantAction, boolean>> {
   const open = new Date(row.sessionEndsAt).getTime() > now.getTime();
-  const base = open && row.participationStatus !== "concluded" && row.nativeInvitationsEnabled && row.providerCorrelation;
+  const base = open && row.participationStatus !== "concluded" && row.nativeInvitationsEnabled && row.providerCorrelation && row.currentCommandId === null;
   return {
     invite: base && row.invitationStatus === "notSent",
     resend: base && row.invitationStatus === "sent",
     generate_launch: open && row.participationStatus !== "concluded",
     revoke_launch: row.activeLaunchCapability,
-    open_diagnostics: !base || row.participationStatus === "concluded",
+    open_diagnostics: Boolean(row.environmentAttention || row.invitationReason || row.currentCommandId) || !base || row.participationStatus === "concluded",
   };
+}
+
+export function primaryParticipantAction(row: SalesParticipantWorkspaceRow, now: Date): SalesParticipantAction | null {
+  const available = eligibleParticipantActions(row, now);
+  return (["invite", "generate_launch", "resend", "open_diagnostics"] as const).find((action) => available[action]) ?? null;
 }
 
 export function participantActionReason(row: SalesParticipantWorkspaceRow, action: SalesParticipantAction, now: Date): string | null {
@@ -52,7 +57,8 @@ export function participantActionReason(row: SalesParticipantWorkspaceRow, actio
   if (row.participationStatus === "concluded") return "Participant has concluded.";
   if (new Date(row.sessionEndsAt).getTime() <= now.getTime()) return "Session access window has ended.";
   if (action === "invite" && row.invitationStatus === "sent") return "Invitation already sent; choose resend.";
-  if (!row.providerCorrelation) return "Participant correlation is unavailable.";
+  if ((action === "invite" || action === "resend") && row.currentCommandId) return "An invitation command is already in progress or awaiting confirmation.";
+  if ((action === "invite" || action === "resend") && !row.providerCorrelation) return "Participant correlation is unavailable.";
   if (!row.nativeInvitationsEnabled && (action === "invite" || action === "resend")) return "Native invitations are unavailable.";
   return "Action is unavailable for the current Participant state.";
 }

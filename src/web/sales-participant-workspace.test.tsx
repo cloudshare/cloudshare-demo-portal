@@ -21,6 +21,20 @@ describe("SalesParticipantWorkspace", () => {
     });
     await waitFor(() => expect(request.mock.calls.length).toBeGreaterThan(1));
   });
+  it("pushes meaningful transitions and restores inspector state and focus on popstate", async () => {
+    const pushState = vi.spyOn(window.history, "pushState");
+    render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify(page))} />);
+    const inspect = await screen.findByRole("button", { name: "Inspect" });
+    await userEvent.setup().click(inspect);
+    await waitFor(() => expect(pushState).toHaveBeenCalled());
+    expect(new URL(window.location.href).searchParams.get("participantFocus")).toBe("inspector");
+    await act(async () => {
+      window.history.pushState({}, "", "/sales?participantActive=p1&participantFocus=inspector");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    const inspector = await screen.findByRole("complementary", { name: "Participant inspector" });
+    await waitFor(() => expect(document.activeElement).toBe(inspector));
+  });
   it("opens and closes the inspector through the public keyboard seam", async () => {
     const user = userEvent.setup();
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify(page))} />);
@@ -29,8 +43,17 @@ describe("SalesParticipantWorkspace", () => {
     expect(screen.getByRole("cell", { name: /Ready/ })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Inspect" }));
     expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
+    screen.getByRole("link", { name: "Open Support" }).focus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("complementary", { name: "Participant inspector" })).toBeNull();
+    expect(document.activeElement?.getAttribute("data-participant-id")).toBe("p1");
+  });
+  it("does not let Space on a nested row control change row selection", async () => {
+    render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify(page))} />);
+    const inspect = await screen.findByRole("button", { name: "Inspect" });
+    inspect.focus();
+    fireEvent.keyDown(inspect, { key: " " });
+    expect(screen.getByRole("row", { name: /Ada Lovelace/ }).getAttribute("data-selected")).toBeNull();
   });
   it("supports click, modifier selection, movement, and nested-control exclusion", async () => {
     const user = userEvent.setup();
@@ -162,7 +185,12 @@ describe("SalesParticipantWorkspace", () => {
     row.focus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Resend" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Generate launch link" }).getAttribute("data-primary-action")).toBe("true");
+    expect(screen.getByRole("button", { name: "Resend" }).getAttribute("data-primary-action")).toBeNull();
+    expect(document.querySelectorAll('[data-primary-action="true"]')).toHaveLength(1);
+    expect(screen.getByText(/Environment state:/).textContent).toContain("Ready");
+    expect(screen.getByText(/Environment source:/).textContent).toContain("CloudShare participant roster");
+    expect(screen.getByText(/Session access ends:/).textContent).toContain("Z");
     expect(errors).not.toHaveBeenCalled();
     expect(warnings).not.toHaveBeenCalled();
   });

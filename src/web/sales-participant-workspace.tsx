@@ -2,9 +2,11 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./sales-session-workspace.module.css";
+import { primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import type { SalesParticipantWorkspaceRow } from "@/domain/sales-participant-workspace";
 import {
   participantActionReason,
+  primaryParticipantAction,
   pruneParticipantSelection,
   reduceParticipantSelection,
   type ParticipantSelectionState,
@@ -40,6 +42,8 @@ export function SalesParticipantWorkspace(props: {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [revokeTarget, setRevokeTarget] = useState<SalesParticipantWorkspaceRow | null>(null);
   const originRef = useRef<HTMLElement | null>(null);
+  const historyMode = useRef<"push" | "replace">("replace");
+  const lastUrl = useRef<string | null>(null);
   const logicalFocus = useRef<"row" | "inspector">(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("participantFocus") === "inspector" ? "inspector" : "row");
   const href = useCallback(() => `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/page?${query ? `query=${encodeURIComponent(query)}&` : ""}offset=${offset}&limit=25`, [offset, query, sessionId]);
   const activeParticipant = page?.participants.find((row) => row.id === selection.activeId) ?? null;
@@ -48,15 +52,20 @@ export function SalesParticipantWorkspace(props: {
     if (active) headingRef.current?.focus();
   }, [active]);
   useEffect(() => {
-    const onPop = () => { const params = new URLSearchParams(window.location.search); setQuery(params.get("participantQuery") ?? ""); setOffset(Number(params.get("participantOffset") ?? 0) || 0); setSelection({ activeId: params.get("participantActive"), selectedIds: (params.get("participantSelected") ?? "").split(",").filter(Boolean).slice(0, 25), rangeAnchorId: params.get("participantAnchor") }); logicalFocus.current = params.get("participantFocus") === "inspector" ? "inspector" : "row"; const scrollY = window.history.state?.participantScrollY; if (typeof scrollY === "number" && typeof window.scrollTo === "function") window.scrollTo(0, scrollY); };
+    const onPop = () => { const params = new URLSearchParams(window.location.search); const inspector = params.get("participantFocus") === "inspector" && Boolean(params.get("participantActive")); historyMode.current = "replace"; lastUrl.current = window.location.href; setQuery(params.get("participantQuery") ?? ""); setOffset(Number(params.get("participantOffset") ?? 0) || 0); setSelection({ activeId: params.get("participantActive"), selectedIds: (params.get("participantSelected") ?? "").split(",").filter(Boolean).slice(0, 25), rangeAnchorId: params.get("participantAnchor") }); logicalFocus.current = inspector ? "inspector" : "row"; setInspectorOpen(inspector); const scrollY = window.history.state?.participantScrollY; if (typeof scrollY === "number" && typeof window.scrollTo === "function") window.scrollTo(0, scrollY); };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
   useEffect(() => {
     if (!active) return;
     const url = new URL(window.location.href); query ? url.searchParams.set("participantQuery", query) : url.searchParams.delete("participantQuery"); offset ? url.searchParams.set("participantOffset", String(offset)) : url.searchParams.delete("participantOffset"); selection.activeId ? url.searchParams.set("participantActive", selection.activeId) : url.searchParams.delete("participantActive"); selection.selectedIds.length ? url.searchParams.set("participantSelected", selection.selectedIds.slice(0, 25).join(",")) : url.searchParams.delete("participantSelected"); selection.rangeAnchorId ? url.searchParams.set("participantAnchor", selection.rangeAnchorId) : url.searchParams.delete("participantAnchor"); url.searchParams.set("participantFocus", logicalFocus.current);
-    window.history.replaceState({ ...window.history.state, participantScrollY: window.scrollY }, "", url);
-  }, [active, offset, query, selection]);
+    const nextUrl = url.toString();
+    if (lastUrl.current === nextUrl) return;
+    const method = historyMode.current === "push" ? "pushState" : "replaceState";
+    window.history[method]({ ...window.history.state, participantScrollY: window.scrollY }, "", url);
+    lastUrl.current = nextUrl;
+    historyMode.current = "replace";
+  }, [active, inspectorOpen, offset, query, selection]);
   useEffect(() => {
     if (!active) return;
     let disposed = false;
@@ -69,7 +78,8 @@ export function SalesParticipantWorkspace(props: {
       setSelection((current) => {
         const next = pruneParticipantSelection(current, body.participants.map((row) => row.id));
         if (current.activeId !== next.activeId || current.rangeAnchorId !== next.rangeAnchorId || current.selectedIds.join(",") !== next.selectedIds.join(",")) {
-          setFeedback((messages) => ({ ...messages, _announcement: "The Participant roster changed; the previous selection is no longer visible." }));
+          historyMode.current = "replace";
+          if (current.activeId || current.rangeAnchorId || current.selectedIds.length) setFeedback((messages) => ({ ...messages, _announcement: "The Participant roster changed; the previous selection is no longer visible." }));
         }
         return next;
       });
@@ -80,6 +90,20 @@ export function SalesParticipantWorkspace(props: {
     if (inspectorOpen) inspectorRef.current?.focus();
     else if (logicalFocus.current === "row" && selection.activeId && !(document.activeElement instanceof HTMLButtonElement || document.activeElement instanceof HTMLInputElement)) Array.from(document.querySelectorAll<HTMLElement>("tr[data-participant-id]")).find((row) => row.dataset.participantId === selection.activeId)?.focus();
   }, [inspectorOpen, selection.activeId]);
+
+  const openInspector = (participantId: string, origin: HTMLElement | null) => {
+    historyMode.current = "push";
+    logicalFocus.current = "inspector";
+    originRef.current = origin?.closest<HTMLElement>("tr[data-participant-id]") ?? headingRef.current;
+    setSelection((state) => ({ ...state, activeId: participantId }));
+    setInspectorOpen(true);
+  };
+  const closeInspector = () => {
+    historyMode.current = "push";
+    logicalFocus.current = "row";
+    setInspectorOpen(false);
+    queueMicrotask(() => (originRef.current ?? headingRef.current)?.focus());
+  };
 
   const runAction = async (participant: SalesParticipantWorkspaceRow, action: Action) => {
     if (action === "revoke_launch") { logicalFocus.current = "inspector"; originRef.current = document.activeElement as HTMLElement; setRevokeTarget(participant); return; }
@@ -118,14 +142,26 @@ export function SalesParticipantWorkspace(props: {
     <section className={styles.panel}>
       <div className={styles.panelHeading}><div><h2 ref={headingRef} tabIndex={-1}>Participants</h2><p>Bounded Participant workspace page.</p></div><span className={styles.count}>{page?.total ?? 0} participants</span></div>
       <label htmlFor="participant-query">Search Participants</label>
-      <input id="participant-query" value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); }} placeholder="Search name or email" />
+      <input id="participant-query" value={query} onChange={(event) => { historyMode.current = "push"; setQuery(event.target.value); setOffset(0); }} placeholder="Search name or email" />
       {feedback._announcement ? <p role="alert" aria-live="polite">{feedback._announcement}</p> : null}
-      {page?.participants.length ? <div className={styles.tableWrap}><table aria-label="Participant roster" className={styles.roster}><thead><tr><th>Participant</th><th>Invitation</th><th>Participation</th><th>Participant Environment</th><th>Environment source</th></tr></thead><tbody>{page.participants.map((participant, index) => { const selected = selection.selectedIds.includes(participant.id); const current = selection.activeId === participant.id; const pageIds = page.participants.map((row) => row.id); return <tr key={participant.id} data-participant-id={participant.id} data-active={current ? "true" : undefined} data-selected={selected ? "true" : undefined} tabIndex={current ? 0 : -1} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; setSelection((state) => reduceParticipantSelection(state, { type: "click", id: participant.id, additive: event.ctrlKey || event.metaKey, range: event.shiftKey, pageIds })); }} onKeyDown={(event) => { if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "move", direction: event.key === "ArrowDown" ? "next" : "previous", pageIds })); } else if (event.key === " ") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "toggle", id: participant.id, range: event.shiftKey, pageIds })); } else if (event.key === "Enter") { event.preventDefault(); setSelection((state) => ({ ...state, activeId: participant.id })); setInspectorOpen(true); } }}><th scope="row"><strong>{participant.name}</strong><span>{participant.email}</span><button type="button" onClick={() => { setSelection((state) => ({ ...state, activeId: participant.id })); setInspectorOpen(true); }}>Inspect</button></th><td><span className={styles.inlineBadge}>{participant.invitationStatus === "sent" ? "Sent" : "Not sent"}</span></td><td><span className={styles.inlineBadge}>{participant.participationStatus === "inProgress" ? "In progress" : participant.participationStatus === "concluded" ? "Concluded" : "Pending"}</span></td><td>{participant.environment.value ?? "Not observed"}</td><td>{humanEnvironmentSource(participant.environment.source)}</td></tr>; })}</tbody></table></div> : <p className={styles.empty}>No Participants are registered for this Sales Session.</p>}
-      {offset > 0 ? <button type="button" onClick={() => setOffset(Math.max(0, offset - 25))}>Previous</button> : null}{page?.hasMore ? <button type="button" onClick={() => setOffset(offset + 25)}>Next</button> : null}
+      {page?.participants.length ? <div className={styles.tableWrap}><table aria-label="Participant roster" className={styles.roster}><thead><tr><th>Participant</th><th>Invitation</th><th>Participation</th><th>Participant Environment</th><th>Environment source</th></tr></thead><tbody>{page.participants.map((participant) => { const selected = selection.selectedIds.includes(participant.id); const current = selection.activeId === participant.id; const pageIds = page.participants.map((row) => row.id); return <tr key={participant.id} data-participant-id={participant.id} data-active={current ? "true" : undefined} data-selected={selected ? "true" : undefined} tabIndex={current ? 0 : -1} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; historyMode.current = "push"; setSelection((state) => reduceParticipantSelection(state, { type: "click", id: participant.id, additive: event.ctrlKey || event.metaKey, range: event.shiftKey, pageIds })); }} onKeyDown={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; historyMode.current = "push"; if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "move", direction: event.key === "ArrowDown" ? "next" : "previous", pageIds })); } else if (event.key === " ") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "toggle", id: participant.id, range: event.shiftKey, pageIds })); } else if (event.key === "Enter") { event.preventDefault(); openInspector(participant.id, event.currentTarget); } }}><th scope="row"><strong>{participant.name}</strong><span>{participant.email}</span><button type="button" onClick={(event) => openInspector(participant.id, event.currentTarget)}>Inspect</button></th><td><span className={styles.inlineBadge}>{participant.invitationStatus === "sent" ? "Sent" : "Not sent"}</span></td><td><span className={styles.inlineBadge}>{participant.participationStatus === "inProgress" ? "In progress" : participant.participationStatus === "concluded" ? "Concluded" : "Pending"}</span></td><td>{participant.environment.value ?? "Not observed"}</td><td>{humanEnvironmentSource(participant.environment.source)}</td></tr>; })}</tbody></table></div> : <p className={styles.empty}>No Participants are registered for this Sales Session.</p>}
+      {offset > 0 ? <button type="button" onClick={() => { historyMode.current = "push"; setOffset(Math.max(0, offset - 25)); }}>Previous</button> : null}{page?.hasMore ? <button type="button" onClick={() => { historyMode.current = "push"; setOffset(offset + 25); }}>Next</button> : null}
     </section>
     {revokeTarget ? <div role="dialog" aria-modal="true" aria-label="Confirm revoke launch link" className={styles.panel} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setRevokeTarget(null); queueMicrotask(() => originRef.current?.focus()); } if (event.key === "Tab") { const buttons = Array.from(event.currentTarget.querySelectorAll("button")); const index = buttons.indexOf(document.activeElement as HTMLButtonElement); const next = buttons[(index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length]; event.preventDefault(); next?.focus(); } }}><p>Revoke the launch link for {revokeTarget.name}?</p><button autoFocus type="button" onClick={() => void confirmRevoke()}>Revoke</button><button type="button" onClick={() => { setRevokeTarget(null); queueMicrotask(() => originRef.current?.focus()); }}>Cancel</button></div> : null}
-    {activeParticipant && inspectorOpen ? <aside ref={inspectorRef} tabIndex={-1} className={styles.panel} aria-label="Participant inspector" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setInspectorOpen(false); } }}><div className={styles.panelHeading}><div><h2>Participant inspector</h2><p>{activeParticipant.name} · {activeParticipant.email}</p></div><button type="button" onClick={() => setInspectorOpen(false)}>Close</button></div><p>Invitation: <strong>{activeParticipant.invitationStatus}</strong> · Participation: <strong>{activeParticipant.participationStatus}</strong></p><div role="group" aria-label="Participant actions" className={styles.inspectorActions}>{(["invite", "resend", "generate_launch", "revoke_launch"] as const).map((action) => { const reason = participantActionReason(activeParticipant, action, new Date()); return <button key={action} type="button" disabled={Boolean(reason)} title={reason ?? undefined} onClick={() => void runAction(activeParticipant, action)}>{action === "generate_launch" ? "Generate launch link" : action === "revoke_launch" ? "Revoke launch link" : action[0].toUpperCase() + action.slice(1)}</button>; })}</div>{feedback[activeParticipant.id] ? <p role="status" aria-live="polite">{feedback[activeParticipant.id]}</p> : null}<p><a href={`/sales?tab=activity&sessionId=${encodeURIComponent(sessionId)}${activeParticipant.launchOperation?.correlationId ? `&correlationId=${encodeURIComponent(activeParticipant.launchOperation.correlationId)}` : ""}`}>View Activity</a> · <a href="/sales?tab=support">Open Support</a></p></aside> : null}
+    {activeParticipant && inspectorOpen ? <ParticipantInspector participant={activeParticipant} sessionId={sessionId} inspectorRef={inspectorRef} feedback={feedback[activeParticipant.id]} onClose={closeInspector} onAction={runAction} /> : null}
   </>;
+}
+
+function ParticipantInspector({ participant, sessionId, inspectorRef, feedback, onClose, onAction }: { participant: SalesParticipantWorkspaceRow; sessionId: string; inspectorRef: React.RefObject<HTMLElement | null>; feedback?: string; onClose: () => void; onAction: (participant: SalesParticipantWorkspaceRow, action: Action) => Promise<void> }) {
+  const now = new Date();
+  const primary = primaryParticipantAction(participant, now);
+  return <aside ref={inspectorRef} tabIndex={-1} className={styles.panel} aria-label="Participant inspector" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } }}><div className={styles.panelHeading}><div><h2>Participant inspector</h2><p>{participant.name} · {participant.email}</p></div><button type="button" onClick={onClose}>Close</button></div><p>Invitation: <strong>{participant.invitationStatus}</strong> · Participation: <strong>{participant.participationStatus}</strong></p><p>Environment state: <strong>{participant.environment.value ?? "Not observed"}</strong></p><p>Environment source: <strong>{humanEnvironmentSource(participant.environment.source)}</strong></p><p>Session access ends: <time dateTime={participant.sessionEndsAt}>{explicitUtcTime(participant.sessionEndsAt)}</time></p><div role="group" aria-label="Participant actions" className={styles.inspectorActions}>{(["invite", "resend", "generate_launch", "revoke_launch"] as const).map((action) => { const reason = participantActionReason(participant, action, now); return <button key={action} type="button" style={primary === action ? primaryButtonStyle : secondaryButtonStyle} data-primary-action={primary === action ? "true" : undefined} disabled={Boolean(reason)} title={reason ?? undefined} onClick={() => void onAction(participant, action)}>{action === "generate_launch" ? "Generate launch link" : action === "revoke_launch" ? "Revoke launch link" : action[0].toUpperCase() + action.slice(1)}</button>; })}</div>{feedback ? <p role="status" aria-live="polite">{feedback}</p> : null}<p><a href={`/sales?tab=activity&sessionId=${encodeURIComponent(sessionId)}${participant.launchOperation?.correlationId ? `&correlationId=${encodeURIComponent(participant.launchOperation.correlationId)}` : ""}`}>View Activity</a> · <a style={primary === "open_diagnostics" ? primaryButtonStyle : undefined} data-primary-action={primary === "open_diagnostics" ? "true" : undefined} href="/sales?tab=support">Open Support</a></p></aside>;
+}
+
+function explicitUtcTime(value: string): string {
+  if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) return "Invalid time";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "Invalid time" : parsed.toISOString();
 }
 
 function humanEnvironmentSource(value: string): string {
