@@ -82,6 +82,10 @@ model OpportunityContact {
   firstName     String
   lastName      String
   email         String
+  normalizedEmail String   @default("")
+  source        String   @default("relationship")
+  syncStatus    String   @default("not_applicable")
+  sourceSessionId String?
   archivedAt    DateTime?
   createdAt     DateTime
   updatedAt     DateTime
@@ -90,6 +94,7 @@ model OpportunityContact {
   salesSessionParticipants SalesSessionParticipant[]
 
   @@index([customerId, opportunityId, updatedAt])
+  @@index([customerId, opportunityId, normalizedEmail])
   @@unique([customerId, id])
 }
 

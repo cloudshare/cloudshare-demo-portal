@@ -32,6 +32,10 @@ export interface OpportunityContact {
   readonly firstName: string;
   readonly lastName: string;
   readonly email: string;
+  readonly normalizedEmail?: string;
+  readonly source?: "relationship" | "ad_hoc";
+  readonly syncStatus?: "not_applicable" | "pending";
+  readonly sourceSessionId?: string | null;
   readonly archivedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
