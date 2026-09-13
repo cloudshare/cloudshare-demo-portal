@@ -80,7 +80,7 @@ export type SalesParticipantWorkspaceRegistrationResult = { readonly status: num
 export interface SalesParticipantWorkspace {
   readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspacePage | null>;
   submitInvitation(input: SalesParticipantWorkspaceInvitationRequest): Promise<SalesParticipantWorkspaceInvitationResult>;
-  registerParticipants?: (input: SalesParticipantWorkspaceRegistrationRequest) => Promise<SalesParticipantWorkspaceRegistrationResult>;
+  registerParticipants(input: SalesParticipantWorkspaceRegistrationRequest): Promise<SalesParticipantWorkspaceRegistrationResult>;
 }
 
 export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, now: Date): Readonly<Record<SalesParticipantAction, boolean>> {

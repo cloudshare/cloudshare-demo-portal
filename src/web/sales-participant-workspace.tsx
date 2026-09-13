@@ -48,6 +48,7 @@ export function SalesParticipantWorkspace(props: {
   const [focusAfterReread, setFocusAfterReread] = useState<string | null>(null);
   const [registrationIds, setRegistrationIds] = useState<string[]>([]);
   const [registrationFeedback, setRegistrationFeedback] = useState<string | null>(null);
+  const [registrationBusy, setRegistrationBusy] = useState(false);
   const originRef = useRef<HTMLElement | null>(null);
   const clearedInspectorTarget = useRef(false);
   const historyMode = useRef<"push" | "replace">("replace");
@@ -165,7 +166,8 @@ export function SalesParticipantWorkspace(props: {
     }
   };
   const registerSelected = async () => {
-    if (!registrationIds.length) return;
+    if (!registrationIds.length || registrationBusy) return;
+    setRegistrationBusy(true);
     setRegistrationFeedback("Registering…");
     try {
       const response = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ opportunityContactIds: registrationIds }) });
@@ -174,6 +176,7 @@ export function SalesParticipantWorkspace(props: {
       setRegistrationIds([]); setRegistrationFeedback("Participant registered. No CloudShare invitation was sent.");
       await rereadWorkspace();
     } catch (cause) { setRegistrationFeedback(cause instanceof Error ? cause.message : "Registration failed; retry or open Support."); }
+    finally { setRegistrationBusy(false); }
   };
 
   const runAction = async (participant: SalesParticipantWorkspaceRow, action: Action) => {

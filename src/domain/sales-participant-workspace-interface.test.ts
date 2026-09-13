@@ -7,12 +7,13 @@ describe("SalesParticipantWorkspace application boundary", () => {
     const workspace: SalesParticipantWorkspace = {
       readPage: vi.fn().mockResolvedValue(null),
       submitInvitation: vi.fn().mockResolvedValue({ status: 202, body: { outcome: "accepted", correlationId: "corr-1" } }),
+      registerParticipants: vi.fn(),
     };
     const target = { participantId: "participant-1", intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: "revision-1" };
     const actor = { type: "admin", id: "admin-1", email: "admin@example.test" };
     await expect(workspace.submitInvitation({ customerId: "customer-1", sessionId: "session-1", actor, commandId: "command-1", targets: [target] })).resolves.toEqual({ status: 202, body: { outcome: "accepted", correlationId: "corr-1" } });
     expect(workspace.submitInvitation).toHaveBeenCalledWith({ customerId: "customer-1", sessionId: "session-1", actor, commandId: "command-1", targets: [target] });
-    expect(Object.keys(workspace).sort()).toEqual(["readPage", "submitInvitation"]);
+    expect(Object.keys(workspace).sort()).toEqual(["readPage", "registerParticipants", "submitInvitation"]);
   });
 
   it("exercises invitation validation through the deep workspace interface", async () => {
