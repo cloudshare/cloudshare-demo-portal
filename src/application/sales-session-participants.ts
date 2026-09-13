@@ -185,7 +185,7 @@ function createSalesParticipantWorkspaceReader(baseReader: SalesParticipantWorks
 }
 
 export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: SalesParticipantWorkspaceBaseReader }): SalesParticipantWorkspace {
-  return { ...createSalesParticipantWorkspaceReader(deps.reader, deps.invitationStore), submitInvitation: (input) => runInvitationLifecycle(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } }), registerParticipants: (input) => handleRegisterSalesSessionParticipants(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { contactIds: input.opportunityContactIds } }) };
+  return { ...createSalesParticipantWorkspaceReader(deps.reader, deps.invitationStore), submitInvitation: (input) => runInvitationLifecycle(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } }), registerParticipants: async (input) => { const result = await handleRegisterSalesSessionParticipants(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { contactIds: input.opportunityContactIds } }); const body = result.body; return { status: result.status, body: { ...(typeof body.error === "string" ? { error: body.error } : {}), ...(typeof body.code === "string" ? { code: body.code } : {}), ...(typeof body.correlationId === "string" ? { correlationId: body.correlationId } : {}) } }; } };
 }
 
 async function runInvitationLifecycle(deps: InviteDeps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {
