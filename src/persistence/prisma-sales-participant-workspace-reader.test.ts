@@ -38,5 +38,13 @@ describe("Prisma participant workspace reader", () => {
     expect(findMany.mock.calls[0][0].select).not.toHaveProperty("contact.opportunity");
     expect(findMany.mock.calls[0][0].select).not.toHaveProperty("cloudShareRosterEnvironmentReference");
   });
+  it("reads one latest invitation outcome for every page participant without skew starvation", async () => {
+    const invitationFindMany = vi.fn(async (args: { where: { customerId: string; salesSessionParticipantId: string; command: { sessionId: string } }; take: number }) => [{ salesSessionParticipantId: args.where.salesSessionParticipantId, outcome: "completed", reason: null, command: { correlationId: `corr-${args.where.salesSessionParticipantId}` } }]);
+    const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-a", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(2), findMany: vi.fn().mockResolvedValue([row(0), row(1)]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationTarget: { findMany: invitationFindMany }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([]) } } as never);
+    const result = await reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() });
+    expect(result?.participants.map((item) => item.latestInvitationCorrelationId)).toEqual(["corr-p0", "corr-p1"]);
+    expect(invitationFindMany).toHaveBeenCalledTimes(2);
+    for (const call of invitationFindMany.mock.calls) expect(call[0]).toMatchObject({ where: { customerId: "customer-a", command: { sessionId: "session-a" } }, take: 1 });
+  });
   it("requires unarchived Opportunity and Account ancestry", async () => { const findFirst = vi.fn().mockResolvedValue(null); const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst } } as never); await reader.readPage({ customerId: "c1", sessionId: "s1", query: "", offset: 0, limit: 25, now: new Date() }); expect(findFirst.mock.calls[0][0].where).toMatchObject({ opportunity: { archivedAt: null, account: { archivedAt: null } } }); });
 });

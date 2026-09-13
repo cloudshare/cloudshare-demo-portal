@@ -154,6 +154,42 @@ describe("SalesParticipantWorkspace", () => {
     const call = request.mock.calls.find(([, init]) => init?.method === "POST");
     expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ targets: [{ participantId: "p1", intent: "invite", expectedInvitationStatus: "notSent", participantRevision: participant.participantRevision }] });
   });
+  it("reports HTTP 202 as confirmation pending with its retained replay fence", async () => {
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, activeLaunchCapability: false, launchOperation: null, environmentAttention: null };
+    const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST"
+      ? new Response(JSON.stringify({ outcome: "confirmation_required", correlationId: "corr-pending" }), { status: 202 })
+      : new Response(JSON.stringify({ ...page, participants: [row] }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Resend" }));
+    const status = await screen.findByText(/Confirmation pending; the replay fence is retained/);
+    expect(status.textContent).toContain("corr-pending");
+    expect(status.textContent).not.toContain("Completed");
+    await waitFor(() => expect(request.mock.calls.filter(([, init]) => !init?.method).length).toBeGreaterThan(1));
+  });
+  it("distinguishes completed-with-unconfirmed from a completed invitation", async () => {
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, activeLaunchCapability: false, launchOperation: null, environmentAttention: null };
+    const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST"
+      ? new Response(JSON.stringify({ outcome: "completed_with_unconfirmed", correlationId: "corr-unconfirmed" }), { status: 200 })
+      : new Response(JSON.stringify({ ...page, participants: [row] }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Resend" }));
+    const status = await screen.findByText(/Completed with confirmation pending; the replay fence is retained/);
+    expect(status.textContent).toContain("corr-unconfirmed");
+    expect(status.textContent).not.toBe("Completed. Correlation corr-unconfirmed.");
+  });
+  it("exposes every disabled action reason through described visible text", async () => {
+    render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify(page))} />);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Inspect" }));
+    for (const button of screen.getAllByRole("button").filter((candidate) => candidate.hasAttribute("disabled"))) {
+      const reasonId = button.getAttribute("aria-describedby");
+      expect(reasonId).toBeTruthy();
+      expect(document.getElementById(String(reasonId))?.textContent).toBeTruthy();
+    }
+  });
   it("allows revoke from an ended participant and returns focus after Escape", async () => {
     const row = { ...participant, sessionEndsAt: "2020-01-01T00:00:00.000Z", activeLaunchCapability: true, providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null };
     const request = vi.fn(async (url: string, init?: RequestInit) => init?.method === "DELETE" ? new Response(JSON.stringify({}), { status: 200 }) : new Response(JSON.stringify({ participants: [row], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 }));
@@ -171,6 +207,32 @@ describe("SalesParticipantWorkspace", () => {
     await user.click(screen.getByRole("button", { name: "Revoke" }));
     await waitFor(() => expect(request.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(true));
     expect(tableRow).toBeTruthy();
+  });
+  it("shows controlled revoke failure and correlation and rereads durable state", async () => {
+    const row = { ...participant, sessionEndsAt: "2020-01-01T00:00:00.000Z", activeLaunchCapability: true, providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null };
+    const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "DELETE"
+      ? new Response(JSON.stringify({ error: "Provider refused revoke.", correlationId: "corr-revoke" }), { status: 409 })
+      : new Response(JSON.stringify({ ...page, participants: [row] }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Revoke launch link" }));
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+    const status = await screen.findByText(/Provider refused revoke/);
+    expect(status.textContent).toContain("corr-revoke");
+    await waitFor(() => expect(request.mock.calls.filter(([, init]) => !init?.method).length).toBeGreaterThan(1));
+  });
+  it("handles a non-JSON revoke failure without losing controlled feedback", async () => {
+    const row = { ...participant, sessionEndsAt: "2020-01-01T00:00:00.000Z", activeLaunchCapability: true, providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null };
+    const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "DELETE"
+      ? new Response("upstream gateway page", { status: 502, headers: { "Content-Type": "text/plain" } })
+      : new Response(JSON.stringify({ ...page, participants: [row] }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Revoke launch link" }));
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+    expect((await screen.findByText(/Revoke failed \(502\)/)).textContent).toContain("open Support");
   });
   it("keeps the roster contained at constrained width and exposes keyboard actions without console errors", async () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);

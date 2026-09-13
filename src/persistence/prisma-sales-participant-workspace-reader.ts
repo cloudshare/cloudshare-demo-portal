@@ -107,23 +107,27 @@ export function createPrismaSalesParticipantWorkspaceReader(
       const fenceByParticipant = new Map(
         fences.map((fence) => [fence.salesSessionParticipantId, fence]),
       );
-      const latestTargets = participantIds.length
-        ? await prisma.salesParticipantInvitationTarget.findMany({
-            where: {
-              customerId: input.customerId,
-              salesSessionParticipantId: { in: participantIds },
-              command: { sessionId: input.sessionId },
-            },
-            orderBy: [{ command: { updatedAt: "desc" } }, { ordinal: "asc" }],
-            take: Math.min(500, participantIds.length * 10),
-            select: {
-              salesSessionParticipantId: true,
-              outcome: true,
-              reason: true,
-              command: { select: { correlationId: true } },
-            },
-          })
-        : [];
+      const latestTargets = (
+        await Promise.all(
+          participantIds.map((participantId) =>
+            prisma.salesParticipantInvitationTarget.findMany({
+              where: {
+                customerId: input.customerId,
+                salesSessionParticipantId: participantId,
+                command: { sessionId: input.sessionId },
+              },
+              orderBy: [{ command: { updatedAt: "desc" } }, { ordinal: "asc" }],
+              take: 1,
+              select: {
+                salesSessionParticipantId: true,
+                outcome: true,
+                reason: true,
+                command: { select: { correlationId: true } },
+              },
+            }),
+          ),
+        )
+      ).flat();
       const latestByParticipant = new Map<
         string,
         (typeof latestTargets)[number]

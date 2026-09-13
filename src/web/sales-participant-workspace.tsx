@@ -105,6 +105,16 @@ export function SalesParticipantWorkspace(props: {
     queueMicrotask(() => (originRef.current ?? headingRef.current)?.focus());
   };
 
+  const rereadWorkspace = async () => {
+    try {
+      const response = await request(href(), { cache: "no-store" });
+      const next = await readJsonObject(response);
+      if (response.ok && Array.isArray(next?.participants)) setPage(next as ParticipantPage);
+    } catch {
+      // Action feedback is more useful than replacing it with a secondary reread failure.
+    }
+  };
+
   const runAction = async (participant: SalesParticipantWorkspaceRow, action: Action) => {
     if (action === "revoke_launch") { logicalFocus.current = "inspector"; originRef.current = document.activeElement as HTMLElement; setRevokeTarget(participant); return; }
     setFeedback((current) => ({ ...current, [participant.id]: "Working…" }));
@@ -113,30 +123,42 @@ export function SalesParticipantWorkspace(props: {
       const url = invite ? `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/invite` : `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/${encodeURIComponent(participant.id)}/launch-link`;
       const body = invite ? JSON.stringify({ commandId: crypto.randomUUID(), targets: [{ participantId: participant.id, intent: action, expectedInvitationStatus: participant.invitationStatus, participantRevision: participant.participantRevision }] }) : undefined;
       const response = await request(url, { method: "POST", headers: body ? { "Content-Type": "application/json" } : undefined, body });
-      const result = (await response.json()) as { error?: string; code?: string; outcome?: string; correlationId?: string; launchUrl?: string };
-      if (!response.ok) throw new Error(result.code === "no_replay" ? "No replay permitted: provider outcome is ambiguous; open Support." : result.error ?? `Action failed (${response.status}).`);
-      if (result.launchUrl) {
-        const launch = new URL(result.launchUrl, window.location.origin);
+      const result = await readJsonObject(response);
+      const code = textField(result, "code");
+      const outcome = textField(result, "outcome");
+      const correlationId = textField(result, "correlationId");
+      const launchUrl = textField(result, "launchUrl");
+      if (!response.ok) throw new Error(code === "no_replay" ? "No replay permitted: provider outcome is ambiguous; open Support." : textField(result, "error") ?? `Action failed (${response.status}).`);
+      if (launchUrl) {
+        const launch = new URL(launchUrl, window.location.origin);
         if (launch.origin !== window.location.origin || !launch.pathname.startsWith("/sales/launch/")) throw new Error("Launch link was rejected because it was not a Certalis portal link.");
       }
-      const message = result.code === "confirmation_required" || result.outcome === "in_progress" ? "Action admitted; confirmation is still in progress." : result.outcome === "failed_retryable" ? "Action failed temporarily; retry is available." : result.launchUrl ? "Launch link ready." : result.correlationId ? `Completed. Correlation ${result.correlationId}.` : "Completed.";
+      const confirmationPending = response.status === 202 || code === "confirmation_required" || outcome === "confirmation_required" || outcome === "in_progress";
+      const message = confirmationPending ? `Confirmation pending; the replay fence is retained.${correlationId ? ` Correlation ${correlationId}.` : ""}` : outcome === "completed_with_unconfirmed" ? `Completed with confirmation pending; the replay fence is retained.${correlationId ? ` Correlation ${correlationId}.` : ""}` : outcome === "failed_retryable" ? "Action failed temporarily; retry is available." : launchUrl ? "Launch link ready." : correlationId ? `Completed. Correlation ${correlationId}.` : "Completed.";
       setFeedback((current) => ({ ...current, [participant.id]: message }));
-      if (result.launchUrl) window.open(new URL(result.launchUrl, window.location.origin).toString(), "_blank", "noopener,noreferrer");
-      const reread = await request(href(), { cache: "no-store" });
-      const next = (await reread.json()) as ParticipantPage;
-      if (reread.ok && Array.isArray(next.participants)) setPage(next);
+      if (launchUrl) window.open(new URL(launchUrl, window.location.origin).toString(), "_blank", "noopener,noreferrer");
     } catch (cause) {
       setFeedback((current) => ({ ...current, [participant.id]: cause instanceof Error ? cause.message : "Action failed; retry or open Support." }));
+    } finally {
+      await rereadWorkspace();
     }
   };
   const confirmRevoke = async () => {
     if (!revokeTarget) return;
     const target = revokeTarget;
     setRevokeTarget(null);
-    const response = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/${encodeURIComponent(target.id)}/launch-link`, { method: "DELETE" });
-    const result = (await response.json()) as { error?: string };
-    setFeedback((current) => ({ ...current, [target.id]: response.ok ? "Launch link revoked." : result.error ?? "Revoke failed; retry or open Support." }));
-    queueMicrotask(() => originRef.current?.focus());
+    try {
+      const response = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/${encodeURIComponent(target.id)}/launch-link`, { method: "DELETE" });
+      const result = await readJsonObject(response);
+      const correlationId = textField(result, "correlationId");
+      const correlation = correlationId ? ` Correlation ${correlationId}.` : "";
+      setFeedback((current) => ({ ...current, [target.id]: response.ok ? `Launch link revoked.${correlation}` : `${textField(result, "error") ?? `Revoke failed (${response.status}); retry or open Support.`}${correlation}` }));
+    } catch {
+      setFeedback((current) => ({ ...current, [target.id]: "Revoke failed; retry or open Support." }));
+    } finally {
+      await rereadWorkspace();
+      queueMicrotask(() => originRef.current?.focus());
+    }
   };
   return <>
     <section className={styles.panel}>
@@ -155,7 +177,21 @@ export function SalesParticipantWorkspace(props: {
 function ParticipantInspector({ participant, sessionId, inspectorRef, feedback, onClose, onAction }: { participant: SalesParticipantWorkspaceRow; sessionId: string; inspectorRef: React.RefObject<HTMLElement | null>; feedback?: string; onClose: () => void; onAction: (participant: SalesParticipantWorkspaceRow, action: Action) => Promise<void> }) {
   const now = new Date();
   const primary = primaryParticipantAction(participant, now);
-  return <aside ref={inspectorRef} tabIndex={-1} className={styles.panel} aria-label="Participant inspector" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } }}><div className={styles.panelHeading}><div><h2>Participant inspector</h2><p>{participant.name} · {participant.email}</p></div><button type="button" onClick={onClose}>Close</button></div><p>Invitation: <strong>{participant.invitationStatus}</strong> · Participation: <strong>{participant.participationStatus}</strong></p><p>Environment state: <strong>{participant.environment.value ?? "Not observed"}</strong></p><p>Environment source: <strong>{humanEnvironmentSource(participant.environment.source)}</strong></p><p>Session access ends: <time dateTime={participant.sessionEndsAt}>{explicitUtcTime(participant.sessionEndsAt)}</time></p>{durableFeedback(participant) ? <p role="status" aria-live="polite">{durableFeedback(participant)}</p> : null}<div role="group" aria-label="Participant actions" className={styles.inspectorActions}>{(["invite", "resend", "generate_launch", "revoke_launch"] as const).map((action) => { const reason = participantActionReason(participant, action, now); return <button key={action} type="button" style={primary === action ? primaryButtonStyle : secondaryButtonStyle} data-primary-action={primary === action ? "true" : undefined} disabled={Boolean(reason)} title={reason ?? undefined} onClick={() => void onAction(participant, action)}>{action === "generate_launch" ? "Generate launch link" : action === "revoke_launch" ? "Revoke launch link" : action[0].toUpperCase() + action.slice(1)}</button>; })}</div>{feedback ? <p role="status" aria-live="polite">{feedback}</p> : null}<p><a href={`/sales/sessions/${encodeURIComponent(sessionId)}?area=activity${participant.launchOperation?.correlationId ? `&correlationId=${encodeURIComponent(participant.launchOperation.correlationId)}` : ""}`}>View Activity</a> · <a style={primary === "open_diagnostics" ? primaryButtonStyle : undefined} data-primary-action={primary === "open_diagnostics" ? "true" : undefined} href="/sales?tab=support">Open Support</a></p></aside>;
+  return <aside ref={inspectorRef} tabIndex={-1} className={styles.panel} aria-label="Participant inspector" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } }}><div className={styles.panelHeading}><div><h2>Participant inspector</h2><p>{participant.name} · {participant.email}</p></div><button type="button" onClick={onClose}>Close</button></div><p>Invitation: <strong>{participant.invitationStatus}</strong> · Participation: <strong>{participant.participationStatus}</strong></p><p>Environment state: <strong>{participant.environment.value ?? "Not observed"}</strong></p><p>Environment source: <strong>{humanEnvironmentSource(participant.environment.source)}</strong></p><p>Session access ends: <time dateTime={participant.sessionEndsAt}>{explicitUtcTime(participant.sessionEndsAt)}</time></p>{durableFeedback(participant) ? <p role="status" aria-live="polite">{durableFeedback(participant)}</p> : null}<div role="group" aria-label="Participant actions" className={styles.inspectorActions}>{(["invite", "resend", "generate_launch", "revoke_launch"] as const).map((action) => { const reason = participantActionReason(participant, action, now); const reasonId = `participant-${participant.id}-${action}-reason`; return <React.Fragment key={action}><button type="button" style={primary === action ? primaryButtonStyle : secondaryButtonStyle} data-primary-action={primary === action ? "true" : undefined} disabled={Boolean(reason)} aria-describedby={reason ? reasonId : undefined} onClick={() => void onAction(participant, action)}>{action === "generate_launch" ? "Generate launch link" : action === "revoke_launch" ? "Revoke launch link" : action[0].toUpperCase() + action.slice(1)}</button>{reason ? <span id={reasonId}>{reason}</span> : null}</React.Fragment>; })}</div>{feedback ? <p role="status" aria-live="polite">{feedback}</p> : null}<p><a href={`/sales/sessions/${encodeURIComponent(sessionId)}?area=activity${participant.launchOperation?.correlationId ? `&correlationId=${encodeURIComponent(participant.launchOperation.correlationId)}` : ""}`}>View Activity</a> · <a style={primary === "open_diagnostics" ? primaryButtonStyle : undefined} data-primary-action={primary === "open_diagnostics" ? "true" : undefined} href="/sales?tab=support">Open Support</a></p></aside>;
+}
+
+async function readJsonObject(response: Response): Promise<Record<string, unknown>> {
+  try {
+    const value: unknown = await response.json();
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function textField(value: Record<string, unknown>, key: string): string | undefined {
+  return typeof value[key] === "string" ? value[key] : undefined;
 }
 
 function explicitUtcTime(value: string): string {
@@ -163,7 +199,7 @@ function explicitUtcTime(value: string): string {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? "Invalid time" : parsed.toISOString();
 }
-function durableFeedback(participant: SalesParticipantWorkspaceRow): string | null { const invitationOutcome = participant.invitationOutcome ?? participant.latestInvitationOutcome; const invitationReason = participant.invitationReason ?? participant.latestInvitationReason; const invitationCorrelation = participant.invitationCorrelationId ?? participant.latestInvitationCorrelationId; const invitation = invitationOutcome ? `Invitation action: ${invitationOutcome}${invitationReason ? ` (${invitationReason})` : ""}${invitationCorrelation ? `. Correlation ${invitationCorrelation}.` : "."}` : null; const launch = participant.launchOperation ? `Launch ${participant.launchOperation.operation}: ${participant.launchOperation.outcome}${participant.launchOperation.reason ? ` (${participant.launchOperation.reason})` : ""}${participant.launchOperation.correlationId ? `. Correlation ${participant.launchOperation.correlationId}.` : "."}` : null; return [invitation, launch].filter(Boolean).join(" ") || null; }
+function durableFeedback(participant: SalesParticipantWorkspaceRow): string | null { const invitationOutcome = participant.invitationOutcome ?? participant.latestInvitationOutcome; const invitationReason = participant.invitationReason ?? participant.latestInvitationReason; const invitationCorrelation = participant.invitationCorrelationId ?? participant.latestInvitationCorrelationId; const invitationLabel = invitationOutcome === "completed_with_unconfirmed" ? "completed with confirmation pending; replay fence retained" : invitationOutcome; const invitation = invitationLabel ? `Invitation action: ${invitationLabel}${invitationReason ? ` (${invitationReason})` : ""}${invitationCorrelation ? `. Correlation ${invitationCorrelation}.` : "."}` : null; const launch = participant.launchOperation ? `Launch ${participant.launchOperation.operation}: ${participant.launchOperation.outcome}${participant.launchOperation.reason ? ` (${participant.launchOperation.reason})` : ""}${participant.launchOperation.correlationId ? `. Correlation ${participant.launchOperation.correlationId}.` : "."}` : null; return [invitation, launch].filter(Boolean).join(" ") || null; }
 
 function humanEnvironmentSource(value: string): string {
   if (value === "cloudshare_v3_environment") return "Observed from CloudShare Environment";
