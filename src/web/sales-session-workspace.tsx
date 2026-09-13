@@ -23,6 +23,13 @@ type DiagnosticRecord = {
   readonly occurredAt: string;
 };
 
+export function buildParticipantRegistrationHref(queueHref: string, sessionId: string, status: string) {
+  const url = new URL(queueHref, "http://localhost");
+  url.searchParams.set("tab", "sessions"); url.searchParams.set("sessionId", sessionId); url.searchParams.set("participants", "open"); url.searchParams.set("status", status);
+  url.searchParams.delete("queue"); url.searchParams.delete("offset");
+  return `${url.pathname}?${url.searchParams.toString()}`;
+}
+
 export function SalesSessionWorkspace(props: {
   readonly sessionId: string;
   readonly area: Area;
@@ -313,18 +320,11 @@ function SalesSessionWorkspaceState({
   const queueIsHistory =
     new URLSearchParams(queueHref.split("?")[1] ?? "").get("queue") ===
     "history";
-  const registrationUrl = new URL(queueHref, "http://localhost");
-  registrationUrl.searchParams.set("tab", "sessions");
-  registrationUrl.searchParams.set("sessionId", sessionId);
-  registrationUrl.searchParams.set("participants", "open");
   const registrationStatus = workspace.summary.operation.value === "needs_attention"
     ? "needs_attention"
     : workspace.summary.experience.value === "inProgress" ? "in_progress"
       : workspace.summary.experience.value === "ended" ? "ended" : "upcoming";
-  registrationUrl.searchParams.set("status", registrationStatus);
-  registrationUrl.searchParams.delete("queue");
-  registrationUrl.searchParams.delete("offset");
-  const registrationHref = `${registrationUrl.pathname}?${registrationUrl.searchParams.toString()}`;
+  const registrationHref = buildParticipantRegistrationHref(queueHref, sessionId, registrationStatus);
   const verifyNow = async () => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
