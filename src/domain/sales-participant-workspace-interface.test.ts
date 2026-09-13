@@ -47,7 +47,7 @@ describe("SalesParticipantWorkspace application boundary", () => {
       sessions: {} as never, records: {} as never, participants: {} as never, connections: {} as never,
     });
     const page = await workspace.readPage({ customerId: "customer-1", sessionId: "session-1", query: "Ada", offset: 0, limit: 25, now: new Date("2026-09-01T00:00:00Z") });
-    expect(readParticipantProjections).toHaveBeenCalledWith({ customerId: "customer-1", sessionId: "session-1", participantIds: ["participant-1"] });
+    expect(readParticipantProjections).toHaveBeenCalledWith({ customerId: "customer-1", sessionId: "session-1", participantIds: ["participant-1"], at: new Date("2026-09-01T00:00:00Z") });
     expect(page?.participants[0]).toMatchObject({ currentCommandId: "command-1", latestInvitationCorrelationId: "corr-latest", primaryAction: "generate_launch", actionAvailability: { invite: { available: false, reason: "invitation_command_pending" } } });
   });
 });

@@ -87,7 +87,7 @@ export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, no
     resend: base && row.invitationStatus === "sent",
     generate_launch: open && row.participationStatus !== "concluded",
     revoke_launch: row.activeLaunchCapability,
-    open_diagnostics: Boolean(row.environmentAttention || row.invitationReason || row.currentCommandId) || !base,
+    open_diagnostics: Boolean(row.environmentAttention || row.invitationReason || row.latestInvitationReason || row.currentCommandId),
   };
 }
 

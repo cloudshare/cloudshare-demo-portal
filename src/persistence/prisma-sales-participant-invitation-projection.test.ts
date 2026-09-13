@@ -11,6 +11,7 @@ function prismaProjectionFixture(overrides: { readonly fences?: unknown[]; reado
 }
 
 describe("Prisma invitation safe workspace projection", () => {
+  const at = new Date("2026-09-13T09:00:00.000Z");
   it("projects current and latest feedback only for the exact Customer, Session, and bounded participant page", async () => {
     const prisma = prismaProjectionFixture({
       fences: [{ salesSessionParticipantId: "p1", commandId: "current", revision: 3 }],
@@ -21,7 +22,7 @@ describe("Prisma invitation safe workspace projection", () => {
       },
     });
     const store = createPrismaInvitationStore(prisma as never);
-    const result = await store.readParticipantProjections({ customerId: "customer-a", sessionId: "session-a", participantIds: ["p1", "p2"] });
+    const result = await store.readParticipantProjections({ customerId: "customer-a", sessionId: "session-a", participantIds: ["p1", "p2"], at });
     expect(result.get("p1")).toMatchObject({ currentCommandId: "current", invitationOutcome: "confirmation_required", invitationCorrelationId: "corr-current", latestInvitationOutcome: "failed_retryable", latestInvitationReason: "not_dispatched", latestInvitationCorrelationId: "corr-latest" });
     expect(result.get("p2")).toMatchObject({ currentCommandId: null, invitationOutcome: null, latestInvitationOutcome: null });
     expect(prisma.salesParticipantInvitationFence.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { customerId: "customer-a", salesSessionParticipantId: { in: ["p1", "p2"] } } }));
@@ -30,14 +31,14 @@ describe("Prisma invitation safe workspace projection", () => {
 
   it("fails closed for corrupt outcomes and mismatched current fences", async () => {
     const corrupt = createPrismaInvitationStore(prismaProjectionFixture({ latest: { p1: [{ salesSessionParticipantId: "p1", outcome: "raw-secret-state", reason: null, command: { correlationId: "corr" } }] } }) as never);
-    await expect(corrupt.readParticipantProjections({ customerId: "customer-a", sessionId: "session-a", participantIds: ["p1"] })).rejects.toThrow("invalid persisted invitation outcome");
+    await expect(corrupt.readParticipantProjections({ customerId: "customer-a", sessionId: "session-a", participantIds: ["p1"], at })).rejects.toThrow("invalid persisted invitation outcome");
     const mismatched = createPrismaInvitationStore(prismaProjectionFixture({ fences: [{ salesSessionParticipantId: "p1", commandId: "current", revision: 4 }], commands: [{ commandId: "current", revision: 3, correlationId: null, targets: [] }] }) as never);
-    await expect(mismatched.readParticipantProjections({ customerId: "customer-a", sessionId: "session-a", participantIds: ["p1"] })).rejects.toThrow("invalid persisted invitation fence");
+    await expect(mismatched.readParticipantProjections({ customerId: "customer-a", sessionId: "session-a", participantIds: ["p1"], at })).rejects.toThrow("invalid persisted invitation fence");
   });
 
   it("rejects duplicate or unbounded participant projection scopes", async () => {
     const store = createPrismaInvitationStore(prismaProjectionFixture() as never);
-    await expect(store.readParticipantProjections({ customerId: "c", sessionId: "s", participantIds: ["p1", "p1"] })).rejects.toThrow("invalid invitation projection scope");
-    await expect(store.readParticipantProjections({ customerId: "c", sessionId: "s", participantIds: Array.from({ length: 51 }, (_, index) => `p${index}`) })).rejects.toThrow("invalid invitation projection scope");
+    await expect(store.readParticipantProjections({ customerId: "c", sessionId: "s", participantIds: ["p1", "p1"], at })).rejects.toThrow("invalid invitation projection scope");
+    await expect(store.readParticipantProjections({ customerId: "c", sessionId: "s", participantIds: Array.from({ length: 51 }, (_, index) => `p${index}`), at })).rejects.toThrow("invalid invitation projection scope");
   });
 });

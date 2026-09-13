@@ -137,6 +137,7 @@ describe("SalesParticipantWorkspace", () => {
   it("shows a visible status when the bounded roster fetch fails", async () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => { throw new Error("network down"); }} />);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("could not be loaded"));
+    expect(screen.queryByText("No Participants are registered for this Sales Session.")).toBeNull();
   });
   it("sends the explicit resend contract and retains correlation feedback after reread", async () => {
     const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, activeLaunchCapability: false, launchOperation: null, environmentAttention: null };

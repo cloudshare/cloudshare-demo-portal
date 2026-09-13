@@ -29,7 +29,7 @@ export type InvitationState = {
 export type InvitationStart =
   | { readonly kind: "started"; readonly handle: InvitationHandle }
   | { readonly kind: "replay"; readonly handle: InvitationHandle; readonly state: InvitationState }
-  | { readonly kind: "blocked"; readonly reason: "command_id_mismatch" | "precondition_failed" | "session_unavailable" };
+  | { readonly kind: "blocked"; readonly reason: "command_id_mismatch" | "stale_revision" | "active_command_conflict" | "participant_unavailable" | "session_unavailable"; readonly conflictingCommandId?: string };
 
 export interface InvitationStore {
   begin(input: { readonly customerId: string; readonly sessionId: string; readonly commandId: string; readonly targets: readonly InvitationTarget[]; readonly at: Date; readonly allowNew: boolean }): Promise<InvitationStart>;
@@ -38,7 +38,7 @@ export interface InvitationStore {
   settle(handle: InvitationHandle, input: { readonly correlationId: string | null; readonly httpStatus: number; readonly resultCode: string; readonly outcomes: readonly InvitationTargetOutcome[]; readonly projections?: readonly ParticipantInvitationProjection[] }): Promise<InvitationState>;
   failBeforeDispatch(handle: InvitationHandle, input: { readonly at: Date; readonly httpStatus: number; readonly resultCode: string; readonly reason: "not_dispatched" | "failed_retryable" | "stale_revision" }): Promise<InvitationState>;
   load(customerId: string, commandId: string): Promise<{ readonly handle: InvitationHandle; readonly state: InvitationState } | null>;
-  readParticipantProjections(input: { readonly customerId: string; readonly sessionId: string; readonly participantIds: readonly string[] }): Promise<ReadonlyMap<string, { readonly currentCommandId: string | null; readonly invitationOutcome: InvitationTargetOutcome["outcome"] | null; readonly invitationReason: InvitationTargetOutcome["reason"] | null; readonly invitationCorrelationId: string | null; readonly latestInvitationOutcome: InvitationTargetOutcome["outcome"] | null; readonly latestInvitationReason: InvitationTargetOutcome["reason"] | null; readonly latestInvitationCorrelationId: string | null }>>;
+  readParticipantProjections(input: { readonly customerId: string; readonly sessionId: string; readonly participantIds: readonly string[]; readonly at: Date }): Promise<ReadonlyMap<string, { readonly currentCommandId: string | null; readonly invitationOutcome: InvitationTargetOutcome["outcome"] | null; readonly invitationReason: InvitationTargetOutcome["reason"] | null; readonly invitationCorrelationId: string | null; readonly latestInvitationOutcome: InvitationTargetOutcome["outcome"] | null; readonly latestInvitationReason: InvitationTargetOutcome["reason"] | null; readonly latestInvitationCorrelationId: string | null }>>;
 }
 import { invitationOutcomes, type InvitationOutcome, type InvitationSafeReason } from "./sales-participant-workspace";
 export { invitationOutcomes };

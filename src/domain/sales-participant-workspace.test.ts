@@ -61,6 +61,14 @@ describe("sales participant workspace contract", () => {
     const now = new Date("2026-09-12T11:00:00Z");
     expect(primaryParticipantAction(row, now)).toBe("invite");
     expect(primaryParticipantAction({ ...row, invitationStatus: "sent" }, now)).toBe("generate_launch");
-    expect(primaryParticipantAction({ ...row, invitationStatus: "sent", participationStatus: "concluded" }, now)).toBe("open_diagnostics");
+    expect(primaryParticipantAction({ ...row, invitationStatus: "sent", participationStatus: "concluded" }, now)).toBeNull();
+    expect(primaryParticipantAction({ ...row, invitationStatus: "sent", participationStatus: "concluded", invitationReason: "failed_retryable" }, now)).toBe("open_diagnostics");
+  });
+  it("offers diagnostics only for durable invitation or Participant attention", () => {
+    const now = new Date("2026-09-12T13:00:00Z");
+    expect(eligibleParticipantActions({ ...row, participationStatus: "concluded" }, now).open_diagnostics).toBe(false);
+    expect(eligibleParticipantActions({ ...row, latestInvitationReason: "not_dispatched" }, now).open_diagnostics).toBe(true);
+    expect(eligibleParticipantActions({ ...row, currentCommandId: "blocked-command" }, now).open_diagnostics).toBe(true);
+    expect(eligibleParticipantActions({ ...row, environmentAttention: { reason: "provider_read_failed", source: "cloudshare" } }, now).open_diagnostics).toBe(true);
   });
 });

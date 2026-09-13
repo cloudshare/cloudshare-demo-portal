@@ -174,7 +174,7 @@ function createSalesParticipantWorkspaceReader(baseReader: SalesParticipantWorks
     const page = await baseReader.readPage(input);
     if (!page) return null;
     const ids = page.participants.map((participant) => participant.id);
-    const invitations = await invitationStore.readParticipantProjections({ customerId: input.customerId, sessionId: input.sessionId, participantIds: ids });
+    const invitations = await invitationStore.readParticipantProjections({ customerId: input.customerId, sessionId: input.sessionId, participantIds: ids, at: input.now });
     if (invitations.size !== ids.length || ids.some((id) => !invitations.has(id))) throw new Error("Invitation projection did not cover the bounded Participant page.");
     return { ...page, participants: page.participants.map((participant) => {
       const invitation = invitations.get(participant.id)!;
@@ -208,11 +208,20 @@ async function runInvitationLifecycle(deps: InviteDeps, request: Request): Promi
     return { status: 409, body: { code: "sales_session_ended", error, correlationId } };
   }
   if (admission.kind === "started") {
-  const registered = await deps.participants.list(request.customerId, sessionResult.session.id);
+  let registered: Awaited<ReturnType<typeof deps.participants.list>>;
+  try { registered = await deps.participants.list(request.customerId, sessionResult.session.id); }
+  catch (error) {
+    await deps.invitationStore.failBeforeDispatch(admission.handle, { at: (deps.now ?? (() => new Date()))(), httpStatus: 502, resultCode: "not_dispatched", reason: "not_dispatched" });
+    return failed(deps, request, sessionResult.session, randomUUID(), "sales.demo_session.participants.invited", "Could not verify the registered Sales Participants before dispatch.", error);
+  }
   selected = participantIds.map((id) => registered.find((participant) => participant.id === id));
-  if (selected.some((participant) => !participant)) return denied(deps, request, sessionResult.session, 404, "Selected registered Sales Participant was not found for this Session.", "participant_not_found");
+  if (selected.some((participant) => !participant)) {
+    await deps.invitationStore.failBeforeDispatch(admission.handle, { at: (deps.now ?? (() => new Date()))(), httpStatus: 404, resultCode: "not_dispatched", reason: "not_dispatched" });
+    return denied(deps, request, sessionResult.session, 404, "Selected registered Sales Participant was not found for this Session.", "participant_not_found");
+  }
   if (selected.some((participant) => participant!.participationStatus === "concluded")) {
     const correlationId = randomUUID(); const error = "Concluded Sales Participants cannot receive native invitations.";
+    await deps.invitationStore.failBeforeDispatch(admission.handle, { at: (deps.now ?? (() => new Date()))(), httpStatus: 409, resultCode: "not_dispatched", reason: "not_dispatched" });
     await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "sales_participant_concluded", participantIds }, {}, false);
     return { status: 409, body: { code: "sales_participant_concluded", error, correlationId } };
   }
@@ -292,7 +301,12 @@ async function runInvitationLifecycle(deps: InviteDeps, request: Request): Promi
           : 200);
     return { status, body: { code: first.resultCode ?? "command_replayed", replayed: true, phase: first.displayPhase, ...currentResult } };
   }
-  if (admission.kind !== "started") return { status: 409, body: { code: admission.reason ?? "invitation_blocked", commandId: parsed.data.commandId } };
+  if (admission.kind !== "started") {
+    const correlationId = randomUUID();
+    await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", "The invitation command could not acquire the Participant workspace.", undefined, { failureMode: admission.reason, commandId: parsed.data.commandId, conflictingCommandId: admission.conflictingCommandId ?? null, participantIds }, {}, false);
+    const targetReason = admission.reason === "active_command_conflict" ? "blocked_by_fence" : admission.reason;
+    return { status: 409, body: { code: admission.reason, error: "The invitation command could not start. Refresh the Participant workspace before retrying.", commandId: parsed.data.commandId, correlationId, targets: parsed.data.targets.map((target) => ({ participantId: target.participantId, reason: targetReason })), ...(admission.conflictingCommandId ? { conflictingCommandId: admission.conflictingCommandId } : {}) } };
+  }
   const preconditionMismatch = parsed.data.targets.some((target, index) => {
     const participant = selected[index]!;
     return participant.invitationStatus !== target.expectedInvitationStatus

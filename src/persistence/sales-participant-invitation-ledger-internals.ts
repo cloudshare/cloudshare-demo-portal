@@ -34,7 +34,7 @@ export type ParticipantInvitationProjection = {
 export type Admission =
   | { readonly kind: "admitted"; readonly commandId: string; readonly admissionToken: string; readonly command?: never; readonly blockReason?: never }
   | { readonly kind: "same_command"; readonly commandId: string; readonly admissionToken?: never; readonly command: RevisionedInvitationCommand; readonly blockReason?: never }
-  | { readonly kind: "blocked"; readonly commandId: string; readonly admissionToken?: never; readonly command?: never; readonly blockReason: "command_id_mismatch" | "precondition_failed" };
+  | { readonly kind: "blocked"; readonly commandId: string; readonly admissionToken?: never; readonly command?: never; readonly blockReason: "command_id_mismatch" | "stale_revision" | "active_command_conflict" | "participant_unavailable"; readonly conflictingCommandId?: string };
 export type FinishInvitationCommand = { readonly commandId: string; readonly expectedRevision: number; readonly expectedPhase: "dispatching" | "evaluating_confirmation" | "settled"; readonly phase: "evaluating_confirmation" | "settled"; readonly correlationId: string | null; readonly httpStatus?: number; readonly resultCode?: string };
 /** Persistence-private state-machine seam. Never inject this into application or route code. */
 export interface InvitationLedgerInternals {

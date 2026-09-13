@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { invitationLedgerInternalsForTest } from "./prisma-sales-participant-invitation-ledger";
+import { createPrismaInvitationStore, invitationLedgerInternalsForTest } from "./prisma-sales-participant-invitation-ledger";
 
 const createInvitationLedgerInternalsForTest = invitationLedgerInternalsForTest.create;
 
@@ -130,7 +130,7 @@ describe("Prisma invitation ledger", () => {
     const same = await Promise.allSettled([make(f.participant.id, f.participant.updatedAt.toISOString()), make(f.participant.id, f.participant.updatedAt.toISOString())]);
     expect(same.every((result) => result.status === "fulfilled")).toBe(true);
     expect(same.filter((r) => r.status === "fulfilled" && r.value.kind === "admitted")).toHaveLength(1);
-    expect(same.filter((r) => r.status === "fulfilled" && r.value.kind === "blocked" && r.value.admissionToken === undefined)).toHaveLength(1);
+    expect(same.filter((r) => r.status === "fulfilled" && r.value.kind === "blocked" && r.value.blockReason === "active_command_conflict" && r.value.conflictingCommandId)).toHaveLength(1);
     const independent = await make(p2.id, p2.updatedAt.toISOString()); expect(independent.kind).toBe("admitted");
   });
 
@@ -280,8 +280,8 @@ describe("Prisma invitation ledger", () => {
   it("rejects stale revision and duplicate targets atomically", async () => {
     const f = await fixture(); const ledger = createInvitationLedgerInternalsForTest(prisma); const commandId = randomUUID();
     const target = { participantId: f.participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: "stale" };
-    await expect(ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets: [target], commandId, at: new Date() })).resolves.toMatchObject({ kind: "blocked" });
-    await expect(ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets: [target, target], commandId: randomUUID(), at: new Date() })).resolves.toMatchObject({ kind: "blocked" });
+    await expect(ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets: [target], commandId, at: new Date() })).resolves.toMatchObject({ kind: "blocked", blockReason: "stale_revision" });
+    await expect(ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets: [target, target], commandId: randomUUID(), at: new Date() })).resolves.toMatchObject({ kind: "blocked", blockReason: "participant_unavailable" });
     await expect(prisma.salesParticipantInvitationCommand.count({ where: { customerId: f.customerId } })).resolves.toBe(0);
   });
 
@@ -295,6 +295,20 @@ describe("Prisma invitation ledger", () => {
     await expect(ledger.markBatchDispatching(f.customerId, commandId, admission.admissionToken!, 1, new Date(at.getTime() + 32_000))).rejects.toThrow();
     await expect(prisma.salesParticipantInvitationFence.count({ where: { customerId: f.customerId } })).resolves.toBe(0);
     await expect(prisma.salesParticipantInvitationTarget.findFirst({ where: { customerId: f.customerId } })).resolves.toMatchObject({ outcome: "failed_retryable" });
+  });
+  it.each([
+    ["admitted", "failed_retryable", 0],
+    ["dispatching", "no_replay", 1],
+  ] as const)("recovers an expired %s fence owner from a bounded projection read after restart", async (phase, outcome, fenceCount) => {
+    const f = await fixture(); const ledger = createInvitationLedgerInternalsForTest(prisma); const at = new Date("2026-09-12T10:00:00.000Z"); const commandId = randomUUID();
+    const target = { participantId: f.participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: f.participant.updatedAt.toISOString() };
+    const admitted = await ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets: [target], commandId, at });
+    if (phase === "dispatching") await ledger.markBatchDispatching(f.customerId, commandId, admitted.admissionToken!, 1, new Date(at.getTime() + 1));
+    const restartedStore = createPrismaInvitationStore(prisma);
+    const projection = await restartedStore.readParticipantProjections({ customerId: f.customerId, sessionId: f.sessionId, participantIds: [f.participant.id], at: new Date(at.getTime() + 30_001) });
+    expect(projection.get(f.participant.id)).toMatchObject({ invitationOutcome: phase === "dispatching" ? outcome : null, latestInvitationOutcome: outcome });
+    expect(await prisma.salesParticipantInvitationFence.count({ where: { customerId: f.customerId, commandId } })).toBe(fenceCount);
+    expect(await ledger.readCommand(f.customerId, commandId)).toMatchObject({ command: { phase: "settled" }, outcome: { targets: [{ outcome }] } });
   });
   it("durably preserves a typed pre-dispatch failure for exact replay and rejects corrupt metadata", async () => {
     const f = await fixture(); const ledger = createInvitationLedgerInternalsForTest(prisma); const commandId = randomUUID();

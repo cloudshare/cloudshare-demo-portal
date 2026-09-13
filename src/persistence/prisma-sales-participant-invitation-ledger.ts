@@ -80,7 +80,7 @@ function createInvitationLedgerInternals(prisma: PrismaClient): InvitationLedger
   };
   return {
     async admitBatch(input): Promise<Admission> {
-      if (!input.targets.length || new Set(input.targets.map((target) => target.participantId)).size !== input.targets.length) return { kind: "blocked", commandId: input.commandId, blockReason: "precondition_failed" };
+      if (!input.targets.length || new Set(input.targets.map((target) => target.participantId)).size !== input.targets.length) return { kind: "blocked", commandId: input.commandId, blockReason: "participant_unavailable" };
       const scopeHash = invitationScopeHash(input);
       const token = randomBytes(18).toString("hex");
       const lease = new Date(input.at.getTime() + LEASE_MS);
@@ -95,7 +95,10 @@ function createInvitationLedgerInternals(prisma: PrismaClient): InvitationLedger
           const existing = await tx.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, include: { targets: { orderBy: { ordinal: "asc" } } } });
           if (existing) { if (existing.scopeHash !== scopeHash) throw new Error("command_id_mismatch"); return "same_command"; }
           const participants = await tx.salesSessionParticipant.findMany({ where: { customerId: input.customerId, salesDemoSessionId: input.sessionId, id: { in: input.targets.map((target) => target.participantId) } }, select: { id: true, invitationStatus: true, updatedAt: true } });
-          if (participants.length !== input.targets.length || input.targets.some((target) => { const row = participants.find((candidate) => candidate.id === target.participantId); return !row || row.invitationStatus !== (target.expectedInvitationStatus === "sent" ? "sent" : "notSent") || row.updatedAt.toISOString() !== target.participantRevision; })) throw new Error("blocked");
+          if (participants.length !== input.targets.length) throw new Error("participant_unavailable");
+          if (input.targets.some((target) => { const row = participants.find((candidate) => candidate.id === target.participantId)!; return row.invitationStatus !== target.expectedInvitationStatus || row.updatedAt.toISOString() !== target.participantRevision; })) throw new Error("stale_revision");
+          const conflictingFence = await tx.salesParticipantInvitationFence.findFirst({ where: { customerId: input.customerId, salesSessionParticipantId: { in: input.targets.map((target) => target.participantId) } }, select: { commandId: true } });
+          if (conflictingFence) throw new Error(`active_command_conflict:${conflictingFence.commandId}`);
           await tx.salesParticipantInvitationCommand.create({ data: { customerId: input.customerId, commandId: input.commandId, sessionId: input.sessionId, scopeHash, phase: "admitted", admissionTokenHash: hash(token), admissionLeaseUntil: lease, createdAt: input.at, updatedAt: input.at, targets: { create: input.targets.map((target, ordinal) => ({ ordinal, salesSessionParticipantId: target.participantId, intent: target.intent, expectedInvitationStatus: target.expectedInvitationStatus, participantRevision: target.participantRevision, projectionRevision: target.participantRevision })) } } });
           for (const target of input.targets) await tx.salesParticipantInvitationFence.create({ data: { customerId: input.customerId, salesSessionParticipantId: target.participantId, commandId: input.commandId, acquiredAt: input.at } });
           return "admitted";
@@ -107,11 +110,15 @@ function createInvitationLedgerInternals(prisma: PrismaClient): InvitationLedger
         return { kind: "admitted", commandId: input.commandId, admissionToken: token };
       } catch (error) {
         if (error instanceof Error && error.message === "command_id_mismatch") return { kind: "blocked", commandId: input.commandId, blockReason: "command_id_mismatch" };
-        if (error instanceof Error && error.message === "blocked") return { kind: "blocked", commandId: input.commandId, blockReason: "precondition_failed" };
+        if (error instanceof Error && error.message === "participant_unavailable") return { kind: "blocked", commandId: input.commandId, blockReason: "participant_unavailable" };
+        if (error instanceof Error && error.message === "stale_revision") return { kind: "blocked", commandId: input.commandId, blockReason: "stale_revision" };
+        if (error instanceof Error && error.message.startsWith("active_command_conflict:")) return { kind: "blocked", commandId: input.commandId, blockReason: "active_command_conflict", conflictingCommandId: error.message.slice("active_command_conflict:".length) };
         if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
           const winner = await prisma.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } });
           if (winner?.scopeHash === scopeHash) return { kind: "same_command", commandId: input.commandId, command: toCommand(winner) };
-          return { kind: "blocked", commandId: input.commandId, blockReason: winner ? "command_id_mismatch" : "precondition_failed" };
+          if (winner) return { kind: "blocked", commandId: input.commandId, blockReason: "command_id_mismatch" };
+          const conflict = await prisma.salesParticipantInvitationFence.findFirst({ where: { customerId: input.customerId, salesSessionParticipantId: { in: input.targets.map((target) => target.participantId) } }, select: { commandId: true } });
+          return conflict ? { kind: "blocked", commandId: input.commandId, blockReason: "active_command_conflict", conflictingCommandId: conflict.commandId } : { kind: "blocked", commandId: input.commandId, blockReason: "participant_unavailable" };
         }
         throw error;
       }
@@ -218,7 +225,7 @@ function createInvitationStore(ledger: InvitationLedgerInternals, readParticipan
         catch { /* Admission below retains nonterminal precedence when recovery races or storage is unavailable. */ }
       }
       const admission = await ledger.admitBatch(input);
-      if (admission.kind === "blocked") return { kind: "blocked", reason: admission.blockReason };
+      if (admission.kind === "blocked") return { kind: "blocked", reason: admission.blockReason, ...(admission.conflictingCommandId ? { conflictingCommandId: admission.conflictingCommandId } : {}) };
       if (admission.kind === "admitted") return { kind: "started", handle: encodeHandle({ customerId: input.customerId, commandId: input.commandId, token: admission.admissionToken, revision: 1, phase: "admitted" }) };
       existing = await read(input.customerId, input.commandId);
       return { kind: "replay", handle: handleFor(existing), state: semanticState(existing) };
@@ -255,10 +262,18 @@ function createInvitationStore(ledger: InvitationLedgerInternals, readParticipan
 }
 
 export function createPrismaInvitationStore(prisma: PrismaClient): InvitationStore {
+  const ledger = createInvitationLedgerInternals(prisma);
   const readParticipantProjections: ParticipantProjectionReader = async (input) => {
     if (input.participantIds.length > 50 || new Set(input.participantIds).size !== input.participantIds.length) throw new Error("invalid invitation projection scope");
     if (!input.participantIds.length) return new Map();
-    const fences = await prisma.salesParticipantInvitationFence.findMany({ where: { customerId: input.customerId, salesSessionParticipantId: { in: [...input.participantIds] } }, select: { salesSessionParticipantId: true, commandId: true, revision: true } });
+    let fences = await prisma.salesParticipantInvitationFence.findMany({ where: { customerId: input.customerId, salesSessionParticipantId: { in: [...input.participantIds] } }, select: { salesSessionParticipantId: true, commandId: true, revision: true } });
+    const owners = [...new Map(fences.map((fence) => [fence.commandId, fence])).values()];
+    for (const owner of owners) {
+      try {
+        await ledger.recoverExpiredInvitationCommand?.({ customerId: input.customerId, sessionId: input.sessionId, commandId: owner.commandId, expectedRevision: owner.revision, at: input.at });
+      } catch { /* A concurrent recovery winner is reflected by the bounded re-read below. */ }
+    }
+    fences = await prisma.salesParticipantInvitationFence.findMany({ where: { customerId: input.customerId, salesSessionParticipantId: { in: [...input.participantIds] } }, select: { salesSessionParticipantId: true, commandId: true, revision: true } });
     const commandIds = fences.map((fence) => fence.commandId);
     const commands = commandIds.length ? await prisma.salesParticipantInvitationCommand.findMany({ where: { customerId: input.customerId, sessionId: input.sessionId, commandId: { in: commandIds } }, select: { commandId: true, revision: true, correlationId: true, targets: { select: { salesSessionParticipantId: true, outcome: true, reason: true } } } }) : [];
     const commandById = new Map(commands.map((command) => [command.commandId, command]));
@@ -286,7 +301,7 @@ export function createPrismaInvitationStore(prisma: PrismaClient): InvitationSto
       return [participantId, { currentCommandId: command?.commandId ?? null, invitationOutcome: currentOutcome, invitationReason: currentOutcome ? safeReason(current?.reason) : null, invitationCorrelationId: command?.correlationId ?? null, latestInvitationOutcome: latestOutcome, latestInvitationReason: latestOutcome ? safeReason(latest?.reason) : null, latestInvitationCorrelationId: latest?.command.correlationId ?? null }] as const;
     }));
   };
-  return createInvitationStore(createInvitationLedgerInternals(prisma), readParticipantProjections);
+  return createInvitationStore(ledger, readParticipantProjections);
 }
 
 /** Test-only invariant seam; production composition receives only InvitationStore. */
