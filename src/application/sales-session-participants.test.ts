@@ -166,8 +166,8 @@ describe("Sales Session participant invitation", () => {
       now: fixedNow, reader: { readPage: vi.fn().mockResolvedValue(null) }, invitationStore: semanticStore(), sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), ensureParticipantCorrelationProperties: vi.fn().mockResolvedValue(correlationProperties()), registerParticipants, listParticipants, inviteParticipants: vi.fn() }) },
     });
-    const result = await workspace.registerParticipants({ customerId: "customer-1", sessionId: session.id, actor, opportunityContactIds: [contact.id] });
-    expect(result).toEqual({ status: 201, body: { correlationId: expect.any(String) } });
+    const result = await workspace.addParticipant({ customerId: "customer-1", sessionId: session.id, actor, commandId: "cmd-1", person: { kind: "existingContact", contactId: contact.id } });
+    expect(result).toEqual({ status: 201, body: { outcome: "registered", correlationId: expect.any(String) } });
     expect(JSON.stringify(result)).not.toContain("participants");
     expect(JSON.stringify(result)).not.toContain("remote-1");
   });
