@@ -104,7 +104,7 @@ export async function handleCreateOpportunityContact(deps: SalesRecordsDeps, req
   const opportunity = await deps.records.findOpportunity(request.customerId, input.opportunityId);
   if (!opportunity) return notFound("opportunity");
   const now = currentTime(deps);
-  const contact = { id: newId(deps), customerId: request.customerId, ...input, archivedAt: null, createdAt: now, updatedAt: now };
+  const contact = { id: newId(deps), customerId: request.customerId, ...input, normalizedEmail: input.email.trim().toLowerCase(), archivedAt: null, createdAt: now, updatedAt: now };
   const result = await persistMutation(deps, request, "opportunity_contact.created", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact }, activeParentGuard(deps, request, "opportunity_contact.created", "opportunity", opportunity.id, "opportunity"));
   if (result === "parent_archived") return archivedParentConflict("opportunity");
   if (result !== "committed") return evidenceUnavailable();
@@ -118,7 +118,7 @@ export async function handleUpdateOpportunityContact(deps: SalesRecordsDeps, req
   if (!input) return badRequest("Contact opportunityId, first name, last name, and email are required.");
   const opportunity = await deps.records.findOpportunity(request.customerId, input.opportunityId);
   if (!opportunity) return notFound("opportunity");
-  const contact = { ...existing, ...input, updatedAt: currentTime(deps) };
+  const contact = { ...existing, ...input, normalizedEmail: input.email.trim().toLowerCase(), updatedAt: currentTime(deps) };
   const result = await persistMutation(deps, request, "opportunity_contact.updated", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact }, existing.archivedAt && existing.opportunityId === input.opportunityId ? undefined : activeParentGuard(deps, request, "opportunity_contact.updated", "opportunity_contact", existing.id, "opportunity", opportunity.id), existing.archivedAt ? undefined : activeRecordGuard(deps, request, "opportunity_contact.updated", "opportunity_contact", contact.id));
   if (result === "parent_archived") return archivedParentConflict("opportunity");
   if (result === "record_archived") return archivedRecordConflict("opportunity contact");

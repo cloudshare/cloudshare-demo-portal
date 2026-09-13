@@ -21,7 +21,7 @@ describe("Sales participant instant launch", () => {
   it("persists only a hash and returns the Certalis capability once", async () => {
     const d = deps(); const result = await handleCreateSalesParticipantLaunchLink(d, { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor });
     expect(result.status).toBe(201); expect(result.body.launchUrl).toMatch(/^\/sales\/launch\//);
-    expect(d.links.regenerate).toHaveBeenCalledWith(expect.objectContaining({ tokenHash: expect.not.stringContaining(result.body.launchUrl.replace("/sales/launch/", "")) }), now);
+    expect(d.links.regenerate).toHaveBeenCalledWith(expect.objectContaining({ tokenHash: expect.not.stringContaining(result.body.launchUrl.replace("/sales/launch/", "")) }), now, expect.any(String));
     expect(JSON.stringify(d.links.regenerate.mock.calls)).not.toContain("/sales/launch/");
   });
   it("regeneration revokes prior capability and cross-customer ownership is not disclosed", async () => {
@@ -29,6 +29,21 @@ describe("Sales participant instant launch", () => {
     expect(d.links.regenerate).toHaveBeenCalledTimes(1);
     const denied = await handleRevokeSalesParticipantLaunchLink(deps({ sessions: { findById: vi.fn().mockResolvedValue(null) } }), { customerId: "other", sessionId: "session-1", participantId: "participant-1", actor });
     expect(denied).toEqual({ status: 404, body: { error: "This Certalis launch link is unavailable." } });
+  });
+  it.each([
+    ["create", "regenerate", () => handleCreateSalesParticipantLaunchLink(deps({ links: { ...deps().links, regenerate: vi.fn().mockRejectedValue(new Error("token persistence secret")) } }), { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor })],
+    ["revoke", "revokeActive", () => handleRevokeSalesParticipantLaunchLink(deps({ links: { ...deps().links, revokeActive: vi.fn().mockRejectedValue(new Error("revoke persistence secret")) } }), { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor })],
+  ])("returns a controlled correlated response when %s persistence fails", async (_action, _method, invoke) => {
+    const d = deps();
+    const result = await invoke();
+    expect(result).toMatchObject({ status: 503, body: { code: "persistence_failure", correlationId: expect.any(String) } });
+    expect(JSON.stringify(result.body)).not.toMatch(/secret|tokenHash|launchUrl|cloudshare/);
+  });
+  it("persists controlled failure feedback with the response correlation", async () => {
+    const recordFailure = vi.fn(); const d = deps({ links: { ...deps().links, regenerate: vi.fn().mockRejectedValue(new Error("private detail")), recordFailure } });
+    const result = await handleCreateSalesParticipantLaunchLink(d, { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor });
+    expect(recordFailure).toHaveBeenCalledWith(expect.objectContaining({ participantId: "participant-1", operation: "generate", safeReason: "persistence_failure", correlationId: result.body.correlationId }));
+    expect(result.body).not.toHaveProperty("launchUrl");
   });
   it("redirects only in its active window and never returns the CloudShare URL in a body", async () => {
     const d = deps(); d.links.findByTokenHash.mockResolvedValue({ id: "link-1", customerId: "certalis", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: null, createdAt: now });

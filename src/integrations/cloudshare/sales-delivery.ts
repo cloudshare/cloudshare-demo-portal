@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SalesExperienceType } from "@/domain/sales-experience-type";
 import type { CloudShareSalesExperienceStatus } from "@/domain/sales-session-status";
 import type { CloudShareClient, CloudShareDetailedResult, CloudShareRequestDiagnostics, CloudShareResponseDiagnostics } from "./client";
-import { CloudShareResponseError } from "./errors";
+import { CloudShareAuthError, CloudShareRequestError, CloudShareResponseError, CloudShareTransportError } from "./errors";
 
 /** Already-sanitized data returned by the client boundary. Keep the complete
  * exchange because Sales support needs headers and transport facts as well as
@@ -10,6 +10,14 @@ import { CloudShareResponseError } from "./errors";
 export interface SalesDeliveryRequestEvidence extends CloudShareRequestDiagnostics {}
 export interface SalesDeliveryResponseEvidence extends CloudShareResponseDiagnostics {}
 export interface SalesDeliveryEvidence { readonly request: SalesDeliveryRequestEvidence; readonly response: SalesDeliveryResponseEvidence; readonly exchangeId?: string; }
+export type SalesDeliveryDispatchEvidence = SalesDeliveryEvidence & ({ readonly dispatchOutcome: "not_dispatched" | "provider_rejected" | "ambiguous_after_dispatch" } | { readonly dispatchOutcome: "acknowledged" });
+export type CompleteSalesParticipantRoster = { readonly participants: readonly SalesParticipant[]; readonly completeness: "complete"; readonly provenance: { readonly expectedCount: number; readonly returnedCount: number; readonly offsets: readonly number[] }; readonly exchanges?: readonly SalesDeliveryEvidence[] } & SalesDeliveryEvidence;
+export type IncompleteSalesParticipantRoster = { readonly participants: readonly SalesParticipant[]; readonly completeness: "incomplete"; readonly provenance: { readonly expectedCount: number | null; readonly returnedCount: number; readonly offsets: readonly number[]; readonly reason: "count_missing" | "count_malformed" | "count_mismatch" | "pagination_incomplete" }; readonly exchanges?: readonly SalesDeliveryEvidence[] } & SalesDeliveryEvidence;
+export type SalesParticipantRoster = CompleteSalesParticipantRoster | IncompleteSalesParticipantRoster;
+export function requireCompleteSalesParticipantRoster(roster: SalesParticipantRoster): CompleteSalesParticipantRoster {
+  if (roster.completeness !== "incomplete") return roster as CompleteSalesParticipantRoster;
+  throw new CloudShareResponseError("CloudShare participant roster could not be proven complete.", { method: roster.request.method, path: roster.request.path, requestQuery: roster.request.query, requestHeaders: roster.request.headers, responseStatus: roster.response.status, responseHeaders: roster.response.headers, responseBody: roster.response.body, expectedCount: roster.provenance.expectedCount, returnedCount: roster.provenance.returnedCount, priorHttpExchanges: roster.exchanges, failureMode: "participant_roster_incomplete" });
+}
 export interface CreateSalesDemoSessionInput {
   readonly name: string;
   readonly type: SalesExperienceType;
@@ -67,8 +75,8 @@ export interface SalesDelivery {
   /** Controlled migration of a Contact explicitly selected by a Sales Admin
    * from the pre-correlation roster. */
   updateParticipantCorrelation(salesExperienceId: string, participantId: string, input: Pick<SalesParticipantInput, "firstName" | "lastName" | "customProperties">): Promise<SalesDeliveryEvidence>;
-  listParticipants(salesExperienceId: string): Promise<{ readonly participants: readonly SalesParticipant[] } & SalesDeliveryEvidence>;
-  inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryEvidence>;
+  listParticipants(salesExperienceId: string): Promise<SalesParticipantRoster>;
+  inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryDispatchEvidence>;
   createSponsoredLink(salesExperienceId: string, participant: Pick<SalesParticipantInput, "firstName" | "lastName" | "email">): Promise<{ readonly loginUrl: string } & SalesDeliveryEvidence>;
 }
 export interface SalesProContact { readonly name?: string; readonly email: string; readonly type: "mainSalesPro" | "salesPro"; }
@@ -196,6 +204,8 @@ export function normalizeSalesParticipantPage(payload: unknown): unknown {
 }
 const participantsEnvelopeSchema = z.preprocess(normalizeSalesParticipantPage, z.object({ count: z.number().int().nonnegative().optional(), participants: z.array(salesParticipantSchema) }));
 const PARTICIPANT_PAGE_LIMIT = 100;
+const PARTICIPANT_MAX_PAGES = 100;
+const PARTICIPANT_MAX_ROWS = PARTICIPANT_PAGE_LIMIT * PARTICIPANT_MAX_PAGES;
 
 const requiredMutableSalesExperienceFields = ["name", "type", "projectId", "blueprintIds", "cloudshareRegionIds", "policyId", "opportunity", "mainSalesPro", "registrationType", "start", "timeZone"] as const;
 const optionalMutableSalesExperienceFields = ["teamId", "allowParticipantsSwitchSteps", "awsCloudRegion", "azureCloudRegion", "googleCloudProviderRegion", "googleCloudProviderZone", "additionalSalesPros", "passphrase", "description", "labels", "externalId", "allowMultipleEnvironmentActivations", "sendInvitations", "emailDomainBlocklist", "blockFreeEmailDomains", "customFields", "useCustomInvitationEmail", "preConfigureParticipantEnvironments", "sharedEnvBlueprintId", "sharedEnvPolicyId", "isSharedLabViewAccessEnabled", "allowAudioVideo", "end"] as const;
@@ -342,32 +352,49 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const first = await detailed<z.output<typeof participantsEnvelopeSchema>>({ method: "GET", path, query: { offset: "0", limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
       const firstPage = participantPage(first.data);
       if (firstPage.count === undefined) {
-        return { participants: firstPage.participants.map(mapSalesParticipant), ...participantEvidence(first.evidence) };
+        return { participants: firstPage.participants.map(mapSalesParticipant), completeness: "incomplete", provenance: { expectedCount: null, returnedCount: firstPage.participants.length, offsets: [0], reason: "count_missing" }, exchanges: [first.evidence], ...participantEvidence(first.evidence) };
       }
       const expectedCount = firstPage.count;
+      if (expectedCount > PARTICIPANT_MAX_ROWS) throwParticipantPageFailure(first.evidence, expectedCount, firstPage.participants.length, [0], "participant_page_limit_exceeded");
       const rows = [...firstPage.participants];
       const offsets = [0];
       if (rows.length > expectedCount) throwParticipantPageFailure(first.evidence, expectedCount, rows.length, offsets, "participant_page_count_contradiction");
       if (hasDuplicateParticipantIds(rows)) throwParticipantPageFailure(first.evidence, expectedCount, rows.length, offsets, "participant_page_duplicate_id");
       const participantIds = new Set(rows.map((participant) => participant.id));
       let evidence = first.evidence;
+      const exchanges = [first.evidence];
       while (rows.length < expectedCount) {
+        if (offsets.length >= PARTICIPANT_MAX_PAGES) throwParticipantPageFailure(evidence, expectedCount, rows.length, offsets, "participant_page_limit_exceeded", exchanges);
         const offset = rows.length;
         const page = await detailed<z.output<typeof participantsEnvelopeSchema>>({ method: "GET", path, query: { offset: String(offset), limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
         const normalizedPage = participantPage(page.data);
         offsets.push(offset);
         const returnedCount = rows.length + normalizedPage.participants.length;
-        if (hasDuplicateParticipantIds(normalizedPage.participants) || normalizedPage.participants.some((participant) => participantIds.has(participant.id))) throwParticipantPageFailure(page.evidence, expectedCount, returnedCount, offsets, "participant_page_duplicate_id");
-        if (normalizedPage.count !== expectedCount || normalizedPage.participants.length === 0 || returnedCount > expectedCount) throwParticipantPageFailure(page.evidence, expectedCount, returnedCount, offsets, "participant_page_count_contradiction");
+        if (hasDuplicateParticipantIds(normalizedPage.participants) || normalizedPage.participants.some((participant) => participantIds.has(participant.id))) throwParticipantPageFailure(page.evidence, expectedCount, returnedCount, offsets, "participant_page_duplicate_id", [...exchanges, page.evidence]);
+        if (normalizedPage.count !== expectedCount || normalizedPage.participants.length === 0 || returnedCount > expectedCount) throwParticipantPageFailure(page.evidence, expectedCount, returnedCount, offsets, "participant_page_count_contradiction", [...exchanges, page.evidence]);
         normalizedPage.participants.forEach((participant) => participantIds.add(participant.id));
         rows.push(...normalizedPage.participants);
         evidence = page.evidence;
+        exchanges.push(page.evidence);
       }
-      return { participants: rows.map(mapSalesParticipant), ...participantEvidence(evidence) };
+      return { participants: rows.map(mapSalesParticipant), completeness: "complete", provenance: { expectedCount, returnedCount: rows.length, offsets }, exchanges, ...participantEvidence(evidence) };
     },
     async inviteParticipants(salesExperienceId, participantIds) {
-      const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });
-      return participantEvidence(evidence);
+      try {
+        const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });
+        return { ...participantEvidence(evidence), dispatchOutcome: "acknowledged" as const };
+      } catch (error) {
+        const context = error instanceof Error && "context" in error && typeof error.context === "object" && error.context !== null ? error.context as Record<string, unknown> : {};
+        const evidence = { request: { method: typeof context.method === "string" ? context.method : "POST", path: typeof context.path === "string" ? context.path : `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, ...(Object.hasOwn(context, "requestQuery") ? { query: context.requestQuery as Record<string, string> } : {}), ...(Object.hasOwn(context, "requestHeaders") ? { headers: context.requestHeaders as Record<string, string> } : {}), ...(Object.hasOwn(context, "requestBody") ? { body: context.requestBody } : { body: participantIds }) }, response: { status: typeof context.responseStatus === "number" ? context.responseStatus : typeof context.status === "number" ? context.status : 0, ...(Object.hasOwn(context, "responseHeaders") ? { headers: context.responseHeaders as Record<string, string> } : {}), ...(Object.hasOwn(context, "responseBody") ? { body: context.responseBody } : {}) } } as SalesDeliveryEvidence;
+        const dispatchOutcome = error instanceof CloudShareAuthError
+          ? "not_dispatched" as const
+          : error instanceof CloudShareRequestError
+            ? error.status >= 500 ? "ambiguous_after_dispatch" as const : "provider_rejected" as const
+            : error instanceof CloudShareTransportError
+              ? "ambiguous_after_dispatch" as const
+              : "ambiguous_after_dispatch" as const;
+        return { ...evidence, dispatchOutcome };
+      }
     },
     async createSponsoredLink(salesExperienceId, participant) {
       const { data, evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/sponsored-link`, body: { ...participant, preRegisteredStudent: false }, schema: sponsoredLinkSchema });
@@ -406,11 +433,11 @@ function hasDuplicateParticipantIds(participants: readonly z.output<typeof sales
   return new Set(participants.map((participant) => participant.id)).size !== participants.length;
 }
 
-type ParticipantPageFailureMode = "participant_page_count_contradiction" | "participant_page_duplicate_id";
+type ParticipantPageFailureMode = "participant_page_count_contradiction" | "participant_page_duplicate_id" | "participant_page_limit_exceeded";
 
-function throwParticipantPageFailure(evidence: SalesDeliveryEvidence, expectedCount: number, returnedCount: number, pageOffsets: readonly number[], failureMode: ParticipantPageFailureMode): never {
+function throwParticipantPageFailure(evidence: SalesDeliveryEvidence, expectedCount: number, returnedCount: number, pageOffsets: readonly number[], failureMode: ParticipantPageFailureMode, priorHttpExchanges: readonly SalesDeliveryEvidence[] = [evidence]): never {
   const safeEvidence = participantEvidence(evidence);
-  throw new CloudShareResponseError(failureMode === "participant_page_duplicate_id" ? "CloudShare participant page contains duplicate IDs." : "CloudShare participant page count contradicts the returned items.", {
+  throw new CloudShareResponseError(failureMode === "participant_page_duplicate_id" ? "CloudShare participant page contains duplicate IDs." : failureMode === "participant_page_limit_exceeded" ? "CloudShare participant roster exceeds the bounded read limit." : "CloudShare participant page count contradicts the returned items.", {
     method: safeEvidence.request.method,
     path: safeEvidence.request.path,
     ...(safeEvidence.request.query ? { requestQuery: safeEvidence.request.query } : {}),
@@ -422,6 +449,8 @@ function throwParticipantPageFailure(evidence: SalesDeliveryEvidence, expectedCo
     responseBody: safeEvidence.response.body,
     expectedCount,
     returnedCount,
+    pageOffsets,
+    priorHttpExchanges,
     failureMode,
   });
 }

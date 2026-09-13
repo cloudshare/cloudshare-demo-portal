@@ -3,9 +3,10 @@ export interface SalesParticipantLaunchLink {
   readonly salesSessionParticipantId: string; readonly tokenHash: string; readonly revokedAt: Date | null; readonly createdAt: Date;
 }
 export interface SalesParticipantLaunchLinkRepository {
-  create(link: SalesParticipantLaunchLink): Promise<void>;
+  create(link: SalesParticipantLaunchLink, correlationId?: string, revision?: number): Promise<void>;
   /** Atomically revokes a previous active capability and persists its replacement. */
-  regenerate(link: SalesParticipantLaunchLink, at: Date): Promise<void>;
-  revokeActive(customerId: string, salesDemoSessionId: string, participantId: string, at: Date): Promise<void>;
+  regenerate(link: SalesParticipantLaunchLink, at: Date, correlationId?: string, revision?: number): Promise<void>;
+  revokeActive(customerId: string, salesDemoSessionId: string, participantId: string, at: Date, correlationId?: string, revision?: number): Promise<void>;
+  recordFailure(input: { readonly customerId: string; readonly salesDemoSessionId: string; readonly participantId: string; readonly correlationId: string; readonly operation: "generate" | "revoke"; readonly safeReason: "persistence_failure"; readonly occurredAt: Date }): Promise<void>;
   findByTokenHash(tokenHash: string): Promise<SalesParticipantLaunchLink | null>;
 }

@@ -33,6 +33,8 @@ model Customer {
   salesOpportunities   SalesOpportunity[]
   opportunityContacts  OpportunityContact[]
   salesDemoSessions    SalesDemoSession[]
+  invitationCommands   SalesParticipantInvitationCommand[]
+  launchOperations     SalesParticipantLaunchOperation[]
   salesTrialOfferings  SalesTrialOffering[]
   salesTrialEnrollments SalesTrialEnrollment[]
   salesTimezoneCache   SalesTimezoneCache?
@@ -80,6 +82,10 @@ model OpportunityContact {
   firstName     String
   lastName      String
   email         String
+  normalizedEmail String   @default("")
+  source        String   @default("relationship")
+  syncStatus    String   @default("not_applicable")
+  sourceSessionId String?
   archivedAt    DateTime?
   createdAt     DateTime
   updatedAt     DateTime
@@ -88,6 +94,7 @@ model OpportunityContact {
   salesSessionParticipants SalesSessionParticipant[]
 
   @@index([customerId, opportunityId, updatedAt])
+  @@index([customerId, opportunityId, normalizedEmail])
   @@unique([customerId, id])
 }
 
@@ -210,6 +217,8 @@ model SalesDemoSession {
   opportunity                 SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
   item                        Item             @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
   participants                SalesSessionParticipant[]
+  invitationCommands          SalesParticipantInvitationCommand[]
+  launchOperations            SalesParticipantLaunchOperation[]
 
   @@index([customerId, opportunityId, createdAt])
   @@unique([customerId, id])
@@ -245,8 +254,12 @@ model SalesSessionParticipant {
   session                     SalesDemoSession @relation(fields: [customerId, salesDemoSessionId], references: [customerId, id], onDelete: Cascade)
   contact                     OpportunityContact @relation(fields: [customerId, opportunityContactId], references: [customerId, id], onDelete: Restrict)
   launchLinks                 SalesParticipantLaunchLink[]
+  invitationTargets            SalesParticipantInvitationTarget[]
+  invitationFences             SalesParticipantInvitationFence[]
+  launchOperations            SalesParticipantLaunchOperation[]
 
   @@unique([customerId, salesDemoSessionId, opportunityContactId])
+  @@unique([customerId, id])
   @@index([customerId, salesDemoSessionId, updatedAt])
 }
 
@@ -263,6 +276,93 @@ model SalesParticipantLaunchLink {
   participant           SalesSessionParticipant @relation(fields: [salesSessionParticipantId], references: [id], onDelete: Cascade)
 
   @@index([customerId, salesDemoSessionId, salesSessionParticipantId])
+}
+
+model SalesParticipantInvitationCommand {
+  customerId String
+  commandId String
+  sessionId String
+  scopeHash String
+  phase String
+  revision Int @default(1)
+  admissionTokenHash String?
+  admissionLeaseUntil DateTime?
+  correlationId String?
+  httpStatus Int?
+  resultCode String?
+  createdAt DateTime
+  updatedAt DateTime
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  session SalesDemoSession @relation(fields: [customerId, sessionId], references: [customerId, id], onDelete: Cascade)
+  targets SalesParticipantInvitationTarget[]
+  fences SalesParticipantInvitationFence[]
+  @@id([customerId, commandId])
+}
+
+/// Durable at-most-once fence for canonical Participant registration.
+model SalesParticipantAddCommand {
+  customerId       String
+  commandId        String
+  sessionId        String
+  targetKey        String   @default("")
+  payloadHash      String
+  state            String
+  status           Int?
+  resultJson       String?
+  correlationId    String?
+  createdAt        DateTime
+  updatedAt        DateTime
+  @@id([customerId, commandId])
+  @@unique([customerId, sessionId, commandId])
+  @@index([customerId, sessionId, createdAt])
+  @@unique([customerId, sessionId, targetKey])
+}
+
+/// Safe, non-secret outcome history for admin participant launch actions.
+model SalesParticipantLaunchOperation {
+  id                       String   @id
+  customerId               String
+  salesDemoSessionId       String
+  salesSessionParticipantId String
+  correlationId            String
+  operation                String
+  outcome                  String
+  safeReason               String?
+  occurredAt               DateTime
+  revision                 Int
+  customer                 Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  session                  SalesDemoSession @relation(fields: [customerId, salesDemoSessionId], references: [customerId, id], onDelete: Cascade)
+  participant              SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
+  @@index([customerId, salesDemoSessionId, salesSessionParticipantId, occurredAt])
+  @@index([customerId, salesDemoSessionId, occurredAt])
+}
+
+model SalesParticipantInvitationTarget {
+  customerId String
+  commandId String
+  salesSessionParticipantId String
+  ordinal Int
+  intent String
+  expectedInvitationStatus String
+  participantRevision String
+  projectionRevision String @default("")
+  outcome String?
+  reason String?
+  command SalesParticipantInvitationCommand @relation(fields: [customerId, commandId], references: [customerId, commandId], onDelete: Cascade)
+  participant SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
+  @@id([customerId, commandId, salesSessionParticipantId])
+  @@unique([customerId, commandId, ordinal])
+}
+
+model SalesParticipantInvitationFence {
+  customerId String
+  salesSessionParticipantId String
+  commandId String
+  revision Int @default(1)
+  acquiredAt DateTime
+  command SalesParticipantInvitationCommand @relation(fields: [customerId, commandId], references: [customerId, commandId], onDelete: Cascade)
+  participant SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
+  @@id([customerId, salesSessionParticipantId])
 }
 
 model User {

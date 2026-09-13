@@ -23,7 +23,7 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
     async read(customerId, sessionId) {
       const session = await prisma.salesDemoSession.findFirst({
         where: { customerId, id: sessionId, opportunity: { archivedAt: null, account: { archivedAt: null } } },
-        include: { opportunity: { include: { account: true } }, item: true, participants: { include: { contact: true }, orderBy: { createdAt: "asc" } } },
+        include: { opportunity: { include: { account: true } }, item: true },
       });
       if (!session) return null;
       // A pending reference is a pre-dispatch reservation. It cannot safely be
@@ -63,7 +63,6 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
       const presentationCapped = allActivityGroups.length > MAX_PRESENTED_ACTIVITY_GROUPS;
       return { state: "available", workspace: {
         summary: { id: session.id, sessionName: session.sessionName || "Sales Enablement Session", revision: session.revision, start: session.start, end: session.end, timeZone: session.timeZone, operation: status.operation, experience: status.experience },
-        participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant), environmentAttention: projectSafeSalesParticipantAttention(participant) })),
         activity: projectedActivity,
         activityGroups,
         activityHistory: sourceCapped

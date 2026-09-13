@@ -28,6 +28,7 @@ import {
 } from "@/integrations/cloudshare/sales-item-provisioning";
 import {
   createCloudShareSalesDelivery,
+  requireCompleteSalesParticipantRoster,
   type SalesDelivery,
 } from "@/integrations/cloudshare/sales-delivery";
 import {
@@ -1035,6 +1036,7 @@ export async function handleEndSalesTrialOffering(
       delivery.readSession(offering.cloudShareSalesExperienceId),
       delivery.listParticipants(offering.cloudShareSalesExperienceId),
     ]);
+    requireCompleteSalesParticipantRoster(roster);
     if (provider.status === "ended") {
       const ended = { ...ending, status: "ended" as const, endingLastReconciledAt: now, attentionReason: null };
       await deps.offerings.save(ended);

@@ -44,6 +44,15 @@ import { createPrismaCohortMonitoringObservationRepository } from "@/persistence
 import { createPrismaExamAttemptRepository } from "@/persistence/prisma-exam-attempt-repository";
 import { createPrismaLabLaunchRepository } from "@/persistence/prisma-lab-launch-repository";
 import { createPrismaSalesTrialEnrollmentRepository } from "@/persistence/prisma-sales-trial-enrollment-repository";
+import { createPrismaInvitationStore } from "@/persistence/prisma-sales-participant-invitation-ledger";
+import type { SalesParticipantWorkspace } from "@/domain/sales-participant-workspace";
+import { createSalesParticipantWorkspace } from "@/application/sales-session-participants";
+import { createPrismaSalesParticipantWorkspaceReader } from "@/persistence/prisma-sales-participant-workspace-reader";
+import { createPrismaSalesDemoSessionRepository } from "@/persistence/prisma-sales-demo-session-repository";
+import { createPrismaSalesRecordRepository } from "@/persistence/prisma-sales-record-repository";
+import { createPrismaSalesSessionParticipantRepository } from "@/persistence/prisma-sales-session-participant-repository";
+import { createPrismaSalesParticipantAddCommandStore } from "@/persistence/prisma-sales-participant-add-command";
+import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 import { createPrismaAdminMonitoringAttemptRepository } from "@/persistence/prisma-admin-monitoring-attempt-repository";
 import { createPrismaAdminCandidateRepository } from "@/persistence/prisma-admin-candidate-repository";
@@ -372,6 +381,7 @@ export interface Services {
   /** Typed, append-only diagnostic log — the Support read model (ADR-004). */
   diagnostics: DiagnosticLogRepository;
   salesTrialEnrollments: SalesTrialEnrollmentRepository;
+  salesParticipantWorkspace: SalesParticipantWorkspace;
   /** Redaction-applying write seam every instrumented flow records through. */
   diagnosticRecorder: DiagnosticRecorder;
   adminMonitoringAttempts: AdminMonitoringAttemptRepository;
@@ -409,6 +419,7 @@ export function getServices(): Services {
   const prisma = new PrismaClient();
   const diagnostics = createPrismaDiagnosticLogRepository(prisma);
   const salesTrialEnrollments = createPrismaSalesTrialEnrollmentRepository(prisma);
+  const invitationStore = createPrismaInvitationStore(prisma);
   const logger = createLogger({
     secrets: secretValues(config),
     sink: (line: string) => {
@@ -510,6 +521,13 @@ export function getServices(): Services {
     diagnostics: diagnosticRecorder,
     mode: config.runtime.mode,
     trace: traceCloudShare,
+  });
+  const salesParticipantWorkspace = createSalesParticipantWorkspace({
+    reader: createPrismaSalesParticipantWorkspaceReader(prisma), invitationStore,
+    sessions: createPrismaSalesDemoSessionRepository(prisma), records: createPrismaSalesRecordRepository(prisma), participants: createPrismaSalesSessionParticipantRepository(prisma), addCommandStore: createPrismaSalesParticipantAddCommandStore(prisma),
+    connections: cloudshareConnections,
+    deliveryFactory: { forConnection: (connection) => createCloudShareSalesDelivery(cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })) },
+    diagnostics: diagnosticRecorder, diagnosticReader: diagnostics, audit,
   });
 
   // Heartbeat auto-suspend. The suspend function is pre-bound to the current
@@ -629,6 +647,7 @@ export function getServices(): Services {
     eventLog,
     diagnostics,
     salesTrialEnrollments,
+    salesParticipantWorkspace,
     diagnosticRecorder,
     adminMonitoringAttempts,
     adminCandidates,

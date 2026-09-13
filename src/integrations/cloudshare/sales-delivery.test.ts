@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCloudShareClient, createCloudShareNoopRequestObserver } from "./client";
 import type { HttpClient } from "./http";
+import { CloudShareAuthError, CloudShareRequestError } from "./errors";
 import {
   createCloudShareSalesDelivery,
   SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS,
@@ -186,6 +187,14 @@ describe("CloudShare Sales Delivery", () => {
       allowEmptyResponse: true,
     }));
   });
+  it.each([
+    ["OAuth/pre-write", new CloudShareAuthError("token exchange failed", { method: "POST", path: "/oauth/token", responseStatus: 503 }), "not_dispatched"],
+    ["acknowledged provider rejection", new CloudShareRequestError("bad invitation request", 400, { method: "POST", path: "/sales/sales-1/participants/invite", responseStatus: 400 }), "provider_rejected"],
+    ["endpoint authentication rejection", new CloudShareRequestError("unauthorized invitation request", 401, { method: "POST", path: "/sales/sales-1/participants/invite", responseStatus: 401 }), "provider_rejected"],
+  ] as const)("classifies %s invitation failures as %s", async (_label, failure, dispatchOutcome) => {
+    const requestV4Detailed = vi.fn().mockRejectedValue(failure);
+    await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).inviteParticipants("sales-1", ["participant-1"])).resolves.toMatchObject({ dispatchOutcome });
+  });
   it("accepts the live count/items participant-list envelope without exposing a participant URL", async () => {
     const participant = documentedParticipant({ invitationStatus: "sent", participationStatus: "inProgress", firstJoined: "2026-07-17T09:05:00Z", envId: "server-only-environment-1", accessLink: "https://bearer.example.test/invite" });
     const liveEnvelope = { count: 1, items: [participant] };
@@ -282,7 +291,7 @@ describe("CloudShare Sales Delivery", () => {
       .mockResolvedValueOnce({ data: { count: 2, items: [second] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "1", limit: "100" } }, response: { status: 200, body: { count: 2, items: [second] } } });
     const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
 
-    await expect(delivery.listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ id: "participant-1" }), expect.objectContaining({ id: "participant-2" })] });
+    await expect(delivery.listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ id: "participant-1" }), expect.objectContaining({ id: "participant-2" })], exchanges: [{ request: { query: { offset: "0" } } }, { request: { query: { offset: "1" } } }] });
     expect(requestV4Detailed).toHaveBeenNthCalledWith(1, expect.objectContaining({ query: { offset: "0", limit: "100" } }));
     expect(requestV4Detailed).toHaveBeenNthCalledWith(2, expect.objectContaining({ query: { offset: "1", limit: "100" } }));
 
