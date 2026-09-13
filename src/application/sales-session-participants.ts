@@ -214,7 +214,7 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
       if (!deps.sessions.findById) return settleBeforeDispatch({ status: 500, body: { outcome: "rejected", code: "session_repository_unavailable" } });
       let preflightSession: Awaited<ReturnType<NonNullable<typeof deps.sessions.findById>>>;
       try { preflightSession = await deps.sessions.findById(input.customerId, input.sessionId); }
-      catch (error) { return settleBeforeDispatch({ status: 500, body: { outcome: "rejected", code: "session_lookup_failed", error: error instanceof Error ? error.message : "Sales Session could not be verified." } }); }
+      catch { return settleBeforeDispatch({ status: 500, body: { outcome: "rejected", code: "session_lookup_failed", error: "Sales Session could not be verified." } }); }
       if (!preflightSession) return settleBeforeDispatch({ status: 404, body: { outcome: "rejected", code: "session_not_found", error: "Sales Session was not found." } });
       try {
         if (input.person.kind === "existingContact") {
@@ -225,12 +225,21 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
           const matches = (await deps.records.listContacts(input.customerId, preflightSession.opportunityId)).filter((contact) => ((contact.normalizedEmail?.trim() || contact.email.trim().toLowerCase()) === email) && !contact.archivedAt);
           if (matches.length > 1) return settleBeforeDispatch({ status: 409, body: { outcome: "needs_attention", code: "ambiguous_contact", error: "More than one active Contact matches this email." } });
         }
-      } catch (error) { return settleBeforeDispatch({ status: 500, body: { outcome: "rejected", code: "contact_lookup_failed", error: error instanceof Error ? error.message : "Participant details could not be verified." } }); }
+      } catch { return settleBeforeDispatch({ status: 500, body: { outcome: "rejected", code: "contact_lookup_failed", error: "Participant details could not be verified." } }); }
       let dispatched = false;
       try { dispatched = (await deps.addCommandStore.markDispatched({ customerId: input.customerId, commandId: input.commandId, now: (deps.now ?? (() => new Date()))() })) !== false; }
       catch { /* A failed fence is a pre-dispatch failure; provider work is forbidden. */ }
       if (!dispatched) return settleBeforeDispatch({ status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add could not be safely authorized." } });
-      try { const outcome = await addParticipantUnfenced(input); await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "settled", result: outcome, now: (deps.now ?? (() => new Date()))() }); return outcome; }
+      try {
+        const outcome = await addParticipantUnfenced(input);
+        if (outcome.status < 200 || outcome.status >= 300) {
+          const attention: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add requires attention.", ...(outcome.body.correlationId ? { correlationId: outcome.body.correlationId } : {}) } };
+          await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "needs_attention", result: attention, now: (deps.now ?? (() => new Date()))() });
+          return attention;
+        }
+        await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "settled", result: outcome, now: (deps.now ?? (() => new Date()))() });
+        return outcome;
+      }
       catch { const outcome: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add requires attention." } }; await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "needs_attention", result: outcome, now: (deps.now ?? (() => new Date()))() }); return outcome; }
     }
     return addParticipantUnfenced(input);

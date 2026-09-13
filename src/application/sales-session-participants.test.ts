@@ -66,6 +66,22 @@ describe("Sales Session participant invitation", () => {
     await expect(workspace.addParticipant({ customerId: "customer-1", sessionId: session.id, actor, commandId: "cmd-missing", person: { kind: "existingContact", contactId: "missing" } })).resolves.toMatchObject({ status: 404, body: { code: "contact_not_found" } });
     expect(settle).toHaveBeenCalledWith(expect.objectContaining({ state: "settled", result: expect.objectContaining({ status: 404 }) })); expect(markDispatched).not.toHaveBeenCalled(); expect(provider).not.toHaveBeenCalled();
   });
+  it("retains no-replay attention when registration fails after the dispatch fence", async () => {
+    const settle = vi.fn();
+    const workspace = createSalesParticipantWorkspace({
+      now: fixedNow,
+      reader: { readPage: vi.fn().mockResolvedValue(null) },
+      invitationStore: semanticStore(),
+      addCommandStore: { admit: vi.fn().mockResolvedValue({ kind: "new" }), markDispatched: vi.fn().mockResolvedValue(true), settle },
+      sessions: { findById: vi.fn().mockResolvedValue(session) },
+      records: { findContact: vi.fn().mockResolvedValue(contact) },
+      participants: { list: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue(null) },
+    });
+    const result = await workspace.addParticipant({ customerId: "customer-1", sessionId: session.id, actor, commandId: "cmd-failed-after-fence", person: { kind: "existingContact", contactId: contact.id } });
+    expect(result).toEqual({ status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add requires attention." } });
+    expect(settle).toHaveBeenCalledWith(expect.objectContaining({ state: "needs_attention", result }));
+  });
   it("blocks participant registration at the exact session end before integration setup", async () => {
     const findByCustomerId = vi.fn(() => { throw new Error("connection lookup must not run"); });
     const forConnection = vi.fn(() => { throw new Error("adapter construction must not run"); });
