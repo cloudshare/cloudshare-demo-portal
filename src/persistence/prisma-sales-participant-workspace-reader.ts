@@ -24,7 +24,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
     async readPage(input) {
       const session = await prisma.salesDemoSession.findFirst({
         where: { id: input.sessionId, customerId: input.customerId, opportunity: { archivedAt: null, account: { archivedAt: null } } },
-        select: { id: true, end: true, timeZone: true, sendInvitations: true },
+        select: { id: true, opportunityId: true, end: true, timeZone: true, sendInvitations: true },
       });
       if (!session) return null;
       const sessionEnd = cloudShareWallClockToInstant(session.end, session.timeZone);
@@ -50,7 +50,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
             : {}),
         },
       };
-      const [total, rows] = await Promise.all([
+      const [total, rows, eligible] = await Promise.all([
         prisma.salesSessionParticipant.count({ where }),
         prisma.salesSessionParticipant.findMany({
           where,
@@ -77,6 +77,11 @@ export function createPrismaSalesParticipantWorkspaceReader(
               take: 1,
             },
           },
+        }),
+        prisma.opportunityContact.findMany({
+          where: { customerId: input.customerId, opportunityId: session.opportunityId, archivedAt: null, opportunity: { archivedAt: null, account: { archivedAt: null } }, salesSessionParticipants: { none: { customerId: input.customerId, salesDemoSessionId: input.sessionId } } },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: 50,
+          select: { id: true, firstName: true, lastName: true, email: true },
         }),
       ]);
       const participantIds = rows.map((row) => row.id);
@@ -148,6 +153,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
               : null,
           };
         }),
+        eligibleContacts: eligible.map((contact) => ({ id: contact.id, name: `${contact.firstName} ${contact.lastName}`.trim(), email: contact.email })),
       };
       return page;
     },

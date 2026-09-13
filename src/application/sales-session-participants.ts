@@ -185,7 +185,7 @@ function createSalesParticipantWorkspaceReader(baseReader: SalesParticipantWorks
 }
 
 export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: SalesParticipantWorkspaceBaseReader }): SalesParticipantWorkspace {
-  return { ...createSalesParticipantWorkspaceReader(deps.reader, deps.invitationStore), submitInvitation: (input) => runInvitationLifecycle(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } }) };
+  return { ...createSalesParticipantWorkspaceReader(deps.reader, deps.invitationStore), submitInvitation: (input) => runInvitationLifecycle(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } }), registerParticipants: (input) => handleRegisterSalesSessionParticipants(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { contactIds: input.opportunityContactIds } }) };
 }
 
 async function runInvitationLifecycle(deps: InviteDeps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {

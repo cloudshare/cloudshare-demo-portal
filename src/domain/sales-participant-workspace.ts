@@ -43,11 +43,12 @@ export interface SalesParticipantWorkspacePage {
   readonly offset: number;
   readonly limit: number;
   readonly hasMore: boolean;
+  readonly eligibleContacts?: readonly { readonly id: string; readonly name: string; readonly email: string }[];
 }
 export type SalesParticipantWorkspaceBaseRow = Omit<SalesParticipantWorkspaceRow,
   "currentCommandId" | "invitationOutcome" | "invitationReason" | "invitationCorrelationId" |
   "latestInvitationOutcome" | "latestInvitationReason" | "latestInvitationCorrelationId" | "actionAvailability" | "primaryAction">;
-export type SalesParticipantWorkspaceBasePage = Omit<SalesParticipantWorkspacePage, "participants"> & { readonly participants: readonly SalesParticipantWorkspaceBaseRow[] };
+export type SalesParticipantWorkspaceBasePage = Omit<SalesParticipantWorkspacePage, "participants" | "eligibleContacts"> & { readonly participants: readonly SalesParticipantWorkspaceBaseRow[]; readonly eligibleContacts?: readonly { readonly id: string; readonly name: string; readonly email: string }[] };
 export interface SalesParticipantWorkspaceBaseReader { readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspaceBasePage | null>; }
 
 /** Application-facing participant workspace boundary. Persistence and ledger
@@ -74,9 +75,12 @@ export type SalesParticipantWorkspaceInvitationResult = {
     readonly correlationId?: string | null;
   };
 };
+export type SalesParticipantWorkspaceRegistrationRequest = { readonly customerId: string; readonly sessionId: string; readonly actor: DiagnosticActor; readonly opportunityContactIds: readonly string[] };
+export type SalesParticipantWorkspaceRegistrationResult = { readonly status: number; readonly body: Record<string, unknown> };
 export interface SalesParticipantWorkspace {
   readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspacePage | null>;
   submitInvitation(input: SalesParticipantWorkspaceInvitationRequest): Promise<SalesParticipantWorkspaceInvitationResult>;
+  registerParticipants?: (input: SalesParticipantWorkspaceRegistrationRequest) => Promise<SalesParticipantWorkspaceRegistrationResult>;
 }
 
 export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, now: Date): Readonly<Record<SalesParticipantAction, boolean>> {

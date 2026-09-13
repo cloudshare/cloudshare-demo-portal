@@ -320,11 +320,6 @@ function SalesSessionWorkspaceState({
   const queueIsHistory =
     new URLSearchParams(queueHref.split("?")[1] ?? "").get("queue") ===
     "history";
-  const registrationStatus = workspace.summary.operation.value === "needs_attention"
-    ? "needs_attention"
-    : workspace.summary.experience.value === "inProgress" ? "in_progress"
-      : workspace.summary.experience.value === "ended" ? "ended" : "upcoming";
-  const registrationHref = buildParticipantRegistrationHref(queueHref, sessionId, registrationStatus);
   const verifyNow = async () => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
@@ -530,7 +525,7 @@ function SalesSessionWorkspaceState({
         </div>
       </nav>
       {area === "participants" ? (
-        <SalesParticipantWorkspace sessionId={sessionId} active request={participantRequest} registrationHref={registrationStatus === "ended" ? undefined : registrationHref} />
+        <SalesParticipantWorkspace sessionId={sessionId} active request={participantRequest} />
       ) : null}
       {area === "activity" ? (
         <section className={styles.panel}>
