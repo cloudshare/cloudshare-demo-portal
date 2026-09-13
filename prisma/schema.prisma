@@ -304,6 +304,7 @@ model SalesParticipantAddCommand {
   customerId       String
   commandId        String
   sessionId        String
+  targetKey        String   @default("")
   payloadHash      String
   state            String
   status           Int?
@@ -314,6 +315,7 @@ model SalesParticipantAddCommand {
   @@id([customerId, commandId])
   @@unique([customerId, sessionId, commandId])
   @@index([customerId, sessionId, createdAt])
+  @@unique([customerId, sessionId, targetKey])
 }
 
 /// Safe, non-secret outcome history for admin participant launch actions.

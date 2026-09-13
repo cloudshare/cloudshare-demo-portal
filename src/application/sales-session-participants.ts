@@ -190,7 +190,8 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
   const registerExisting = async (input: { customerId: string; sessionId: string; actor: DiagnosticActor; opportunityContactIds: readonly string[] }) => { const result = await handleRegisterSalesSessionParticipants(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { contactIds: input.opportunityContactIds } }); const body = result.body; return { status: result.status, body: { ...(typeof body.error === "string" ? { error: body.error } : {}), ...(typeof body.code === "string" ? { code: body.code } : {}), ...(typeof body.correlationId === "string" ? { correlationId: body.correlationId } : {}) } }; };
   const addParticipant = async (input: Parameters<NonNullable<SalesParticipantWorkspace["addParticipant"]>>[0]): Promise<SalesParticipantWorkspaceAddParticipantResult> => {
     if (deps.addCommandStore) {
-      const admitted = await deps.addCommandStore.admit({ customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId, payloadHash: addParticipantPayloadHash(input), now: (deps.now ?? (() => new Date()))() });
+      const targetKey = input.person.kind === "existingContact" ? `contact:${input.person.contactId}` : `email:${input.person.email.trim().toLowerCase()}`;
+      const admitted = await deps.addCommandStore.admit({ customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId, targetKey, payloadHash: addParticipantPayloadHash(input), now: (deps.now ?? (() => new Date()))() });
       if (admitted.kind === "mismatch") return { status: 409, body: { outcome: "rejected", code: "command_id_mismatch", error: "Command ID was already used for a different Participant." } };
       if (admitted.kind === "existing") return admitted.result ?? { status: 202, body: { outcome: admitted.state === "needs_attention" ? "needs_attention" : "rejected", code: "command_in_progress" } };
       const settleBeforeDispatch = async (result: SalesParticipantWorkspaceAddParticipantResult) => {
@@ -216,7 +217,7 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
         }
       } catch (error) { return settleBeforeDispatch({ status: 500, body: { outcome: "rejected", code: "contact_lookup_failed", error: error instanceof Error ? error.message : "Participant details could not be verified." } }); }
       let dispatched = false;
-      try { dispatched = await deps.addCommandStore.markDispatched({ customerId: input.customerId, commandId: input.commandId, now: (deps.now ?? (() => new Date()))() }); }
+      try { dispatched = (await deps.addCommandStore.markDispatched({ customerId: input.customerId, commandId: input.commandId, now: (deps.now ?? (() => new Date()))() })) !== false; }
       catch { /* A failed fence is a pre-dispatch failure; provider work is forbidden. */ }
       if (!dispatched) return settleBeforeDispatch({ status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add could not be safely authorized." } });
       try { const outcome = await addParticipantUnfenced(input); await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "settled", result: outcome, now: (deps.now ?? (() => new Date()))() }); return outcome; }
