@@ -214,12 +214,19 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
     return addParticipantUnfenced(input);
   };
   const addParticipantUnfenced = async (input: Parameters<NonNullable<SalesParticipantWorkspace["addParticipant"]>>[0]): Promise<SalesParticipantWorkspaceAddParticipantResult> => {
-    if (input.person.kind === "existingContact") { const result = await registerExisting({ customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, opportunityContactIds: [input.person.contactId] }); return { status: result.status, body: { outcome: result.status >= 200 && result.status < 300 ? "registered" : "rejected", ...result.body } }; }
+    if (input.person.kind === "existingContact") {
+      const existing = await deps.participants.list(input.customerId, input.sessionId);
+      if (existing.some((participant) => participant.opportunityContactId === input.person.contactId)) return { status: 200, body: { outcome: "already_registered", code: "already_registered" } };
+      const result = await registerExisting({ customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, opportunityContactIds: [input.person.contactId] });
+      return { status: result.status, body: { outcome: result.status >= 200 && result.status < 300 ? "registered" : "rejected", ...result.body } };
+    }
     if (!deps.sessions.findById) return { status: 404, body: { outcome: "rejected", code: "session_not_found", error: "Sales Session was not found." } };
     const session = await deps.sessions.findById(input.customerId, input.sessionId);
     if (!session || !deps.records.listContacts) return { status: 404, body: { outcome: "rejected", code: "session_not_found", error: "Sales Session was not found." } };
     const email = input.person.email.trim().toLowerCase();
-    const matches = (await deps.records.listContacts(input.customerId, session.opportunityId)).filter((contact) => (contact.normalizedEmail ?? contact.email.trim().toLowerCase()) === email && !contact.archivedAt);
+    const allMatches = (await deps.records.listContacts(input.customerId, session.opportunityId)).filter((contact) => (contact.normalizedEmail ?? contact.email.trim().toLowerCase()) === email);
+    const matches = allMatches.filter((contact) => !contact.archivedAt);
+    if (!matches.length && allMatches.some((contact) => contact.archivedAt)) return { status: 409, body: { outcome: "rejected", code: "contact_archived", error: "An archived Contact already matches this email." } };
     if (matches.length > 1) return { status: 409, body: { outcome: "needs_attention", code: "ambiguous_contact", error: "More than one active Contact matches this email." } };
     const contact = matches[0] ?? { id: randomUUID(), customerId: input.customerId, opportunityId: session.opportunityId, firstName: input.person.firstName.trim(), lastName: input.person.lastName.trim(), email: input.person.email.trim(), normalizedEmail: email, source: "ad_hoc" as const, syncStatus: "pending" as const, sourceSessionId: session.id, archivedAt: null, createdAt: new Date(), updatedAt: new Date() };
     if (!matches[0]) await (deps.records as SalesRecordRepository).saveContact(contact);
