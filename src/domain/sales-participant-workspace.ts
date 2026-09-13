@@ -16,6 +16,11 @@ export interface SalesParticipantWorkspaceRow {
   readonly invitationReason?: string | null;
   readonly invitationCorrelationId?: string | null;
   readonly invitationRevision?: number | null;
+  /** Latest settled/reconciliation feedback; unlike currentCommandId this is
+   * attribution only and never blocks a new command. */
+  readonly latestInvitationOutcome?: string | null;
+  readonly latestInvitationReason?: string | null;
+  readonly latestInvitationCorrelationId?: string | null;
   readonly launchOperation: { readonly outcome: string; readonly correlationId: string | null } | null;
   readonly environment: { readonly value: string | null; readonly source: string; readonly observedAt?: string };
   readonly environmentAttention: { readonly reason: string; readonly source: string } | null;
