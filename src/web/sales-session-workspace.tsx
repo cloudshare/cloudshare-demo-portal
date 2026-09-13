@@ -23,6 +23,13 @@ type DiagnosticRecord = {
   readonly occurredAt: string;
 };
 
+export function buildParticipantRegistrationHref(queueHref: string, sessionId: string, status: string) {
+  const url = new URL(queueHref, "http://localhost");
+  url.searchParams.set("tab", "sessions"); url.searchParams.set("sessionId", sessionId); url.searchParams.set("participants", "open"); url.searchParams.set("status", status);
+  url.searchParams.delete("queue"); url.searchParams.delete("offset");
+  return `${url.pathname}?${url.searchParams.toString()}`;
+}
+
 export function SalesSessionWorkspace(props: {
   readonly sessionId: string;
   readonly area: Area;
