@@ -254,6 +254,39 @@ describe("SalesParticipantWorkspace", () => {
     expect(status.textContent).toContain("corr-revoke");
     await waitFor(() => expect(request.mock.calls.filter(([, init]) => !init?.method).length).toBeGreaterThan(1));
   });
+  it("restores focus to an enabled current action after revoke disables the originating control", async () => {
+    let revoked = false;
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", activeLaunchCapability: true, providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null };
+    const request = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "DELETE") { revoked = true; return new Response(JSON.stringify({ correlationId: "corr-revoke" }), { status: 200 }); }
+      return new Response(JSON.stringify({ ...page, participants: [{ ...row, activeLaunchCapability: !revoked }] }), { status: 200 });
+    });
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Revoke launch link" }));
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+    const original = await screen.findByRole("button", { name: "Revoke launch link" });
+    await waitFor(() => expect((original as HTMLButtonElement).disabled).toBe(true));
+    const expected = screen.getByRole("button", { name: "Generate launch link" });
+    await waitFor(() => expect(document.activeElement).toBe(expected));
+    expect((document.activeElement as HTMLButtonElement).disabled).toBe(false);
+  });
+  it.each(["invitation_blocked", "precondition_failed", "command_id_mismatch"])("explains a competing invitation fence for %s", async (code) => {
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, activeLaunchCapability: false, launchOperation: null, environmentAttention: null };
+    const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST"
+      ? new Response(JSON.stringify({ code }), { status: 409 })
+      : new Response(JSON.stringify({ ...page, participants: [row] }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Resend" }));
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toContain("Another invitation command is already in progress or awaiting confirmation");
+    expect(status.textContent).toContain("Refresh Participant state before starting another invitation action");
+    expect(status.textContent).not.toContain("Action failed");
+    expect(status.textContent).not.toContain(code);
+  });
   it("handles a non-JSON revoke failure without losing controlled feedback", async () => {
     const row = { ...participant, sessionEndsAt: "2020-01-01T00:00:00.000Z", activeLaunchCapability: true, providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null };
     const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "DELETE"

@@ -44,6 +44,7 @@ export function SalesParticipantWorkspace(props: {
   const inspectorRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [revokeTarget, setRevokeTarget] = useState<SalesParticipantWorkspaceRow | null>(null);
+  const [focusAfterReread, setFocusAfterReread] = useState<string | null>(null);
   const originRef = useRef<HTMLElement | null>(null);
   const clearedInspectorTarget = useRef(false);
   const historyMode = useRef<"push" | "replace">("replace");
@@ -124,6 +125,16 @@ export function SalesParticipantWorkspace(props: {
     if (inspectorOpen) inspectorRef.current?.focus();
     else if (logicalFocus.current === "row" && selection.activeId && !(document.activeElement instanceof HTMLButtonElement || document.activeElement instanceof HTMLInputElement)) Array.from(document.querySelectorAll<HTMLElement>("tr[data-participant-id]")).find((row) => row.dataset.participantId === selection.activeId)?.focus();
   }, [activeParticipant?.id, inspectorOpen, selection.activeId]);
+  useEffect(() => {
+    if (!focusAfterReread) return;
+    const preferred = originRef.current;
+    const primaryAction = inspectorRef.current?.querySelector<HTMLElement>('[role="group"][aria-label="Participant actions"] [data-primary-action="true"]:not([disabled])');
+    const currentAction = primaryAction ?? inspectorRef.current?.querySelector<HTMLElement>('[role="group"][aria-label="Participant actions"] button:not([disabled])');
+    const currentRow = Array.from(document.querySelectorAll<HTMLElement>("tr[data-participant-id]")).find((row) => row.dataset.participantId === focusAfterReread);
+    const target = safelyFocusable(preferred) ? preferred : safelyFocusable(currentAction) ? currentAction : safelyFocusable(currentRow) ? currentRow : headingRef.current;
+    target?.focus();
+    setFocusAfterReread(null);
+  }, [focusAfterReread, page]);
 
   const openInspector = (participantId: string, origin: HTMLElement | null) => {
     clearedInspectorTarget.current = false;
@@ -163,7 +174,14 @@ export function SalesParticipantWorkspace(props: {
       const outcome = textField(result, "outcome");
       const correlationId = textField(result, "correlationId");
       const launchUrl = textField(result, "launchUrl");
-      if (!response.ok) throw new Error(code === "no_replay" ? "No replay permitted: provider outcome is ambiguous; open Support." : textField(result, "error") ?? `Action failed (${response.status}).`);
+      if (!response.ok) {
+        const competingFence = code === "invitation_blocked" || code === "precondition_failed" || code === "command_id_mismatch";
+        throw new Error(code === "no_replay"
+          ? "No replay permitted: provider outcome is ambiguous; open Support."
+          : competingFence
+            ? "Another invitation command is already in progress or awaiting confirmation. Refresh Participant state before starting another invitation action."
+            : textField(result, "error") ?? `Action failed (${response.status}).`);
+      }
       let copiedLaunch = false;
       if (launchUrl) {
         const launch = new URL(launchUrl, window.location.origin);
@@ -202,7 +220,7 @@ export function SalesParticipantWorkspace(props: {
       setFeedback((current) => ({ ...current, [target.id]: "Revoke failed; retry or open Support." }));
     } finally {
       await rereadWorkspace();
-      queueMicrotask(() => originRef.current?.focus());
+      setFocusAfterReread(target.id);
     }
   };
   return <>
@@ -238,6 +256,12 @@ async function readJsonObject(response: Response): Promise<Record<string, unknow
 
 function textField(value: Record<string, unknown>, key: string): string | undefined {
   return typeof value[key] === "string" ? value[key] : undefined;
+}
+
+function safelyFocusable(value: HTMLElement | null | undefined): value is HTMLElement {
+  return Boolean(value?.isConnected)
+    && !(value instanceof HTMLButtonElement && value.disabled)
+    && value?.getAttribute("aria-disabled") !== "true";
 }
 
 function explicitUtcTime(value: string): string {
