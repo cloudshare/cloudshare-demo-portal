@@ -122,6 +122,18 @@ describe("SalesParticipantWorkspace", () => {
     await user.type(search, "grace");
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("roster changed"));
   });
+  it("closes the inspector and clears its target when that Participant leaves the page", async () => {
+    const second = { ...participant, id: "p2", name: "Grace Hopper" };
+    const request = vi.fn(async (url: string) => new Response(JSON.stringify({ participants: url.includes("query=") ? [second] : [participant], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
+    await user.type(screen.getByRole("textbox", { name: "Search Participants" }), "g");
+    await waitFor(() => expect(screen.queryByRole("complementary", { name: "Participant inspector" })).toBeNull());
+    await waitFor(() => expect(new URL(window.location.href).searchParams.get("participantActive")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Participants" })));
+  });
   it("shows a visible status when the bounded roster fetch fails", async () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => { throw new Error("network down"); }} />);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("could not be loaded"));
@@ -318,12 +330,24 @@ describe("SalesParticipantWorkspace", () => {
     await user.click(screen.getByRole("row", { name: /Grace Hopper/ }));
     expect(screen.queryByRole("textbox", { name: "Generated launch link" })).toBeNull();
   });
+  it("clears a one-time generated launch capability when the session changes", async () => {
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null };
+    const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST" ? new Response(JSON.stringify({ launchUrl: "/sales/launch/portal-token", correlationId: "launch-corr" }), { status: 201 }) : new Response(JSON.stringify({ participants: [row], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 }));
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("denied"));
+    const user = userEvent.setup();
+    const view = render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Generate launch link" }));
+    expect(await screen.findByRole("textbox", { name: "Generated launch link" })).toBeTruthy();
+    view.rerender(<SalesParticipantWorkspace sessionId="s2" active request={request} />);
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Generated launch link" })).toBeNull());
+  });
   it("restores direct-link focus and exposes semantic selection, durable feedback, and canonical Activity", async () => {
     window.history.replaceState({}, "", "/sales?participantActive=p1&participantFocus=inspector");
     const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, latestInvitationOutcome: "accepted_unconfirmed", latestInvitationReason: "provider_acknowledged", latestInvitationCorrelationId: "invite-corr", launchOperation: { operation: "generate", outcome: "failure", reason: "persistence_failure", correlationId: "launch-corr" }, environmentAttention: null };
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify({ ...page, participants: [row] }))} />);
     const inspector = await screen.findByRole("complementary", { name: "Participant inspector" }); await waitFor(() => expect(document.activeElement).toBe(inspector));
-    const status = screen.getByRole("status"); expect(status.textContent).toContain("invite-corr"); expect(status.textContent).toContain("acknowledged by CloudShare"); expect(status.textContent).toContain("replay allowed and fence released"); expect(status.textContent).not.toContain("accepted_unconfirmed"); expect(status.textContent).not.toContain("provider_acknowledged"); expect(status.textContent).toContain("persistence_failure"); expect(status.textContent).toContain("launch-corr");
+    const status = screen.getByRole("status"); expect(status.textContent).toContain("invite-corr"); expect(status.textContent).toContain("acknowledged by CloudShare"); expect(status.textContent).toContain("fence released"); expect(status.textContent).toContain("new explicitly initiated Resend may be started"); expect(status.textContent).not.toContain("replay allowed"); expect(status.textContent).not.toContain("accepted_unconfirmed"); expect(status.textContent).not.toContain("provider_acknowledged"); expect(status.textContent).toContain("persistence_failure"); expect(status.textContent).toContain("launch-corr");
     expect(screen.getByRole("link", { name: "View Activity" }).getAttribute("href")).toBe("/sales/sessions/s1?area=activity&correlationId=invite-corr");
     expect(screen.getByRole("region", { name: "Scrollable Participant roster" }).getAttribute("tabindex")).toBe("0");
     fireEvent.click(screen.getByRole("row", { name: /Ada Lovelace/ })); expect(screen.getByRole("row", { name: /Ada Lovelace/ }).getAttribute("aria-selected")).toBe("true"); expect(screen.getByText(/1 selected/)).toBeTruthy();

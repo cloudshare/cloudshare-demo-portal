@@ -43,6 +43,7 @@ export function SalesParticipantWorkspace(props: {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [revokeTarget, setRevokeTarget] = useState<SalesParticipantWorkspaceRow | null>(null);
   const originRef = useRef<HTMLElement | null>(null);
+  const clearedInspectorTarget = useRef(false);
   const historyMode = useRef<"push" | "replace">("replace");
   const lastUrl = useRef<string | null>(null);
   const logicalFocus = useRef<"row" | "inspector">(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("participantFocus") === "inspector" ? "inspector" : "row");
@@ -53,7 +54,7 @@ export function SalesParticipantWorkspace(props: {
     if (active) headingRef.current?.focus();
   }, [active]);
   useEffect(() => {
-    const onPop = () => { const params = new URLSearchParams(window.location.search); const inspector = params.get("participantFocus") === "inspector" && Boolean(params.get("participantActive")); historyMode.current = "replace"; lastUrl.current = window.location.href; setQuery(params.get("participantQuery") ?? ""); setOffset(Number(params.get("participantOffset") ?? 0) || 0); setSelection({ activeId: params.get("participantActive"), selectedIds: (params.get("participantSelected") ?? "").split(",").filter(Boolean).slice(0, 25), rangeAnchorId: params.get("participantAnchor") }); logicalFocus.current = inspector ? "inspector" : "row"; setInspectorOpen(inspector); const scrollY = window.history.state?.participantScrollY; if (typeof scrollY === "number" && typeof window.scrollTo === "function") window.scrollTo(0, scrollY); };
+    const onPop = () => { const params = new URLSearchParams(window.location.search); const inspector = params.get("participantFocus") === "inspector" && Boolean(params.get("participantActive")); clearedInspectorTarget.current = false; historyMode.current = "replace"; lastUrl.current = window.location.href; setQuery(params.get("participantQuery") ?? ""); setOffset(Number(params.get("participantOffset") ?? 0) || 0); setSelection({ activeId: params.get("participantActive"), selectedIds: (params.get("participantSelected") ?? "").split(",").filter(Boolean).slice(0, 25), rangeAnchorId: params.get("participantAnchor") }); logicalFocus.current = inspector ? "inspector" : "row"; setInspectorOpen(inspector); const scrollY = window.history.state?.participantScrollY; if (typeof scrollY === "number" && typeof window.scrollTo === "function") window.scrollTo(0, scrollY); };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
@@ -84,22 +85,46 @@ export function SalesParticipantWorkspace(props: {
       if (!response.ok || !Array.isArray(body.participants)) { setFeedback((current) => ({ ...current, _announcement: "Participant roster could not be loaded; retry or open Support." })); return; }
       setPage(body);
       setSelection((current) => {
-        const next = pruneParticipantSelection(current, body.participants.map((row) => row.id));
+        const pageIds = body.participants.map((row) => row.id);
+        const inspectorTargetMissing = inspectorOpen && Boolean(current.activeId) && !pageIds.includes(current.activeId as string);
+        const pruned = pruneParticipantSelection(current, pageIds);
+        const next = inspectorTargetMissing || (clearedInspectorTarget.current && current.activeId === null) ? { ...pruned, activeId: null } : pruned;
         if (current.activeId !== next.activeId || current.rangeAnchorId !== next.rangeAnchorId || current.selectedIds.join(",") !== next.selectedIds.join(",")) {
           historyMode.current = "replace";
           if (current.activeId || current.rangeAnchorId || current.selectedIds.length) setFeedback((messages) => ({ ...messages, _announcement: "The Participant roster changed; the previous selection is no longer visible." }));
+        }
+        if (inspectorTargetMissing) {
+          clearedInspectorTarget.current = true;
+          logicalFocus.current = "row";
+          originRef.current = headingRef.current;
+          setInspectorOpen(false);
+          queueMicrotask(() => headingRef.current?.focus());
         }
         return next;
       });
     }).catch(() => { if (!disposed) setFeedback((messages) => ({ ...messages, _announcement: "Participant roster could not be loaded; retry or open Support." })); });
     return () => { disposed = true; };
-  }, [active, href, request]);
+  }, [active, href, inspectorOpen, request]);
+  useEffect(() => {
+    if (!inspectorOpen || !selection.activeId || !page || page.participants.some((participant) => participant.id === selection.activeId)) return;
+    const missingId = selection.activeId;
+    historyMode.current = "replace";
+    clearedInspectorTarget.current = true;
+    logicalFocus.current = "row";
+    originRef.current = headingRef.current;
+    setInspectorOpen(false);
+    setSelection((current) => current.activeId === missingId
+      ? { ...pruneParticipantSelection(current, page.participants.map((participant) => participant.id)), activeId: null }
+      : current);
+    queueMicrotask(() => headingRef.current?.focus());
+  }, [inspectorOpen, page, selection.activeId]);
   useEffect(() => {
     if (inspectorOpen) inspectorRef.current?.focus();
     else if (logicalFocus.current === "row" && selection.activeId && !(document.activeElement instanceof HTMLButtonElement || document.activeElement instanceof HTMLInputElement)) Array.from(document.querySelectorAll<HTMLElement>("tr[data-participant-id]")).find((row) => row.dataset.participantId === selection.activeId)?.focus();
   }, [activeParticipant?.id, inspectorOpen, selection.activeId]);
 
   const openInspector = (participantId: string, origin: HTMLElement | null) => {
+    clearedInspectorTarget.current = false;
     historyMode.current = "push";
     logicalFocus.current = "inspector";
     originRef.current = origin?.closest<HTMLElement>("tr[data-participant-id]") ?? headingRef.current;
@@ -184,7 +209,7 @@ export function SalesParticipantWorkspace(props: {
       <label htmlFor="participant-query">Search Participants</label>
       <input id="participant-query" value={query} onChange={(event) => { historyMode.current = "push"; setQuery(event.target.value); setOffset(0); }} placeholder="Search name or email" />
       {feedback._announcement ? <p role="alert" aria-live="polite">{feedback._announcement}</p> : null}
-      {page?.participants.length ? <div className={styles.tableWrap} role="region" aria-label="Scrollable Participant roster" tabIndex={0}><table aria-label="Participant roster" className={styles.roster}><thead><tr><th>Participant</th><th>Invitation</th><th>Participation</th><th>Participant Environment</th><th>Environment source</th></tr></thead><tbody>{page.participants.map((participant) => { const selected = selection.selectedIds.includes(participant.id); const current = selection.activeId === participant.id; const pageIds = page.participants.map((row) => row.id); return <tr key={participant.id} aria-selected={selected} data-participant-id={participant.id} data-active={current ? "true" : undefined} data-selected={selected ? "true" : undefined} tabIndex={current ? 0 : -1} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; historyMode.current = "push"; setSelection((state) => reduceParticipantSelection(state, { type: "click", id: participant.id, additive: event.ctrlKey || event.metaKey, range: event.shiftKey, pageIds })); }} onKeyDown={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; historyMode.current = "push"; if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "move", direction: event.key === "ArrowDown" ? "next" : "previous", pageIds })); } else if (event.key === " ") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "toggle", id: participant.id, range: event.shiftKey, pageIds })); } else if (event.key === "Enter") { event.preventDefault(); openInspector(participant.id, event.currentTarget); } }}><th scope="row"><strong>{participant.name}</strong><span>{participant.email}</span><button type="button" onClick={(event) => openInspector(participant.id, event.currentTarget)}>Inspect</button></th><td><span className={styles.inlineBadge}>{participant.invitationStatus === "sent" ? "Sent" : "Not sent"}</span></td><td><span className={styles.inlineBadge}>{participant.participationStatus === "inProgress" ? "In progress" : participant.participationStatus === "concluded" ? "Concluded" : "Pending"}</span></td><td>{participant.environment.value ?? "Not observed"}</td><td>{humanEnvironmentSource(participant.environment.source)}</td></tr>; })}</tbody></table></div> : <p className={styles.empty}>No Participants are registered for this Sales Session.</p>}
+      {page?.participants.length ? <div className={styles.tableWrap} role="region" aria-label="Scrollable Participant roster" tabIndex={0}><table aria-label="Participant roster" className={styles.roster}><thead><tr><th>Participant</th><th>Invitation</th><th>Participation</th><th>Participant Environment</th><th>Environment source</th></tr></thead><tbody>{page.participants.map((participant) => { const selected = selection.selectedIds.includes(participant.id); const current = selection.activeId === participant.id; const pageIds = page.participants.map((row) => row.id); return <tr key={participant.id} aria-selected={selected} data-participant-id={participant.id} data-active={current ? "true" : undefined} data-selected={selected ? "true" : undefined} tabIndex={current ? 0 : -1} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; clearedInspectorTarget.current = false; historyMode.current = "push"; setSelection((state) => reduceParticipantSelection(state, { type: "click", id: participant.id, additive: event.ctrlKey || event.metaKey, range: event.shiftKey, pageIds })); }} onKeyDown={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; clearedInspectorTarget.current = false; historyMode.current = "push"; if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "move", direction: event.key === "ArrowDown" ? "next" : "previous", pageIds })); } else if (event.key === " ") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "toggle", id: participant.id, range: event.shiftKey, pageIds })); } else if (event.key === "Enter") { event.preventDefault(); openInspector(participant.id, event.currentTarget); } }}><th scope="row"><strong>{participant.name}</strong><span>{participant.email}</span><button type="button" onClick={(event) => openInspector(participant.id, event.currentTarget)}>Inspect</button></th><td><span className={styles.inlineBadge}>{participant.invitationStatus === "sent" ? "Sent" : "Not sent"}</span></td><td><span className={styles.inlineBadge}>{participant.participationStatus === "inProgress" ? "In progress" : participant.participationStatus === "concluded" ? "Concluded" : "Pending"}</span></td><td>{participant.environment.value ?? "Not observed"}</td><td>{humanEnvironmentSource(participant.environment.source)}</td></tr>; })}</tbody></table></div> : <p className={styles.empty}>No Participants are registered for this Sales Session.</p>}
       {offset > 0 ? <button type="button" onClick={() => { historyMode.current = "push"; setOffset(Math.max(0, offset - 25)); }}>Previous</button> : null}{page?.hasMore ? <button type="button" onClick={() => { historyMode.current = "push"; setOffset(offset + 25); }}>Next</button> : null}
     </section>
     {revokeTarget ? <div role="dialog" aria-modal="true" aria-label="Confirm revoke launch link" className={styles.panel} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setRevokeTarget(null); queueMicrotask(() => originRef.current?.focus()); } if (event.key === "Tab") { const buttons = Array.from(event.currentTarget.querySelectorAll("button")); const index = buttons.indexOf(document.activeElement as HTMLButtonElement); const next = buttons[(index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length]; event.preventDefault(); next?.focus(); } }}><p>Revoke the launch link for {revokeTarget.name}?</p><button autoFocus type="button" onClick={() => void confirmRevoke()}>Revoke</button><button type="button" onClick={() => { setRevokeTarget(null); queueMicrotask(() => originRef.current?.focus()); }}>Cancel</button></div> : null}
@@ -224,7 +249,7 @@ function durableFeedback(participant: SalesParticipantWorkspaceRow): string | nu
   const invitationCorrelation = participant.invitationCorrelationId ?? participant.latestInvitationCorrelationId;
   const acknowledgedUnconfirmed = invitationOutcome === "accepted_unconfirmed";
   const invitationLabel = acknowledgedUnconfirmed
-    ? "acknowledged by CloudShare; delivery unconfirmed; replay allowed and fence released"
+    ? "acknowledged by CloudShare; delivery unconfirmed; fence released; a new explicitly initiated Resend may be started"
     : invitationOutcome;
   const safeReason = acknowledgedUnconfirmed ? null : invitationReason;
   const invitation = invitationLabel ? `Invitation action: ${invitationLabel}${safeReason ? ` (${safeReason})` : ""}${invitationCorrelation ? `. Correlation ${invitationCorrelation}.` : "."}` : null;
