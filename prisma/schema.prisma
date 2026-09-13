@@ -34,6 +34,7 @@ model Customer {
   opportunityContacts  OpportunityContact[]
   salesDemoSessions    SalesDemoSession[]
   invitationCommands   SalesParticipantInvitationCommand[]
+  launchOperations     SalesParticipantLaunchOperation[]
   salesTrialOfferings  SalesTrialOffering[]
   salesTrialEnrollments SalesTrialEnrollment[]
   salesTimezoneCache   SalesTimezoneCache?
@@ -212,6 +213,7 @@ model SalesDemoSession {
   item                        Item             @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
   participants                SalesSessionParticipant[]
   invitationCommands          SalesParticipantInvitationCommand[]
+  launchOperations            SalesParticipantLaunchOperation[]
 
   @@index([customerId, opportunityId, createdAt])
   @@unique([customerId, id])
@@ -249,6 +251,7 @@ model SalesSessionParticipant {
   launchLinks                 SalesParticipantLaunchLink[]
   invitationTargets            SalesParticipantInvitationTarget[]
   invitationFences             SalesParticipantInvitationFence[]
+  launchOperations            SalesParticipantLaunchOperation[]
 
   @@unique([customerId, salesDemoSessionId, opportunityContactId])
   @@unique([customerId, id])
@@ -287,6 +290,25 @@ model SalesParticipantInvitationCommand {
   targets SalesParticipantInvitationTarget[]
   fences SalesParticipantInvitationFence[]
   @@id([customerId, commandId])
+}
+
+/// Safe, non-secret outcome history for admin participant launch actions.
+model SalesParticipantLaunchOperation {
+  id                       String   @id
+  customerId               String
+  salesDemoSessionId       String
+  salesSessionParticipantId String
+  correlationId            String
+  operation                String
+  outcome                  String
+  safeReason               String?
+  occurredAt               DateTime
+  revision                 Int
+  customer                 Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  session                  SalesDemoSession @relation(fields: [customerId, salesDemoSessionId], references: [customerId, id], onDelete: Cascade)
+  participant              SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
+  @@index([customerId, salesDemoSessionId, salesSessionParticipantId, occurredAt])
+  @@index([customerId, salesDemoSessionId, occurredAt])
 }
 
 model SalesParticipantInvitationTarget {
