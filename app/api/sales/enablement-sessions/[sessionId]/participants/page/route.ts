@@ -9,6 +9,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ sess
   const session = await getPortalAdminSession(services, (await cookies()).get(PORTAL_SESSION_COOKIE)?.value);
   if (!session || session.role !== "admin" || session.workspace !== "sales") return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   const url = new URL(request.url);
-  const result = await handleReadSalesParticipantWorkspacePage({ reader: services.salesParticipantWorkspace }, { customerId: session.customerId, sessionId: (await params).sessionId, query: url.searchParams.get("query") ?? undefined, offset: Number(url.searchParams.get("offset") ?? 0), limit: Number(url.searchParams.get("limit") ?? 25) });
+  const result = await handleReadSalesParticipantWorkspacePage({ workspace: services.salesParticipantWorkspace }, { customerId: session.customerId, sessionId: (await params).sessionId, query: url.searchParams.get("query") ?? undefined, offset: Number(url.searchParams.get("offset") ?? 0), limit: Number(url.searchParams.get("limit") ?? 25) });
   return NextResponse.json(result.body, { status: result.status, headers: { "Cache-Control": "no-store" } });
 }

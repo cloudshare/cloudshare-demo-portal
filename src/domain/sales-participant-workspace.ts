@@ -44,7 +44,6 @@ export interface SalesParticipantWorkspacePage {
   readonly limit: number;
   readonly hasMore: boolean;
 }
-export interface SalesParticipantWorkspaceReader { readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspacePage | null>; }
 export type SalesParticipantWorkspaceBaseRow = Omit<SalesParticipantWorkspaceRow,
   "currentCommandId" | "invitationOutcome" | "invitationReason" | "invitationCorrelationId" |
   "latestInvitationOutcome" | "latestInvitationReason" | "latestInvitationCorrelationId" | "actionAvailability" | "primaryAction">;
@@ -75,7 +74,8 @@ export type SalesParticipantWorkspaceInvitationResult = {
     readonly correlationId?: string | null;
   };
 };
-export interface SalesParticipantWorkspace extends SalesParticipantWorkspaceReader {
+export interface SalesParticipantWorkspace {
+  readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspacePage | null>;
   submitInvitation(input: SalesParticipantWorkspaceInvitationRequest): Promise<SalesParticipantWorkspaceInvitationResult>;
 }
 

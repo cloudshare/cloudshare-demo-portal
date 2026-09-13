@@ -15,7 +15,7 @@ import type { ItemRepository } from "@/domain/item";
 import { SalesEnvironmentResolutionError, type SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
 import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
 import { invitationResult, type InvitationHandle, type InvitationStore, type InvitationTargetOutcome } from "@/domain/sales-participant-invitation-store";
-import { projectParticipantActionAvailability, type SalesParticipantWorkspace, type SalesParticipantWorkspaceBaseReader, type SalesParticipantWorkspaceInvitationRequest, type SalesParticipantWorkspaceInvitationResult, type SalesParticipantWorkspaceReader } from "@/domain/sales-participant-workspace";
+import { projectParticipantActionAvailability, type SalesParticipantWorkspace, type SalesParticipantWorkspaceBaseReader, type SalesParticipantWorkspaceInvitationRequest, type SalesParticipantWorkspaceInvitationResult } from "@/domain/sales-participant-workspace";
 
 const contactsSchema = z.object({ contactIds: z.array(z.string().trim().min(1)).min(1).max(100) });
 const invitationCommandSchema = z.object({
@@ -169,7 +169,7 @@ export async function handleRegisterSalesSessionParticipants(deps: BaseDeps, req
   } catch (error) { const classifiedError = completedRemote && !hasParticipantFailureContext(error) ? participantMappingPersistenceFailed(error) : error; const failedExchange = exchange(error); return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "CloudShare could not register selected Sales Participants.", classifiedError, completedRemote, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]); }
 }
 
-export function createSalesParticipantWorkspaceReader(baseReader: SalesParticipantWorkspaceBaseReader, invitationStore: InvitationStore): SalesParticipantWorkspaceReader {
+function createSalesParticipantWorkspaceReader(baseReader: SalesParticipantWorkspaceBaseReader, invitationStore: InvitationStore): Pick<SalesParticipantWorkspace, "readPage"> {
   return { async readPage(input) {
     const page = await baseReader.readPage(input);
     if (!page) return null;
