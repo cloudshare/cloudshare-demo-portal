@@ -11,6 +11,7 @@ export function createPrismaSalesParticipantAddCommandStore(prisma: PrismaClient
       const target = input.targetKey ? await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_sessionId_targetKey: { customerId: input.customerId, sessionId: input.sessionId, targetKey: input.targetKey } } }) : null;
       if (existing) {
         if (existing.payloadHash !== hash(input.payloadHash)) return { kind: "mismatch" };
+        if (existing.state === "admitted" && !existing.resultJson) return { kind: "new" };
         // A process may have died after crossing the fence. This is an
         // ambiguous provider write: persist attention and never return 202.
         if (existing.state === "dispatched" && !existing.resultJson) {
@@ -26,7 +27,9 @@ export function createPrismaSalesParticipantAddCommandStore(prisma: PrismaClient
           await prisma.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: target.commandId, state: "dispatched", resultJson: null }, data: { state: "needs_attention", status: 409, resultJson: JSON.stringify(attention), updatedAt: input.now } });
           return { kind: "existing", state: "needs_attention", result: attention };
         }
-        return { kind: "existing", state: target.state as AddCommandState, result: result(target.resultJson) };
+        const targetResult = result(target.resultJson);
+        if (targetResult?.body.outcome === "registered") return { kind: "existing", state: target.state as AddCommandState, result: { status: 200, body: { ...targetResult.body, outcome: "already_registered", code: "already_registered" } } };
+        return { kind: "existing", state: target.state as AddCommandState, result: targetResult };
       }
       try { await prisma.salesParticipantAddCommand.create({ data: { customerId: input.customerId, commandId: input.commandId, sessionId: input.sessionId, targetKey: input.targetKey ?? `command:${input.commandId}`, payloadHash: hash(input.payloadHash), state: "admitted", createdAt: input.now, updatedAt: input.now } }); return { kind: "new" }; }
       catch { const row = await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } }); const winner = row ?? (input.targetKey ? await prisma.salesParticipantAddCommand.findUniqueOrThrow({ where: { customerId_sessionId_targetKey: { customerId: input.customerId, sessionId: input.sessionId, targetKey: input.targetKey } } }) : null); if (!winner) throw new Error("Participant add admission failed"); return row && row.payloadHash !== hash(input.payloadHash) ? { kind: "mismatch" } : { kind: "existing", state: winner.state as AddCommandState, result: result(winner.resultJson) }; }

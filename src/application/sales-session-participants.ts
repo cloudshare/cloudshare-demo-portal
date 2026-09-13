@@ -193,16 +193,28 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
       // Resolve the scoped target before admission so existingContact and adHoc
       // requests for the same Contact share one durable fence key.
       let targetKey = input.person.kind === "existingContact" ? `contact:${input.person.contactId}` : `email:${input.person.email.trim().toLowerCase()}`;
-      if (input.person.kind === "existingContact" && deps.sessions.findById) {
-        try {
-          const scoped = await deps.sessions.findById(input.customerId, input.sessionId);
-          const contact = scoped ? await deps.records.findContact(input.customerId, input.person.contactId) : null;
-          if (contact && !contact.archivedAt && contact.opportunityId === scoped?.opportunityId) {
-            targetKey = `email:${(contact.normalizedEmail?.trim() || contact.email.trim().toLowerCase()).toLowerCase()}`;
+      if (!deps.sessions.findById || (input.person.kind === "adHoc" && !deps.records.listContacts)) return { status: 503, body: { outcome: "rejected", code: "participant_add_unavailable", error: "Participant add could not be started. Retry the operation." } };
+      try {
+        const scoped = await deps.sessions.findById(input.customerId, input.sessionId);
+        if (scoped) {
+          if (input.person.kind === "existingContact") {
+            const contact = await deps.records.findContact(input.customerId, input.person.contactId);
+            if (contact && !contact.archivedAt && contact.opportunityId === scoped.opportunityId) {
+              const email = (contact.normalizedEmail?.trim() || contact.email.trim().toLowerCase()).toLowerCase();
+              if (deps.records.listContacts) {
+                const matches = (await deps.records.listContacts(input.customerId, scoped.opportunityId)).filter((candidate) => !candidate.archivedAt && (candidate.normalizedEmail?.trim() || candidate.email.trim().toLowerCase()).toLowerCase() === email);
+                if (matches.length > 1) return { status: 409, body: { outcome: "needs_attention", code: "ambiguous_contact", error: "More than one active Contact matches this email." } };
+                targetKey = `email:${email}`;
+              }
+            }
+          } else {
+            const email = input.person.email.trim().toLowerCase();
+            const matches = (await deps.records.listContacts!(input.customerId, scoped.opportunityId)).filter((candidate) => !candidate.archivedAt && (candidate.normalizedEmail?.trim() || candidate.email.trim().toLowerCase()).toLowerCase() === email);
+            if (matches.length > 1) return { status: 409, body: { outcome: "needs_attention", code: "ambiguous_contact", error: "More than one active Contact matches this email." } };
           }
-        } catch {
-          return { status: 503, body: { outcome: "rejected", code: "participant_add_unavailable", error: "Participant add could not be started. Retry the operation." } };
         }
+      } catch {
+        return { status: 503, body: { outcome: "rejected", code: "participant_add_unavailable", error: "Participant add could not be started. Retry the operation." } };
       }
       let admitted: Awaited<ReturnType<NonNullable<typeof deps.addCommandStore>["admit"]>>;
       try {
@@ -237,7 +249,7 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
       let dispatched = false;
       try { dispatched = (await deps.addCommandStore.markDispatched({ customerId: input.customerId, commandId: input.commandId, now: (deps.now ?? (() => new Date()))() })) !== false; }
       catch { /* A failed fence is a pre-dispatch failure; provider work is forbidden. */ }
-      if (!dispatched) return settleBeforeDispatch({ status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add could not be safely authorized." } });
+      if (!dispatched) return { status: 202, body: { outcome: "needs_attention", code: "command_in_progress", error: "Participant add is already in progress." } };
       try {
         const outcome = await addParticipantUnfenced(input);
         if (outcome.status < 200 || outcome.status >= 300) {
