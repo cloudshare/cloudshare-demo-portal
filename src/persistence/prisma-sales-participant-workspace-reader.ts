@@ -4,6 +4,23 @@ import type {
   SalesParticipantWorkspaceReader,
 } from "@/domain/sales-participant-workspace";
 import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
+import { invitationOutcomes, type InvitationOutcome, type InvitationSafeReason } from "@/domain/sales-participant-invitation-ledger";
+import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "@/domain/sales-participant-launch-operation";
+
+const invitationSafeReasons = new Set<InvitationSafeReason>(["provider_rejected", "ambiguous_after_dispatch", "confirmation_required", "failed_retryable", "stale_revision", "blocked_by_fence"]);
+const launchOperations = new Set<SalesParticipantLaunchOperationKind>(["generate", "revoke"]);
+const launchOutcomes = new Set<SalesParticipantLaunchOutcome>(["success", "failure"]);
+
+function invitationOutcome(value: string | null | undefined): InvitationOutcome | null {
+  return invitationOutcomes.includes(value as InvitationOutcome) ? value as InvitationOutcome : null;
+}
+function invitationReason(value: string | null | undefined): InvitationSafeReason | null {
+  return invitationSafeReasons.has(value as InvitationSafeReason) ? value as InvitationSafeReason : null;
+}
+function safeLaunchOperation(value: { operation: string; outcome: string; safeReason: string | null; correlationId: string } | undefined) {
+  if (!value || !launchOperations.has(value.operation as SalesParticipantLaunchOperationKind) || !launchOutcomes.has(value.outcome as SalesParticipantLaunchOutcome) || (value.safeReason !== null && value.safeReason !== "persistence_failure")) return null;
+  return { operation: value.operation as SalesParticipantLaunchOperationKind, outcome: value.outcome as SalesParticipantLaunchOutcome, reason: value.safeReason as "persistence_failure" | null, correlationId: value.correlationId };
+}
 export function createPrismaSalesParticipantWorkspaceReader(
   prisma: PrismaClient,
 ): SalesParticipantWorkspaceReader {
@@ -176,12 +193,11 @@ export function createPrismaSalesParticipantWorkspaceReader(
             command?.targets.filter(
               (target) => target.salesSessionParticipantId === row.id,
             ) ?? [];
-          const outcome =
-            outcomes.find((target) => target.outcome)?.outcome ?? null;
-          const reason =
-            outcomes.find((target) => target.reason)?.reason ?? null;
+          const outcome = invitationOutcome(outcomes.find((target) => target.outcome)?.outcome);
+          const reason = outcome ? invitationReason(outcomes.find((target) => target.reason)?.reason) : null;
           const latest = latestByParticipant.get(row.id);
           const launch = launchByParticipant.get(row.id);
+          const latestOutcome = invitationOutcome(latest?.outcome);
           return {
             id: row.id,
             participantRevision: row.updatedAt.toISOString(),
@@ -200,11 +216,11 @@ export function createPrismaSalesParticipantWorkspaceReader(
             invitationReason: reason,
             invitationCorrelationId: command?.correlationId ?? null,
             invitationRevision: command?.revision ?? null,
-            latestInvitationOutcome: latest?.outcome ?? null,
-            latestInvitationReason: latest?.reason ?? null,
+            latestInvitationOutcome: latestOutcome,
+            latestInvitationReason: latestOutcome ? invitationReason(latest?.reason) : null,
             latestInvitationCorrelationId:
               latest?.command.correlationId ?? null,
-            launchOperation: launch ? { operation: launch.operation, outcome: launch.outcome, reason: launch.safeReason, correlationId: launch.correlationId } : null,
+            launchOperation: safeLaunchOperation(launch),
             environment: {
               value: row.environmentStatus,
               source: row.environmentStatus ? "cloudshare_v4_sales_participant_roster" : "not_observed",

@@ -86,15 +86,15 @@ describe("SalesParticipantWorkspace", () => {
       expect(new URL(window.location.href).searchParams.get("participantAnchor")).toBe("p1");
     });
 
-    // A plain click resets the set but preserves the established anchor.
-    await user.click(getRows()[0]);
+    // A plain click resets the set and establishes a new range anchor.
+    await user.click(getRows()[1]);
     fireEvent.click(getRows()[2], { shiftKey: true });
     await waitFor(() => {
-      expect(getRows().every((row) => row.getAttribute("data-selected") === "true")).toBe(true);
+      expect(getRows().map((row) => row.getAttribute("data-selected"))).toEqual([null, "true", "true"]);
       const url = new URL(window.location.href);
       expect(url.searchParams.get("participantActive")).toBe("p3");
-      expect(url.searchParams.get("participantAnchor")).toBe("p1");
-      expect(url.searchParams.get("participantSelected")).toBe("p1,p2,p3");
+      expect(url.searchParams.get("participantAnchor")).toBe("p2");
+      expect(url.searchParams.get("participantSelected")).toBe("p2,p3");
     });
 
     // Keyboard range selection uses the same anchor and selects the full range.
@@ -153,6 +153,24 @@ describe("SalesParticipantWorkspace", () => {
     await waitFor(() => expect(screen.getByText("Completed. Correlation corr-invite.")).toBeTruthy());
     const call = request.mock.calls.find(([, init]) => init?.method === "POST");
     expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ targets: [{ participantId: "p1", intent: "invite", expectedInvitationStatus: "notSent", participantRevision: participant.participantRevision }] });
+  });
+  it("saves the departing entry scroll before pushing and restores it on popstate", async () => {
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 320 });
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    const pushState = vi.spyOn(window.history, "pushState");
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+    render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify(page))} />);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Inspect" }));
+    await waitFor(() => expect(pushState).toHaveBeenCalled());
+    const pushOrder = pushState.mock.invocationCallOrder.at(-1) ?? 0;
+    const departingWrite = replaceState.mock.calls.findIndex((call) => (call[0] as { participantScrollY?: number })?.participantScrollY === 320);
+    expect(departingWrite).toBeGreaterThanOrEqual(0);
+    expect(replaceState.mock.invocationCallOrder[departingWrite]).toBeLessThan(pushOrder);
+    await act(async () => {
+      window.history.replaceState({ participantScrollY: 144 }, "", "/sales?participantActive=p1&participantFocus=inspector");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(scrollTo).toHaveBeenCalledWith(0, 144);
   });
   it("reports HTTP 202 as confirmation pending with its retained replay fence", async () => {
     const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, activeLaunchCapability: false, launchOperation: null, environmentAttention: null };
@@ -281,7 +299,24 @@ describe("SalesParticipantWorkspace", () => {
     await user.click(await screen.findByRole("button", { name: "Inspect" }));
     await user.click(screen.getByRole("button", { name: "Generate launch link" }));
     expect(await screen.findByText("Launch link generated. Copy it from the local workspace when clipboard access is available.")).toBeTruthy();
+    const manualCopy = screen.getByRole("textbox", { name: "Generated launch link" });
+    expect(manualCopy.getAttribute("readonly")).not.toBeNull();
+    expect((manualCopy as HTMLInputElement).value).toContain("/sales/launch/portal-token");
     expect(opened).not.toHaveBeenCalled();
+  });
+  it("clears a one-time generated launch capability when the active row changes", async () => {
+    const second = { ...participant, id: "p2", name: "Grace Hopper" };
+    const rows = [participant, second].map((item) => ({ ...item, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null }));
+    const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST" ? new Response(JSON.stringify({ launchUrl: "/sales/launch/portal-token", correlationId: "launch-corr" }), { status: 201 }) : new Response(JSON.stringify({ participants: rows, total: 2, offset: 0, limit: 25, hasMore: false }), { status: 200 }));
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("denied"));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click((await screen.findAllByRole("button", { name: "Inspect" }))[0]);
+    await user.click(screen.getByRole("button", { name: "Generate launch link" }));
+    expect(await screen.findByRole("textbox", { name: "Generated launch link" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await user.click(screen.getByRole("row", { name: /Grace Hopper/ }));
+    expect(screen.queryByRole("textbox", { name: "Generated launch link" })).toBeNull();
   });
   it("restores direct-link focus and exposes semantic selection, durable feedback, and canonical Activity", async () => {
     window.history.replaceState({}, "", "/sales?participantActive=p1&participantFocus=inspector");
@@ -289,7 +324,7 @@ describe("SalesParticipantWorkspace", () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify({ ...page, participants: [row] }))} />);
     const inspector = await screen.findByRole("complementary", { name: "Participant inspector" }); await waitFor(() => expect(document.activeElement).toBe(inspector));
     const status = screen.getByRole("status"); expect(status.textContent).toContain("invite-corr"); expect(status.textContent).toContain("acknowledged by CloudShare"); expect(status.textContent).toContain("replay allowed and fence released"); expect(status.textContent).not.toContain("accepted_unconfirmed"); expect(status.textContent).not.toContain("provider_acknowledged"); expect(status.textContent).toContain("persistence_failure"); expect(status.textContent).toContain("launch-corr");
-    expect(screen.getByRole("link", { name: "View Activity" }).getAttribute("href")).toBe("/sales/sessions/s1?area=activity&correlationId=launch-corr");
+    expect(screen.getByRole("link", { name: "View Activity" }).getAttribute("href")).toBe("/sales/sessions/s1?area=activity&correlationId=invite-corr");
     expect(screen.getByRole("region", { name: "Scrollable Participant roster" }).getAttribute("tabindex")).toBe("0");
     fireEvent.click(screen.getByRole("row", { name: /Ada Lovelace/ })); expect(screen.getByRole("row", { name: /Ada Lovelace/ }).getAttribute("aria-selected")).toBe("true"); expect(screen.getByText(/1 selected/)).toBeTruthy();
   });

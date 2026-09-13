@@ -1,3 +1,6 @@
+import type { InvitationOutcome, InvitationSafeReason } from "./sales-participant-invitation-ledger";
+import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "./sales-participant-launch-operation";
+
 export type SalesParticipantAction = "invite" | "resend" | "generate_launch" | "revoke_launch" | "open_diagnostics";
 
 export interface SalesParticipantWorkspaceRow {
@@ -12,16 +15,16 @@ export interface SalesParticipantWorkspaceRow {
   readonly providerCorrelation: boolean;
   readonly activeLaunchCapability: boolean;
   readonly currentCommandId: string | null;
-  readonly invitationOutcome: string | null;
-  readonly invitationReason?: string | null;
+  readonly invitationOutcome: InvitationOutcome | null;
+  readonly invitationReason?: InvitationSafeReason | null;
   readonly invitationCorrelationId?: string | null;
   readonly invitationRevision?: number | null;
   /** Latest settled/reconciliation feedback; unlike currentCommandId this is
    * attribution only and never blocks a new command. */
-  readonly latestInvitationOutcome?: string | null;
-  readonly latestInvitationReason?: string | null;
+  readonly latestInvitationOutcome?: InvitationOutcome | null;
+  readonly latestInvitationReason?: InvitationSafeReason | null;
   readonly latestInvitationCorrelationId?: string | null;
-  readonly launchOperation: { readonly operation: string; readonly outcome: string; readonly reason: string | null; readonly correlationId: string | null } | null;
+  readonly launchOperation: { readonly operation: SalesParticipantLaunchOperationKind; readonly outcome: SalesParticipantLaunchOutcome; readonly reason: "persistence_failure" | null; readonly correlationId: string | null } | null;
   readonly environment: { readonly value: string | null; readonly source: string; readonly observedAt?: string };
   readonly environmentAttention: { readonly reason: string; readonly source: string } | null;
 }
@@ -88,9 +91,13 @@ export function reduceParticipantSelection(state: ParticipantSelectionState, eve
       if (start >= 0 && end >= 0) for (const id of pageIds.slice(Math.min(start, end), Math.max(start, end) + 1)) selected.add(id);
       return { activeId: event.id, selectedIds: [...selected], rangeAnchorId: anchor };
     }
-    if (event.type === "toggle" || event.additive) selected.has(event.id) ? selected.delete(event.id) : selected.add(event.id);
-    else { selected.clear(); selected.add(event.id); }
-    return { activeId: event.id, selectedIds: [...selected], rangeAnchorId: state.rangeAnchorId ?? event.id };
+    if (event.type === "toggle" || event.additive) {
+      selected.has(event.id) ? selected.delete(event.id) : selected.add(event.id);
+      return { activeId: event.id, selectedIds: [...selected], rangeAnchorId: state.rangeAnchorId ?? event.id };
+    }
+    selected.clear();
+    selected.add(event.id);
+    return { activeId: event.id, selectedIds: [...selected], rangeAnchorId: event.id };
   }
   return state;
 }

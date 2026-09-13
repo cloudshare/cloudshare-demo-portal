@@ -16,6 +16,15 @@ describe("sales participant workspace contract", () => {
     state = reduceParticipantSelection(state, { type: "move", direction: "next", pageIds: ["p1", "p2", "p3"] });
     expect(state).toMatchObject({ activeId: "p3", selectedIds: ["p1", "p2", "p3"], rangeAnchorId: "p1" });
   });
+  it("starts a new range anchor on a later plain click", () => {
+    const selected = reduceParticipantSelection(
+      { activeId: "p3", selectedIds: ["p1", "p2", "p3"], rangeAnchorId: "p1" },
+      { type: "click", id: "p2", pageIds: ["p1", "p2", "p3"] },
+    );
+    expect(selected).toEqual({ activeId: "p2", selectedIds: ["p2"], rangeAnchorId: "p2" });
+    expect(reduceParticipantSelection(selected, { type: "click", id: "p3", range: true, pageIds: ["p1", "p2", "p3"] }))
+      .toEqual({ activeId: "p3", selectedIds: ["p2", "p3"], rangeAnchorId: "p2" });
+  });
   it("bounds and trims page reads", () => {
     expect(validateParticipantPage({ query: "  Ada ", offset: 25, limit: 25 })).toEqual({ query: "Ada", offset: 25, limit: 25 });
     expect(validateParticipantPage({ offset: -1 })).toBeNull();

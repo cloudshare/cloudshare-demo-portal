@@ -62,5 +62,13 @@ describe("Prisma participant workspace reader", () => {
     expect(invitationFindMany).toHaveBeenCalledTimes(2);
     for (const call of invitationFindMany.mock.calls) expect(call[0]).toMatchObject({ where: { customerId: "customer-a", command: { sessionId: "session-a" } }, take: 1 });
   });
+  it("fails closed instead of projecting arbitrary persisted invitation and launch values", async () => {
+    const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-a", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([row(0)]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([{ salesSessionParticipantId: "p0", commandId: "cmd", revision: 1 }]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([{ commandId: "cmd", phase: "settled", revision: 1, correlationId: "current-corr", targets: [{ salesSessionParticipantId: "p0", outcome: "<script>bad</script>", reason: "secret database value" }] }]) }, salesParticipantInvitationTarget: { findMany: vi.fn().mockResolvedValue([{ salesSessionParticipantId: "p0", outcome: "invented", reason: "another arbitrary value", command: { correlationId: "latest-corr" } }]) }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([{ salesSessionParticipantId: "p0", operation: "redirect", outcome: "maybe", safeReason: "raw exception", correlationId: "launch-corr" }]) } } as never);
+    const result = await reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() });
+    expect(result?.participants[0]).toMatchObject({ invitationOutcome: null, invitationReason: null, latestInvitationOutcome: null, latestInvitationReason: null, launchOperation: null });
+    expect(JSON.stringify(result)).not.toContain("script");
+    expect(JSON.stringify(result)).not.toContain("secret database value");
+    expect(JSON.stringify(result)).not.toContain("raw exception");
+  });
   it("requires unarchived Opportunity and Account ancestry", async () => { const findFirst = vi.fn().mockResolvedValue(null); const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst } } as never); await reader.readPage({ customerId: "c1", sessionId: "s1", query: "", offset: 0, limit: 25, now: new Date() }); expect(findFirst.mock.calls[0][0].where).toMatchObject({ opportunity: { archivedAt: null, account: { archivedAt: null } } }); });
 });
