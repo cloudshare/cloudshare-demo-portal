@@ -3,7 +3,8 @@ import type { SalesParticipantWorkspaceAddParticipantInput, SalesParticipantWork
 export type AddCommandState = "admitted" | "dispatched" | "settled" | "needs_attention";
 export interface SalesParticipantAddCommandStore {
   admit(input: { customerId: string; sessionId: string; commandId: string; payloadHash: string; now: Date }): Promise<{ kind: "new" | "existing" | "mismatch"; state?: AddCommandState; result?: SalesParticipantWorkspaceAddParticipantResult }>;
-  markDispatched(input: { customerId: string; commandId: string; now: Date }): Promise<void>;
+  /** Returns true only when this command atomically crosses the dispatch fence. */
+  markDispatched(input: { customerId: string; commandId: string; now: Date }): Promise<boolean>;
   settle(input: { customerId: string; commandId: string; state: "settled" | "needs_attention"; result: SalesParticipantWorkspaceAddParticipantResult; now: Date }): Promise<void>;
 }
 

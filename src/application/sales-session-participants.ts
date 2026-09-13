@@ -215,9 +215,12 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
           if (matches.length > 1) return settleBeforeDispatch({ status: 409, body: { outcome: "needs_attention", code: "ambiguous_contact", error: "More than one active Contact matches this email." } });
         }
       } catch (error) { return settleBeforeDispatch({ status: 500, body: { outcome: "rejected", code: "contact_lookup_failed", error: error instanceof Error ? error.message : "Participant details could not be verified." } }); }
-      await deps.addCommandStore.markDispatched({ customerId: input.customerId, commandId: input.commandId, now: (deps.now ?? (() => new Date()))() });
+      let dispatched = false;
+      try { dispatched = await deps.addCommandStore.markDispatched({ customerId: input.customerId, commandId: input.commandId, now: (deps.now ?? (() => new Date()))() }); }
+      catch { /* A failed fence is a pre-dispatch failure; provider work is forbidden. */ }
+      if (!dispatched) return settleBeforeDispatch({ status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add could not be safely authorized." } });
       try { const outcome = await addParticipantUnfenced(input); await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "settled", result: outcome, now: (deps.now ?? (() => new Date()))() }); return outcome; }
-      catch (error) { const outcome: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: error instanceof Error ? error.message : "Participant add requires attention." } }; await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "needs_attention", result: outcome, now: (deps.now ?? (() => new Date()))() }); return outcome; }
+      catch { const outcome: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add requires attention." } }; await deps.addCommandStore.settle({ customerId: input.customerId, commandId: input.commandId, state: "needs_attention", result: outcome, now: (deps.now ?? (() => new Date()))() }); return outcome; }
     }
     return addParticipantUnfenced(input);
   };
