@@ -10,6 +10,26 @@ const page = { participants: [participant], total: 1, offset: 0, limit: 25, hasM
 
 describe("SalesParticipantWorkspace", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); window.history.replaceState({}, "", "/sales"); });
+  it("registers one eligible contact once, rereads the canonical page, and inspects the new Participant", async () => {
+    const user = userEvent.setup();
+    const registered = { ...participant, id: "registered-1", name: "Grace Hopper", email: "grace@example.test" };
+    let reread = false;
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/participants/register")) { reread = true; return new Response(JSON.stringify({ status: "registered", registeredParticipantIds: [registered.id] }), { status: 200 }); }
+      if (url.includes("/participants/invite")) throw new Error("invite must not be called");
+      return new Response(JSON.stringify(reread ? { participants: [registered], total: 1, offset: 0, limit: 25, hasMore: false } : { participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-1", name: "Grace Hopper", email: "grace@example.test" }] }));
+    });
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("checkbox"));
+    const register = screen.getByRole("button", { name: "Register selected contacts" });
+    await user.click(register);
+    await user.click(register);
+    await screen.findByRole("row", { name: /Grace Hopper/ });
+    expect(request.mock.calls.filter(([, init]) => init?.method === "POST" && String(init.body).includes("opportunityContactIds")).length).toBe(1);
+    expect(request.mock.calls.some(([url]) => String(url).includes("/participants/invite"))).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Inspect" }));
+    expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
+  });
   it("hydrates bounded query and offset from the URL and rereads on popstate", async () => {
     window.history.replaceState({}, "", "/sales?participantQuery=ada&participantOffset=25");
     const request = vi.fn(async () => new Response(JSON.stringify({ ...page, offset: 25 }), { status: 200 }));
