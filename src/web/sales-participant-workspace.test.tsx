@@ -106,7 +106,8 @@ describe("SalesParticipantWorkspace", () => {
   it("keeps paging bounded and announces an unavailable reread", async () => {
     const request = vi.fn(async (url: string) => new Response(JSON.stringify({ participants: [], total: 26, offset: url.includes("offset=25") ? 25 : 0, limit: 25, hasMore: true }), { status: 200 }));
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
-    await screen.findByText("No Participants are registered for this Sales Session.");
+    await screen.findByText("No Participants match this page or search.");
+    expect(screen.queryByText("Register an eligible Opportunity Contact to add the first Participant.")).toBeNull();
     expect(screen.getByRole("button", { name: "Next" })).toBeTruthy();
     await userEvent.setup().click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(request.mock.calls.some((call) => String(call[0] ?? "").includes("offset=25"))).toBe(true));
