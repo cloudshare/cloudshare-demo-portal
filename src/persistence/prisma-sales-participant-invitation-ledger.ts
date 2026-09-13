@@ -30,12 +30,13 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
   const finishInTransaction = async (tx: Prisma.TransactionClient, input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[]; projections?: readonly ParticipantInvitationProjection[] }) => {
     const command = await tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, include: { targets: { orderBy: { ordinal: "asc" } }, fences: true } });
     const ids = input.targetOutcomes.map((o) => o.participantId);
+    const hasMatchingProjection = (target: typeof command.targets[number]) => input.projections?.some((projection) => projection.participantId === target.salesSessionParticipantId && projection.expectedParticipantRevision === target.projectionRevision) ?? false;
     const retainedBefore = new Set(command.targets.filter((target) => target.outcome === null || ["no_replay", "confirmation_required"].includes(target.outcome)).map((target) => target.salesSessionParticipantId));
     const legalTransition = (target: typeof command.targets[number], next: InvitationTargetOutcome) => {
       if (target.outcome === null) return target.intent === "invite" ? next.outcome !== "accepted_unconfirmed" : !["confirmed", "confirmed_by_reconciliation"].includes(next.outcome);
-      if (target.outcome === "no_replay") return next.reason === (next.outcome === "no_replay" ? "ambiguous_after_dispatch" : null) && (next.outcome === "no_replay" || (target.intent === "invite" && next.outcome === "confirmed_by_reconciliation"));
+      if (target.outcome === "no_replay") return next.reason === (next.outcome === "no_replay" ? "ambiguous_after_dispatch" : null) && (next.outcome === "no_replay" || (target.intent === "invite" && next.outcome === "confirmed_by_reconciliation" && input.phase === "settled" && hasMatchingProjection(target)));
       if (target.outcome === "confirmation_required") return target.intent === "invite"
-        ? ((next.outcome === "confirmation_required" && next.reason === "confirmation_required") || (["confirmed", "confirmed_by_reconciliation"].includes(next.outcome) && next.reason === null))
+        ? ((next.outcome === "confirmation_required" && next.reason === "confirmation_required") || (next.outcome === "confirmed" && next.reason === null && input.expectedPhase === "evaluating_confirmation" && hasMatchingProjection(target)) || (next.outcome === "confirmed_by_reconciliation" && next.reason === null && input.phase === "settled" && hasMatchingProjection(target)))
         : ((next.outcome === "confirmation_required" && next.reason === "confirmation_required") || (next.outcome === "accepted_unconfirmed" && next.reason === null));
       return next.outcome === target.outcome && next.reason === target.reason;
     };
