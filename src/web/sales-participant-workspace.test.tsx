@@ -33,6 +33,32 @@ describe("SalesParticipantWorkspace", () => {
     await user.click(screen.getByRole("button", { name: "Inspect" }));
     expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
   });
+  it("adds an ad hoc person once and rereads the canonical Participant", async () => {
+    const user = userEvent.setup();
+    const added = { ...participant, id: "ad-hoc-1", name: "Katherine Johnson", email: "katherine@example.test" };
+    let addedOnce = false;
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/participants/add")) { addedOnce = true; return new Response(JSON.stringify({ outcome: "registered", participantId: added.id, contactId: "contact-ad-hoc" }), { status: 201 }); }
+      if (url.includes("/participants/invite")) throw new Error("invite must not be called");
+      return new Response(JSON.stringify(addedOnce ? { participants: [added], total: 1, offset: 0, limit: 25, hasMore: false, eligibleContacts: [] } : { participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [] }));
+    });
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(screen.getByLabelText(/New person/));
+    await user.type(screen.getByLabelText("First name"), "Katherine");
+    await user.type(screen.getByLabelText("Last name"), "Johnson");
+    await user.type(screen.getByLabelText("Email"), "katherine@example.test");
+    const add = screen.getByRole("button", { name: "Add participant" });
+    await user.click(add); await user.click(add);
+    await screen.findByRole("row", { name: /Katherine Johnson/ });
+    const posts = request.mock.calls.filter(([url, init]) => init?.method === "POST" && String(url).includes("/participants/add"));
+    expect(posts).toHaveLength(1);
+    expect(String(posts[0]?.[1]?.body)).toContain('"kind":"adHoc"');
+    expect(String(posts[0]?.[1]?.body)).toContain('"commandId"');
+    expect(request.mock.calls.some(([url]) => String(url).includes("/participants/invite"))).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Inspect" }));
+    expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
+  });
+
   it("hydrates bounded query and offset from the URL and rereads on popstate", async () => {
     window.history.replaceState({}, "", "/sales?participantQuery=ada&participantOffset=25");
     const request = vi.fn(async () => new Response(JSON.stringify({ ...page, offset: 25 }), { status: 200 }));
