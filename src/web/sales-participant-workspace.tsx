@@ -69,6 +69,13 @@ export function SalesParticipantWorkspace(props: {
   }, [active]);
   useEffect(() => {
     const generation = ++registrationGeneration.current;
+    registrationCommand.current = null;
+    automaticRetryCount.current = 0;
+    setRegistrationOutcome(null);
+    setRegistrationFeedback(null);
+    setRegistrationBusy(false);
+    setRegistrationId("");
+    setAdHoc({ firstName: "", lastName: "", email: "" });
     return () => {
       if (registrationGeneration.current === generation) registrationGeneration.current += 1;
       if (automaticRetryTimer.current) { clearTimeout(automaticRetryTimer.current); automaticRetryTimer.current = null; }

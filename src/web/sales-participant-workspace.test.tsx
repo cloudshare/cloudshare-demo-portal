@@ -115,6 +115,38 @@ describe("SalesParticipantWorkspace", () => {
     expect(posts).toHaveLength(1);
   });
 
+  it("clears a canceled automatic retry when the workspace changes Session", async () => {
+    const user = userEvent.setup(); const posts: string[] = [];
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/participants/add")) { posts.push(url); return new Response(JSON.stringify({ outcome: "rejected", code: "participant_add_retryable", dispatchOutcome: "not_dispatched", correlationId: "old-session-correlation" }), { status: 503 }); }
+      return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-1", name: "Grace Hopper", email: "grace@example.test" }] }));
+    });
+    const view = render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
+    await user.click(screen.getByRole("button", { name: "Add participant" }));
+    await screen.findByText(/Automatic retry 1 of 3/);
+    view.rerender(<SalesParticipantWorkspace sessionId="s2" active request={request} />);
+    await waitFor(() => expect(screen.queryByText("old-session-correlation")).toBeNull());
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
+    expect((screen.getByRole("button", { name: "Add participant" }) as HTMLButtonElement).disabled).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 2_100));
+    expect(posts).toHaveLength(1);
+  });
+
+  it("ignores a pending participant response and unlocks Add when the workspace changes Session", async () => {
+    const user = userEvent.setup(); let release!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => { release = resolve; });
+    const request = vi.fn(async (url: string) => url.endsWith("/participants/add") ? pending : new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-1", name: "Grace Hopper", email: "grace@example.test" }] })));
+    const view = render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
+    await user.click(screen.getByRole("button", { name: "Add participant" }));
+    view.rerender(<SalesParticipantWorkspace sessionId="s2" active request={request} />);
+    await act(async () => { release(new Response(JSON.stringify({ outcome: "rejected", code: "participant_add_retryable", dispatchOutcome: "not_dispatched", correlationId: "old-pending-correlation" }), { status: 503 })); await pending; });
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
+    expect((screen.getByRole("button", { name: "Add participant" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText("old-pending-correlation")).toBeNull();
+  });
+
   it("refreshes a legacy no-replay command into explicit retry-safe state without adding a participant", async () => {
     const user = userEvent.setup(); const posts: Array<{ url: string; body: string }> = [];
     const durableCommandId = "11111111-1111-4111-8111-111111111111";
