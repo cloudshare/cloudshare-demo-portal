@@ -201,7 +201,12 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
           if (matches.length === 1) targetKey = `contact:${matches[0]!.id}`;
         }
       }
-      const admitted = await deps.addCommandStore.admit({ customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId, targetKey, payloadHash: addParticipantPayloadHash(input), now: (deps.now ?? (() => new Date()))() });
+      let admitted: Awaited<ReturnType<NonNullable<typeof deps.addCommandStore>["admit"]>>;
+      try {
+        admitted = await deps.addCommandStore.admit({ customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId, targetKey, payloadHash: addParticipantPayloadHash(input), now: (deps.now ?? (() => new Date()))() });
+      } catch {
+        return { status: 503, body: { outcome: "rejected", code: "participant_add_unavailable", error: "Participant add could not be started. Retry the operation." } };
+      }
       if (admitted.kind === "mismatch") return { status: 409, body: { outcome: "rejected", code: "command_id_mismatch", error: "Command ID was already used for a different Participant." } };
       if (admitted.kind === "existing") return admitted.result ?? { status: 202, body: { outcome: admitted.state === "needs_attention" ? "needs_attention" : "rejected", code: "command_in_progress" } };
       const settleBeforeDispatch = async (result: SalesParticipantWorkspaceAddParticipantResult) => {
