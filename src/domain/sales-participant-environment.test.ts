@@ -29,4 +29,6 @@ it.each([
 
 it("does not treat an unknown roster state as a documented display value", () => {
   expect(isProjectableSalesParticipantRosterEnvironment("Unknown")).toBe(false);
+  expect(isProjectableSalesParticipantRosterEnvironment("toString")).toBe(false);
+  expect(isProjectableSalesParticipantRosterEnvironment("__proto__")).toBe(false);
 });

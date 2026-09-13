@@ -17,9 +17,10 @@ const rosterEnvironmentValues = {
   Stopping: "Stopping",
   EditingNetworks: "Editing networks",
 } as const;
+const rosterEnvironmentKeys = new Set(Object.keys(rosterEnvironmentValues));
 
 export function isProjectableSalesParticipantRosterEnvironment(status: string | null | undefined): status is keyof typeof rosterEnvironmentValues {
-  return typeof status === "string" && status in rosterEnvironmentValues;
+  return typeof status === "string" && rosterEnvironmentKeys.has(status);
 }
 
 /** Exact documented v3 Environment statusCode display contract for Sales UI. */

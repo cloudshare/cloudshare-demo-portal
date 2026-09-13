@@ -253,7 +253,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
             exactRemoteByParticipantId.set(stored.id, remote[0]!);
             resolvedRetainedIds.add(stored.id);
           });
-          if (resolvedRetainedIds.size > 0 || (first.command.phase === "evaluating_confirmation" && retainedResends.length > 0)) {
+          if (resolvedRetainedIds.size > 0 || first.command.phase === "evaluating_confirmation") {
             const reconciledOutcomes: InvitationTargetOutcome[] = parsed.data.targets.map((target) => {
               if (resolvedRetainedIds.has(target.participantId)) return { participantId: target.participantId, outcome: "confirmed_by_reconciliation", reason: null };
               if (retainedResends.some((candidate) => candidate.participantId === target.participantId) && first.command.phase === "evaluating_confirmation") return { participantId: target.participantId, outcome: "accepted_unconfirmed", reason: null };
@@ -531,8 +531,8 @@ export async function handleListSalesSessionParticipants(deps: BaseDeps, request
         invitedBy: participant.invitedBy,
         participationStatus: participant.participationStatus,
         firstJoined: participant.firstJoined,
-        cloudShareEnvironmentId: participant.environmentId,
-        environmentStatus: participant.envStatus ?? null,
+        cloudShareEnvironmentId: participant.environmentId ?? stored.cloudShareEnvironmentId,
+        environmentStatus: isProjectableSalesParticipantRosterEnvironment(participant.envStatus) ? participant.envStatus : stored.environmentStatus,
         lastReconciledAt: now,
         updatedAt: now,
       } : stored;
@@ -545,9 +545,6 @@ export async function handleListSalesSessionParticipants(deps: BaseDeps, request
           // labelled current v3 list observation has no exact match.
           observed = { ...current, environmentStatusCode: null, environmentObservedAt: now, environmentAttentionReason: null, environmentAttentionSource: null };
           await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: now });
-        } else if (!current.cloudShareEnvironmentId) {
-          observed = { ...current, environmentStatusCode: null, environmentObservedAt: null };
-          await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: null });
         } else if (environmentSource && item) {
           const contact = await deps.records.findContact(request.customerId, current.opportunityContactId);
           if (!contact) throw new Error("Sales Participant Contact was not found for this Customer");
@@ -569,6 +566,8 @@ export async function handleListSalesSessionParticipants(deps: BaseDeps, request
               throw error;
             }
           }
+        } else if (!current.cloudShareEnvironmentId) {
+          observed = current;
         } else if (legacyEnvironmentSource) {
           let read: Awaited<ReturnType<EnvironmentStateEvidenceSource["readEnvironmentState"]>>;
           try { read = await legacyEnvironmentSource.readEnvironmentState(current.cloudShareEnvironmentId); }

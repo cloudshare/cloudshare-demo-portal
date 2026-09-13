@@ -809,6 +809,17 @@ describe("Sales Session participant invitation", () => {
     expect(ledger.finishBatch).not.toHaveBeenCalled();
   });
 
+  it("terminally settles a restarted initial Invite when a complete roster proves no transition", async () => {
+    const participant = storedParticipant(); const commandId = randomUUID(); const correlationId = "corr-restart";
+    const evaluating = { command: { customerId: "customer-1", commandId, phase: "evaluating_confirmation" as const, revision: 3, correlationId }, targets: [{ participantId: participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: participant.updatedAt.toISOString() }], outcome: invitationResult({ commandId, correlationId, outcomes: [{ participantId: participant.id, outcome: "confirmation_required", reason: "confirmation_required" }] }) };
+    const settled = { ...evaluating, command: { ...evaluating.command, phase: "settled" as const, revision: 4, httpStatus: 202, resultCode: "invitation_confirmation_required" } };
+    const readCommand = vi.fn().mockResolvedValueOnce(evaluating).mockResolvedValueOnce(evaluating).mockResolvedValue(settled); const finishBatchWithParticipantProjections = vi.fn().mockResolvedValue(settled.command);
+    const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId, command: evaluating.command }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections, readCommand, readCurrent: vi.fn() };
+    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1", participant.id, participant.opportunityContactId)])), inviteParticipants: vi.fn() }) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
+    expect(finishBatchWithParticipantProjections).toHaveBeenCalledWith(expect.objectContaining({ expectedPhase: "evaluating_confirmation", phase: "settled", httpStatus: 202, resultCode: "invitation_confirmation_required", projections: [] }));
+    expect(result).toMatchObject({ status: 202, body: { code: "invitation_confirmation_required", phase: "settled", outcome: "confirmation_required" } });
+  });
+
   it("fails retained reconciliation closed for a duplicate single correlation key or an intervening participant revision", async () => {
     const participant = storedParticipant(); const commandId = randomUUID();
     const makeLedger = (participantRevision = participant.updatedAt.toISOString()) => {
