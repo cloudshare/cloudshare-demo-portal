@@ -271,6 +271,18 @@ describe("SalesParticipantWorkspace", () => {
     expect(opened).not.toHaveBeenCalled();
     expect(screen.getByText("Launch link generated and copied.")).toBeTruthy();
   });
+  it("keeps a successful generated capability local when clipboard permission is denied", async () => {
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null };
+    const opened = vi.spyOn(window, "open").mockImplementation(() => null);
+    const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST" ? new Response(JSON.stringify({ launchUrl: "/sales/launch/portal-token", correlationId: "launch-corr" }), { status: 201 }) : new Response(JSON.stringify({ participants: [row], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 }));
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("denied"));
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Generate launch link" }));
+    expect(await screen.findByText("Launch link generated. Copy it from the local workspace when clipboard access is available.")).toBeTruthy();
+    expect(opened).not.toHaveBeenCalled();
+  });
   it("restores direct-link focus and exposes semantic selection, durable feedback, and canonical Activity", async () => {
     window.history.replaceState({}, "", "/sales?participantActive=p1&participantFocus=inspector");
     const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, latestInvitationOutcome: "accepted_unconfirmed", latestInvitationReason: "provider_acknowledged", latestInvitationCorrelationId: "invite-corr", launchOperation: { operation: "generate", outcome: "failure", reason: "persistence_failure", correlationId: "launch-corr" }, environmentAttention: null };

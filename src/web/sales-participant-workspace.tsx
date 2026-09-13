@@ -134,8 +134,13 @@ export function SalesParticipantWorkspace(props: {
         const launch = new URL(launchUrl, window.location.origin);
         if (launch.origin !== window.location.origin || !launch.pathname.startsWith("/sales/launch/")) throw new Error("Launch link was rejected because it was not a Certalis portal link.");
         if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(launch.toString());
-          copiedLaunch = true;
+          try {
+            await navigator.clipboard.writeText(launch.toString());
+            copiedLaunch = true;
+          } catch {
+            // The capability remains generated locally when browser clipboard
+            // permission is unavailable; never follow it as a fallback.
+          }
         }
       }
       const confirmationPending = response.status === 202 || code === "confirmation_required" || outcome === "confirmation_required" || outcome === "in_progress";
