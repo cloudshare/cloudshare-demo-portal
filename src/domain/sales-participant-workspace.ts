@@ -1,4 +1,5 @@
-import type { InvitationOutcome, InvitationSafeReason, InvitationTarget } from "./sales-participant-invitation-ledger";
+import type { InvitationOutcome, InvitationSafeReason } from "./sales-participant-invitation-ledger";
+import type { DiagnosticActor } from "./diagnostic-log";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "./sales-participant-launch-operation";
 import type { SalesParticipantEnvironmentObservation } from "./sales-participant-environment";
 
@@ -45,13 +46,30 @@ export interface SalesParticipantWorkspaceReader { readPage(input: { customerId:
 
 /** Application-facing participant workspace boundary. Persistence and ledger
  * lifecycle details stay behind this deliberately small caller contract. */
+export type SalesParticipantWorkspaceInvitationTarget = {
+  readonly participantId: string;
+  readonly intent: "invite" | "resend";
+  readonly expectedInvitationStatus: "notSent" | "sent";
+  readonly participantRevision: string;
+};
+export type SalesParticipantWorkspaceInvitationRequest = {
+  readonly customerId: string;
+  readonly sessionId: string;
+  readonly actor: DiagnosticActor;
+  readonly commandId: string;
+  readonly targets: readonly SalesParticipantWorkspaceInvitationTarget[];
+};
+export type SalesParticipantWorkspaceInvitationResult = {
+  readonly status: number;
+  readonly body: {
+    readonly outcome?: "accepted" | "in_progress" | "completed" | "needs_attention" | "rejected";
+    readonly code?: string;
+    readonly error?: string;
+    readonly correlationId?: string | null;
+  };
+};
 export interface SalesParticipantWorkspace extends SalesParticipantWorkspaceReader {
-  submitInvitation(input: {
-    readonly customerId: string;
-    readonly sessionId: string;
-    readonly commandId: string;
-    readonly targets: readonly InvitationTarget[];
-  }): Promise<{ readonly status: number; readonly body: Record<string, unknown> }>;
+  submitInvitation(input: SalesParticipantWorkspaceInvitationRequest): Promise<SalesParticipantWorkspaceInvitationResult>;
 }
 
 export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, now: Date): Readonly<Record<SalesParticipantAction, boolean>> {
