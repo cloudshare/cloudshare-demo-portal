@@ -215,9 +215,10 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
   };
   const addParticipantUnfenced = async (input: Parameters<NonNullable<SalesParticipantWorkspace["addParticipant"]>>[0]): Promise<SalesParticipantWorkspaceAddParticipantResult> => {
     if (input.person.kind === "existingContact") {
+      const contactId = input.person.contactId;
       const existing = await deps.participants.list(input.customerId, input.sessionId);
-      if (existing.some((participant) => participant.opportunityContactId === input.person.contactId)) return { status: 200, body: { outcome: "already_registered", code: "already_registered" } };
-      const result = await registerExisting({ customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, opportunityContactIds: [input.person.contactId] });
+      if (existing.some((participant) => participant.opportunityContactId === contactId)) return { status: 200, body: { outcome: "already_registered", code: "already_registered" } };
+      const result = await registerExisting({ customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, opportunityContactIds: [contactId] });
       return { status: result.status, body: { outcome: result.status >= 200 && result.status < 300 ? "registered" : "rejected", ...result.body } };
     }
     if (!deps.sessions.findById) return { status: 404, body: { outcome: "rejected", code: "session_not_found", error: "Sales Session was not found." } };
