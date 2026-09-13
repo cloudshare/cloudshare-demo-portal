@@ -31,6 +31,8 @@
 .count, .inlineBadge, .successBadge, .failureBadge { display: inline-block; border-radius: 999px; padding: .2rem .5rem; font-size: .78rem; font-weight: 700; white-space: nowrap; }
 .count, .inlineBadge { background: #edf3f7; color: #405267; }
 .tableWrap { overflow-x: auto; }
+.roster tbody tr[aria-selected="true"] { background: rgba(36, 87, 214, .12); }
+.roster tbody tr[data-active="true"] { outline: 2px solid #2457d6; outline-offset: -2px; }
 .roster { width: 100%; min-width: 48rem; border-collapse: collapse; }
 .roster th, .roster td { padding: .75rem; border-bottom: 1px solid #e5edf3; text-align: left; vertical-align: top; }
 .roster thead th { color: #52606d; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }

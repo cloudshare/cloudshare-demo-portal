@@ -21,7 +21,7 @@ export interface SalesParticipantWorkspaceRow {
   readonly latestInvitationOutcome?: string | null;
   readonly latestInvitationReason?: string | null;
   readonly latestInvitationCorrelationId?: string | null;
-  readonly launchOperation: { readonly outcome: string; readonly correlationId: string | null } | null;
+  readonly launchOperation: { readonly operation: string; readonly outcome: string; readonly reason: string | null; readonly correlationId: string | null } | null;
   readonly environment: { readonly value: string | null; readonly source: string; readonly observedAt?: string };
   readonly environmentAttention: { readonly reason: string; readonly source: string } | null;
 }

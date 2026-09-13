@@ -26,6 +26,7 @@ export async function handleCreateSalesParticipantLaunchLink(deps: Deps, request
   try {
     await deps.links.regenerate({ id: randomUUID(), customerId: request.customerId, salesDemoSessionId: request.sessionId, salesSessionParticipantId: owned.participant.id, tokenHash: hash(token), revokedAt: null, createdAt: now }, now, correlationId);
   } catch (error) {
+    await persistLaunchFailure(deps, request, correlationId, "generate", now);
     return adminPersistenceFailure(deps, request, "generated", correlationId, error);
   }
   await adminEvidence(deps, request, correlationId, "sales.demo_session.participant_launch.generated", "success");
@@ -35,9 +36,10 @@ export async function handleRevokeSalesParticipantLaunchLink(deps: Deps, request
   if (!await ownedParticipant(deps, request)) return generic;
   const correlationId = randomUUID();
   try { await deps.links.revokeActive(request.customerId, request.sessionId, request.participantId, (deps.now ?? (() => new Date()))(), correlationId); }
-  catch (error) { return adminPersistenceFailure(deps, request, "revoked", correlationId, error); }
+  catch (error) { await persistLaunchFailure(deps, request, correlationId, "revoke", (deps.now ?? (() => new Date()))()); return adminPersistenceFailure(deps, request, "revoked", correlationId, error); }
   await adminEvidence(deps, request, correlationId, "sales.demo_session.participant_launch.revoked", "success"); return { status: 200, body: { correlationId } };
 }
+async function persistLaunchFailure(deps: Deps, request: AdminRequest, correlationId: string, operation: "generate" | "revoke", occurredAt: Date): Promise<void> { try { await deps.links.recordFailure({ customerId: request.customerId, salesDemoSessionId: request.sessionId, participantId: request.participantId, correlationId, operation, safeReason: "persistence_failure", occurredAt }); } catch { /* Database-wide failure cannot be made durable; keep the response controlled. */ } }
 export async function handleSalesParticipantLaunch(deps: Deps, token: string): Promise<{ status: number; redirect?: string; body?: { error: string; correlationId?: string; denialContext?: SalesLaunchDenialContext | null } }> {
   const correlationId = randomUUID(); let link: Awaited<ReturnType<SalesParticipantLaunchLinkRepository["findByTokenHash"]>> = null;
   try { link = token.length >= 40 ? await deps.links.findByTokenHash(hash(token)) : null; } catch (error) { return launchDenied(deps, null, correlationId, "persistence_failure", error); }

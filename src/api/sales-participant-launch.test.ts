@@ -39,6 +39,12 @@ describe("Sales participant instant launch", () => {
     expect(result).toMatchObject({ status: 503, body: { code: "persistence_failure", correlationId: expect.any(String) } });
     expect(JSON.stringify(result.body)).not.toMatch(/secret|tokenHash|launchUrl|cloudshare/);
   });
+  it("persists controlled failure feedback with the response correlation", async () => {
+    const recordFailure = vi.fn(); const d = deps({ links: { ...deps().links, regenerate: vi.fn().mockRejectedValue(new Error("private detail")), recordFailure } });
+    const result = await handleCreateSalesParticipantLaunchLink(d, { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor });
+    expect(recordFailure).toHaveBeenCalledWith(expect.objectContaining({ participantId: "participant-1", operation: "generate", safeReason: "persistence_failure", correlationId: result.body.correlationId }));
+    expect(result.body).not.toHaveProperty("launchUrl");
+  });
   it("redirects only in its active window and never returns the CloudShare URL in a body", async () => {
     const d = deps(); d.links.findByTokenHash.mockResolvedValue({ id: "link-1", customerId: "certalis", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: null, createdAt: now });
     const result = await handleSalesParticipantLaunch(d, "a".repeat(43));

@@ -3,16 +3,19 @@ import type {
   SalesParticipantWorkspacePage,
   SalesParticipantWorkspaceReader,
 } from "@/domain/sales-participant-workspace";
+import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
 export function createPrismaSalesParticipantWorkspaceReader(
   prisma: PrismaClient,
 ): SalesParticipantWorkspaceReader {
   return {
     async readPage(input) {
       const session = await prisma.salesDemoSession.findFirst({
-        where: { id: input.sessionId, customerId: input.customerId },
-        select: { id: true, end: true, sendInvitations: true },
+        where: { id: input.sessionId, customerId: input.customerId, opportunity: { archivedAt: null, account: { archivedAt: null } } },
+        select: { id: true, end: true, timeZone: true, sendInvitations: true },
       });
       if (!session) return null;
+      const sessionEnd = cloudShareWallClockToInstant(session.end, session.timeZone);
+      if (!sessionEnd) return null;
       // Prisma's SQLite connector does not support the `mode` filter modifier.
       // SQLite LIKE is case-insensitive for the ASCII contact data used by the
       // portal, so `contains` gives the required bounded name/email search
@@ -47,7 +50,6 @@ export function createPrismaSalesParticipantWorkspaceReader(
             invitationStatus: true,
             participationStatus: true,
             cloudShareParticipantId: true,
-            cloudShareRosterEnvironmentReference: true,
             environmentStatus: true,
             environmentObservedAt: true,
             environmentAttentionReason: true,
@@ -134,7 +136,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
             where: { customerId: input.customerId, salesDemoSessionId: input.sessionId, salesSessionParticipantId: { in: participantIds } },
             orderBy: [{ occurredAt: "desc" }, { revision: "desc" }, { id: "desc" }],
             distinct: ["salesSessionParticipantId"],
-            select: { salesSessionParticipantId: true, outcome: true, correlationId: true },
+            select: { salesSessionParticipantId: true, operation: true, outcome: true, safeReason: true, correlationId: true },
           })
         : [];
       const launchByParticipant = new Map(launchOperations.map((operation) => [operation.salesSessionParticipantId, operation]));
@@ -164,7 +166,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
             invitationStatus:
               row.invitationStatus === "sent" ? "sent" : "notSent",
             participationStatus: row.participationStatus,
-            sessionEndsAt: session.end,
+            sessionEndsAt: sessionEnd.toISOString(),
             nativeInvitationsEnabled:
               session.sendInvitations === "salesProsAndParticipants",
             providerCorrelation: Boolean(row.cloudShareParticipantId),
@@ -178,14 +180,10 @@ export function createPrismaSalesParticipantWorkspaceReader(
             latestInvitationReason: latest?.reason ?? null,
             latestInvitationCorrelationId:
               latest?.command.correlationId ?? null,
-            launchOperation: launch ? { outcome: launch.outcome, correlationId: launch.correlationId } : null,
+            launchOperation: launch ? { operation: launch.operation, outcome: launch.outcome, reason: launch.safeReason, correlationId: launch.correlationId } : null,
             environment: {
               value: row.environmentStatus,
-              source: row.environmentStatus
-                ? "cloudshare_v4_sales_participant_roster"
-                : row.cloudShareRosterEnvironmentReference
-                  ? "not_observed"
-                  : "not_assigned",
+              source: row.environmentStatus ? "cloudshare_v4_sales_participant_roster" : "not_observed",
               ...(row.environmentObservedAt
                 ? { observedAt: row.environmentObservedAt.toISOString() }
                 : {}),

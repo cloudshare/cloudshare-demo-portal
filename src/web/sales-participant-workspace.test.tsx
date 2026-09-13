@@ -206,4 +206,14 @@ describe("SalesParticipantWorkspace", () => {
     await waitFor(() => expect(opened).toHaveBeenCalledWith(expect.stringContaining("/sales/launch/portal-token"), "_blank", "noopener,noreferrer"));
     expect(screen.getByText("Launch link ready.")).toBeTruthy();
   });
+  it("restores direct-link focus and exposes semantic selection, durable feedback, and canonical Activity", async () => {
+    window.history.replaceState({}, "", "/sales?participantActive=p1&participantFocus=inspector");
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, latestInvitationOutcome: "accepted_unconfirmed", latestInvitationReason: "provider_acknowledged", latestInvitationCorrelationId: "invite-corr", launchOperation: { operation: "generate", outcome: "failure", reason: "persistence_failure", correlationId: "launch-corr" }, environmentAttention: null };
+    render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify({ ...page, participants: [row] }))} />);
+    const inspector = await screen.findByRole("complementary", { name: "Participant inspector" }); await waitFor(() => expect(document.activeElement).toBe(inspector));
+    const status = screen.getByRole("status"); expect(status.textContent).toContain("invite-corr"); expect(status.textContent).toContain("persistence_failure"); expect(status.textContent).toContain("launch-corr");
+    expect(screen.getByRole("link", { name: "View Activity" }).getAttribute("href")).toBe("/sales/sessions/s1?area=activity&correlationId=launch-corr");
+    expect(screen.getByRole("region", { name: "Scrollable Participant roster" }).getAttribute("tabindex")).toBe("0");
+    fireEvent.click(screen.getByRole("row", { name: /Ada Lovelace/ })); expect(screen.getByRole("row", { name: /Ada Lovelace/ }).getAttribute("aria-selected")).toBe("true"); expect(screen.getByText(/1 selected/)).toBeTruthy();
+  });
 });

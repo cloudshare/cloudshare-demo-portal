@@ -7,5 +7,6 @@ export interface SalesParticipantLaunchLinkRepository {
   /** Atomically revokes a previous active capability and persists its replacement. */
   regenerate(link: SalesParticipantLaunchLink, at: Date, correlationId?: string, revision?: number): Promise<void>;
   revokeActive(customerId: string, salesDemoSessionId: string, participantId: string, at: Date, correlationId?: string, revision?: number): Promise<void>;
+  recordFailure(input: { readonly customerId: string; readonly salesDemoSessionId: string; readonly participantId: string; readonly correlationId: string; readonly operation: "generate" | "revoke"; readonly safeReason: "persistence_failure"; readonly occurredAt: Date }): Promise<void>;
   findByTokenHash(tokenHash: string): Promise<SalesParticipantLaunchLink | null>;
 }
