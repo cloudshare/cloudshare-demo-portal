@@ -28,7 +28,6 @@ export function SalesParticipantWorkspace(props: {
 }) {
   const { sessionId, active, request } = props;
   const [page, setPage] = useState<ParticipantPage | null>(null);
-  const [pageHref, setPageHref] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const initial = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
   const [query, setQuery] = useState(initial?.get("participantQuery") ?? "");
@@ -39,8 +38,6 @@ export function SalesParticipantWorkspace(props: {
     return { activeId: params.get("participantActive"), selectedIds: (params.get("participantSelected") ?? "").split(",").filter(Boolean).slice(0, 25), rangeAnchorId: params.get("participantAnchor") };
   });
   const [inspectorOpen, setInspectorOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("participantFocus") === "inspector" && Boolean(new URLSearchParams(window.location.search).get("participantActive")));
-  const inspectorOpenRef = useRef(inspectorOpen);
-  inspectorOpenRef.current = inspectorOpen;
   const [feedback, setFeedback] = useState<Record<string, string>>({});
   const [generatedLaunch, setGeneratedLaunch] = useState<{ sessionId: string; participantId: string; url: string } | null>(null);
   const inspectorRef = useRef<HTMLElement>(null);
@@ -53,16 +50,13 @@ export function SalesParticipantWorkspace(props: {
   const lastUrl = useRef<string | null>(null);
   const logicalFocus = useRef<"row" | "inspector">(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("participantFocus") === "inspector" ? "inspector" : "row");
   const href = useCallback(() => `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/page?${query ? `query=${encodeURIComponent(query)}&` : ""}offset=${offset}&limit=25`, [offset, query, sessionId]);
-  const currentPageHref = href();
-  const currentPageHrefRef = useRef(currentPageHref);
-  currentPageHrefRef.current = currentPageHref;
   const activeParticipant = page?.participants.find((row) => row.id === selection.activeId) ?? null;
 
   useEffect(() => {
     if (active) headingRef.current?.focus();
   }, [active]);
   useEffect(() => {
-    const onPop = () => { const params = new URLSearchParams(window.location.search); const inspector = params.get("participantFocus") === "inspector" && Boolean(params.get("participantActive")); clearedInspectorTarget.current = false; historyMode.current = "replace"; lastUrl.current = window.location.href; setQuery(params.get("participantQuery") ?? ""); setOffset(Number(params.get("participantOffset") ?? 0) || 0); setSelection({ activeId: params.get("participantActive"), selectedIds: (params.get("participantSelected") ?? "").split(",").filter(Boolean).slice(0, 25), rangeAnchorId: params.get("participantAnchor") }); setFeedback((current) => { const next = { ...current }; delete next._announcement; return next; }); logicalFocus.current = inspector ? "inspector" : "row"; setInspectorOpen(inspector); const scrollY = window.history.state?.participantScrollY; if (typeof scrollY === "number" && typeof window.scrollTo === "function") window.scrollTo(0, scrollY); };
+    const onPop = () => { const params = new URLSearchParams(window.location.search); const inspector = params.get("participantFocus") === "inspector" && Boolean(params.get("participantActive")); clearedInspectorTarget.current = false; historyMode.current = "replace"; lastUrl.current = window.location.href; setQuery(params.get("participantQuery") ?? ""); setOffset(Number(params.get("participantOffset") ?? 0) || 0); setSelection({ activeId: params.get("participantActive"), selectedIds: (params.get("participantSelected") ?? "").split(",").filter(Boolean).slice(0, 25), rangeAnchorId: params.get("participantAnchor") }); logicalFocus.current = inspector ? "inspector" : "row"; setInspectorOpen(inspector); const scrollY = window.history.state?.participantScrollY; if (typeof scrollY === "number" && typeof window.scrollTo === "function") window.scrollTo(0, scrollY); };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
@@ -86,18 +80,16 @@ export function SalesParticipantWorkspace(props: {
   useEffect(() => {
     if (!active) return;
     let disposed = false;
-    const requestedHref = href();
-    void request(requestedHref, { cache: "no-store" }).then(async (response) => {
-      if (disposed || currentPageHrefRef.current !== requestedHref) return;
+    void request(href(), { cache: "no-store" }).then(async (response) => {
+      if (disposed) return;
       const body = (await response.json()) as ParticipantPage;
-      if (disposed || currentPageHrefRef.current !== requestedHref) return;
-      if (!response.ok || !Array.isArray(body.participants)) { setLoadFailed(true); setPage(null); setPageHref(null); setFeedback((current) => ({ ...current, _announcement: "Participant roster could not be loaded; retry or open Support." })); return; }
+      if (disposed) return;
+      if (!response.ok || !Array.isArray(body.participants)) { setLoadFailed(true); setPage(null); setFeedback((current) => ({ ...current, _announcement: "Participant roster could not be loaded; retry or open Support." })); return; }
       setLoadFailed(false);
       setPage(body);
-      setPageHref(requestedHref);
       setSelection((current) => {
         const pageIds = body.participants.map((row) => row.id);
-        const inspectorTargetMissing = inspectorOpenRef.current && Boolean(current.activeId) && !pageIds.includes(current.activeId as string);
+        const inspectorTargetMissing = inspectorOpen && Boolean(current.activeId) && !pageIds.includes(current.activeId as string);
         const pruned = pruneParticipantSelection(current, pageIds);
         const next = inspectorTargetMissing || (clearedInspectorTarget.current && current.activeId === null) ? { ...pruned, activeId: null } : pruned;
         if (current.activeId !== next.activeId || current.rangeAnchorId !== next.rangeAnchorId || current.selectedIds.join(",") !== next.selectedIds.join(",")) {
@@ -113,11 +105,11 @@ export function SalesParticipantWorkspace(props: {
         }
         return next;
       });
-    }).catch(() => { if (!disposed) { setLoadFailed(true); setPage(null); setPageHref(null); setFeedback((messages) => ({ ...messages, _announcement: "Participant roster could not be loaded; retry or open Support." })); } });
+    }).catch(() => { if (!disposed) { setLoadFailed(true); setPage(null); setFeedback((messages) => ({ ...messages, _announcement: "Participant roster could not be loaded; retry or open Support." })); } });
     return () => { disposed = true; };
-  }, [active, href, request]);
+  }, [active, href, inspectorOpen, request]);
   useEffect(() => {
-    if (!inspectorOpen || !selection.activeId || !page || pageHref !== currentPageHref || page.participants.some((participant) => participant.id === selection.activeId)) return;
+    if (!inspectorOpen || !selection.activeId || !page || page.participants.some((participant) => participant.id === selection.activeId)) return;
     const missingId = selection.activeId;
     historyMode.current = "replace";
     clearedInspectorTarget.current = true;
@@ -128,7 +120,7 @@ export function SalesParticipantWorkspace(props: {
       ? { ...pruneParticipantSelection(current, page.participants.map((participant) => participant.id)), activeId: null }
       : current);
     queueMicrotask(() => headingRef.current?.focus());
-  }, [currentPageHref, inspectorOpen, page, pageHref, selection.activeId]);
+  }, [inspectorOpen, page, selection.activeId]);
   useEffect(() => {
     if (inspectorOpen) inspectorRef.current?.focus();
     else if (logicalFocus.current === "row" && selection.activeId && !(document.activeElement instanceof HTMLButtonElement || document.activeElement instanceof HTMLInputElement)) Array.from(document.querySelectorAll<HTMLElement>("tr[data-participant-id]")).find((row) => row.dataset.participantId === selection.activeId)?.focus();
@@ -163,7 +155,7 @@ export function SalesParticipantWorkspace(props: {
     try {
       const response = await request(href(), { cache: "no-store" });
       const next = await readJsonObject(response);
-      if (response.ok && Array.isArray(next?.participants)) { setPage(next as ParticipantPage); setPageHref(href()); }
+      if (response.ok && Array.isArray(next?.participants)) setPage(next as ParticipantPage);
     } catch {
       // Action feedback is more useful than replacing it with a secondary reread failure.
     }
