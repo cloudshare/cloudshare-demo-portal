@@ -283,7 +283,7 @@ export function createPrismaInvitationStore(prisma: PrismaClient): InvitationSto
       const latest = latestByParticipant.get(participantId);
       const currentOutcome = safeOutcome(current?.outcome);
       const latestOutcome = safeOutcome(latest?.outcome);
-      return [participantId, { currentCommandId: command?.commandId ?? null, invitationOutcome: currentOutcome, invitationReason: currentOutcome ? safeReason(current?.reason) : null, invitationCorrelationId: command?.correlationId ?? null, invitationRevision: command?.revision ?? null, latestInvitationOutcome: latestOutcome, latestInvitationReason: latestOutcome ? safeReason(latest?.reason) : null, latestInvitationCorrelationId: latest?.command.correlationId ?? null }] as const;
+      return [participantId, { currentCommandId: command?.commandId ?? null, invitationOutcome: currentOutcome, invitationReason: currentOutcome ? safeReason(current?.reason) : null, invitationCorrelationId: command?.correlationId ?? null, latestInvitationOutcome: latestOutcome, latestInvitationReason: latestOutcome ? safeReason(latest?.reason) : null, latestInvitationCorrelationId: latest?.command.correlationId ?? null }] as const;
     }));
   };
   return createInvitationStoreFromLedger(createPrismaSalesParticipantInvitationLedger(prisma), readParticipantProjections);

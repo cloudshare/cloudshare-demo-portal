@@ -1,4 +1,4 @@
-import type { InvitationOutcome, InvitationSafeReason } from "./sales-participant-invitation-ledger";
+import type { InvitationOutcome, InvitationSafeReason } from "./sales-participant-invitation-store";
 import type { DiagnosticActor } from "./diagnostic-log";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "./sales-participant-launch-operation";
 import type { SalesParticipantEnvironmentObservation } from "./sales-participant-environment";
@@ -22,7 +22,6 @@ export interface SalesParticipantWorkspaceRow {
   readonly invitationOutcome: InvitationOutcome | null;
   readonly invitationReason?: InvitationSafeReason | null;
   readonly invitationCorrelationId?: string | null;
-  readonly invitationRevision?: number | null;
   /** Latest settled/reconciliation feedback; unlike currentCommandId this is
    * attribution only and never blocks a new command. */
   readonly latestInvitationOutcome?: InvitationOutcome | null;
@@ -44,7 +43,7 @@ export interface SalesParticipantWorkspacePage {
 }
 export interface SalesParticipantWorkspaceReader { readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspacePage | null>; }
 export type SalesParticipantWorkspaceBaseRow = Omit<SalesParticipantWorkspaceRow,
-  "currentCommandId" | "invitationOutcome" | "invitationReason" | "invitationCorrelationId" | "invitationRevision" |
+  "currentCommandId" | "invitationOutcome" | "invitationReason" | "invitationCorrelationId" |
   "latestInvitationOutcome" | "latestInvitationReason" | "latestInvitationCorrelationId" | "actionAvailability" | "primaryAction">;
 export type SalesParticipantWorkspaceBasePage = Omit<SalesParticipantWorkspacePage, "participants"> & { readonly participants: readonly SalesParticipantWorkspaceBaseRow[] };
 export interface SalesParticipantWorkspaceBaseReader { readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspaceBasePage | null>; }

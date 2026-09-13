@@ -38,7 +38,7 @@ describe("SalesParticipantWorkspace application boundary", () => {
 
   it("composes the bounded base page with safe invitation feedback and server-projected actions", async () => {
     const readParticipantProjections = vi.fn().mockResolvedValue(new Map([["participant-1", {
-      currentCommandId: "command-1", invitationOutcome: "confirmation_required", invitationReason: "confirmation_required", invitationCorrelationId: "corr-current", invitationRevision: 3,
+      currentCommandId: "command-1", invitationOutcome: "confirmation_required", invitationReason: "confirmation_required", invitationCorrelationId: "corr-current",
       latestInvitationOutcome: "failed_retryable", latestInvitationReason: "not_dispatched", latestInvitationCorrelationId: "corr-latest",
     }]]));
     const workspace = createSalesParticipantWorkspace({

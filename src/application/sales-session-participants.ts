@@ -14,8 +14,7 @@ import type { EnvironmentStateEvidenceSource } from "@/domain/environment";
 import type { ItemRepository } from "@/domain/item";
 import { SalesEnvironmentResolutionError, type SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
 import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
-import { invitationResult, type InvitationTargetOutcome } from "@/domain/sales-participant-invitation-ledger";
-import type { InvitationHandle, InvitationStore } from "@/domain/sales-participant-invitation-store";
+import { invitationResult, type InvitationHandle, type InvitationStore, type InvitationTargetOutcome } from "@/domain/sales-participant-invitation-store";
 import { projectParticipantActionAvailability, type SalesParticipantWorkspace, type SalesParticipantWorkspaceBaseReader, type SalesParticipantWorkspaceInvitationRequest, type SalesParticipantWorkspaceInvitationResult, type SalesParticipantWorkspaceReader } from "@/domain/sales-participant-workspace";
 
 const contactsSchema = z.object({ contactIds: z.array(z.string().trim().min(1)).min(1).max(100) });
