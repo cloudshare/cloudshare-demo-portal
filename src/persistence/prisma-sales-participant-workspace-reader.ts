@@ -209,7 +209,9 @@ export function createPrismaSalesParticipantWorkspaceReader(
           if (row.invitationStatus !== "sent" && row.invitationStatus !== "notSent") throw new Error("Invalid persisted Participant invitation status.");
           if (row.environmentStatus !== null && !isProjectableSalesParticipantRosterEnvironment(row.environmentStatus)) throw new Error("Invalid persisted Participant Environment status.");
           if (row.environmentStatusCode !== null && row.environmentStatusCode !== undefined && !v3EnvironmentStatusCodes.has(row.environmentStatusCode)) throw new Error("Invalid persisted Participant Environment status code.");
-          if ((row.environmentAttentionReason !== null && !environmentAttentionReasons.has(row.environmentAttentionReason)) || (row.environmentAttentionReason === null) !== (row.environmentAttentionSource === null || row.environmentAttentionSource === undefined) || (row.environmentAttentionSource !== null && row.environmentAttentionSource !== undefined && row.environmentAttentionSource !== "cloudshare_v3_owner_email_item_project")) throw new Error("Invalid persisted Participant Environment attention state.");
+          const hasEnvironmentAttentionReason = row.environmentAttentionReason !== null && row.environmentAttentionReason !== undefined;
+          const hasEnvironmentAttentionSource = row.environmentAttentionSource !== null && row.environmentAttentionSource !== undefined;
+          if ((hasEnvironmentAttentionReason && !environmentAttentionReasons.has(row.environmentAttentionReason ?? "")) || hasEnvironmentAttentionReason !== hasEnvironmentAttentionSource || (hasEnvironmentAttentionSource && row.environmentAttentionSource !== "cloudshare_v3_owner_email_item_project")) throw new Error("Invalid persisted Participant Environment attention state.");
           const environment = isProjectableSalesParticipantRosterEnvironment(row.environmentStatus) && row.environmentObservedAt
             ? projectSalesParticipantRosterEnvironment(row.environmentStatus, row.environmentObservedAt)
             : projectSalesParticipantEnvironment(row.environmentStatusCode, row.environmentObservedAt ?? undefined);

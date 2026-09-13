@@ -75,12 +75,18 @@ describe("Prisma participant workspace reader", () => {
     const result = await reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() });
     expect(result?.participants[0]).toMatchObject({ latestInvitationOutcome: "failed_retryable", latestInvitationReason: "not_dispatched" });
   });
+  it("accepts an absent attention pair when Prisma returns null values", async () => {
+    const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-a", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([row(0)]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationTarget: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([]) } } as never);
+    await expect(reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() })).resolves.toMatchObject({ participants: [{ environmentAttention: null }] });
+  });
   it.each([
     { invitationStatus: "invented" },
     { participationStatus: "joining" },
     { environmentStatus: "Secret raw provider state" },
     { environmentStatusCode: 99 },
     { environmentAttentionReason: "raw provider detail", environmentAttentionSource: "unsafe source" },
+    { environmentAttentionReason: "environment_ambiguous_for_project", environmentAttentionSource: null },
+    { environmentAttentionReason: null, environmentAttentionSource: "cloudshare_v3_owner_email_item_project" },
   ])("fails closed for malformed persisted Participant state %#", async (malformed) => {
     const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-a", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([{ ...row(0), ...malformed }]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationTarget: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([]) } } as never);
     await expect(reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() })).rejects.toThrow("Invalid persisted Participant");
