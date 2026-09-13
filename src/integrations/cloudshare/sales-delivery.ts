@@ -379,7 +379,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         const dispatchOutcome = error instanceof CloudShareAuthError || (error instanceof CloudShareRequestError && error.status === 401)
           ? "not_dispatched" as const
           : error instanceof CloudShareRequestError
-            ? "provider_rejected" as const
+            ? error.status >= 500 ? "ambiguous_after_dispatch" as const : "provider_rejected" as const
             : error instanceof CloudShareTransportError
               ? "ambiguous_after_dispatch" as const
               : "ambiguous_after_dispatch" as const;
