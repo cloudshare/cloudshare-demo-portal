@@ -43,7 +43,7 @@ const invitationEnabledEvidence = () => ({
   request: { method: "GET", path: "/v4/sales/remote-sales-1" },
   response: { status: 200, body: { id: "remote-sales-1", sendInvitations: "salesProsAndParticipants" } },
 });
-const rosterEvidence = (participants: readonly unknown[]) => ({ participants, request: { method: "GET", path: "/v4/sales/remote-sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: participants.length, items: participants } } });
+const rosterEvidence = (participants: readonly unknown[]) => ({ completeness: "complete" as const, participants, request: { method: "GET", path: "/v4/sales/remote-sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: participants.length, items: participants } } });
 const remoteParticipant = (id: string, portalId?: string, contactId?: string, email = "ada@example.test") => ({
   id, firstName: "Ada", lastName: "Lovelace", email, invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, environmentId: null, envStatus: null,
   customProperties: portalId && contactId ? { certalisSalesParticipantId: portalId, certalisOpportunityContactId: contactId } : {},

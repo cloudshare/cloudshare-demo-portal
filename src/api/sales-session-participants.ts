@@ -168,6 +168,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   const parsed = invitationCommandSchema.safeParse(request.body); if (!parsed.success) return { status: 400, body: { error: "Provide a valid invitation command with ordered participant targets." } };
   const participantIds = parsed.data.targets.map((target) => target.participantId);
   const sessionResult = await resolveSession(deps, request); if ("response" in sessionResult) return sessionResult.response!;
+  const admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
   const invitationWindow = projectSalesSessionAccessWindow(sessionResult.session, (deps.now ?? (() => new Date()))());
   if (!invitationWindow.nativeInvitationsAvailable) {
     const correlationId = randomUUID();
@@ -183,21 +184,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "sales_participant_concluded", participantIds }, {}, false);
     return { status: 409, body: { code: "sales_participant_concluded", error, correlationId } };
   }
-  const preconditionMismatch = parsed.data.targets.some((target, index) => {
-    const participant = selected[index]!;
-    return participant.invitationStatus !== target.expectedInvitationStatus
-      || participant.updatedAt.toISOString() !== target.participantRevision
-      || (target.intent === "invite" && participant.invitationStatus !== "notSent")
-      || (target.intent === "resend" && participant.invitationStatus !== "sent");
-  });
-  if (preconditionMismatch) {
-    const correlationId = randomUUID();
-    const error = "One or more selected Sales Participants changed. Refresh the participant workspace before retrying.";
-    await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "participant_revision_stale", participantIds }, {}, false);
-    return { status: 409, body: { code: "participant_revision_stale", error, correlationId } };
-  }
   let admittedCommand: { commandId: string; admissionToken?: string; revision: number } | undefined;
-  const admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
   if (admission.kind === "same_command") {
     const commandState = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
     if (!commandState) return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
@@ -212,7 +199,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
         try {
           const roster = await deliveryResult.delivery.listParticipants!(sessionResult.session.cloudShareSalesExperienceId);
           const registered = await deps.participants.list(request.customerId, sessionResult.session.id);
-          const exact = parsed.data.targets.every((target) => {
+          const exact = roster.completeness === "complete" && parsed.data.targets.every((target) => {
             const stored = registered.find((participant) => participant.id === target.participantId);
             const remote = stored && roster.participants.filter((candidate) => participantProperties(candidate).certalisSalesParticipantId === stored.id && participantProperties(candidate).certalisOpportunityContactId === stored.opportunityContactId);
             return stored && stored.updatedAt.toISOString() === target.participantRevision && remote?.length === 1 && remote[0]!.invitationStatus === "sent";
@@ -232,6 +219,20 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     return { status: 200, body: { code: "command_replayed", commandId: parsed.data.commandId, phase: first.command.phase, outcome, correlationId: first.outcome.correlationId, targets: outcomes } };
   }
   if (admission.kind !== "admitted") return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
+  const preconditionMismatch = parsed.data.targets.some((target, index) => {
+    const participant = selected[index]!;
+    return participant.invitationStatus !== target.expectedInvitationStatus
+      || participant.updatedAt.toISOString() !== target.participantRevision
+      || (target.intent === "invite" && participant.invitationStatus !== "notSent")
+      || (target.intent === "resend" && participant.invitationStatus !== "sent");
+  });
+  if (preconditionMismatch) {
+    await deps.invitationLedger.failAdmitted(request.customerId, parsed.data.commandId, 1, (deps.now ?? (() => new Date()))());
+    const correlationId = randomUUID();
+    const error = "One or more selected Sales Participants changed. Refresh the participant workspace before retrying.";
+    await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "participant_revision_stale", participantIds }, {}, false);
+    return { status: 409, body: { code: "participant_revision_stale", error, correlationId } };
+  }
   admittedCommand = { commandId: parsed.data.commandId, admissionToken: admission.admissionToken, revision: 1 };
   const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) {
     await deps.invitationLedger.failAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))());
@@ -317,6 +318,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     });
     if (confirmed.some((value) => !value)) {
       await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare accepted the native invitation request but did not return one or more selected Sales Participant mappings during confirmation.", requested, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds, httpExchanges: completedExchanges });
+      await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "evaluating_confirmation", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmation_required" as const, reason: "confirmation_required" as const })) });
       return { status: 409, body: { error: "CloudShare could not confirm one or more selected Sales Participants after the invitation request. Refresh monitoring and investigate the correlated diagnostics before retrying.", correlationId } };
     }
     const confirmedParticipants = confirmed.filter((value): value is NonNullable<typeof value> => value !== undefined);
@@ -326,7 +328,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     const targetOutcomes = confirmedParticipants.map(({ stored, before, participant }) => {
       const sent = participant.invitationStatus === "sent";
       if (stored.invitationStatus === "notSent" && sent) return { participantId: stored.id, outcome: "confirmed" as const, reason: null };
-      if (stored.invitationStatus === "sent" && sent) return { participantId: stored.id, outcome: "accepted_unconfirmed" as const, reason: "confirmation_required" as const };
+      if (stored.invitationStatus === "sent" && sent) return { participantId: stored.id, outcome: "accepted_unconfirmed" as const, reason: null };
       return { participantId: stored.id, outcome: "confirmation_required" as const, reason: "confirmation_required" as const };
     });
     const confirmedParticipantCount = targetOutcomes.filter((target) => target.outcome === "confirmed").length;
