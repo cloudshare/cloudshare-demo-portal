@@ -40,8 +40,7 @@ type ParticipantDelivery = Pick<SalesDelivery, "createSession" | "readSession"> 
 type ResolutionResponse = { readonly status: number; readonly body: Record<string, unknown> };
 export type SalesSessionParticipantsDependencies = { sessions: Pick<SalesDemoSessionRepository, "findById">; items?: Pick<ItemRepository, "findById">; records: Pick<SalesRecordRepository, "findContact"> & Partial<Pick<SalesRecordRepository, "listContacts">>; participants: Pick<SalesSessionParticipantRepository, "save" | "list"> & Partial<Pick<SalesSessionParticipantRepository, "recordEnvironmentObservation">>; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): ParticipantDelivery }; environmentFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): EnvironmentStateEvidenceSource }; salesEnvironmentFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): SalesEnvironmentSource }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write">; now?: () => Date };
 type BaseDeps = SalesSessionParticipantsDependencies;
-export type SalesParticipantInvitationDependencies = BaseDeps & { invitationStore: InvitationStore };
-type InviteDeps = SalesParticipantInvitationDependencies;
+type InviteDeps = BaseDeps & { invitationStore: InvitationStore };
 type Deps = BaseDeps;
 
 /** Deep handler interface: contacts are resolved server-side before the typed
@@ -186,15 +185,7 @@ export function createSalesParticipantWorkspaceReader(baseReader: SalesParticipa
 }
 
 export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: SalesParticipantWorkspaceBaseReader }): SalesParticipantWorkspace {
-  return { ...createSalesParticipantWorkspaceReader(deps.reader, deps.invitationStore), ...createSalesParticipantInvitationWorkspace(deps) };
-}
-
-export function createSalesParticipantInvitationWorkspace(deps: InviteDeps): Pick<SalesParticipantWorkspace, "submitInvitation"> {
-  return { submitInvitation: (input) => runInvitationLifecycle(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } }) };
-}
-
-export async function handleInviteSalesSessionParticipants(deps: InviteDeps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {
-  return createSalesParticipantInvitationWorkspace(deps).submitInvitation({ customerId: request.customerId, sessionId: request.sessionId, actor: request.actor, commandId: (request.body as { commandId?: string })?.commandId ?? "", targets: ((request.body as { targets?: unknown[] })?.targets ?? []) as never[] });
+  return { ...createSalesParticipantWorkspaceReader(deps.reader, deps.invitationStore), submitInvitation: (input) => runInvitationLifecycle(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } }) };
 }
 
 async function runInvitationLifecycle(deps: InviteDeps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {

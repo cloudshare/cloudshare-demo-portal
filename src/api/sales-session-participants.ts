@@ -1,12 +1,10 @@
 import {
-  createSalesParticipantInvitationWorkspace,
-  createSalesParticipantWorkspace,
   handleListSalesSessionParticipants as readSalesSessionParticipants,
   handleRegisterSalesSessionParticipants as registerSalesSessionParticipants,
-  type SalesParticipantInvitationDependencies,
   type SalesSessionParticipantsDependencies,
   type SalesSessionParticipantsRequest,
 } from "@/application/sales-session-participants";
+import type { SalesParticipantWorkspace } from "@/domain/sales-participant-workspace";
 import { z } from "zod";
 
 const invitationCommandSchema = z.object({
@@ -26,8 +24,6 @@ const invitationCommandSchema = z.object({
   }),
 });
 
-export { createSalesParticipantWorkspace };
-
 /** HTTP seam: invoke the participant application module once. */
 export async function handleRegisterSalesSessionParticipants(
   deps: SalesSessionParticipantsDependencies,
@@ -38,12 +34,12 @@ export async function handleRegisterSalesSessionParticipants(
 
 /** HTTP seam: invoke the deep invitation lifecycle once. */
 export async function handleInviteSalesSessionParticipants(
-  deps: SalesParticipantInvitationDependencies,
+  deps: { workspace: SalesParticipantWorkspace },
   request: SalesSessionParticipantsRequest,
 ) {
   const parsed = invitationCommandSchema.safeParse(request.body);
   if (!parsed.success) return { status: 400, body: { error: "Provide a valid invitation command with ordered participant targets." } };
-  return createSalesParticipantInvitationWorkspace(deps).submitInvitation({
+  return deps.workspace.submitInvitation({
     customerId: request.customerId,
     sessionId: request.sessionId,
     actor: request.actor,

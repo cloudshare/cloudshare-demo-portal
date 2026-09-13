@@ -4,6 +4,7 @@ import { CloudShareAuthError, CloudShareResponseError } from "@/integrations/clo
 import { handleInviteSalesSessionParticipants as inviteSalesSessionParticipants, handleListSalesSessionParticipants as listSalesSessionParticipants, handleRegisterSalesSessionParticipants as registerSalesSessionParticipants } from "./sales-session-participants";
 import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales-environment";
 import { invitationResult, type InvitationHandle, type InvitationState, type InvitationStore } from "@/domain/sales-participant-invitation-store";
+import { createSalesParticipantWorkspace } from "@/application/sales-session-participants";
 
 const fixedNow = () => new Date("2026-07-19T08:00:00.000Z");
 const handleRegisterSalesSessionParticipants: typeof registerSalesSessionParticipants = (deps, request) => registerSalesSessionParticipants({ now: fixedNow, ...deps }, request);
@@ -20,9 +21,10 @@ const semanticStore = (): InvitationStore => ({
   load: vi.fn(async () => null),
   readParticipantProjections: vi.fn(async () => new Map()),
 });
-const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof inviteSalesSessionParticipants>[0], "invitationStore"> & { invitationStore?: InvitationStore }, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
+const handleInviteSalesSessionParticipants = (deps: Record<string, unknown> & { invitationStore?: InvitationStore }, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
   const invitationStore = deps.invitationStore ?? semanticStore();
-  return inviteSalesSessionParticipants({ now: fixedNow, ...deps, invitationStore } as Parameters<typeof inviteSalesSessionParticipants>[0], request);
+  const workspace = createSalesParticipantWorkspace({ ...deps, now: fixedNow, invitationStore, reader: { readPage: vi.fn().mockResolvedValue(null) } } as never);
+  return inviteSalesSessionParticipants({ workspace }, request);
 };
 
 const actor = { type: "admin" as const, id: "admin-1", email: "sales-admin@certalis.demo" };
