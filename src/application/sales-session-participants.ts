@@ -190,7 +190,17 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
   const registerExisting = async (input: { customerId: string; sessionId: string; actor: DiagnosticActor; opportunityContactIds: readonly string[] }) => { const result = await handleRegisterSalesSessionParticipants(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { contactIds: input.opportunityContactIds } }); const body = result.body; return { status: result.status, body: { ...(typeof body.error === "string" ? { error: body.error } : {}), ...(typeof body.code === "string" ? { code: body.code } : {}), ...(typeof body.correlationId === "string" ? { correlationId: body.correlationId } : {}) } }; };
   const addParticipant = async (input: Parameters<NonNullable<SalesParticipantWorkspace["addParticipant"]>>[0]): Promise<SalesParticipantWorkspaceAddParticipantResult> => {
     if (deps.addCommandStore) {
-      const targetKey = input.person.kind === "existingContact" ? `contact:${input.person.contactId}` : `email:${input.person.email.trim().toLowerCase()}`;
+      // Resolve the scoped target before admission so existingContact and adHoc
+      // requests for the same Contact share one durable fence key.
+      let targetKey = input.person.kind === "existingContact" ? `contact:${input.person.contactId}` : `email:${input.person.email.trim().toLowerCase()}`;
+      if (input.person.kind === "adHoc" && deps.sessions.findById && deps.records.listContacts) {
+        const scoped = await deps.sessions.findById(input.customerId, input.sessionId);
+        if (scoped) {
+          const email = input.person.email.trim().toLowerCase();
+          const matches = (await deps.records.listContacts(input.customerId, scoped.opportunityId)).filter((c) => !c.archivedAt && (c.normalizedEmail?.trim() || c.email.trim().toLowerCase()) === email);
+          if (matches.length === 1) targetKey = `contact:${matches[0]!.id}`;
+        }
+      }
       const admitted = await deps.addCommandStore.admit({ customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId, targetKey, payloadHash: addParticipantPayloadHash(input), now: (deps.now ?? (() => new Date()))() });
       if (admitted.kind === "mismatch") return { status: 409, body: { outcome: "rejected", code: "command_id_mismatch", error: "Command ID was already used for a different Participant." } };
       if (admitted.kind === "existing") return admitted.result ?? { status: 202, body: { outcome: admitted.state === "needs_attention" ? "needs_attention" : "rejected", code: "command_in_progress" } };
