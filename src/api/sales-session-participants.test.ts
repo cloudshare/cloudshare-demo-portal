@@ -639,7 +639,7 @@ describe("Sales Session participant invitation", () => {
   it("refuses duplicate provider correlation and a stale remote invitation state before dispatch", async () => {
     const participant = storedParticipant(); const inviteParticipants = vi.fn(); const failAdmitted = vi.fn();
     const ledger: SalesParticipantInvitationLedger = {
-      admitBatch: vi.fn(async ({ commandId }) => ({ kind: "admitted", commandId, admissionToken: "token" })), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted, finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(null), readCurrent: vi.fn(),
+      admitBatch: vi.fn(async ({ commandId }) => ({ kind: "admitted" as const, commandId, admissionToken: "token" })), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted, finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(null), readCurrent: vi.fn(),
     };
     const duplicated = rosterEvidence([
       { ...remoteParticipant("remote-1", participant.id, participant.opportunityContactId), invitationStatus: "sent" as const },
@@ -794,11 +794,14 @@ describe("Sales Session participant invitation", () => {
     ["settled", "confirmed", "completed", 200],
   ] as const)("replays %s/%s with aggregate %s and HTTP %s", async (phase, targetOutcome, aggregate, status) => {
     const participant = storedParticipant(); const commandId = randomUUID();
-    const current = { command: { customerId: "customer-1", commandId, phase, revision: 3, correlationId: "corr-replay" }, outcome: invitationResult({ commandId, correlationId: "corr-replay", outcomes: [{ participantId: participant.id, outcome: targetOutcome, reason: targetOutcome === "confirmation_required" ? "confirmation_required" : targetOutcome === "failed_retryable" ? "failed_retryable" : null }] }) };
+    const target = targetOutcome === null
+      ? { participantId: participant.id, outcome: null, reason: null } as const
+      : { participantId: participant.id, outcome: targetOutcome, reason: targetOutcome === "confirmation_required" ? "confirmation_required" : targetOutcome === "failed_retryable" ? "failed_retryable" : null } as const;
+    const current = { command: { customerId: "customer-1", commandId, phase, revision: 3, correlationId: "corr-replay" }, outcome: invitationResult({ commandId, correlationId: "corr-replay", outcomes: [target] }) };
     const ledger: SalesParticipantInvitationLedger = {
       admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(current), readCurrent: vi.fn(),
     };
-    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn() }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "resend", commandId) });
+    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn() }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "resend", commandId) });
     expect(result).toMatchObject({ status, body: { outcome: aggregate, commandId, correlationId: "corr-replay", targets: [{ participantId: participant.id, outcome: targetOutcome }] } });
   });
 
