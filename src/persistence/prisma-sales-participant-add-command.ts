@@ -6,6 +6,11 @@ const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 const result = (json: string | null): SalesParticipantWorkspaceAddParticipantResult | undefined => { if (!json) return undefined; try { return JSON.parse(json) as SalesParticipantWorkspaceAddParticipantResult; } catch { throw new Error("Invalid persisted participant add result"); } };
 export function createPrismaSalesParticipantAddCommandStore(prisma: PrismaClient): SalesParticipantAddCommandStore {
   return {
+    async findForReconciliation(input) {
+      const row = await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } });
+      if (!row || row.sessionId !== input.sessionId) return null;
+      return { state: row.state as AddCommandState, targetKey: row.targetKey, result: result(row.resultJson) };
+    },
     async admit(input) {
       const existing = await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } });
       const target = input.targetKey ? await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_sessionId_targetKey: { customerId: input.customerId, sessionId: input.sessionId, targetKey: input.targetKey } } }) : null;

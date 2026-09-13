@@ -11,12 +11,12 @@ describe("participant page handler", () => {
     expect(addParticipant).toHaveBeenCalledWith(expect.objectContaining({ commandId, person: { kind: "existingContact", contactId: "contact-1" } }));
     await expect(handleAddSalesParticipantWorkspace({ workspace }, { customerId: "c1", sessionId: "s1", actor: { type: "admin", id: "a", email: "a@test" }, body: { commandId: "cmd-2", person: { kind: "adHoc", firstName: "", lastName: "B", email: "b@test" } } })).resolves.toMatchObject({ status: 400 });
   });
-  it("validates and forwards an explicit participant evidence refresh", async () => {
+  it("validates and forwards a read-only participant status check by durable command identity", async () => {
     const commandId = "11111111-1111-4111-8111-111111111111";
     const reconcileParticipantAdd = vi.fn().mockResolvedValue({ status: 503, body: { outcome: "rejected", code: "participant_add_retryable" } });
     const workspace = { reconcileParticipantAdd } as unknown as SalesParticipantWorkspace;
-    await expect(handleReconcileSalesParticipantWorkspace({ workspace }, { customerId: "c1", sessionId: "s1", actor: { type: "admin" }, body: { commandId, person: { kind: "adHoc", firstName: "Test", lastName: "User", email: "user@example.test" } } })).resolves.toMatchObject({ status: 503 });
-    expect(reconcileParticipantAdd).toHaveBeenCalledWith(expect.objectContaining({ customerId: "c1", commandId, person: expect.objectContaining({ email: "user@example.test" }) }));
+    await expect(handleReconcileSalesParticipantWorkspace({ workspace }, { customerId: "c1", sessionId: "s1", actor: { type: "admin" }, body: { commandId } })).resolves.toMatchObject({ status: 503 });
+    expect(reconcileParticipantAdd).toHaveBeenCalledWith({ customerId: "c1", sessionId: "s1", actor: { type: "admin" }, commandId });
   });
   it("validates bounds and preserves Customer-scoped safe page", async () => {
     const workspace = { readPage: vi.fn().mockResolvedValue({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false }), submitInvitation: vi.fn() } as unknown as SalesParticipantWorkspace;

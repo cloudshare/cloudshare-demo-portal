@@ -9,7 +9,7 @@ const participant = { id: "p1", name: "Ada Lovelace", email: "ada@example.test",
 const page = { participants: [participant], total: 1, offset: 0, limit: 25, hasMore: false };
 
 describe("SalesParticipantWorkspace", () => {
-  afterEach(() => { cleanup(); vi.restoreAllMocks(); window.history.replaceState({}, "", "/sales"); });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); window.history.replaceState({}, "", "/sales"); });
   it("registers one eligible contact once, rereads the canonical page, and inspects the new Participant", async () => {
     const user = userEvent.setup();
     const registered = { ...participant, id: "registered-1", name: "Grace Hopper", email: "grace@example.test" };
@@ -75,27 +75,27 @@ describe("SalesParticipantWorkspace", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     expect((screen.getByRole("button", { name: "Add participant" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole("link", { name: "Support diagnostics" }).getAttribute("href")).toContain("correlationId=corr-ambiguous");
-    await user.click(screen.getByRole("button", { name: "Refresh evidence" }));
+    await user.click(screen.getByRole("button", { name: "Check CloudShare status" }));
     await waitFor(() => expect(request.mock.calls.filter(([, init]) => init?.method !== "POST").length).toBeGreaterThan(1));
     expect(bodies).toHaveLength(2);
     expect(request.mock.calls.filter(([url]) => String(url).endsWith("/participants/add"))).toHaveLength(1);
     expect(request.mock.calls.filter(([url]) => String(url).endsWith("/participants/add/reconcile"))).toHaveLength(1);
   });
 
-  it("offers an explicit fresh-command retry only when the provider write was not dispatched", async () => {
+  it("automatically retries with bounded backoff only when the provider write was not dispatched", async () => {
     const user = userEvent.setup(); const bodies: string[] = [];
     const request = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.includes("/participants/add")) { bodies.push(String(init?.body)); return new Response(JSON.stringify({ outcome: "rejected", code: "participant_add_retryable", dispatchOutcome: "not_dispatched", correlationId: "corr-safe" }), { status: 503 }); }
+      if (url.includes("/participants/add")) { bodies.push(String(init?.body)); return bodies.length === 1 ? new Response(JSON.stringify({ outcome: "rejected", code: "participant_add_retryable", dispatchOutcome: "not_dispatched", correlationId: "corr-safe" }), { status: 503 }) : new Response(JSON.stringify({ outcome: "registered", participantId: "p-safe" }), { status: 201 }); }
       return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-1", name: "Grace Hopper", email: "grace@example.test" }] }));
     });
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
     await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
     await user.click(screen.getByRole("button", { name: "Add participant" }));
-    await screen.findByText("No CloudShare participant write was attempted. Retry is safe.");
+    await screen.findByText(/Automatic retry 1 of 3 is scheduled for .*Z\./);
     expect(screen.getByRole("link", { name: "Support diagnostics" }).getAttribute("href")).toContain("correlationId=corr-safe");
     expect((screen.getByRole("button", { name: "Add participant" }) as HTMLButtonElement).disabled).toBe(true);
-    await user.click(screen.getByRole("button", { name: "Retry" }));
-    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(screen.queryByRole("button", { name: "Retry participant add" })).toBeNull();
+    await waitFor(() => expect(bodies).toHaveLength(2), { timeout: 4_000 });
     expect(JSON.parse(bodies[0]).commandId).not.toBe(JSON.parse(bodies[1]).commandId);
   });
 
@@ -111,12 +111,13 @@ describe("SalesParticipantWorkspace", () => {
     await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
     await user.click(screen.getByRole("button", { name: "Add participant" }));
     await screen.findByText("Do not retry: CloudShare may have received the participant write.");
-    await user.click(screen.getByRole("button", { name: "Refresh evidence" }));
+    await user.click(screen.getByRole("button", { name: "Check CloudShare status" }));
     await screen.findByText("No CloudShare participant write was attempted. Retry is safe.");
-    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry participant add" })).toBeTruthy();
     expect(posts).toHaveLength(2);
     expect(posts[1].url).toContain("/reconcile");
     expect(JSON.parse(posts[1].body).commandId).toBe(durableCommandId);
+    expect(Object.keys(JSON.parse(posts[1].body))).toEqual(["commandId"]);
   });
 
   it("hydrates bounded query and offset from the URL and rereads on popstate", async () => {

@@ -276,12 +276,12 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
     }
     return addParticipantUnfenced(input);
   };
-  const reconcileParticipantAdd = async (input: Parameters<NonNullable<SalesParticipantWorkspace["addParticipant"]>>[0]): Promise<SalesParticipantWorkspaceAddParticipantResult> => {
+  const reconcileParticipantAdd: NonNullable<SalesParticipantWorkspace["reconcileParticipantAdd"]> = async (input) => {
     const unavailable: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add still requires attention." } };
-    if (!deps.addCommandStore?.reclassifyProvenPreDispatch || !deps.diagnosticReader || !deps.sessions.findById) return unavailable;
-    const admitted = await deps.addCommandStore.admit({ customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId, payloadHash: addParticipantPayloadHash(input), now: (deps.now ?? (() => new Date()))() });
-    const current = admitted.result;
-    if (admitted.kind !== "existing" || current?.body.code !== "participant_add_no_replay" || !current.body.correlationId) return current ?? unavailable;
+    if (!deps.addCommandStore?.findForReconciliation || !deps.addCommandStore.reclassifyProvenPreDispatch || !deps.diagnosticReader || !deps.sessions.findById) return unavailable;
+    const command = await deps.addCommandStore.findForReconciliation({ customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId });
+    const current = command?.result;
+    if (command?.state !== "needs_attention" || current?.body.code !== "participant_add_no_replay" || !current.body.correlationId) return current ?? unavailable;
     const correlationId = current.body.correlationId;
     const retained = { ...current, body: { ...current.body, commandId: input.commandId } };
     try {
@@ -296,12 +296,13 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
       const session = await deps.sessions.findById(input.customerId, input.sessionId);
       const connection = session ? await deps.connections.findByCustomerId(input.customerId) : null;
       if (!session || !connection) return retained;
-      const adHocEmail = input.person.kind === "adHoc" ? input.person.email.trim().toLowerCase() : null;
-      const contact = input.person.kind === "existingContact"
-        ? await deps.records.findContact(input.customerId, input.person.contactId)
-        : (await deps.records.listContacts?.(input.customerId, session.opportunityId))?.find((candidate) => !candidate.archivedAt && (candidate.normalizedEmail?.trim() || candidate.email.trim().toLowerCase()) === adHocEmail);
-      const email = contact?.email.trim().toLowerCase() ?? adHocEmail ?? undefined;
-      if (!email || (!deps.deliveryFactory && !deps.cloudshare)) return retained;
+      const contactId = command.targetKey.startsWith("contact:") ? command.targetKey.slice("contact:".length) : null;
+      const targetEmail = command.targetKey.startsWith("email:") ? command.targetKey.slice("email:".length).trim().toLowerCase() : null;
+      const emailMatches = targetEmail ? (await deps.records.listContacts?.(input.customerId, session.opportunityId))?.filter((candidate) => !candidate.archivedAt && (candidate.normalizedEmail?.trim() || candidate.email.trim().toLowerCase()) === targetEmail) : undefined;
+      if (targetEmail && emailMatches?.length !== 1) return retained;
+      const contact = contactId ? await deps.records.findContact(input.customerId, contactId) : emailMatches?.[0];
+      const email = contact?.email.trim().toLowerCase() ?? targetEmail ?? undefined;
+      if (!contact || contact.opportunityId !== session.opportunityId || !email || (!deps.deliveryFactory && !deps.cloudshare)) return retained;
       const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" }));
       const roster = await delivery.listParticipants?.(session.cloudShareSalesExperienceId);
       const portalParticipantId = contact ? stablePortalParticipantId(input.customerId, session.id, contact.id) : null;
