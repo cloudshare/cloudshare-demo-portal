@@ -315,9 +315,13 @@ function SalesSessionWorkspaceState({
     "history";
   const registrationUrl = new URL(queueHref, "http://localhost");
   registrationUrl.searchParams.set("tab", "sessions");
-  registrationUrl.searchParams.set("sessionView", "manage");
   registrationUrl.searchParams.set("sessionId", sessionId);
   registrationUrl.searchParams.set("participants", "open");
+  const registrationStatus = workspace.summary.operation.value === "needs_attention"
+    ? "needs_attention"
+    : workspace.summary.experience.value === "inProgress" ? "in_progress"
+      : workspace.summary.experience.value === "ended" ? "ended" : "upcoming";
+  registrationUrl.searchParams.set("status", registrationStatus);
   registrationUrl.searchParams.delete("queue");
   registrationUrl.searchParams.delete("offset");
   const registrationHref = `${registrationUrl.pathname}?${registrationUrl.searchParams.toString()}`;
@@ -526,7 +530,7 @@ function SalesSessionWorkspaceState({
         </div>
       </nav>
       {area === "participants" ? (
-        <SalesParticipantWorkspace sessionId={sessionId} active request={participantRequest} registrationHref={registrationHref} />
+        <SalesParticipantWorkspace sessionId={sessionId} active request={participantRequest} registrationHref={registrationStatus === "ended" ? undefined : registrationHref} />
       ) : null}
       {area === "activity" ? (
         <section className={styles.panel}>
