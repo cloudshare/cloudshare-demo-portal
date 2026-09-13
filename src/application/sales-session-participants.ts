@@ -304,7 +304,11 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
       if (!email || (!deps.deliveryFactory && !deps.cloudshare)) return retained;
       const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" }));
       const roster = await delivery.listParticipants?.(session.cloudShareSalesExperienceId);
-      if (!roster || roster.completeness !== "complete" || roster.participants.some((participant) => participant.email.trim().toLowerCase() === email || (contact && participantProperties(participant).certalisOpportunityContactId === contact.id))) return retained;
+      const portalParticipantId = contact ? stablePortalParticipantId(input.customerId, session.id, contact.id) : null;
+      if (!roster || roster.completeness !== "complete" || roster.participants.some((participant) => {
+        const properties = participantProperties(participant);
+        return participant.email.trim().toLowerCase() === email || (contact && properties.certalisOpportunityContactId === contact.id) || (portalParticipantId && properties.certalisSalesParticipantId === portalParticipantId);
+      })) return retained;
       const changed = await deps.addCommandStore.reclassifyProvenPreDispatch({ customerId: input.customerId, commandId: input.commandId, correlationId, now: (deps.now ?? (() => new Date()))() });
       return changed ? { status: 503, body: { outcome: "rejected", code: "participant_add_retryable", error: "CloudShare authentication failed before participant registration was sent. Retry is safe.", dispatchOutcome: "not_dispatched", correlationId, commandId: input.commandId } } : retained;
     } catch { return retained; }

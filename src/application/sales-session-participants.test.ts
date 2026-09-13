@@ -184,6 +184,14 @@ describe("Sales Session participant invitation", () => {
     const result = await workspace.reconcileParticipantAdd!({ customerId: "customer-1", sessionId: session.id, actor, commandId: "33333333-3333-4333-8333-333333333333", person: { kind: "existingContact", contactId: contact.id } });
     expect(result).toMatchObject({ status: 409, body: { code: "participant_add_no_replay" } }); expect(reclassifyProvenPreDispatch).not.toHaveBeenCalled();
   });
+  it("keeps legacy no-replay when a renamed provider target retains only its stable participant correlation", async () => {
+    const legacy = { status: 409, body: { outcome: "needs_attention" as const, code: "participant_add_no_replay", correlationId: "corr-renamed" } }; const reclassifyProvenPreDispatch = vi.fn();
+    const portalId = "ce0f08a5-61e6-5619-cd6e-8c57c41b3e64";
+    const renamed = { ...remoteParticipant("remote-renamed", portalId, contact.id, "renamed@example.test"), customProperties: { certalisSalesParticipantId: portalId } };
+    const workspace = createSalesParticipantWorkspace({ now: fixedNow, reader: { readPage: vi.fn().mockResolvedValue(null) }, invitationStore: semanticStore(), addCommandStore: { admit: vi.fn().mockResolvedValue({ kind: "existing", commandId: "44444444-4444-4444-8444-444444444444", state: "needs_attention", result: legacy }), markDispatched: vi.fn(), settle: vi.fn(), reclassifyProvenPreDispatch }, diagnosticReader: { query: vi.fn().mockResolvedValue([{ outcome: "failure", details: { integrationSurface: "cloudshare.v4.oauth.token", failureMode: "transport_failure", httpExchanges: [] } }]) }, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([renamed])) }) } } as never);
+    const result = await workspace.reconcileParticipantAdd!({ customerId: "customer-1", sessionId: session.id, actor, commandId: "44444444-4444-4444-8444-444444444444", person: { kind: "existingContact", contactId: contact.id } });
+    expect(result).toMatchObject({ status: 409, body: { code: "participant_add_no_replay" } }); expect(reclassifyProvenPreDispatch).not.toHaveBeenCalled();
+  });
   it("blocks participant registration at the exact session end before integration setup", async () => {
     const findByCustomerId = vi.fn(() => { throw new Error("connection lookup must not run"); });
     const forConnection = vi.fn(() => { throw new Error("adapter construction must not run"); });
