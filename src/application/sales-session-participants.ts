@@ -211,7 +211,7 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
           if (!contact || contact.opportunityId !== preflightSession.opportunityId || contact.archivedAt) return settleBeforeDispatch({ status: 404, body: { outcome: "rejected", code: "contact_not_found", error: "Eligible Opportunity Contact was not found." } });
         } else if (deps.records.listContacts) {
           const email = input.person.email.trim().toLowerCase();
-          const matches = (await deps.records.listContacts(input.customerId, preflightSession.opportunityId)).filter((contact) => (contact.normalizedEmail ?? contact.email.trim().toLowerCase()) === email && !contact.archivedAt);
+          const matches = (await deps.records.listContacts(input.customerId, preflightSession.opportunityId)).filter((contact) => ((contact.normalizedEmail?.trim() || contact.email.trim().toLowerCase()) === email) && !contact.archivedAt);
           if (matches.length > 1) return settleBeforeDispatch({ status: 409, body: { outcome: "needs_attention", code: "ambiguous_contact", error: "More than one active Contact matches this email." } });
         }
       } catch (error) { return settleBeforeDispatch({ status: 500, body: { outcome: "rejected", code: "contact_lookup_failed", error: error instanceof Error ? error.message : "Participant details could not be verified." } }); }
@@ -236,7 +236,7 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
     const session = await deps.sessions.findById(input.customerId, input.sessionId);
     if (!session || !deps.records.listContacts) return { status: 404, body: { outcome: "rejected", code: "session_not_found", error: "Sales Session was not found." } };
     const email = input.person.email.trim().toLowerCase();
-    const allMatches = (await deps.records.listContacts(input.customerId, session.opportunityId)).filter((contact) => (contact.normalizedEmail ?? contact.email.trim().toLowerCase()) === email);
+    const allMatches = (await deps.records.listContacts(input.customerId, session.opportunityId)).filter((contact) => (contact.normalizedEmail?.trim() || contact.email.trim().toLowerCase()) === email);
     const matches = allMatches.filter((contact) => !contact.archivedAt);
     if (!matches.length && allMatches.some((contact) => contact.archivedAt)) return { status: 409, body: { outcome: "rejected", code: "contact_archived", error: "An archived Contact already matches this email." } };
     if (matches.length > 1) return { status: 409, body: { outcome: "needs_attention", code: "ambiguous_contact", error: "More than one active Contact matches this email." } };
