@@ -15,6 +15,7 @@ import type { ItemRepository } from "@/domain/item";
 import { SalesEnvironmentResolutionError, type SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
 import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
 import { invitationResult, type InvitationTargetOutcome, type SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
+import type { SalesParticipantWorkspace, SalesParticipantWorkspaceInvitationRequest, SalesParticipantWorkspaceInvitationResult } from "@/domain/sales-participant-workspace";
 
 const contactsSchema = z.object({ contactIds: z.array(z.string().trim().min(1)).min(1).max(100) });
 const invitationCommandSchema = z.object({
@@ -166,7 +167,23 @@ export async function handleRegisterSalesSessionParticipants(deps: BaseDeps, req
   } catch (error) { const classifiedError = completedRemote && !hasParticipantFailureContext(error) ? participantMappingPersistenceFailed(error) : error; const failedExchange = exchange(error); return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "CloudShare could not register selected Sales Participants.", classifiedError, completedRemote, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]); }
 }
 
+class InvitationLifecycle {
+  constructor(private readonly deps: InviteDeps) {}
+  async submit(input: SalesParticipantWorkspaceInvitationRequest): Promise<SalesParticipantWorkspaceInvitationResult> {
+    return runInvitationLifecycle(this.deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } });
+  }
+}
+
+export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: SalesParticipantWorkspace["readPage"] }): SalesParticipantWorkspace {
+  const lifecycle = new InvitationLifecycle(deps);
+  return { readPage: deps.reader, submitInvitation: (input) => lifecycle.submit(input) };
+}
+
 export async function handleInviteSalesSessionParticipants(deps: InviteDeps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {
+  return new InvitationLifecycle(deps).submit({ customerId: request.customerId, sessionId: request.sessionId, actor: request.actor, commandId: (request.body as { commandId?: string })?.commandId ?? "", targets: ((request.body as { targets?: unknown[] })?.targets ?? []) as never[] });
+}
+
+async function runInvitationLifecycle(deps: InviteDeps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {
   const parsed = invitationCommandSchema.safeParse(request.body); if (!parsed.success) return { status: 400, body: { error: "Provide a valid invitation command with ordered participant targets." } };
   const participantIds = parsed.data.targets.map((target) => target.participantId);
   if (!deps.sessions.findById) return { status: 500, body: { error: "Sales Session repository is unavailable." } };
