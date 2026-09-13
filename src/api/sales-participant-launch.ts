@@ -24,7 +24,7 @@ export async function handleCreateSalesParticipantLaunchLink(deps: Deps, request
   if (owned.participant.participationStatus === "concluded") return adminDenied(deps, request, "sales_participant_concluded", "Instant launch links are unavailable for concluded Sales Participants.");
   const token = randomBytes(32).toString("base64url"); const correlationId = randomUUID();
   try {
-    await deps.links.regenerate({ id: randomUUID(), customerId: request.customerId, salesDemoSessionId: request.sessionId, salesSessionParticipantId: owned.participant.id, tokenHash: hash(token), revokedAt: null, createdAt: now }, now);
+    await deps.links.regenerate({ id: randomUUID(), customerId: request.customerId, salesDemoSessionId: request.sessionId, salesSessionParticipantId: owned.participant.id, tokenHash: hash(token), revokedAt: null, createdAt: now }, now, correlationId);
   } catch (error) {
     return adminPersistenceFailure(deps, request, "generated", correlationId, error);
   }
@@ -34,7 +34,7 @@ export async function handleCreateSalesParticipantLaunchLink(deps: Deps, request
 export async function handleRevokeSalesParticipantLaunchLink(deps: Deps, request: AdminRequest): Promise<{ status: number; body: Record<string, string> }> {
   if (!await ownedParticipant(deps, request)) return generic;
   const correlationId = randomUUID();
-  try { await deps.links.revokeActive(request.customerId, request.sessionId, request.participantId, (deps.now ?? (() => new Date()))()); }
+  try { await deps.links.revokeActive(request.customerId, request.sessionId, request.participantId, (deps.now ?? (() => new Date()))(), correlationId); }
   catch (error) { return adminPersistenceFailure(deps, request, "revoked", correlationId, error); }
   await adminEvidence(deps, request, correlationId, "sales.demo_session.participant_launch.revoked", "success"); return { status: 200, body: { correlationId } };
 }
