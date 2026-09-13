@@ -262,8 +262,8 @@ checkpoint states the outcome, exact head, remaining acceptance gap, implementat
 count, scope growth, and whether the work still aligns with the issue. The parent watches for spiral
 indicators: repeated rounds with shrinking findings; growing abstractions or edge cases; diff or test
 growth disproportionate to the visible outcome; accepted decisions being re-solved; or no measurable
-movement toward acceptance. Report disproportionate time, tokens, diff size, and loop growth with
-evidence.
+movement toward acceptance. The parent reports disproportionate time, tokens, diff size, and loop
+growth with evidence.
 
 After a bounded number of repair loops, normally three, the worker pauses and escalates with the root
 cause, options, and a KISS recommendation. The parent explicitly chooses whether to simplify, re-scope,
