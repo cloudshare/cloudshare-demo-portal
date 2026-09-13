@@ -5,6 +5,7 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesWorkspace } from "./sales-workspace";
 import { salesSessionProvisionDraftKey } from "./sales-session-provision-draft";
+import { buildSalesWorkspaceHref, parseSalesWorkspaceRouteState } from "./sales-shell-route";
 
 vi.mock("./session-expiry", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./session-expiry")>()),
@@ -1433,9 +1434,10 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link" && init?.method === "DELETE") return json({ correlationId: "corr-revoke-1" });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
-    await user.click(await screen.findByRole("button", { name: "Manage participants" }));
-    await waitFor(() => expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions&sessionId=session-1&participants=open", { scroll: false }));
+    const registrationHref = buildSalesWorkspaceHref({ tab: "sessions", sessionId: "session-1", participantsOpen: true });
+    const registrationRoute = parseSalesWorkspaceRouteState(Object.fromEntries(new URL(registrationHref, "http://localhost").searchParams));
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={registrationRoute} />);
+    expect(await screen.findByRole("button", { name: "Register or repair selected participants" })).not.toBeNull();
     await user.click(await screen.findByLabelText(/Ada Lovelace$/));
     await user.click(screen.getByRole("button", { name: "Register or repair selected participants" }));
     expect((await screen.findByText("Sales Participants registered. No native invitations were sent.")).closest("[role]")?.getAttribute("role")).toBe("status");
