@@ -14,7 +14,7 @@ import type { EnvironmentStateEvidenceSource } from "@/domain/environment";
 import type { ItemRepository } from "@/domain/item";
 import { SalesEnvironmentResolutionError, type SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
 import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
-import type { SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
+import { invitationResult, type SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
 
 const contactsSchema = z.object({ contactIds: z.array(z.string().trim().min(1)).min(1).max(100) });
 const invitationCommandSchema = z.object({
@@ -168,7 +168,15 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   const parsed = invitationCommandSchema.safeParse(request.body); if (!parsed.success) return { status: 400, body: { error: "Provide a valid invitation command with ordered participant targets." } };
   const participantIds = parsed.data.targets.map((target) => target.participantId);
   const sessionResult = await resolveSession(deps, request); if ("response" in sessionResult) return sessionResult.response!;
-  const admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
+  const existingCommand = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
+  let admission: Awaited<ReturnType<SalesParticipantInvitationLedger["admitBatch"]>>;
+  let selected: Array<Awaited<ReturnType<typeof deps.participants.list>>[number] | undefined> = [];
+  if (existingCommand) {
+    // `admitBatch` is a read-only exact-scope check when the command exists.
+    // This keeps replay independent of mutable Session/Participant state while
+    // still rejecting command IDs reused with different preconditions.
+    admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
+  } else {
   const invitationWindow = projectSalesSessionAccessWindow(sessionResult.session, (deps.now ?? (() => new Date()))());
   if (!invitationWindow.nativeInvitationsAvailable) {
     const correlationId = randomUUID();
@@ -177,12 +185,14 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     return { status: 409, body: { code: "sales_session_ended", error, correlationId } };
   }
   const registered = await deps.participants.list(request.customerId, sessionResult.session.id);
-  const selected = participantIds.map((id) => registered.find((participant) => participant.id === id));
+  selected = participantIds.map((id) => registered.find((participant) => participant.id === id));
   if (selected.some((participant) => !participant)) return denied(deps, request, sessionResult.session, 404, "Selected registered Sales Participant was not found for this Session.", "participant_not_found");
   if (selected.some((participant) => participant!.participationStatus === "concluded")) {
     const correlationId = randomUUID(); const error = "Concluded Sales Participants cannot receive native invitations.";
     await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "sales_participant_concluded", participantIds }, {}, false);
     return { status: 409, body: { code: "sales_participant_concluded", error, correlationId } };
+  }
+    admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
   }
   let admittedCommand: { commandId: string; admissionToken?: string; revision: number } | undefined;
   if (admission.kind === "same_command") {
@@ -202,7 +212,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
           const exact = roster.completeness === "complete" && parsed.data.targets.every((target) => {
             const stored = registered.find((participant) => participant.id === target.participantId);
             const remote = stored && roster.participants.filter((candidate) => participantProperties(candidate).certalisSalesParticipantId === stored.id && participantProperties(candidate).certalisOpportunityContactId === stored.opportunityContactId);
-            return stored && stored.updatedAt.toISOString() === target.participantRevision && remote?.length === 1 && remote[0]!.invitationStatus === "sent";
+            return stored && remote?.length === 1 && remote[0]!.id === stored.cloudShareParticipantId && remote[0]!.invitationStatus === "sent";
           });
           if (exact) {
             await deps.invitationLedger.finishBatchWithParticipantProjections({ customerId: request.customerId, commandId: parsed.data.commandId, expectedRevision: first.command.revision, expectedPhase: replayPhase, phase: "settled", correlationId: first.command.correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmed_by_reconciliation" as const, reason: null })), projections: parsed.data.targets.map((target) => {
@@ -210,13 +220,19 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
               const remoteParticipant = roster.participants.find((candidate) => participantProperties(candidate).certalisSalesParticipantId === stored.id)!;
               return { participantId: stored.id, expectedParticipantRevision: stored.updatedAt.toISOString(), cloudShareParticipantId: remoteParticipant.id, invitationStatus: remoteParticipant.invitationStatus, lastInvitedAt: remoteParticipant.invitationStatus === "sent" ? (deps.now ?? (() => new Date()))().toISOString() : stored.lastInvitedAt?.toISOString() ?? null, invitedBy: remoteParticipant.invitedBy, participationStatus: remoteParticipant.participationStatus, firstJoined: remoteParticipant.firstJoined, cloudShareRosterEnvironmentReference: remoteParticipant.environmentId ?? null, environmentStatus: remoteParticipant.envStatus ?? null, environmentStatusCode: null, environmentObservedAt: null, environmentAttentionReason: null, environmentAttentionSource: null, lastReconciledAt: (deps.now ?? (() => new Date()))().toISOString() };
             }) });
-            return { status: 200, body: { code: "command_reconciled", commandId: parsed.data.commandId, phase: "settled", outcome: "completed", correlationId: first.command.correlationId } };
+            const reconciled = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
+            if (!reconciled) throw new Error("reconciled invitation command was not found");
+            return { status: 200, body: { code: "command_reconciled", phase: "settled", ...reconciled.outcome } };
           }
         } catch { /* retained state is fail-closed when the read or CAS precondition is not provable */ }
       }
     }
-    const outcome = outcomes.some((target) => target.outcome === "no_replay") ? "blocked" : outcomes.some((target) => target.outcome === "confirmation_required") ? "confirmation_required" : outcomes.some((target) => target.outcome === "accepted_unconfirmed") ? "completed_with_unconfirmed" : "completed";
-    return { status: 200, body: { code: "command_replayed", commandId: parsed.data.commandId, phase: first.command.phase, outcome, correlationId: first.outcome.correlationId, targets: outcomes } };
+    const currentResult = first.outcome;
+    const status = currentResult.outcome === "in_progress" || currentResult.outcome === "confirmation_required" ? 202
+      : currentResult.outcome === "blocked" ? 409
+        : currentResult.outcome === "failed_retryable" ? 502
+          : 200;
+    return { status, body: { code: "command_replayed", phase: first.command.phase, ...currentResult } };
   }
   if (admission.kind !== "admitted") return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
   const preconditionMismatch = parsed.data.targets.some((target, index) => {
@@ -263,9 +279,12 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
       return { status: 502, body: { code: "participant_roster_incomplete", error: "CloudShare participant roster could not be proven complete.", correlationId } };
     }
     const currentByProviderId = new Map(current.participants.map((participant) => [participant.id, participant]));
-    if (selected.some((participant) => {
+    if (selected.some((participant, index) => {
       const remote = currentByProviderId.get(participant!.cloudShareParticipantId);
-      return !remote || participantProperties(remote).certalisSalesParticipantId !== participant!.id || participantProperties(remote).certalisOpportunityContactId !== participant!.opportunityContactId;
+      const exactMatches = current.participants.filter((candidate) => participantProperties(candidate).certalisSalesParticipantId === participant!.id && participantProperties(candidate).certalisOpportunityContactId === participant!.opportunityContactId);
+      const target = parsed.data.targets[index]!;
+      return exactMatches.length !== 1 || !remote || remote.id !== exactMatches[0]!.id
+        || remote.invitationStatus !== target.expectedInvitationStatus;
     })) {
       await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "One or more selected Sales Participants no longer has its Certalis correlation values in CloudShare. Refresh monitoring and investigate the correlated diagnostics before inviting.", current, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds, httpExchanges: completedExchanges });
       await deps.invitationLedger.failAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))());
@@ -297,7 +316,8 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
         ? "Certalis could not prove whether CloudShare received the invitation request. Do not retry until support diagnostics are reviewed."
         : "CloudShare rejected the native invitation request. Retry after reviewing support diagnostics.";
       await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", message, requested, { failureMode: requested.dispatchOutcome, participantIds, httpExchanges: completedExchanges });
-      return { status: ambiguous ? 502 : 409, body: { code: ambiguous ? "invitation_no_replay" : "provider_rejected", error: message, correlationId } };
+      const result = invitationResult({ commandId: admittedCommand.commandId, correlationId, outcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: ambiguous ? "no_replay" as const : "failed_retryable" as const, reason: ambiguous ? "ambiguous_after_dispatch" as const : "provider_rejected" as const })) });
+      return { status: ambiguous ? 409 : 502, body: { code: ambiguous ? "invitation_no_replay" : "provider_rejected", error: message, ...result } };
     }
     // The documented endpoint acknowledges with an empty 200 response. Treat a
     // subsequent roster read as the only authority for the participant's
@@ -306,7 +326,8 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     completedExchanges.push(afterRequest);
     if (afterRequest.completeness === "incomplete") {
       await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "evaluating_confirmation", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmation_required" as const, reason: "confirmation_required" as const })) });
-      return { status: 502, body: { code: "participant_roster_incomplete", error: "CloudShare accepted the invitation request, but its participant roster could not be proven complete. Do not retry until support diagnostics are reviewed.", correlationId } };
+      const result = invitationResult({ commandId: admittedCommand.commandId, correlationId, outcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmation_required" as const, reason: "confirmation_required" as const })) });
+      return { status: 202, body: { code: "participant_roster_incomplete", error: "CloudShare accepted the invitation request, but its participant roster could not be proven complete. Do not retry until support diagnostics are reviewed.", ...result } };
     }
     const afterByProviderId = new Map(afterRequest.participants.map((participant) => [participant.id, participant]));
     const confirmed = selected.map((stored) => {
@@ -319,7 +340,8 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     if (confirmed.some((value) => !value)) {
       await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare accepted the native invitation request but did not return one or more selected Sales Participant mappings during confirmation.", requested, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds, httpExchanges: completedExchanges });
       await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "evaluating_confirmation", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmation_required" as const, reason: "confirmation_required" as const })) });
-      return { status: 409, body: { error: "CloudShare could not confirm one or more selected Sales Participants after the invitation request. Refresh monitoring and investigate the correlated diagnostics before retrying.", correlationId } };
+      const result = invitationResult({ commandId: admittedCommand.commandId, correlationId, outcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmation_required" as const, reason: "confirmation_required" as const })) });
+      return { status: 202, body: { code: "invitation_confirmation_required", error: "CloudShare could not confirm one or more selected Sales Participants after the invitation request. Refresh monitoring and investigate the correlated diagnostics before retrying.", ...result } };
     }
     const confirmedParticipants = confirmed.filter((value): value is NonNullable<typeof value> => value !== undefined);
     const now = (deps.now ?? (() => new Date()))();
@@ -365,7 +387,8 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
       ? "CloudShare confirmed native invitations for selected Sales Participants."
       : "CloudShare accepted the native invitation request, but has not yet confirmed the invitation as sent.";
     await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "success", message, requested, { participantIds, confirmedParticipantCount, pendingConfirmationParticipantCount, ...(alreadySentParticipantCount > 0 ? { alreadySentParticipantCount } : {}), httpExchanges: completedExchanges });
-    return { status: 200, body: { correlationId, invitationConfirmation, confirmedParticipantCount, pendingConfirmationParticipantCount } };
+    const result = invitationResult({ commandId: admittedCommand.commandId, correlationId, outcomes: targetOutcomes });
+    return { status: result.outcome === "confirmation_required" ? 202 : 200, body: { ...result, invitationConfirmation, confirmedParticipantCount, pendingConfirmationParticipantCount } };
   }
   catch (error) {
     const failedExchange = exchange(error);
@@ -379,13 +402,17 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
       const outcome = ambiguous ? "no_replay" as const : "confirmation_required" as const;
       const reason = ambiguous ? "ambiguous_after_dispatch" as const : "confirmation_required" as const;
       await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: ambiguous ? "settled" : "evaluating_confirmation", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome, reason })) });
-      return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed.", participantInvitationConfirmationFailed(error), acknowledgedInvite, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]);
+      await failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed.", participantInvitationConfirmationFailed(error), acknowledgedInvite, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]);
+      const result = invitationResult({ commandId: admittedCommand.commandId, correlationId, outcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome, reason })) });
+      return { status: ambiguous ? 409 : 202, body: { code: ambiguous ? "invitation_no_replay" : "invitation_confirmation_required", error: "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed.", ...result } };
     }
     // Once the durable dispatch marker exists, an unclassified failure has no
     // proof that the provider was never reached. Fail closed and retain the
     // fence; retryability requires an explicit typed not_dispatched proof.
     await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "settled", correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "no_replay" as const, reason: "ambiguous_after_dispatch" as const })) });
-    return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "Certalis could not prove whether CloudShare received the invitation request. Do not retry until support diagnostics are reviewed.", error, undefined, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]);
+    await failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "Certalis could not prove whether CloudShare received the invitation request. Do not retry until support diagnostics are reviewed.", error, undefined, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]);
+    const result = invitationResult({ commandId: admittedCommand.commandId, correlationId, outcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "no_replay" as const, reason: "ambiguous_after_dispatch" as const })) });
+    return { status: 409, body: { code: "invitation_no_replay", error: "Certalis could not prove whether CloudShare received the invitation request. Do not retry until support diagnostics are reviewed.", ...result } };
   }
 }
 

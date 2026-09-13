@@ -2,7 +2,6 @@
 CREATE TABLE "SalesParticipantInvitationCommand" (
     "customerId" TEXT NOT NULL,
     "commandId" TEXT NOT NULL,
-    "ordinal" INTEGER NOT NULL,
     "sessionId" TEXT NOT NULL,
     "scopeHash" TEXT NOT NULL,
     "phase" TEXT NOT NULL,
@@ -20,6 +19,7 @@ CREATE TABLE "SalesParticipantInvitationTarget" (
     "customerId" TEXT NOT NULL,
     "commandId" TEXT NOT NULL,
     "salesSessionParticipantId" TEXT NOT NULL,
+    "ordinal" INTEGER NOT NULL,
     "intent" TEXT NOT NULL,
     "expectedInvitationStatus" TEXT NOT NULL,
     "participantRevision" TEXT NOT NULL,
@@ -39,6 +39,5 @@ CREATE TABLE "SalesParticipantInvitationFence" (
     CONSTRAINT "SalesParticipantInvitationFence_customerId_commandId_fkey" FOREIGN KEY ("customerId", "commandId") REFERENCES "SalesParticipantInvitationCommand" ("customerId", "commandId") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "SalesParticipantInvitationFence_customerId_salesSessionParticipantId_fkey" FOREIGN KEY ("customerId", "salesSessionParticipantId") REFERENCES "SalesSessionParticipant" ("customerId", "id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "SalesParticipantInvitationCommand_customerId_commandId_key" ON "SalesParticipantInvitationCommand"("customerId", "commandId");
 CREATE UNIQUE INDEX "SalesParticipantInvitationTarget_customerId_commandId_ordinal_key" ON "SalesParticipantInvitationTarget"("customerId", "commandId", "ordinal");
 CREATE UNIQUE INDEX "SalesSessionParticipant_customerId_id_key" ON "SalesSessionParticipant"("customerId", "id");

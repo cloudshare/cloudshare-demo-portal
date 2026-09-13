@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CloudShareAuthError, CloudShareResponseError } from "@/integrations/cloudshare/errors";
 import { handleInviteSalesSessionParticipants as inviteSalesSessionParticipants, handleListSalesSessionParticipants as listSalesSessionParticipants, handleRegisterSalesSessionParticipants as registerSalesSessionParticipants } from "./sales-session-participants";
 import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales-environment";
-import type { SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
+import { invitationResult, type SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
 
 const fixedNow = () => new Date("2026-07-19T08:00:00.000Z");
 const handleRegisterSalesSessionParticipants: typeof registerSalesSessionParticipants = (deps, request) => registerSalesSessionParticipants({ now: fixedNow, ...deps }, request);
@@ -111,7 +111,7 @@ describe("Sales Session participant invitation", () => {
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability, listParticipants: vi.fn().mockResolvedValue(roster), inviteParticipants: vi.fn().mockResolvedValue({ request: { method: "POST", path: "/invite" }, response: { status: 200 } }) }) },
     }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
-    expect(result.status).toBe(200);
+    expect(result.status).toBe(202);
     expect(readParticipantInvitationCapability).toHaveBeenCalledOnce();
   });
   it("rejects a mixed concluded and eligible invite atomically before CloudShare", async () => {
@@ -517,7 +517,7 @@ describe("Sales Session participant invitation", () => {
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1", "portal-1", "contact-1")])), inviteParticipants }) },
     }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
-    expect(result.status).toBe(200);
+    expect(result.status).toBe(202);
     expect(inviteParticipants).toHaveBeenCalledWith("remote-sales-1", ["remote-1"]);
     expect(JSON.stringify(result.body)).not.toContain("remote-1");
   });
@@ -554,7 +554,7 @@ describe("Sales Session participant invitation", () => {
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants, inviteParticipants }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
-    expect(result).toMatchObject({ status: 200, body: { invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1 } });
+    expect(result).toMatchObject({ status: 202, body: { outcome: "confirmation_required", invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1 } });
     expect(listParticipants).toHaveBeenCalledTimes(2);
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
       message: "CloudShare accepted the native invitation request, but has not yet confirmed the invitation as sent.",
@@ -612,7 +612,7 @@ describe("Sales Session participant invitation", () => {
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValueOnce(current).mockRejectedValueOnce(confirmationFailure), inviteParticipants: vi.fn().mockResolvedValue(requested) }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
 
-    expect(result).toMatchObject({ status: 502, body: { error: "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed." } });
+    expect(result).toMatchObject({ status: 202, body: { outcome: "confirmation_required", error: "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed." } });
     expect(save).not.toHaveBeenCalled();
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
       request: requested.request,
@@ -634,6 +634,29 @@ describe("Sales Session participant invitation", () => {
     expect(result.status).toBe(409);
     expect(inviteParticipants).not.toHaveBeenCalled();
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "participant_mapping_missing_from_cloudshare", httpExchanges: [capability, roster] }) }));
+  });
+
+  it("refuses duplicate provider correlation and a stale remote invitation state before dispatch", async () => {
+    const participant = storedParticipant(); const inviteParticipants = vi.fn(); const failAdmitted = vi.fn();
+    const ledger: SalesParticipantInvitationLedger = {
+      admitBatch: vi.fn(async ({ commandId }) => ({ kind: "admitted", commandId, admissionToken: "token" })), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted, finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(null), readCurrent: vi.fn(),
+    };
+    const duplicated = rosterEvidence([
+      { ...remoteParticipant("remote-1", participant.id, participant.opportunityContactId), invitationStatus: "sent" as const },
+      { ...remoteParticipant("remote-duplicate", participant.id, participant.opportunityContactId), invitationStatus: "sent" as const },
+    ]);
+    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(duplicated), inviteParticipants } as never) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant) });
+    expect(result.status).toBe(409);
+    expect(inviteParticipants).not.toHaveBeenCalled();
+    expect(failAdmitted).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a uniquely correlated provider row whose current invitation state is stale", async () => {
+    const participant = storedParticipant(); const inviteParticipants = vi.fn();
+    const stale = rosterEvidence([{ ...remoteParticipant("remote-1", participant.id, participant.opportunityContactId), invitationStatus: "sent" as const }]);
+    const result = await handleInviteSalesSessionParticipants({ sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(stale), inviteParticipants } as never) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant) });
+    expect(result.status).toBe(409);
+    expect(inviteParticipants).not.toHaveBeenCalled();
   });
 
   it("retains typed CloudShare pagination failure facts in support diagnostics", async () => {
@@ -757,10 +780,26 @@ describe("Sales Session participant invitation", () => {
       participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants, inviteParticipants }) }, diagnostics: { record: vi.fn() },
     }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "resend", commandId) });
-    expect(result).toMatchObject({ status: 200, body: { code: "command_replayed", outcome: "blocked", commandId } });
+    expect(result).toMatchObject({ status: 409, body: { code: "command_replayed", outcome: "blocked", commandId } });
     expect(listParticipants).not.toHaveBeenCalled();
     expect(inviteParticipants).not.toHaveBeenCalled();
     expect(ledger.finishBatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["admitted", null, "in_progress", 202],
+    ["settled", "confirmation_required", "confirmation_required", 202],
+    ["settled", "failed_retryable", "failed_retryable", 502],
+    ["settled", "accepted_unconfirmed", "completed_with_unconfirmed", 200],
+    ["settled", "confirmed", "completed", 200],
+  ] as const)("replays %s/%s with aggregate %s and HTTP %s", async (phase, targetOutcome, aggregate, status) => {
+    const participant = storedParticipant(); const commandId = randomUUID();
+    const current = { command: { customerId: "customer-1", commandId, phase, revision: 3, correlationId: "corr-replay" }, outcome: invitationResult({ commandId, correlationId: "corr-replay", outcomes: [{ participantId: participant.id, outcome: targetOutcome, reason: targetOutcome === "confirmation_required" ? "confirmation_required" : targetOutcome === "failed_retryable" ? "failed_retryable" : null }] }) };
+    const ledger: SalesParticipantInvitationLedger = {
+      admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(current), readCurrent: vi.fn(),
+    };
+    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn() }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "resend", commandId) });
+    expect(result).toMatchObject({ status, body: { outcome: aggregate, commandId, correlationId: "corr-replay", targets: [{ participantId: participant.id, outcome: targetOutcome }] } });
   });
 
   it("retains the command and leaves projection untouched when reconciliation CAS rejects", async () => {
@@ -769,7 +808,7 @@ describe("Sales Session participant invitation", () => {
     const finishBatch = vi.fn().mockRejectedValue(new Error("stale command revision"));
     const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch, finishBatchWithParticipantProjections: vi.fn().mockRejectedValue(new Error("stale command revision")), readCommand: vi.fn().mockResolvedValue(current), readCurrent: vi.fn().mockResolvedValue(current) };
     const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const }])), inviteParticipants }) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: { ...explicitInviteBody(participant, "invite", commandId) } });
-    expect(result).toMatchObject({ status: 200, body: { code: "command_replayed", commandId, outcome: "blocked" } });
+    expect(result).toMatchObject({ status: 409, body: { code: "command_replayed", commandId, outcome: "blocked" } });
     expect(ledger.finishBatchWithParticipantProjections).toHaveBeenCalled(); expect(save).not.toHaveBeenCalled(); expect(inviteParticipants).not.toHaveBeenCalled(); expect(ledger.readCommand).toHaveBeenCalledWith("customer-1", commandId);
   });
 });

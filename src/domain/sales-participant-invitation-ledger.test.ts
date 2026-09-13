@@ -23,4 +23,17 @@ describe("Sales Participant invitation ledger", () => {
     expect(invitationResult({ commandId: "cmd", outcomes, correlationId: "corr" })).toMatchObject({ outcome: "blocked", counts: { confirmed: 1, no_replay: 1 } });
     expect(() => invitationResult({ commandId: "cmd", outcomes: [{ participantId: "p", outcome: "provider_secret" as never, reason: null }], correlationId: null })).toThrow();
   });
+
+  it.each([
+    [null, "in_progress"],
+    ["no_replay", "blocked"],
+    ["confirmation_required", "confirmation_required"],
+    ["failed_retryable", "failed_retryable"],
+    ["accepted_unconfirmed", "completed_with_unconfirmed"],
+    ["confirmed_by_reconciliation", "completed"],
+  ] as const)("projects %s to the contract aggregate %s", (targetOutcome, aggregate) => {
+    expect(invitationResult({ commandId: "cmd", correlationId: "corr", outcomes: [
+      { participantId: "p1", outcome: targetOutcome, reason: null },
+    ] }).outcome).toBe(aggregate);
+  });
 });
