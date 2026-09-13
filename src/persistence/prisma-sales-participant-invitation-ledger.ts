@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { invitationOutcomes, invitationPhases, invitationResult, invitationScopeHash, type Admission, type CurrentInvitationState, type FinishInvitationCommand, type InvitationPhase, type InvitationTargetOutcome, type ParticipantInvitationProjection, type RevisionedInvitationCommand, type SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
+import { invitationOutcomes, invitationPhases, invitationResult, invitationScopeHash, type Admission, type CurrentInvitationState, type FinishInvitationCommand, type InvitationPhase, type InvitationTargetOutcome, type ParticipantInvitationProjection, type RevisionedInvitationCommand, type InvitationLedgerInternals } from "@/persistence/sales-participant-invitation-ledger-internals";
 import type { InvitationHandle, InvitationState, InvitationStore } from "@/domain/sales-participant-invitation-store";
 
 const LEASE_MS = 30_000;
@@ -14,7 +14,7 @@ const toCommand = (row: { customerId: string; commandId: string; phase: string; 
   return { customerId: row.customerId, commandId: row.commandId, phase: row.phase as InvitationPhase, revision: row.revision, correlationId: row.correlationId, httpStatus: row.httpStatus ?? null, resultCode: row.resultCode ?? null };
 };
 
-export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClient): SalesParticipantInvitationLedger {
+function createInvitationLedgerInternals(prisma: PrismaClient): InvitationLedgerInternals {
   const projectCommand = (row: { customerId: string; commandId: string; phase: string; revision: number; correlationId: string | null; httpStatus: number | null; resultCode: string | null; targets: readonly { salesSessionParticipantId: string; intent: string; expectedInvitationStatus: string; participantRevision: string; projectionRevision: string; outcome: string | null; reason: string | null }[] }): CurrentInvitationState => {
     const command = toCommand(row);
     const outcomes = row.targets.map((target) => {
@@ -202,7 +202,7 @@ const semanticState = (value: CurrentInvitationState): InvitationState => ({
 /** Deep persistence interface. Lifecycle phases, revisions, leases, admission
  * tokens, and fence CAS rules stay inside this adapter. */
 type ParticipantProjectionReader = InvitationStore["readParticipantProjections"];
-export function createInvitationStoreFromLedger(ledger: SalesParticipantInvitationLedger, readParticipantProjections: ParticipantProjectionReader = async () => new Map()): InvitationStore {
+export function createInvitationStoreFromInternalsForTest(ledger: InvitationLedgerInternals, readParticipantProjections: ParticipantProjectionReader = async () => new Map()): InvitationStore {
   const read = async (customerId: string, commandId: string) => {
     const current = await ledger.readCommand(customerId, commandId);
     if (!current) throw new Error("invitation command was not found");
@@ -286,5 +286,8 @@ export function createPrismaInvitationStore(prisma: PrismaClient): InvitationSto
       return [participantId, { currentCommandId: command?.commandId ?? null, invitationOutcome: currentOutcome, invitationReason: currentOutcome ? safeReason(current?.reason) : null, invitationCorrelationId: command?.correlationId ?? null, latestInvitationOutcome: latestOutcome, latestInvitationReason: latestOutcome ? safeReason(latest?.reason) : null, latestInvitationCorrelationId: latest?.command.correlationId ?? null }] as const;
     }));
   };
-  return createInvitationStoreFromLedger(createPrismaSalesParticipantInvitationLedger(prisma), readParticipantProjections);
+  return createInvitationStoreFromInternalsForTest(createInvitationLedgerInternals(prisma), readParticipantProjections);
 }
+
+/** Test-only invariant seam; production composition receives only InvitationStore. */
+export const invitationLedgerInternalsForTest = { create: createInvitationLedgerInternals } as const;

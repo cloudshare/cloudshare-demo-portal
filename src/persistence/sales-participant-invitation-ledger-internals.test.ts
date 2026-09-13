@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { invitationResult, invitationScopeHash, type InvitationTargetOutcome } from "./sales-participant-invitation-ledger";
+import { invitationResult, invitationScopeHash, type InvitationTargetOutcome } from "./sales-participant-invitation-ledger-internals";
 
 describe("Sales Participant invitation ledger", () => {
   it("binds command scope to customer, session, ordered targets and explicit preconditions", () => {

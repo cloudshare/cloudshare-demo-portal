@@ -4,7 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { createPrismaSalesParticipantInvitationLedger } from "./prisma-sales-participant-invitation-ledger";
+import { invitationLedgerInternalsForTest } from "./prisma-sales-participant-invitation-ledger";
+
+const createPrismaSalesParticipantInvitationLedger = invitationLedgerInternalsForTest.create;
 
 const databasePath = path.join(os.tmpdir(), `cloudshare-stage3-ledger-${randomUUID()}.sqlite`);
 fs.copyFileSync(path.resolve("prisma/test.db"), databasePath);

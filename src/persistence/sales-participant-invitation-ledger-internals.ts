@@ -36,7 +36,8 @@ export type Admission =
   | { readonly kind: "same_command"; readonly commandId: string; readonly admissionToken?: never; readonly command: RevisionedInvitationCommand; readonly blockReason?: never }
   | { readonly kind: "blocked"; readonly commandId: string; readonly admissionToken?: never; readonly command?: never; readonly blockReason: "command_id_mismatch" | "precondition_failed" };
 export type FinishInvitationCommand = { readonly commandId: string; readonly expectedRevision: number; readonly expectedPhase: "dispatching" | "evaluating_confirmation" | "settled"; readonly phase: "evaluating_confirmation" | "settled"; readonly correlationId: string | null; readonly httpStatus?: number; readonly resultCode?: string };
-export interface SalesParticipantInvitationLedger {
+/** Persistence-private state-machine seam. Never inject this into application or route code. */
+export interface InvitationLedgerInternals {
   admitBatch(input: { customerId: string; sessionId: string; targets: readonly InvitationTarget[]; commandId: string; at: Date }): Promise<Admission>;
   markBatchDispatching(customerId: string, commandId: string, admissionToken: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
   markBatchEvaluatingConfirmation?(input: { readonly customerId: string; readonly commandId: string; readonly admissionToken: string; readonly expectedRevision: number; readonly correlationId: string; readonly targetOutcomes: readonly InvitationTargetOutcome[]; readonly at: Date }): Promise<RevisionedInvitationCommand>;
