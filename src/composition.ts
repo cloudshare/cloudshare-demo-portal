@@ -51,6 +51,7 @@ import { createPrismaSalesParticipantWorkspaceReader } from "@/persistence/prism
 import { createPrismaSalesDemoSessionRepository } from "@/persistence/prisma-sales-demo-session-repository";
 import { createPrismaSalesRecordRepository } from "@/persistence/prisma-sales-record-repository";
 import { createPrismaSalesSessionParticipantRepository } from "@/persistence/prisma-sales-session-participant-repository";
+import { createPrismaSalesParticipantAddCommandStore } from "@/persistence/prisma-sales-participant-add-command";
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 import { createPrismaAdminMonitoringAttemptRepository } from "@/persistence/prisma-admin-monitoring-attempt-repository";
@@ -523,7 +524,7 @@ export function getServices(): Services {
   });
   const salesParticipantWorkspace = createSalesParticipantWorkspace({
     reader: createPrismaSalesParticipantWorkspaceReader(prisma), invitationStore,
-    sessions: createPrismaSalesDemoSessionRepository(prisma), records: createPrismaSalesRecordRepository(prisma), participants: createPrismaSalesSessionParticipantRepository(prisma),
+    sessions: createPrismaSalesDemoSessionRepository(prisma), records: createPrismaSalesRecordRepository(prisma), participants: createPrismaSalesSessionParticipantRepository(prisma), addCommandStore: createPrismaSalesParticipantAddCommandStore(prisma),
     connections: cloudshareConnections,
     deliveryFactory: { forConnection: (connection) => createCloudShareSalesDelivery(cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })) },
     diagnostics: diagnosticRecorder, audit,

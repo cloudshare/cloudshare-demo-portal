@@ -299,6 +299,23 @@ model SalesParticipantInvitationCommand {
   @@id([customerId, commandId])
 }
 
+/// Durable at-most-once fence for canonical Participant registration.
+model SalesParticipantAddCommand {
+  customerId       String
+  commandId        String
+  sessionId        String
+  payloadHash      String
+  state            String
+  status           Int?
+  resultJson       String?
+  correlationId    String?
+  createdAt        DateTime
+  updatedAt        DateTime
+  @@id([customerId, commandId])
+  @@unique([customerId, sessionId, commandId])
+  @@index([customerId, sessionId, createdAt])
+}
+
 /// Safe, non-secret outcome history for admin participant launch actions.
 model SalesParticipantLaunchOperation {
   id                       String   @id
