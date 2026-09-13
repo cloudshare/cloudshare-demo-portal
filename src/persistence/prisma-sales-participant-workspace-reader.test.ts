@@ -11,4 +11,24 @@ describe("Prisma participant workspace reader", () => {
     expect(JSON.stringify(page)).not.toContain("provider-");
   });
   it("fails closed for another Customer", async () => { const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(null) } } as never); expect(await reader.readPage({ customerId: "other", sessionId: "s1", query: "", offset: 0, limit: 25, now: new Date() })).toBeNull(); });
+  it("confines the bounded query to the Customer, session, and unarchived contact opportunity", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
+    const reader = createPrismaSalesParticipantWorkspaceReader({
+      salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "s1", end: "2026-12-01", sendInvitations: "dontSend" }) },
+      salesSessionParticipant: { count, findMany },
+    } as never);
+    await reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "Ada", offset: 0, limit: 25, now: new Date() });
+    for (const call of [count, findMany]) {
+      const where = call.mock.calls[0][0].where;
+      expect(where).toMatchObject({ customerId: "customer-a", salesDemoSessionId: "session-a", contact: { archivedAt: null, opportunity: { archivedAt: null } } });
+      expect(where.contact.OR).toEqual(expect.arrayContaining([
+        { firstName: { contains: "Ada" } },
+        { lastName: { contains: "Ada" } },
+        { email: { contains: "Ada" } },
+      ]));
+    }
+    expect(findMany.mock.calls[0][0].select).toMatchObject({ contact: { select: { firstName: true, lastName: true, email: true } } });
+    expect(findMany.mock.calls[0][0].select).not.toHaveProperty("contact.opportunity");
+  });
 });
