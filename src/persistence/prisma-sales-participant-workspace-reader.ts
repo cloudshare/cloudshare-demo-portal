@@ -135,14 +135,34 @@ export function createPrismaSalesParticipantWorkspaceReader(
       for (const target of latestTargets)
         if (!latestByParticipant.has(target.salesSessionParticipantId))
           latestByParticipant.set(target.salesSessionParticipantId, target);
-      const launchOperations = participantIds.length
-        ? await prisma.salesParticipantLaunchOperation.findMany({
-            where: { customerId: input.customerId, salesDemoSessionId: input.sessionId, salesSessionParticipantId: { in: participantIds } },
-            orderBy: [{ occurredAt: "desc" }, { revision: "desc" }, { id: "desc" }],
-            distinct: ["salesSessionParticipantId"],
-            select: { salesSessionParticipantId: true, operation: true, outcome: true, safeReason: true, correlationId: true },
-          })
-        : [];
+      // Query one row per bounded page participant. Prisma distinct may be
+      // applied in memory, which can read an unbounded operation history.
+      const launchOperations = (
+        await Promise.all(
+          participantIds.map((participantId) =>
+            prisma.salesParticipantLaunchOperation.findMany({
+              where: {
+                customerId: input.customerId,
+                salesDemoSessionId: input.sessionId,
+                salesSessionParticipantId: participantId,
+              },
+              orderBy: [
+                { occurredAt: "desc" },
+                { revision: "desc" },
+                { id: "desc" },
+              ],
+              take: 1,
+              select: {
+                salesSessionParticipantId: true,
+                operation: true,
+                outcome: true,
+                safeReason: true,
+                correlationId: true,
+              },
+            }),
+          ),
+        )
+      ).flat();
       const launchByParticipant = new Map(launchOperations.map((operation) => [operation.salesSessionParticipantId, operation]));
       const page: SalesParticipantWorkspacePage = {
         total,

@@ -129,14 +129,18 @@ export function SalesParticipantWorkspace(props: {
       const correlationId = textField(result, "correlationId");
       const launchUrl = textField(result, "launchUrl");
       if (!response.ok) throw new Error(code === "no_replay" ? "No replay permitted: provider outcome is ambiguous; open Support." : textField(result, "error") ?? `Action failed (${response.status}).`);
+      let copiedLaunch = false;
       if (launchUrl) {
         const launch = new URL(launchUrl, window.location.origin);
         if (launch.origin !== window.location.origin || !launch.pathname.startsWith("/sales/launch/")) throw new Error("Launch link was rejected because it was not a Certalis portal link.");
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(launch.toString());
+          copiedLaunch = true;
+        }
       }
       const confirmationPending = response.status === 202 || code === "confirmation_required" || outcome === "confirmation_required" || outcome === "in_progress";
-      const message = confirmationPending ? `Confirmation pending; the replay fence is retained.${correlationId ? ` Correlation ${correlationId}.` : ""}` : outcome === "completed_with_unconfirmed" ? `Completed with confirmation pending; the replay fence is retained.${correlationId ? ` Correlation ${correlationId}.` : ""}` : outcome === "failed_retryable" ? "Action failed temporarily; retry is available." : launchUrl ? "Launch link ready." : correlationId ? `Completed. Correlation ${correlationId}.` : "Completed.";
+      const message = confirmationPending ? `Confirmation pending; the replay fence is retained.${correlationId ? ` Correlation ${correlationId}.` : ""}` : outcome === "completed_with_unconfirmed" || outcome === "accepted_unconfirmed" ? `CloudShare acknowledged the invitation; delivery is unconfirmed. Replay is allowed and the fence is released.${correlationId ? ` Correlation ${correlationId}.` : ""}` : outcome === "failed_retryable" ? "Action failed temporarily; retry is available." : launchUrl ? copiedLaunch ? "Launch link generated and copied." : "Launch link generated. Copy it from the local workspace when clipboard access is available." : correlationId ? `Completed. Correlation ${correlationId}.` : "Completed.";
       setFeedback((current) => ({ ...current, [participant.id]: message }));
-      if (launchUrl) window.open(new URL(launchUrl, window.location.origin).toString(), "_blank", "noopener,noreferrer");
     } catch (cause) {
       setFeedback((current) => ({ ...current, [participant.id]: cause instanceof Error ? cause.message : "Action failed; retry or open Support." }));
     } finally {
@@ -199,7 +203,19 @@ function explicitUtcTime(value: string): string {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? "Invalid time" : parsed.toISOString();
 }
-function durableFeedback(participant: SalesParticipantWorkspaceRow): string | null { const invitationOutcome = participant.invitationOutcome ?? participant.latestInvitationOutcome; const invitationReason = participant.invitationReason ?? participant.latestInvitationReason; const invitationCorrelation = participant.invitationCorrelationId ?? participant.latestInvitationCorrelationId; const invitationLabel = invitationOutcome === "completed_with_unconfirmed" ? "completed with confirmation pending; replay fence retained" : invitationOutcome; const invitation = invitationLabel ? `Invitation action: ${invitationLabel}${invitationReason ? ` (${invitationReason})` : ""}${invitationCorrelation ? `. Correlation ${invitationCorrelation}.` : "."}` : null; const launch = participant.launchOperation ? `Launch ${participant.launchOperation.operation}: ${participant.launchOperation.outcome}${participant.launchOperation.reason ? ` (${participant.launchOperation.reason})` : ""}${participant.launchOperation.correlationId ? `. Correlation ${participant.launchOperation.correlationId}.` : "."}` : null; return [invitation, launch].filter(Boolean).join(" ") || null; }
+function durableFeedback(participant: SalesParticipantWorkspaceRow): string | null {
+  const invitationOutcome = participant.invitationOutcome ?? participant.latestInvitationOutcome;
+  const invitationReason = participant.invitationReason ?? participant.latestInvitationReason;
+  const invitationCorrelation = participant.invitationCorrelationId ?? participant.latestInvitationCorrelationId;
+  const acknowledgedUnconfirmed = invitationOutcome === "completed_with_unconfirmed" || invitationOutcome === "accepted_unconfirmed";
+  const invitationLabel = acknowledgedUnconfirmed
+    ? "acknowledged by CloudShare; delivery unconfirmed; replay allowed and fence released"
+    : invitationOutcome;
+  const safeReason = acknowledgedUnconfirmed ? null : invitationReason;
+  const invitation = invitationLabel ? `Invitation action: ${invitationLabel}${safeReason ? ` (${safeReason})` : ""}${invitationCorrelation ? `. Correlation ${invitationCorrelation}.` : "."}` : null;
+  const launch = participant.launchOperation ? `Launch ${participant.launchOperation.operation}: ${participant.launchOperation.outcome}${participant.launchOperation.reason ? ` (${participant.launchOperation.reason})` : ""}${participant.launchOperation.correlationId ? `. Correlation ${participant.launchOperation.correlationId}.` : "."}` : null;
+  return [invitation, launch].filter(Boolean).join(" ") || null;
+}
 
 function humanEnvironmentSource(value: string): string {
   if (value === "cloudshare_v3_environment") return "Observed from CloudShare Environment";

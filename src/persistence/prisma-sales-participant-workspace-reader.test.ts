@@ -11,10 +11,26 @@ describe("Prisma participant workspace reader", () => {
     expect(JSON.stringify(page)).not.toContain("provider-");
   });
   it("fails closed for another Customer", async () => { const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue(null) } } as never); expect(await reader.readPage({ customerId: "other", sessionId: "s1", query: "", offset: 0, limit: 25, now: new Date() })).toBeNull(); });
-  it("projects the latest bounded launch operation without leaking other scope", async () => {
-    const operation = { salesSessionParticipantId: "p0", operation: "generate", outcome: "failure", safeReason: "persistence_failure", correlationId: "corr-launch" };
-    const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "s1", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([row(0)]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationTarget: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([operation]) } } as never);
-    await expect(reader.readPage({ customerId: "c1", sessionId: "s1", query: "", offset: 0, limit: 25, now: new Date() })).resolves.toMatchObject({ participants: [{ sessionEndsAt: "2026-12-01T12:00:00.000Z", launchOperation: { operation: "generate", outcome: "failure", reason: "persistence_failure", correlationId: operation.correlationId } }] });
+  it("reads one latest launch operation per page row without history skew or scope leakage", async () => {
+    const findLaunchOperations = vi.fn(async (args: { where: { customerId: string; salesDemoSessionId: string; salesSessionParticipantId: string }; take: number }) => [{
+      salesSessionParticipantId: args.where.salesSessionParticipantId,
+      operation: "generate",
+      outcome: "failure",
+      safeReason: "persistence_failure",
+      correlationId: `corr-${args.where.salesSessionParticipantId}`,
+    }]);
+    const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-a", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(2), findMany: vi.fn().mockResolvedValue([row(0), row(1)]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationTarget: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantLaunchOperation: { findMany: findLaunchOperations } } as never);
+    const result = await reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() });
+    expect(result?.participants.map((participant) => participant.launchOperation?.correlationId)).toEqual(["corr-p0", "corr-p1"]);
+    expect(findLaunchOperations).toHaveBeenCalledTimes(2);
+    for (const call of findLaunchOperations.mock.calls) {
+      expect(call[0]).toMatchObject({
+        where: { customerId: "customer-a", salesDemoSessionId: "session-a" },
+        orderBy: [{ occurredAt: "desc" }, { revision: "desc" }, { id: "desc" }],
+        take: 1,
+      });
+      expect(call[0]).not.toHaveProperty("distinct");
+    }
   });
   it("confines the bounded query to the Customer, session, and unarchived contact opportunity", async () => {
     const findMany = vi.fn().mockResolvedValue([]);

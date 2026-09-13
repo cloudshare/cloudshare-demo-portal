@@ -177,8 +177,9 @@ describe("SalesParticipantWorkspace", () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
     await user.click(await screen.findByRole("button", { name: "Inspect" }));
     await user.click(screen.getByRole("button", { name: "Resend" }));
-    const status = await screen.findByText(/Completed with confirmation pending; the replay fence is retained/);
+    const status = await screen.findByText(/CloudShare acknowledged the invitation; delivery is unconfirmed. Replay is allowed and the fence is released/);
     expect(status.textContent).toContain("corr-unconfirmed");
+    expect(status.textContent).not.toContain("retained");
     expect(status.textContent).not.toBe("Completed. Correlation corr-unconfirmed.");
   });
   it("exposes every disabled action reason through described visible text", async () => {
@@ -256,24 +257,26 @@ describe("SalesParticipantWorkspace", () => {
     expect(errors).not.toHaveBeenCalled();
     expect(warnings).not.toHaveBeenCalled();
   });
-  it("opens only a portal launch path and preserves its correlation feedback", async () => {
+  it("keeps generated capability local, copies it, and never opens or navigates it", async () => {
     const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", providerCorrelation: true, nativeInvitationsEnabled: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null };
     const opened = vi.spyOn(window, "open").mockImplementation(() => null);
     const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST" ? new Response(JSON.stringify({ launchUrl: "/sales/launch/portal-token", correlationId: "launch-corr" }), { status: 201 }) : new Response(JSON.stringify({ participants: [row], total: 1, offset: 0, limit: 25, hasMore: false }), { status: 200 }));
     const user = userEvent.setup();
+    const copied = vi.spyOn(navigator.clipboard, "writeText");
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
     await screen.findByRole("row", { name: /Ada Lovelace/ });
     await user.click(screen.getByRole("button", { name: "Inspect" }));
     await user.click(screen.getByRole("button", { name: "Generate launch link" }));
-    await waitFor(() => expect(opened).toHaveBeenCalledWith(expect.stringContaining("/sales/launch/portal-token"), "_blank", "noopener,noreferrer"));
-    expect(screen.getByText("Launch link ready.")).toBeTruthy();
+    await waitFor(() => expect(copied).toHaveBeenCalledWith(expect.stringContaining("/sales/launch/portal-token")));
+    expect(opened).not.toHaveBeenCalled();
+    expect(screen.getByText("Launch link generated and copied.")).toBeTruthy();
   });
   it("restores direct-link focus and exposes semantic selection, durable feedback, and canonical Activity", async () => {
     window.history.replaceState({}, "", "/sales?participantActive=p1&participantFocus=inspector");
     const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, latestInvitationOutcome: "accepted_unconfirmed", latestInvitationReason: "provider_acknowledged", latestInvitationCorrelationId: "invite-corr", launchOperation: { operation: "generate", outcome: "failure", reason: "persistence_failure", correlationId: "launch-corr" }, environmentAttention: null };
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify({ ...page, participants: [row] }))} />);
     const inspector = await screen.findByRole("complementary", { name: "Participant inspector" }); await waitFor(() => expect(document.activeElement).toBe(inspector));
-    const status = screen.getByRole("status"); expect(status.textContent).toContain("invite-corr"); expect(status.textContent).toContain("persistence_failure"); expect(status.textContent).toContain("launch-corr");
+    const status = screen.getByRole("status"); expect(status.textContent).toContain("invite-corr"); expect(status.textContent).toContain("acknowledged by CloudShare"); expect(status.textContent).toContain("replay allowed and fence released"); expect(status.textContent).not.toContain("accepted_unconfirmed"); expect(status.textContent).not.toContain("provider_acknowledged"); expect(status.textContent).toContain("persistence_failure"); expect(status.textContent).toContain("launch-corr");
     expect(screen.getByRole("link", { name: "View Activity" }).getAttribute("href")).toBe("/sales/sessions/s1?area=activity&correlationId=launch-corr");
     expect(screen.getByRole("region", { name: "Scrollable Participant roster" }).getAttribute("tabindex")).toBe("0");
     fireEvent.click(screen.getByRole("row", { name: /Ada Lovelace/ })); expect(screen.getByRole("row", { name: /Ada Lovelace/ }).getAttribute("aria-selected")).toBe("true"); expect(screen.getByText(/1 selected/)).toBeTruthy();
