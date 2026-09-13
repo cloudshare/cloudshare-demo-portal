@@ -54,6 +54,7 @@ export function SalesParticipantWorkspace(props: {
   const registrationCommand = useRef<{ key: string; commandId: string } | null>(null);
   const automaticRetryCount = useRef(0);
   const automaticRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const registrationGeneration = useRef(0);
   const [registrationBusy, setRegistrationBusy] = useState(false);
   const originRef = useRef<HTMLElement | null>(null);
   const clearedInspectorTarget = useRef(false);
@@ -66,7 +67,14 @@ export function SalesParticipantWorkspace(props: {
   useEffect(() => {
     if (active) headingRef.current?.focus();
   }, [active]);
-  useEffect(() => () => { if (automaticRetryTimer.current) clearTimeout(automaticRetryTimer.current); }, []);
+  useEffect(() => {
+    const generation = ++registrationGeneration.current;
+    return () => {
+      if (registrationGeneration.current === generation) registrationGeneration.current += 1;
+      if (automaticRetryTimer.current) { clearTimeout(automaticRetryTimer.current); automaticRetryTimer.current = null; }
+      automaticRetryCount.current = 0;
+    };
+  }, [sessionId]);
   useEffect(() => {
     const onPop = () => { const params = new URLSearchParams(window.location.search); const inspector = params.get("participantFocus") === "inspector" && Boolean(params.get("participantActive")); clearedInspectorTarget.current = false; historyMode.current = "replace"; lastUrl.current = window.location.href; setQuery(params.get("participantQuery") ?? ""); setOffset(Number(params.get("participantOffset") ?? 0) || 0); setSelection({ activeId: params.get("participantActive"), selectedIds: (params.get("participantSelected") ?? "").split(",").filter(Boolean).slice(0, 25), rangeAnchorId: params.get("participantAnchor") }); logicalFocus.current = inspector ? "inspector" : "row"; setInspectorOpen(inspector); const scrollY = window.history.state?.participantScrollY; if (typeof scrollY === "number" && typeof window.scrollTo === "function") window.scrollTo(0, scrollY); };
     window.addEventListener("popstate", onPop);
@@ -173,6 +181,7 @@ export function SalesParticipantWorkspace(props: {
     }
   };
   const registerSelected = async (forceNewCommand = false, automaticPerson?: ParticipantAddPerson) => {
+    const generation = registrationGeneration.current;
     const selectedId = registrationId;
     const person: ParticipantAddPerson = automaticPerson ?? (addMode === "existingContact" ? { kind: "existingContact", contactId: selectedId } : { kind: "adHoc", ...adHoc });
     if (registrationBusy || (person.kind === "existingContact" ? !person.contactId : !person.firstName.trim() || !person.lastName.trim() || !person.email.trim())) return;
@@ -184,6 +193,7 @@ export function SalesParticipantWorkspace(props: {
       registrationCommand.current = { key, commandId };
       const response = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/add`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ commandId, person }) });
       const result = await readJsonObject(response);
+      if (registrationGeneration.current !== generation) return;
       const durableCommandId = textField(result, "commandId");
       if (durableCommandId) registrationCommand.current = { key, commandId: durableCommandId };
       if (!response.ok) {
@@ -193,7 +203,7 @@ export function SalesParticipantWorkspace(props: {
           const delayMs = 2_000 * 2 ** automaticRetryCount.current++;
           const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
           setRegistrationOutcome({ retryable: true, correlationId: correlationId ?? null, nextRetryAt });
-          automaticRetryTimer.current = setTimeout(() => { automaticRetryTimer.current = null; void registerSelected(true, person); }, delayMs);
+          automaticRetryTimer.current = setTimeout(() => { automaticRetryTimer.current = null; if (registrationGeneration.current === generation) void registerSelected(true, person); }, delayMs);
           throw new Error(`CloudShare failed before any participant write. Automatic retry ${automaticRetryCount.current} of 3 is scheduled for ${nextRetryAt}.`);
         }
         setRegistrationOutcome({ retryable, correlationId: correlationId ?? null });
@@ -204,8 +214,8 @@ export function SalesParticipantWorkspace(props: {
       setRegistrationId(""); setAdHoc({ firstName: "", lastName: "", email: "" }); setRegistrationFeedback(textField(result, "outcome") === "already_registered" ? "Participant was already registered. No CloudShare invitation was sent." : "Participant registered. No CloudShare invitation was sent.");
       if (query || offset) { historyMode.current = "push"; setQuery(""); setOffset(0); }
       await rereadWorkspace();
-    } catch (cause) { setRegistrationFeedback(cause instanceof Error ? cause.message : "Registration failed; retry or open Support."); }
-    finally { setRegistrationBusy(false); }
+    } catch (cause) { if (registrationGeneration.current === generation) setRegistrationFeedback(cause instanceof Error ? cause.message : "Registration failed; retry or open Support."); }
+    finally { if (registrationGeneration.current === generation) setRegistrationBusy(false); }
   };
   const refreshRegistrationEvidence = async () => {
     if (registrationBusy || !registrationCommand.current) return;

@@ -99,6 +99,22 @@ describe("SalesParticipantWorkspace", () => {
     expect(JSON.parse(bodies[0]).commandId).not.toBe(JSON.parse(bodies[1]).commandId);
   });
 
+  it("does not schedule an automatic participant retry after the Session workspace unmounts", async () => {
+    const user = userEvent.setup(); let release!: (response: Response) => void; const posts: string[] = [];
+    const pending = new Promise<Response>((resolve) => { release = resolve; });
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/participants/add")) { posts.push(String(init?.body)); return pending; }
+      return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-1", name: "Grace Hopper", email: "grace@example.test" }] }));
+    });
+    const view = render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
+    await user.click(screen.getByRole("button", { name: "Add participant" }));
+    view.unmount();
+    await act(async () => { release(new Response(JSON.stringify({ outcome: "rejected", code: "participant_add_retryable", dispatchOutcome: "not_dispatched" }), { status: 503 })); await pending; });
+    await new Promise((resolve) => setTimeout(resolve, 2_100));
+    expect(posts).toHaveLength(1);
+  });
+
   it("refreshes a legacy no-replay command into explicit retry-safe state without adding a participant", async () => {
     const user = userEvent.setup(); const posts: Array<{ url: string; body: string }> = [];
     const durableCommandId = "11111111-1111-4111-8111-111111111111";
