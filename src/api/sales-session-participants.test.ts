@@ -4,9 +4,6 @@ import { CloudShareAuthError, CloudShareResponseError } from "@/integrations/clo
 import { handleInviteSalesSessionParticipants as inviteSalesSessionParticipants, handleListSalesSessionParticipants as listSalesSessionParticipants, handleRegisterSalesSessionParticipants as registerSalesSessionParticipants } from "./sales-session-participants";
 import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales-environment";
 import { invitationResult, type InvitationHandle, type InvitationState, type InvitationStore } from "@/domain/sales-participant-invitation-store";
-import type { InvitationLedgerInternals } from "@/persistence/sales-participant-invitation-ledger-internals";
-import { createInvitationStoreFromInternalsForTest } from "@/persistence/prisma-sales-participant-invitation-ledger";
-type SalesParticipantInvitationLedger = InvitationLedgerInternals;
 
 const fixedNow = () => new Date("2026-07-19T08:00:00.000Z");
 const handleRegisterSalesSessionParticipants: typeof registerSalesSessionParticipants = (deps, request) => registerSalesSessionParticipants({ now: fixedNow, ...deps }, request);
@@ -23,8 +20,8 @@ const semanticStore = (): InvitationStore => ({
   load: vi.fn(async () => null),
   readParticipantProjections: vi.fn(async () => new Map()),
 });
-const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof inviteSalesSessionParticipants>[0], "invitationStore"> & { invitationStore?: InvitationStore; invitationLedger?: InvitationLedgerInternals }, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
-  const invitationStore = deps.invitationStore ?? (deps.invitationLedger ? createInvitationStoreFromInternalsForTest(deps.invitationLedger) : semanticStore());
+const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof inviteSalesSessionParticipants>[0], "invitationStore"> & { invitationStore?: InvitationStore }, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
+  const invitationStore = deps.invitationStore ?? semanticStore();
   return inviteSalesSessionParticipants({ now: fixedNow, ...deps, invitationStore } as Parameters<typeof inviteSalesSessionParticipants>[0], request);
 };
 
@@ -513,15 +510,12 @@ describe("Sales Session participant invitation", () => {
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ response: expect.objectContaining({ status: 200, body: expect.objectContaining({ items: [remote] }) }), details: expect.objectContaining({ failureMode: "participant_mapping_persistence", error: expect.stringContaining("database unavailable") }) }));
   });
 
-  it("never invokes the provider POST when the durable dispatch transition fails", async () => {
-    const participant = storedParticipant(); const commandId = randomUUID(); const inviteParticipants = vi.fn();
-    const ledger: SalesParticipantInvitationLedger = {
-      admitBatch: vi.fn().mockResolvedValue({ kind: "admitted", commandId, admissionToken: "required-token" }),
-      markBatchDispatching: vi.fn().mockRejectedValue(new Error("dispatch fence lost")),
-      markBatchEvaluatingConfirmation: vi.fn(), expireAdmitted: vi.fn(), recoverExpiredInvitationCommand: vi.fn(), failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(null), readCurrent: vi.fn(),
-    };
-    await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1", participant.id, participant.opportunityContactId)])), inviteParticipants }) } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
-    expect(ledger.markBatchDispatching).toHaveBeenCalledWith("customer-1", commandId, "required-token", 1, fixedNow());
+  it("never invokes the provider POST when durable dispatch authorization fails", async () => {
+    const participant = storedParticipant(); const inviteParticipants = vi.fn();
+    const invitationStore = semanticStore();
+    invitationStore.authorizeDispatch = vi.fn().mockRejectedValue(new Error("dispatch authorization lost"));
+    await handleInviteSalesSessionParticipants({ invitationStore, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1", participant.id, participant.opportunityContactId)])), inviteParticipants }) } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant) });
+    expect(invitationStore.authorizeDispatch).toHaveBeenCalledWith(testHandle, fixedNow());
     expect(inviteParticipants).not.toHaveBeenCalled();
   });
 
@@ -652,18 +646,10 @@ describe("Sales Session participant invitation", () => {
   });
 
   it("refuses duplicate provider correlation and a stale remote invitation state before dispatch", async () => {
-    const participant = storedParticipant(); const inviteParticipants = vi.fn(); const failAdmitted = vi.fn();
-    const ledger: SalesParticipantInvitationLedger = {
-      admitBatch: vi.fn(async ({ commandId }) => ({ kind: "admitted" as const, commandId, admissionToken: "token" })), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted, finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(null), readCurrent: vi.fn(),
-    };
-    const duplicated = rosterEvidence([
-      { ...remoteParticipant("remote-1", participant.id, participant.opportunityContactId), invitationStatus: "sent" as const },
-      { ...remoteParticipant("remote-duplicate", participant.id, participant.opportunityContactId), invitationStatus: "sent" as const },
-    ]);
-    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(duplicated), inviteParticipants } as never) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant) });
-    expect(result.status).toBe(409);
-    expect(inviteParticipants).not.toHaveBeenCalled();
-    expect(failAdmitted).toHaveBeenCalledOnce();
+    const participant = storedParticipant(); const inviteParticipants = vi.fn(); const invitationStore = semanticStore();
+    const duplicated = rosterEvidence([{ ...remoteParticipant("remote-1", participant.id, participant.opportunityContactId), invitationStatus: "sent" as const }, { ...remoteParticipant("remote-duplicate", participant.id, participant.opportunityContactId), invitationStatus: "sent" as const }]);
+    const result = await handleInviteSalesSessionParticipants({ invitationStore, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(duplicated), inviteParticipants } as never) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant) });
+    expect(result.status).toBe(409); expect(inviteParticipants).not.toHaveBeenCalled(); expect(invitationStore.failBeforeDispatch).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -770,144 +756,43 @@ describe("Sales Session participant invitation", () => {
     expect(inviteParticipants).toHaveBeenCalledWith("remote-sales-1", ["remote-1"]);
   });
 
-  it("reconciles a retained initial invite without redispatching", async () => {
-    const participant = storedParticipant();
-    const inviteParticipants = vi.fn();
-    const commandId = randomUUID();
-    const ledger: SalesParticipantInvitationLedger = {
-      admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }),
-      markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch: vi.fn().mockResolvedValue({ customerId: "customer-1", commandId, phase: "settled", revision: 4, correlationId: "corr-1" }), finishBatchWithParticipantProjections: vi.fn().mockResolvedValue({ customerId: "customer-1", commandId, phase: "settled", revision: 4, correlationId: "corr-1" }),
-      readCommand: vi.fn().mockResolvedValue({ command: { customerId: "customer-1", commandId, phase: "settled", revision: 3, correlationId: "corr-1" }, targets: [{ participantId: participant.id, intent: "invite", expectedInvitationStatus: "notSent", participantRevision: participant.updatedAt.toISOString() }], outcome: { commandId, outcome: "blocked", correlationId: "corr-1", counts: {}, targets: [{ participantId: participant.id, outcome: "no_replay", reason: "ambiguous_after_dispatch" }] } }),
-      readCurrent: vi.fn().mockResolvedValue(null),
-    };
-    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const }])) , inviteParticipants }) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: { commandId, targets: [{ participantId: participant.id, intent: "invite", expectedInvitationStatus: "notSent", participantRevision: participant.updatedAt.toISOString() }] } });
-    expect(result.status).toBe(200);
-    expect(inviteParticipants).not.toHaveBeenCalled();
-    expect(ledger.finishBatchWithParticipantProjections).toHaveBeenCalledWith(expect.objectContaining({ expectedPhase: "settled", projections: expect.any(Array) }));
-  });
-
-  it("does not reconcile or clear an indefinitely retained resend no-replay command", async () => {
-    const participant = { ...storedParticipant(), invitationStatus: "sent" as const };
-    const commandId = randomUUID();
-    const inviteParticipants = vi.fn();
-    const ledger: SalesParticipantInvitationLedger = {
-      admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }),
-      markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(),
-      readCommand: vi.fn().mockResolvedValue({
-        command: { customerId: "customer-1", commandId, phase: "settled", revision: 4, correlationId: "corr-resend" },
-        outcome: { commandId, outcome: "blocked", correlationId: "corr-resend", counts: { no_replay: 1 }, targets: [{ participantId: participant.id, outcome: "no_replay", reason: "ambiguous_after_dispatch" }] },
-      }),
-      readCurrent: vi.fn().mockResolvedValue(null),
-    };
-    const listParticipants = vi.fn().mockRejectedValue(new Error("reconciliation must not run"));
-    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger,
-      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() },
-      participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants, inviteParticipants }) }, diagnostics: { record: vi.fn() },
-    }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "resend", commandId) });
-    expect(result).toMatchObject({ status: 409, body: { code: "command_replayed", outcome: "blocked", commandId } });
-    expect(listParticipants).not.toHaveBeenCalled();
-    expect(inviteParticipants).not.toHaveBeenCalled();
-    expect(ledger.finishBatch).not.toHaveBeenCalled();
-  });
-
-  it("terminally settles a restarted initial Invite when a complete roster proves no transition", async () => {
-    const participant = storedParticipant(); const commandId = randomUUID(); const correlationId = "corr-restart";
-    const evaluating = { command: { customerId: "customer-1", commandId, phase: "evaluating_confirmation" as const, revision: 3, correlationId }, targets: [{ participantId: participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: participant.updatedAt.toISOString() }], outcome: invitationResult({ commandId, correlationId, outcomes: [{ participantId: participant.id, outcome: "confirmation_required", reason: "confirmation_required" }] }) };
-    const settled = { ...evaluating, command: { ...evaluating.command, phase: "settled" as const, revision: 4, httpStatus: 202, resultCode: "invitation_confirmation_required" } };
-    const readCommand = vi.fn().mockResolvedValueOnce(evaluating).mockResolvedValueOnce(evaluating).mockResolvedValue(settled); const finishBatchWithParticipantProjections = vi.fn().mockResolvedValue(settled.command);
-    const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId, command: evaluating.command }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections, readCommand, readCurrent: vi.fn() };
-    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1", participant.id, participant.opportunityContactId)])), inviteParticipants: vi.fn() }) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
-    expect(finishBatchWithParticipantProjections).toHaveBeenCalledWith(expect.objectContaining({ expectedPhase: "evaluating_confirmation", phase: "settled", httpStatus: 202, resultCode: "invitation_confirmation_required", projections: [] }));
-    expect(result).toMatchObject({ status: 202, body: { code: "invitation_confirmation_required", phase: "settled", outcome: "confirmation_required" } });
-  });
-
-  it("fails retained reconciliation closed for a duplicate single correlation key or an intervening participant revision", async () => {
-    const participant = storedParticipant(); const commandId = randomUUID();
-    const makeLedger = (participantRevision = participant.updatedAt.toISOString()) => {
-      const current = { command: { customerId: "customer-1", commandId, phase: "settled" as const, revision: 3, correlationId: "corr-retained" }, targets: [{ participantId: participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision }], outcome: invitationResult({ commandId, correlationId: "corr-retained", outcomes: [{ participantId: participant.id, outcome: "no_replay" as const, reason: "ambiguous_after_dispatch" as const }] }) };
-      return { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(current), readCurrent: vi.fn() } satisfies SalesParticipantInvitationLedger;
-    };
-    const duplicateSingleKey = rosterEvidence([
-      { ...remoteParticipant("remote-1", participant.id, participant.opportunityContactId), invitationStatus: "sent" as const },
-      { ...remoteParticipant("remote-2", participant.id, "another-contact"), invitationStatus: "sent" as const },
-    ]);
-    for (const [ledger, roster] of [[makeLedger(), duplicateSingleKey], [makeLedger(new Date(0).toISOString()), rosterEvidence([{ ...remoteParticipant("remote-1", participant.id, participant.opportunityContactId), invitationStatus: "sent" as const }])]] as const) {
-      const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(roster), inviteParticipants: vi.fn() }) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
-      expect(result).toMatchObject({ status: 409, body: { code: "command_replayed", outcome: "blocked" } });
-      expect(ledger.finishBatchWithParticipantProjections).not.toHaveBeenCalled();
-    }
-  });
-
-  it("recovers an expired pre-dispatch admission and replays it as retryable without dispatch", async () => {
-    const participant = storedParticipant(); const commandId = randomUUID(); const inviteParticipants = vi.fn();
-    const admitted = { command: { customerId: "customer-1", commandId, phase: "admitted" as const, revision: 1, correlationId: null }, targets: [{ participantId: participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: participant.updatedAt.toISOString() }], outcome: invitationResult({ commandId, correlationId: null, outcomes: [{ participantId: participant.id, outcome: null, reason: null }] }) };
-    const recovered = { command: { ...admitted.command, phase: "settled" as const, revision: 2 }, targets: admitted.targets, outcome: invitationResult({ commandId, correlationId: null, outcomes: [{ participantId: participant.id, outcome: "failed_retryable", reason: "failed_retryable" }] }) };
-    const readCommand = vi.fn().mockResolvedValueOnce(admitted).mockResolvedValue(recovered);
-    const recoverExpiredInvitationCommand = vi.fn().mockResolvedValue(recovered.command);
-    const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), recoverExpiredInvitationCommand, failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand, readCurrent: vi.fn() };
-    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn(() => ({ createSession: vi.fn(), readSession: vi.fn(), inviteParticipants } as never)) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
-    expect(recoverExpiredInvitationCommand).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-1", sessionId: session.id, commandId, expectedRevision: 1 }));
-    expect(result).toMatchObject({ status: 502, body: { code: "command_replayed", outcome: "failed_retryable" } });
-    expect(inviteParticipants).not.toHaveBeenCalled();
-  });
-
-  it("leaves a fresh pre-dispatch admission in progress without dispatching or inventing a token", async () => {
-    const participant = storedParticipant(); const commandId = randomUUID();
-    const current = { command: { customerId: "customer-1", commandId, phase: "admitted" as const, revision: 1, correlationId: null }, targets: [{ participantId: participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: participant.updatedAt.toISOString() }], outcome: invitationResult({ commandId, correlationId: null, outcomes: [{ participantId: participant.id, outcome: null, reason: null }] }) };
-    const recoverExpiredInvitationCommand = vi.fn().mockResolvedValue(null); const readCommand = vi.fn().mockResolvedValue(current);
-    const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), recoverExpiredInvitationCommand, failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand, readCurrent: vi.fn() };
-    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn() }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
-    expect(result).toMatchObject({ status: 202, body: { code: "command_replayed", outcome: "in_progress" } });
-    expect(ledger.markBatchDispatching).not.toHaveBeenCalled();
-  });
-
-  it("gives nonterminal phase precedence when restart recovery throws", async () => {
-    const participant = storedParticipant(); const commandId = randomUUID();
-    const current = { command: { customerId: "customer-1", commandId, phase: "dispatching" as const, revision: 2, correlationId: "corr", httpStatus: 409, resultCode: "invitation_no_replay" }, targets: [{ participantId: participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: participant.updatedAt.toISOString() }], outcome: invitationResult({ commandId, correlationId: "corr", outcomes: [{ participantId: participant.id, outcome: "no_replay", reason: "ambiguous_after_dispatch" }] }) };
-    const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId, command: current.command }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), recoverExpiredInvitationCommand: vi.fn().mockRejectedValue(new Error("database unavailable")), failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(current), readCurrent: vi.fn() };
-    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
-    expect(result).toMatchObject({ status: 202, body: { code: "command_replayed", phase: "dispatching", outcome: "in_progress", targets: [{ outcome: null }] } });
-  });
-
-  it("recovers an expired dispatch marker as retained no-replay without redispatching", async () => {
-    const participant = storedParticipant(); const commandId = randomUUID(); const inviteParticipants = vi.fn();
-    const dispatching = { command: { customerId: "customer-1", commandId, phase: "dispatching" as const, revision: 2, correlationId: null }, targets: [{ participantId: participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: participant.updatedAt.toISOString() }], outcome: invitationResult({ commandId, correlationId: null, outcomes: [{ participantId: participant.id, outcome: null, reason: null }] }) };
-    const recovered = { command: { ...dispatching.command, phase: "settled" as const, revision: 3 }, targets: dispatching.targets, outcome: invitationResult({ commandId, correlationId: null, outcomes: [{ participantId: participant.id, outcome: "no_replay", reason: "ambiguous_after_dispatch" }] }) };
-    const recoverExpiredInvitationCommand = vi.fn().mockResolvedValue(recovered.command); const readCommand = vi.fn().mockResolvedValueOnce(dispatching).mockResolvedValue(recovered);
-    const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), recoverExpiredInvitationCommand, failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand, readCurrent: vi.fn() };
-    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn(() => ({ createSession: vi.fn(), readSession: vi.fn(), inviteParticipants } as never)) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
-    expect(result).toMatchObject({ status: 409, body: { code: "command_replayed", outcome: "blocked", targets: [{ outcome: "no_replay" }] } });
-    expect(recoverExpiredInvitationCommand).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 2 }));
-    expect(inviteParticipants).not.toHaveBeenCalled();
-  });
-
   it.each([
-    ["admitted", null, "in_progress", 202],
+    ["in_progress", null, "in_progress", 202],
     ["settled", "confirmation_required", "confirmation_required", 202],
     ["settled", "failed_retryable", "failed_retryable", 502],
     ["settled", "accepted_unconfirmed", "completed_with_unconfirmed", 200],
     ["settled", "confirmed", "completed", 200],
-  ] as const)("replays %s/%s with aggregate %s and HTTP %s", async (phase, targetOutcome, aggregate, status) => {
-    const participant = storedParticipant(); const commandId = randomUUID();
-    const target = targetOutcome === null
-      ? { participantId: participant.id, outcome: null, reason: null } as const
-      : { participantId: participant.id, outcome: targetOutcome, reason: targetOutcome === "confirmation_required" ? "confirmation_required" : targetOutcome === "failed_retryable" ? "failed_retryable" : null } as const;
-    const current = { command: { customerId: "customer-1", commandId, phase, revision: 3, correlationId: "corr-replay" }, outcome: invitationResult({ commandId, correlationId: "corr-replay", outcomes: [target] }) };
-    const ledger: SalesParticipantInvitationLedger = {
-      admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(current), readCurrent: vi.fn(),
-    };
-    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn() }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "resend", commandId) });
-    expect(result).toMatchObject({ status, body: { outcome: aggregate, commandId, correlationId: "corr-replay", targets: [{ participantId: participant.id, outcome: targetOutcome }] } });
+  ] as const)("replays semantic %s/%s with aggregate %s and HTTP %s", async (statusName, targetOutcome, aggregate, httpStatus) => {
+    const participant = storedParticipant(); const commandId = randomUUID(); const invitationStore = semanticStore();
+    const target = targetOutcome === null ? { participantId: participant.id, outcome: null, reason: null } as const : { participantId: participant.id, outcome: targetOutcome, reason: targetOutcome === "confirmation_required" ? "confirmation_required" : targetOutcome === "failed_retryable" ? "failed_retryable" : null } as const;
+    const state: InvitationState = { status: statusName, displayPhase: statusName, correlationId: "corr-replay", httpStatus: null, resultCode: null, targets: [], outcome: invitationResult({ commandId, correlationId: "corr-replay", outcomes: [target] }) };
+    invitationStore.begin = vi.fn().mockResolvedValue({ kind: "replay", handle: testHandle, state });
+    const result = await handleInviteSalesSessionParticipants({ invitationStore, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn() }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "resend", commandId) });
+    expect(result).toMatchObject({ status: httpStatus, body: { outcome: aggregate, commandId, correlationId: "corr-replay", targets: [{ participantId: participant.id, outcome: targetOutcome }] } });
   });
 
-  it("retains the command and leaves projection untouched when reconciliation CAS rejects", async () => {
-    const participant = storedParticipant(); const commandId = randomUUID(); const save = vi.fn(); const inviteParticipants = vi.fn();
-    const current = { command: { customerId: "customer-1", commandId, phase: "settled" as const, revision: 3, correlationId: "corr-cas" }, targets: [{ participantId: participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: participant.updatedAt.toISOString() }], outcome: { commandId, outcome: "blocked" as const, correlationId: "corr-cas", counts: { no_replay: 1 }, targets: [{ participantId: participant.id, outcome: "no_replay" as const, reason: "ambiguous_after_dispatch" as const }] } };
-    const finishBatch = vi.fn().mockRejectedValue(new Error("stale command revision"));
-    const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), failAdmitted: vi.fn(), finishBatch, finishBatchWithParticipantProjections: vi.fn().mockRejectedValue(new Error("stale command revision")), readCommand: vi.fn().mockResolvedValue(current), readCurrent: vi.fn().mockResolvedValue(current) };
-    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const }])), inviteParticipants }) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: { ...explicitInviteBody(participant, "invite", commandId) } });
-    expect(result).toMatchObject({ status: 409, body: { code: "command_replayed", commandId, outcome: "blocked" } });
-    expect(ledger.finishBatchWithParticipantProjections).toHaveBeenCalled(); expect(save).not.toHaveBeenCalled(); expect(inviteParticipants).not.toHaveBeenCalled(); expect(ledger.readCommand).toHaveBeenCalledWith("customer-1", commandId);
+  it("returns a store-recovered pre-dispatch attempt as retryable without dispatch", async () => {
+    const participant = storedParticipant(); const commandId = randomUUID(); const inviteParticipants = vi.fn(); const invitationStore = semanticStore();
+    const state: InvitationState = { status: "settled", displayPhase: "settled", correlationId: null, httpStatus: 502, resultCode: null, targets: [], outcome: invitationResult({ commandId, correlationId: null, outcomes: [{ participantId: participant.id, outcome: "failed_retryable", reason: "failed_retryable" }] }) };
+    invitationStore.begin = vi.fn().mockResolvedValue({ kind: "replay", handle: testHandle, state });
+    const result = await handleInviteSalesSessionParticipants({ invitationStore, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: () => ({ inviteParticipants } as never) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
+    expect(result).toMatchObject({ status: 502, body: { code: "command_replayed", outcome: "failed_retryable" } }); expect(inviteParticipants).not.toHaveBeenCalled();
   });
+
+  it("keeps a fresh store-owned attempt in progress without dispatch", async () => {
+    const participant = storedParticipant(); const commandId = randomUUID(); const invitationStore = semanticStore();
+    const state: InvitationState = { status: "in_progress", displayPhase: "in_progress", correlationId: null, httpStatus: null, resultCode: null, targets: [], outcome: invitationResult({ commandId, correlationId: null, outcomes: [{ participantId: participant.id, outcome: null, reason: null }] }) };
+    invitationStore.begin = vi.fn().mockResolvedValue({ kind: "replay", handle: testHandle, state });
+    const result = await handleInviteSalesSessionParticipants({ invitationStore, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn() }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
+    expect(result).toMatchObject({ status: 202, body: { code: "command_replayed", outcome: "in_progress" } }); expect(invitationStore.authorizeDispatch).not.toHaveBeenCalled();
+  });
+
+  it("replays retained ambiguity without calling the provider", async () => {
+    const participant = storedParticipant(); const commandId = randomUUID(); const inviteParticipants = vi.fn(); const invitationStore = semanticStore();
+    const state: InvitationState = { status: "settled", displayPhase: "settled", correlationId: "corr", httpStatus: 409, resultCode: "invitation_no_replay", targets: [], outcome: invitationResult({ commandId, correlationId: "corr", outcomes: [{ participantId: participant.id, outcome: "no_replay", reason: "ambiguous_after_dispatch" }] }) };
+    invitationStore.begin = vi.fn().mockResolvedValue({ kind: "replay", handle: testHandle, state });
+    const result = await handleInviteSalesSessionParticipants({ invitationStore, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: () => ({ inviteParticipants } as never) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "resend", commandId) });
+    expect(result).toMatchObject({ status: 409, body: { outcome: "blocked", targets: [{ outcome: "no_replay" }] } }); expect(inviteParticipants).not.toHaveBeenCalled();
+  });
+
 });

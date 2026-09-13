@@ -202,7 +202,7 @@ const semanticState = (value: CurrentInvitationState): InvitationState => ({
 /** Deep persistence interface. Lifecycle phases, revisions, leases, admission
  * tokens, and fence CAS rules stay inside this adapter. */
 type ParticipantProjectionReader = InvitationStore["readParticipantProjections"];
-export function createInvitationStoreFromInternalsForTest(ledger: InvitationLedgerInternals, readParticipantProjections: ParticipantProjectionReader = async () => new Map()): InvitationStore {
+function createInvitationStore(ledger: InvitationLedgerInternals, readParticipantProjections: ParticipantProjectionReader = async () => new Map()): InvitationStore {
   const read = async (customerId: string, commandId: string) => {
     const current = await ledger.readCommand(customerId, commandId);
     if (!current) throw new Error("invitation command was not found");
@@ -286,7 +286,7 @@ export function createPrismaInvitationStore(prisma: PrismaClient): InvitationSto
       return [participantId, { currentCommandId: command?.commandId ?? null, invitationOutcome: currentOutcome, invitationReason: currentOutcome ? safeReason(current?.reason) : null, invitationCorrelationId: command?.correlationId ?? null, latestInvitationOutcome: latestOutcome, latestInvitationReason: latestOutcome ? safeReason(latest?.reason) : null, latestInvitationCorrelationId: latest?.command.correlationId ?? null }] as const;
     }));
   };
-  return createInvitationStoreFromInternalsForTest(createInvitationLedgerInternals(prisma), readParticipantProjections);
+  return createInvitationStore(createInvitationLedgerInternals(prisma), readParticipantProjections);
 }
 
 /** Test-only invariant seam; production composition receives only InvitationStore. */
