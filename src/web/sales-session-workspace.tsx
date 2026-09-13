@@ -313,7 +313,14 @@ function SalesSessionWorkspaceState({
   const queueIsHistory =
     new URLSearchParams(queueHref.split("?")[1] ?? "").get("queue") ===
     "history";
-  const registrationHref = `${queueHref}${queueHref.includes("?") ? "&" : "?"}sessionId=${encodeURIComponent(sessionId)}&participantsOpen=true`;
+  const registrationUrl = new URL(queueHref, "http://localhost");
+  registrationUrl.searchParams.set("tab", "sessions");
+  registrationUrl.searchParams.set("sessionView", "manage");
+  registrationUrl.searchParams.set("sessionId", sessionId);
+  registrationUrl.searchParams.set("participants", "open");
+  registrationUrl.searchParams.delete("queue");
+  registrationUrl.searchParams.delete("offset");
+  const registrationHref = `${registrationUrl.pathname}?${registrationUrl.searchParams.toString()}`;
   const verifyNow = async () => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
