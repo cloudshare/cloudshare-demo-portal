@@ -115,6 +115,24 @@ describe("Sales Session participant invitation", () => {
     expect(result.body.dispatchOutcome).toBeUndefined();
     expect(settle).toHaveBeenCalledWith(expect.objectContaining({ state: "needs_attention", result }));
   });
+  it("does not reopen retry when reconciliation OAuth fails after a successful participant POST", async () => {
+    const settle = vi.fn();
+    const oauthError = new CloudShareAuthError("OAuth token exchange failed", { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token" });
+    const registerParticipants = vi.fn().mockResolvedValue({ request: { method: "POST", path: "/v4/sales/remote-sales-1/participants" }, response: { status: 201 } });
+    const listParticipants = vi.fn().mockResolvedValueOnce(rosterEvidence([])).mockRejectedValueOnce(oauthError);
+    const workspace = createSalesParticipantWorkspace({
+      now: fixedNow, reader: { readPage: vi.fn().mockResolvedValue(null) }, invitationStore: semanticStore(),
+      addCommandStore: { admit: vi.fn().mockResolvedValue({ kind: "new" }), markDispatched: vi.fn().mockResolvedValue(true), settle },
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) },
+      participants: { list: vi.fn().mockResolvedValue([]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), ensureParticipantCorrelationProperties: vi.fn().mockResolvedValue(correlationProperties()), listParticipants, registerParticipants }) },
+    });
+    const result = await workspace.addParticipant({ customerId: "customer-1", sessionId: session.id, actor, commandId: "cmd-post-then-oauth", person: { kind: "existingContact", contactId: contact.id } });
+    expect(registerParticipants).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", correlationId: expect.any(String) } });
+    expect(result.body.dispatchOutcome).toBeUndefined();
+    expect(settle).toHaveBeenCalledWith(expect.objectContaining({ state: "needs_attention", result }));
+  });
   it("blocks participant registration at the exact session end before integration setup", async () => {
     const findByCustomerId = vi.fn(() => { throw new Error("connection lookup must not run"); });
     const forConnection = vi.fn(() => { throw new Error("adapter construction must not run"); });
