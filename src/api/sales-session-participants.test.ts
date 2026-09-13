@@ -15,6 +15,7 @@ const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof invit
   const invitationLedger: SalesParticipantInvitationLedger = {
     admitBatch: vi.fn(async ({ commandId }) => ({ kind: "admitted" as const, commandId, admissionToken: "test-admission-token" })),
     markBatchDispatching: vi.fn(async (customerId, commandId) => ({ customerId, commandId, phase: "dispatching" as const, revision: 2, correlationId: null })),
+    markBatchEvaluatingConfirmation: vi.fn(async ({ customerId, commandId, correlationId }) => ({ customerId, commandId, phase: "evaluating_confirmation" as const, revision: 3, correlationId })),
     expireAdmitted: vi.fn(async (customerId, commandId) => ({ customerId, commandId, phase: "settled" as const, revision: 2, correlationId: null })),
     failAdmitted: vi.fn(async (customerId, commandId) => ({ customerId, commandId, phase: "settled" as const, revision: 2, correlationId: null })),
     finishBatch: vi.fn(async ({ customerId, commandId, phase, correlationId }) => ({ customerId, commandId, phase, revision: 3, correlationId })),
@@ -649,6 +650,16 @@ describe("Sales Session participant invitation", () => {
     expect(result.status).toBe(409);
     expect(inviteParticipants).not.toHaveBeenCalled();
     expect(failAdmitted).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["participant", [remoteParticipant("remote-1", "portal-1", "contact-1"), remoteParticipant("remote-2", "portal-1", "other-contact")]],
+    ["contact", [remoteParticipant("remote-1", "portal-1", "contact-1"), remoteParticipant("remote-2", "other-participant", "contact-1")]],
+  ] as const)("requires the %s correlation key to be independently unique before dispatch", async (_key, participants) => {
+    const inviteParticipants = vi.fn();
+    const result = await handleInviteSalesSessionParticipants({ sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([...participants])), inviteParticipants }) }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(storedParticipant()) });
+    expect(result.status).toBe(409);
+    expect(inviteParticipants).not.toHaveBeenCalled();
   });
 
   it("refuses a uniquely correlated provider row whose current invitation state is stale", async () => {

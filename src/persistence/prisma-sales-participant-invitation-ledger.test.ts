@@ -148,6 +148,39 @@ describe("Prisma invitation ledger", () => {
     const e = await ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: d.revision, expectedPhase: "dispatching", phase: "evaluating_confirmation", correlationId: "c", targetOutcomes: [{ participantId: f.participant.id, outcome: "confirmation_required", reason: "confirmation_required" }] }); await expect(ledger.readCurrent(f.customerId, f.participant.id)).resolves.toMatchObject({ command: { phase: "evaluating_confirmation", revision: 3 }, outcome: { outcome: "confirmation_required" } });
     await ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: e.revision, expectedPhase: "evaluating_confirmation", phase: "settled", correlationId: "c", targetOutcomes: [{ participantId: f.participant.id, outcome: "no_replay", reason: "ambiguous_after_dispatch" }] }); await expect(ledger.readCurrent(f.customerId, f.participant.id)).resolves.toMatchObject({ command: { phase: "settled", revision: 4 }, outcome: { outcome: "blocked" } });
   });
+
+  it("persists acknowledged dispatch with exact token, command revision, and every fence before confirmation", async () => {
+    const f = await fixture(); const p2 = await secondParticipant(f); const ledger = createPrismaSalesParticipantInvitationLedger(prisma); const at = new Date("2026-09-12T10:00:00.000Z"); const commandId = randomUUID();
+    const targets = [f.participant, p2].map((p) => ({ participantId: p.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: p.updatedAt.toISOString() }));
+    const admitted = await ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets, commandId, at });
+    await ledger.markBatchDispatching(f.customerId, commandId, admitted.admissionToken!, 1, new Date(at.getTime() + 1));
+    const outcomes = targets.map((target) => ({ participantId: target.participantId, outcome: "confirmation_required" as const, reason: "confirmation_required" as const }));
+    await expect(ledger.markBatchEvaluatingConfirmation!({ customerId: f.customerId, commandId, admissionToken: "wrong", expectedRevision: 2, correlationId: "corr", targetOutcomes: outcomes, at })).rejects.toThrow();
+    await expect(ledger.markBatchEvaluatingConfirmation!({ customerId: f.customerId, commandId, admissionToken: admitted.admissionToken!, expectedRevision: 2, correlationId: "corr", targetOutcomes: outcomes, at })).resolves.toMatchObject({ phase: "evaluating_confirmation", revision: 3, correlationId: "corr" });
+    await expect(ledger.readCommand(f.customerId, commandId)).resolves.toMatchObject({ command: { phase: "evaluating_confirmation", revision: 3 }, outcome: { outcome: "confirmation_required" } });
+    await expect(prisma.salesParticipantInvitationFence.findMany({ where: { customerId: f.customerId, commandId } })).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ revision: 3 }), expect.objectContaining({ revision: 3 })]));
+  });
+
+  it("rolls back a stale-fence finish CAS without changing command, targets, or participants", async () => {
+    const f = await fixture(); const ledger = createPrismaSalesParticipantInvitationLedger(prisma); const at = new Date(); const commandId = randomUUID(); const target = { participantId: f.participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: f.participant.updatedAt.toISOString() };
+    const admitted = await ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets: [target], commandId, at }); await ledger.markBatchDispatching(f.customerId, commandId, admitted.admissionToken!, 1, at);
+    await prisma.salesParticipantInvitationFence.update({ where: { customerId_salesSessionParticipantId: { customerId: f.customerId, salesSessionParticipantId: f.participant.id } }, data: { revision: 99 } });
+    const beforeParticipant = await prisma.salesSessionParticipant.findUniqueOrThrow({ where: { id: f.participant.id } });
+    await expect(ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: 2, expectedPhase: "dispatching", phase: "settled", correlationId: "corr", targetOutcomes: [{ participantId: f.participant.id, outcome: "confirmed", reason: null }] })).rejects.toThrow("invitation command is no longer current");
+    await expect(ledger.readCommand(f.customerId, commandId)).resolves.toMatchObject({ command: { phase: "dispatching", revision: 2 }, outcome: { outcome: "in_progress" } });
+    await expect(prisma.salesSessionParticipant.findUniqueOrThrow({ where: { id: f.participant.id } })).resolves.toEqual(beforeParticipant);
+  });
+
+  it("carries the committed participant revision forward for later read-only reconciliation", async () => {
+    const f = await fixture(); const ledger = createPrismaSalesParticipantInvitationLedger(prisma); const at = new Date("2026-09-12T10:01:00.000Z"); const commandId = randomUUID(); const target = { participantId: f.participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: f.participant.updatedAt.toISOString() };
+    const admitted = await ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets: [target], commandId, at }); await ledger.markBatchDispatching(f.customerId, commandId, admitted.admissionToken!, 1, at);
+    const evaluating = await ledger.markBatchEvaluatingConfirmation!({ customerId: f.customerId, commandId, admissionToken: admitted.admissionToken!, expectedRevision: 2, correlationId: "corr", targetOutcomes: [{ participantId: f.participant.id, outcome: "confirmation_required", reason: "confirmation_required" }], at });
+    const projection = { participantId: f.participant.id, expectedParticipantRevision: f.participant.updatedAt.toISOString(), cloudShareParticipantId: f.participant.cloudShareParticipantId, invitationStatus: "notSent" as const, lastInvitedAt: null, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, cloudShareRosterEnvironmentReference: null, environmentStatus: null, environmentStatusCode: null, environmentObservedAt: null, environmentAttentionReason: null, environmentAttentionSource: null, lastReconciledAt: at.toISOString() };
+    const retained = await ledger.finishBatchWithParticipantProjections({ customerId: f.customerId, commandId, expectedRevision: evaluating.revision, expectedPhase: "evaluating_confirmation", phase: "evaluating_confirmation", correlationId: "corr", targetOutcomes: [{ participantId: f.participant.id, outcome: "confirmation_required", reason: "confirmation_required" }], projections: [projection] });
+    const stored = await prisma.salesSessionParticipant.findUniqueOrThrow({ where: { id: f.participant.id } }); const current = await ledger.readCommand(f.customerId, commandId);
+    expect(current?.targets?.[0]?.participantRevision).toBe(stored.updatedAt.toISOString());
+    await expect(ledger.finishBatchWithParticipantProjections({ customerId: f.customerId, commandId, expectedRevision: retained.revision, expectedPhase: "evaluating_confirmation", phase: "settled", correlationId: "corr", targetOutcomes: [{ participantId: f.participant.id, outcome: "confirmed_by_reconciliation", reason: null }], projections: [{ ...projection, expectedParticipantRevision: stored.updatedAt.toISOString(), invitationStatus: "sent" }] })).resolves.toMatchObject({ phase: "settled" });
+  });
   it("admits one exact target, reads the fence, and returns same-command replay", async () => {
     const f = await fixture(); const ledger = createPrismaSalesParticipantInvitationLedger(prisma);
     const input = { customerId: f.customerId, sessionId: f.sessionId, targets: [{ participantId: f.participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: f.participant.updatedAt.toISOString() }], commandId: randomUUID(), at: new Date("2026-09-12T10:00:00.000Z") };

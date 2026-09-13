@@ -25,22 +25,29 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
     return { command, targets, outcome: invitationResult({ commandId: command.commandId, outcomes, correlationId: command.correlationId }) };
   };
   const finishInTransaction = async (tx: Prisma.TransactionClient, input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[]; projections?: readonly ParticipantInvitationProjection[] }) => {
-    const command = await tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, include: { targets: { orderBy: { ordinal: "asc" } } } });
+    const command = await tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, include: { targets: { orderBy: { ordinal: "asc" } }, fences: true } });
     const ids = input.targetOutcomes.map((o) => o.participantId);
-    if (command.revision !== input.expectedRevision || command.phase !== input.expectedPhase || !["evaluating_confirmation", "settled"].includes(input.phase) || command.targets.length !== ids.length || new Set(ids).size !== ids.length || command.targets.some((target) => !ids.includes(target.salesSessionParticipantId)) || input.targetOutcomes.some((outcome) => !invitationOutcomes.includes(outcome.outcome) || (outcome.reason !== null && !safeReasons.includes(outcome.reason as never)))) throw new Error("invitation command is no longer current");
+    if (command.revision !== input.expectedRevision || command.phase !== input.expectedPhase || !["evaluating_confirmation", "settled"].includes(input.phase) || command.targets.length !== ids.length || new Set(ids).size !== ids.length || command.targets.some((target) => !ids.includes(target.salesSessionParticipantId)) || command.fences.length !== ids.length || command.fences.some((fence) => fence.commandId !== input.commandId || fence.revision !== input.expectedRevision || !ids.includes(fence.salesSessionParticipantId)) || input.targetOutcomes.some((outcome) => !invitationOutcomes.includes(outcome.outcome) || (outcome.reason !== null && !safeReasons.includes(outcome.reason as never)))) throw new Error("invitation command is no longer current");
     invitationResult({ commandId: input.commandId, outcomes: input.targetOutcomes, correlationId: input.correlationId });
+    const commandUpdate = await tx.salesParticipantInvitationCommand.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, revision: input.expectedRevision, phase: input.expectedPhase, admissionTokenHash: command.admissionTokenHash }, data: { phase: input.phase, correlationId: input.correlationId, revision: { increment: 1 }, updatedAt: new Date() } });
+    if (commandUpdate.count !== 1) throw new Error("invitation command is no longer current");
+    for (const fence of command.fences) {
+      const claimed = await tx.salesParticipantInvitationFence.updateMany({ where: { customerId: input.customerId, salesSessionParticipantId: fence.salesSessionParticipantId, commandId: input.commandId, revision: input.expectedRevision }, data: { revision: { increment: 1 } } });
+      if (claimed.count !== 1) throw new Error("invitation fence is no longer current");
+    }
+    const participantRevisionAt = new Date();
     if (input.projections) {
       if (input.projections.length !== ids.length || new Set(input.projections.map((p) => p.participantId)).size !== ids.length || input.projections.some((p) => !ids.includes(p.participantId))) throw new Error("participant projection set is incomplete");
       for (const projection of input.projections) {
-        const updated = await tx.salesSessionParticipant.updateMany({ where: { customerId: input.customerId, id: projection.participantId, salesDemoSessionId: command.sessionId, updatedAt: new Date(projection.expectedParticipantRevision) }, data: { cloudShareParticipantId: projection.cloudShareParticipantId, invitationStatus: projection.invitationStatus, lastInvitedAt: projection.lastInvitedAt ? new Date(projection.lastInvitedAt) : null, invitedBy: projection.invitedBy, participationStatus: projection.participationStatus, firstJoined: projection.firstJoined, cloudShareRosterEnvironmentReference: projection.cloudShareRosterEnvironmentReference, environmentStatus: projection.environmentStatus, environmentStatusCode: projection.environmentStatusCode, environmentObservedAt: projection.environmentObservedAt ? new Date(projection.environmentObservedAt) : null, environmentAttentionReason: projection.environmentAttentionReason, environmentAttentionSource: projection.environmentAttentionSource, lastReconciledAt: new Date(projection.lastReconciledAt), updatedAt: new Date() } });
+        const updated = await tx.salesSessionParticipant.updateMany({ where: { customerId: input.customerId, id: projection.participantId, salesDemoSessionId: command.sessionId, updatedAt: new Date(projection.expectedParticipantRevision) }, data: { cloudShareParticipantId: projection.cloudShareParticipantId, invitationStatus: projection.invitationStatus, lastInvitedAt: projection.lastInvitedAt ? new Date(projection.lastInvitedAt) : null, invitedBy: projection.invitedBy, participationStatus: projection.participationStatus, firstJoined: projection.firstJoined, cloudShareRosterEnvironmentReference: projection.cloudShareRosterEnvironmentReference, environmentStatus: projection.environmentStatus, environmentStatusCode: projection.environmentStatusCode, environmentObservedAt: projection.environmentObservedAt ? new Date(projection.environmentObservedAt) : null, environmentAttentionReason: projection.environmentAttentionReason, environmentAttentionSource: projection.environmentAttentionSource, lastReconciledAt: new Date(projection.lastReconciledAt), updatedAt: participantRevisionAt } });
         if (updated.count !== 1) throw new Error("participant projection is no longer current");
+        await tx.salesParticipantInvitationTarget.update({ where: { customerId_commandId_salesSessionParticipantId: { customerId: input.customerId, commandId: input.commandId, salesSessionParticipantId: projection.participantId } }, data: { participantRevision: participantRevisionAt.toISOString() } });
       }
     }
-    const updated = await tx.salesParticipantInvitationCommand.update({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, data: { phase: input.phase, correlationId: input.correlationId, revision: { increment: 1 }, updatedAt: new Date() } });
     for (const outcome of input.targetOutcomes) await tx.salesParticipantInvitationTarget.update({ where: { customerId_commandId_salesSessionParticipantId: { customerId: input.customerId, commandId: input.commandId, salesSessionParticipantId: outcome.participantId } }, data: { outcome: outcome.outcome, reason: outcome.reason } });
     const releasable = new Set(input.targetOutcomes.filter((outcome) => !["no_replay", "confirmation_required"].includes(outcome.outcome)).map((outcome) => outcome.participantId));
     if (releasable.size) await tx.salesParticipantInvitationFence.deleteMany({ where: { customerId: input.customerId, commandId: input.commandId, salesSessionParticipantId: { in: [...releasable] } } });
-    return toCommand(updated);
+    return toCommand(await tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } }));
   };
   return {
     async admitBatch(input): Promise<Admission> {
@@ -84,9 +91,22 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
       return prisma.$transaction(async (tx) => {
         const command = await tx.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId, commandId } }, include: { targets: { orderBy: { ordinal: "asc" } }, fences: true } });
         if (!command || command.revision !== expectedRevision || command.phase !== "admitted" || command.admissionTokenHash !== hash(admissionToken) || !command.admissionLeaseUntil || command.admissionLeaseUntil <= at || command.fences.length !== command.targets.length || command.targets.some((target) => !command.fences.some((fence) => fence.salesSessionParticipantId === target.salesSessionParticipantId))) throw new Error("invitation admission is no longer current");
-        const updated = await tx.salesParticipantInvitationCommand.updateMany({ where: { customerId, commandId, revision: expectedRevision, phase: "admitted" }, data: { phase: "dispatching", revision: { increment: 1 }, updatedAt: at } });
+        const updated = await tx.salesParticipantInvitationCommand.updateMany({ where: { customerId, commandId, revision: expectedRevision, phase: "admitted", admissionTokenHash: hash(admissionToken) }, data: { phase: "dispatching", revision: { increment: 1 }, updatedAt: at } });
         if (updated.count !== 1) throw new Error("invitation admission is no longer current");
+        for (const fence of command.fences) { const claimed = await tx.salesParticipantInvitationFence.updateMany({ where: { customerId, salesSessionParticipantId: fence.salesSessionParticipantId, commandId, revision: expectedRevision }, data: { revision: { increment: 1 } } }); if (claimed.count !== 1) throw new Error("invitation fence is no longer current"); }
         return toCommand(await tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId, commandId } } }));
+      });
+    },
+    async markBatchEvaluatingConfirmation(input) {
+      return prisma.$transaction(async (tx) => {
+        const command = await tx.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, include: { targets: { orderBy: { ordinal: "asc" } }, fences: true } });
+        const ids = input.targetOutcomes.map((outcome) => outcome.participantId);
+        if (!command || command.phase !== "dispatching" || command.revision !== input.expectedRevision || command.admissionTokenHash !== hash(input.admissionToken) || command.targets.length !== ids.length || new Set(ids).size !== ids.length || command.targets.some((target) => !ids.includes(target.salesSessionParticipantId)) || command.fences.length !== ids.length || command.fences.some((fence) => fence.commandId !== input.commandId || fence.revision !== input.expectedRevision || !ids.includes(fence.salesSessionParticipantId)) || input.targetOutcomes.some((outcome) => outcome.outcome !== "confirmation_required" || outcome.reason !== "confirmation_required")) throw new Error("invitation dispatch is no longer current");
+        const updated = await tx.salesParticipantInvitationCommand.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, revision: input.expectedRevision, phase: "dispatching", admissionTokenHash: hash(input.admissionToken) }, data: { phase: "evaluating_confirmation", correlationId: input.correlationId, revision: { increment: 1 }, updatedAt: input.at } });
+        if (updated.count !== 1) throw new Error("invitation dispatch is no longer current");
+        for (const fence of command.fences) { const claimed = await tx.salesParticipantInvitationFence.updateMany({ where: { customerId: input.customerId, salesSessionParticipantId: fence.salesSessionParticipantId, commandId: input.commandId, revision: input.expectedRevision }, data: { revision: { increment: 1 } } }); if (claimed.count !== 1) throw new Error("invitation fence is no longer current"); }
+        for (const outcome of input.targetOutcomes) await tx.salesParticipantInvitationTarget.update({ where: { customerId_commandId_salesSessionParticipantId: { customerId: input.customerId, commandId: input.commandId, salesSessionParticipantId: outcome.participantId } }, data: { outcome: outcome.outcome, reason: outcome.reason } });
+        return toCommand(await tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } }));
       });
     },
     async expireAdmitted(customerId, commandId, expectedRevision, at) {
@@ -95,8 +115,8 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
     },
     async recoverExpiredInvitationCommand(input) {
       return prisma.$transaction(async (tx) => {
-        const command = await tx.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } });
-        if (!command || command.sessionId !== input.sessionId || !["admitted", "dispatching"].includes(command.phase) || command.revision !== input.expectedRevision || !command.admissionTokenHash || !command.admissionLeaseUntil || command.admissionLeaseUntil > input.at) return null;
+        const command = await tx.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, include: { targets: true, fences: true } });
+        if (!command || command.sessionId !== input.sessionId || !["admitted", "dispatching"].includes(command.phase) || command.revision !== input.expectedRevision || !command.admissionTokenHash || !command.admissionLeaseUntil || command.admissionLeaseUntil > input.at || command.fences.length !== command.targets.length || command.fences.some((fence) => fence.revision !== input.expectedRevision)) return null;
         const expectedPhase = command.phase;
         const result = await tx.salesParticipantInvitationCommand.updateMany({
           where: { customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId, revision: input.expectedRevision, phase: expectedPhase, admissionTokenHash: command.admissionTokenHash, admissionLeaseUntil: command.admissionLeaseUntil },
@@ -105,6 +125,7 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
         if (result.count !== 1) return null;
         const dispatched = expectedPhase === "dispatching";
         await tx.salesParticipantInvitationTarget.updateMany({ where: { customerId: input.customerId, commandId: input.commandId }, data: { outcome: dispatched ? "no_replay" : "failed_retryable", reason: dispatched ? "ambiguous_after_dispatch" : "failed_retryable" } });
+        if (dispatched) { const claimed = await tx.salesParticipantInvitationFence.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, revision: input.expectedRevision }, data: { revision: { increment: 1 } } }); if (claimed.count !== command.targets.length) throw new Error("invitation fence is no longer current"); }
         if (!dispatched) await tx.salesParticipantInvitationFence.deleteMany({ where: { customerId: input.customerId, commandId: input.commandId } });
         return toCommand(await tx.salesParticipantInvitationCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } }));
       });

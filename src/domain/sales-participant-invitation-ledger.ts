@@ -35,6 +35,7 @@ export type FinishInvitationCommand = { readonly commandId: string; readonly exp
 export interface SalesParticipantInvitationLedger {
   admitBatch(input: { customerId: string; sessionId: string; targets: readonly InvitationTarget[]; commandId: string; at: Date }): Promise<Admission>;
   markBatchDispatching(customerId: string, commandId: string, admissionToken: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
+  markBatchEvaluatingConfirmation?(input: { readonly customerId: string; readonly commandId: string; readonly admissionToken: string; readonly expectedRevision: number; readonly correlationId: string; readonly targetOutcomes: readonly InvitationTargetOutcome[]; readonly at: Date }): Promise<RevisionedInvitationCommand>;
   expireAdmitted(customerId: string, commandId: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
   recoverExpiredInvitationCommand?(input: { readonly customerId: string; readonly sessionId: string; readonly commandId: string; readonly expectedRevision: number; readonly at: Date }): Promise<RevisionedInvitationCommand | null>;
   failAdmitted(customerId: string, commandId: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
