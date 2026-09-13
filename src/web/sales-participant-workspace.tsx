@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./sales-session-workspace.module.css";
 import { primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import type { SalesParticipantWorkspaceRow } from "@/domain/sales-participant-workspace";
-import type { InvitationOutcome, InvitationSafeReason } from "@/domain/sales-participant-invitation-store";
+import type { InvitationOutcome, InvitationSafeReason } from "@/domain/sales-participant-workspace";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "@/domain/sales-participant-launch-operation";
 import {
   pruneParticipantSelection,

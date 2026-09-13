@@ -1,6 +1,3 @@
-export const invitationOutcomes = ["confirmed", "confirmed_by_reconciliation", "accepted_unconfirmed", "confirmation_required", "no_replay", "failed_retryable"] as const;
-export type InvitationOutcome = typeof invitationOutcomes[number];
-export type InvitationSafeReason = "not_dispatched" | "provider_rejected" | "ambiguous_after_dispatch" | "confirmation_required" | "failed_retryable" | "stale_revision" | "blocked_by_fence";
 export type InvitationTarget = { readonly participantId: string; readonly intent: "invite" | "resend"; readonly expectedInvitationStatus: "notSent" | "sent"; readonly participantRevision: string; readonly projectionRevision?: string };
 export type InvitationTargetOutcome = { readonly participantId: string; readonly outcome: InvitationOutcome; readonly reason: InvitationSafeReason | null };
 export type ParticipantInvitationProjection = { readonly participantId: string; readonly expectedParticipantRevision: string; readonly cloudShareParticipantId: string; readonly invitationStatus: "sent" | "notSent"; readonly lastInvitedAt: string | null; readonly invitedBy: string | null; readonly participationStatus: "pending" | "inProgress" | "concluded"; readonly firstJoined: string | null; readonly cloudShareRosterEnvironmentReference: string | null; readonly environmentStatus: string | null; readonly environmentStatusCode: number | null; readonly environmentObservedAt: string | null; readonly environmentAttentionReason: string | null; readonly environmentAttentionSource: string | null; readonly lastReconciledAt: string };
@@ -43,3 +40,6 @@ export interface InvitationStore {
   load(customerId: string, commandId: string): Promise<{ readonly handle: InvitationHandle; readonly state: InvitationState } | null>;
   readParticipantProjections(input: { readonly customerId: string; readonly sessionId: string; readonly participantIds: readonly string[] }): Promise<ReadonlyMap<string, { readonly currentCommandId: string | null; readonly invitationOutcome: InvitationTargetOutcome["outcome"] | null; readonly invitationReason: InvitationTargetOutcome["reason"] | null; readonly invitationCorrelationId: string | null; readonly latestInvitationOutcome: InvitationTargetOutcome["outcome"] | null; readonly latestInvitationReason: InvitationTargetOutcome["reason"] | null; readonly latestInvitationCorrelationId: string | null }>>;
 }
+import { invitationOutcomes, type InvitationOutcome, type InvitationSafeReason } from "./sales-participant-workspace";
+export { invitationOutcomes };
+export type { InvitationOutcome, InvitationSafeReason };

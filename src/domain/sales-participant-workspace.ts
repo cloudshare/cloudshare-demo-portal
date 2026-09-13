@@ -1,7 +1,10 @@
-import type { InvitationOutcome, InvitationSafeReason } from "./sales-participant-invitation-store";
 import type { DiagnosticActor } from "./diagnostic-log";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "./sales-participant-launch-operation";
 import type { SalesParticipantEnvironmentObservation } from "./sales-participant-environment";
+
+export const invitationOutcomes = ["confirmed", "confirmed_by_reconciliation", "accepted_unconfirmed", "confirmation_required", "no_replay", "failed_retryable"] as const;
+export type InvitationOutcome = typeof invitationOutcomes[number];
+export type InvitationSafeReason = "not_dispatched" | "provider_rejected" | "ambiguous_after_dispatch" | "confirmation_required" | "failed_retryable" | "stale_revision" | "blocked_by_fence";
 
 export type SalesParticipantAction = "invite" | "resend" | "generate_launch" | "revoke_launch" | "open_diagnostics";
 export type SalesParticipantActionReason = "participant_concluded" | "session_ended" | "invitation_already_sent" | "invitation_not_sent" | "invitation_command_pending" | "participant_correlation_unavailable" | "native_invitations_unavailable" | "no_active_launch" | "available_to_attempt" | "unavailable_for_state";

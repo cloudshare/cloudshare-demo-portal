@@ -170,13 +170,6 @@ export async function handleRegisterSalesSessionParticipants(deps: BaseDeps, req
   } catch (error) { const classifiedError = completedRemote && !hasParticipantFailureContext(error) ? participantMappingPersistenceFailed(error) : error; const failedExchange = exchange(error); return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "CloudShare could not register selected Sales Participants.", classifiedError, completedRemote, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]); }
 }
 
-class InvitationLifecycle {
-  constructor(private readonly deps: InviteDeps) {}
-  async submit(input: SalesParticipantWorkspaceInvitationRequest): Promise<SalesParticipantWorkspaceInvitationResult> {
-    return runInvitationLifecycle(this.deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } });
-  }
-}
-
 export function createSalesParticipantWorkspaceReader(baseReader: SalesParticipantWorkspaceBaseReader, invitationStore: InvitationStore): SalesParticipantWorkspaceReader {
   return { async readPage(input) {
     const page = await baseReader.readPage(input);
@@ -197,8 +190,7 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
 }
 
 export function createSalesParticipantInvitationWorkspace(deps: InviteDeps): Pick<SalesParticipantWorkspace, "submitInvitation"> {
-  const lifecycle = new InvitationLifecycle(deps);
-  return { submitInvitation: (input) => lifecycle.submit(input) };
+  return { submitInvitation: (input) => runInvitationLifecycle(deps, { customerId: input.customerId, sessionId: input.sessionId, actor: input.actor, body: { commandId: input.commandId, targets: input.targets } }) };
 }
 
 export async function handleInviteSalesSessionParticipants(deps: InviteDeps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {
