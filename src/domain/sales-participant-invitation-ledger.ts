@@ -8,7 +8,11 @@ export type InvitationTarget = { readonly participantId: string; readonly intent
 export type InvitationTargetOutcome = { readonly participantId: string; readonly outcome: InvitationOutcome; readonly reason: string | null };
 export type InvitationSafeReason = "provider_rejected" | "ambiguous_after_dispatch" | "confirmation_required" | "failed_retryable" | "stale_revision" | "blocked_by_fence";
 export type RevisionedInvitationCommand = { readonly customerId: string; readonly commandId: string; readonly phase: InvitationPhase; readonly revision: number; readonly correlationId: string | null };
-export type CurrentInvitationState = { readonly command: RevisionedInvitationCommand; readonly outcome: ReturnType<typeof invitationResult> };
+export type CurrentInvitationState = {
+  readonly command: RevisionedInvitationCommand;
+  readonly targets?: readonly InvitationTarget[];
+  readonly outcome: ReturnType<typeof invitationResult>;
+};
 export type ParticipantInvitationProjection = {
   readonly participantId: string;
   readonly expectedParticipantRevision: string;
@@ -32,6 +36,7 @@ export interface SalesParticipantInvitationLedger {
   admitBatch(input: { customerId: string; sessionId: string; targets: readonly InvitationTarget[]; commandId: string; at: Date }): Promise<Admission>;
   markBatchDispatching(customerId: string, commandId: string, admissionToken: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
   expireAdmitted(customerId: string, commandId: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
+  recoverExpiredInvitationCommand?(input: { readonly customerId: string; readonly sessionId: string; readonly commandId: string; readonly expectedRevision: number; readonly at: Date }): Promise<RevisionedInvitationCommand | null>;
   failAdmitted(customerId: string, commandId: string, expectedRevision: number, at: Date): Promise<RevisionedInvitationCommand>;
   finishBatch(input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[] }): Promise<RevisionedInvitationCommand>;
   finishBatchWithParticipantProjections(input: FinishInvitationCommand & { customerId: string; targetOutcomes: readonly InvitationTargetOutcome[]; projections: readonly ParticipantInvitationProjection[] }): Promise<RevisionedInvitationCommand>;

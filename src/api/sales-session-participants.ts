@@ -168,7 +168,17 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   const parsed = invitationCommandSchema.safeParse(request.body); if (!parsed.success) return { status: 400, body: { error: "Provide a valid invitation command with ordered participant targets." } };
   const participantIds = parsed.data.targets.map((target) => target.participantId);
   const sessionResult = await resolveSession(deps, request); if ("response" in sessionResult) return sessionResult.response!;
-  const existingCommand = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
+  let existingCommand = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
+  if (existingCommand && ["admitted", "dispatching"].includes(existingCommand.command.phase) && deps.invitationLedger.recoverExpiredInvitationCommand) {
+    await deps.invitationLedger.recoverExpiredInvitationCommand({
+      customerId: request.customerId,
+      sessionId: sessionResult.session.id,
+      commandId: parsed.data.commandId,
+      expectedRevision: existingCommand.command.revision,
+      at: (deps.now ?? (() => new Date()))(),
+    });
+    existingCommand = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
+  }
   let admission: Awaited<ReturnType<SalesParticipantInvitationLedger["admitBatch"]>>;
   let selected: Array<Awaited<ReturnType<typeof deps.participants.list>>[number] | undefined> = [];
   if (existingCommand) {
@@ -207,17 +217,26 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
       const deliveryResult = await resolveDelivery(deps, request);
       if (!("response" in deliveryResult)) {
         try {
-          const roster = await deliveryResult.delivery.listParticipants!(sessionResult.session.cloudShareSalesExperienceId);
           const registered = await deps.participants.list(request.customerId, sessionResult.session.id);
+          // Capture the local projection and command revisions before observing
+          // CloudShare; the atomic finish below must prove neither changed
+          // during that external read.
+          const roster = await deliveryResult.delivery.listParticipants!(sessionResult.session.cloudShareSalesExperienceId);
+          const exactRemoteByParticipantId = new Map<string, (typeof roster.participants)[number]>();
           const exact = roster.completeness === "complete" && parsed.data.targets.every((target) => {
             const stored = registered.find((participant) => participant.id === target.participantId);
+            const admittedTarget = first.targets?.find((candidate) => candidate.participantId === target.participantId);
+            const byParticipantKey = stored && roster.participants.filter((candidate) => participantProperties(candidate).certalisSalesParticipantId === stored.id);
+            const byContactKey = stored && roster.participants.filter((candidate) => participantProperties(candidate).certalisOpportunityContactId === stored.opportunityContactId);
             const remote = stored && roster.participants.filter((candidate) => participantProperties(candidate).certalisSalesParticipantId === stored.id && participantProperties(candidate).certalisOpportunityContactId === stored.opportunityContactId);
-            return stored && remote?.length === 1 && remote[0]!.id === stored.cloudShareParticipantId && remote[0]!.invitationStatus === "sent";
+            if (!stored || !admittedTarget || admittedTarget.participantRevision !== stored.updatedAt.toISOString() || byParticipantKey?.length !== 1 || byContactKey?.length !== 1 || remote?.length !== 1 || remote[0]!.id !== stored.cloudShareParticipantId || remote[0]!.invitationStatus !== "sent") return false;
+            exactRemoteByParticipantId.set(stored.id, remote[0]!);
+            return true;
           });
           if (exact) {
             await deps.invitationLedger.finishBatchWithParticipantProjections({ customerId: request.customerId, commandId: parsed.data.commandId, expectedRevision: first.command.revision, expectedPhase: replayPhase, phase: "settled", correlationId: first.command.correlationId, targetOutcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmed_by_reconciliation" as const, reason: null })), projections: parsed.data.targets.map((target) => {
               const stored = registered.find((participant) => participant.id === target.participantId)!;
-              const remoteParticipant = roster.participants.find((candidate) => participantProperties(candidate).certalisSalesParticipantId === stored.id)!;
+              const remoteParticipant = exactRemoteByParticipantId.get(stored.id)!;
               return { participantId: stored.id, expectedParticipantRevision: stored.updatedAt.toISOString(), cloudShareParticipantId: remoteParticipant.id, invitationStatus: remoteParticipant.invitationStatus, lastInvitedAt: remoteParticipant.invitationStatus === "sent" ? (deps.now ?? (() => new Date()))().toISOString() : stored.lastInvitedAt?.toISOString() ?? null, invitedBy: remoteParticipant.invitedBy, participationStatus: remoteParticipant.participationStatus, firstJoined: remoteParticipant.firstJoined, cloudShareRosterEnvironmentReference: remoteParticipant.environmentId ?? null, environmentStatus: remoteParticipant.envStatus ?? null, environmentStatusCode: null, environmentObservedAt: null, environmentAttentionReason: null, environmentAttentionSource: null, lastReconciledAt: (deps.now ?? (() => new Date()))().toISOString() };
             }) });
             const reconciled = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
