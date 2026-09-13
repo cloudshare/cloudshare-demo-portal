@@ -28,7 +28,7 @@ export async function POST(
   }
   const result = await handleInviteSalesSessionParticipants(
     {
-      invitationLedger: services.invitationLedger,
+      invitationStore: services.invitationStore,
       sessions: createPrismaSalesDemoSessionRepository(services.prisma),
       records: createPrismaSalesRecordRepository(services.prisma),
       participants: createPrismaSalesSessionParticipantRepository(

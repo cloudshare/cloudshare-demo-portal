@@ -4,14 +4,15 @@ import { CloudShareAuthError, CloudShareResponseError } from "@/integrations/clo
 import { handleInviteSalesSessionParticipants as inviteSalesSessionParticipants, handleListSalesSessionParticipants as listSalesSessionParticipants, handleRegisterSalesSessionParticipants as registerSalesSessionParticipants } from "./sales-session-participants";
 import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales-environment";
 import { invitationResult, type SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
+import { createInvitationStoreFromLedger } from "@/persistence/prisma-sales-participant-invitation-ledger";
 
 const fixedNow = () => new Date("2026-07-19T08:00:00.000Z");
 const handleRegisterSalesSessionParticipants: typeof registerSalesSessionParticipants = (deps, request) => registerSalesSessionParticipants({ now: fixedNow, ...deps }, request);
 const handleListSalesSessionParticipants: typeof listSalesSessionParticipants = (deps, request) => listSalesSessionParticipants({ now: fixedNow, ...deps }, request);
 type StoredParticipantFixture = Omit<ReturnType<typeof storedParticipant>, "invitationStatus"> & { readonly invitationStatus: "notSent" | "sent" };
 const explicitInviteBody = (participant: StoredParticipantFixture, intent: "invite" | "resend" = "invite", commandId = randomUUID()) => ({ commandId, targets: [{ participantId: participant.id, intent, expectedInvitationStatus: intent === "invite" ? "notSent" as const : "sent" as const, participantRevision: participant.updatedAt.toISOString() }] });
-const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof inviteSalesSessionParticipants>[0], "invitationLedger"> & { invitationLedger?: SalesParticipantInvitationLedger }, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
-  if (deps.invitationLedger) return inviteSalesSessionParticipants({ now: fixedNow, ...deps, invitationLedger: deps.invitationLedger } as Parameters<typeof inviteSalesSessionParticipants>[0], request);
+const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof inviteSalesSessionParticipants>[0], "invitationStore"> & { invitationLedger?: SalesParticipantInvitationLedger }, request: Parameters<typeof inviteSalesSessionParticipants>[1]) => {
+  if (deps.invitationLedger) return inviteSalesSessionParticipants({ now: fixedNow, ...deps, invitationStore: createInvitationStoreFromLedger(deps.invitationLedger) } as Parameters<typeof inviteSalesSessionParticipants>[0], request);
   const invitationLedger: SalesParticipantInvitationLedger = {
     admitBatch: vi.fn(async ({ commandId }) => ({ kind: "admitted" as const, commandId, admissionToken: "test-admission-token" })),
     markBatchDispatching: vi.fn(async (customerId, commandId) => ({ customerId, commandId, phase: "dispatching" as const, revision: 2, correlationId: null })),
@@ -23,7 +24,7 @@ const handleInviteSalesSessionParticipants = (deps: Omit<Parameters<typeof invit
     readCommand: vi.fn(async () => null),
     readCurrent: vi.fn(async () => null),
   };
-  return inviteSalesSessionParticipants({ now: fixedNow, ...deps, invitationLedger } as Parameters<typeof inviteSalesSessionParticipants>[0], request);
+  return inviteSalesSessionParticipants({ now: fixedNow, ...deps, invitationStore: createInvitationStoreFromLedger(invitationLedger) } as Parameters<typeof inviteSalesSessionParticipants>[0], request);
 };
 
 const actor = { type: "admin" as const, id: "admin-1", email: "sales-admin@certalis.demo" };

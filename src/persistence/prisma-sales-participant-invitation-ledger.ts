@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { invitationOutcomes, invitationPhases, invitationResult, invitationScopeHash, type Admission, type CurrentInvitationState, type FinishInvitationCommand, type InvitationPhase, type InvitationTargetOutcome, type ParticipantInvitationProjection, type RevisionedInvitationCommand, type SalesParticipantInvitationLedger } from "@/domain/sales-participant-invitation-ledger";
+import type { InvitationHandle, InvitationState, InvitationStore } from "@/domain/sales-participant-invitation-store";
 
 const LEASE_MS = 30_000;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -179,4 +180,78 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
       return command ? projectCommand(command) : null;
     },
   };
+}
+
+type HandlePayload = { readonly customerId: string; readonly commandId: string; readonly token: string; readonly revision: number; readonly phase: InvitationPhase };
+const encodeHandle = (value: HandlePayload): InvitationHandle => Buffer.from(JSON.stringify(value), "utf8").toString("base64url") as InvitationHandle;
+const decodeHandle = (value: InvitationHandle): HandlePayload => {
+  const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<HandlePayload>;
+  if (!parsed.customerId || !parsed.commandId || !parsed.token || !parsed.revision || !parsed.phase || !invitationPhases.includes(parsed.phase)) throw new Error("invalid invitation handle");
+  return parsed as HandlePayload;
+};
+const semanticState = (value: CurrentInvitationState): InvitationState => ({
+  status: value.command.phase === "evaluating_confirmation" ? "awaiting_confirmation" : value.command.phase === "settled" ? "settled" : "in_progress",
+  displayPhase: value.command.phase,
+  correlationId: value.command.correlationId,
+  httpStatus: value.command.httpStatus ?? null,
+  resultCode: value.command.resultCode ?? null,
+  targets: value.targets ?? [],
+  outcome: value.outcome,
+});
+
+/** Deep persistence interface. Lifecycle phases, revisions, leases, admission
+ * tokens, and fence CAS rules stay inside this adapter. */
+export function createInvitationStoreFromLedger(ledger: SalesParticipantInvitationLedger): InvitationStore {
+  const read = async (customerId: string, commandId: string) => {
+    const current = await ledger.readCommand(customerId, commandId);
+    if (!current) throw new Error("invitation command was not found");
+    return current;
+  };
+  const handleFor = (current: CurrentInvitationState, token = "retained") => encodeHandle({ customerId: current.command.customerId, commandId: current.command.commandId, token, revision: current.command.revision, phase: current.command.phase });
+  return {
+    async begin(input) {
+      let existing = await ledger.readCommand(input.customerId, input.commandId);
+      if (!existing && !input.allowNew) return { kind: "blocked", reason: "session_unavailable" };
+      if (existing && ["admitted", "dispatching"].includes(existing.command.phase) && ledger.recoverExpiredInvitationCommand) {
+        try { await ledger.recoverExpiredInvitationCommand({ customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId, expectedRevision: existing.command.revision, at: input.at }); }
+        catch { /* Admission below retains nonterminal precedence when recovery races or storage is unavailable. */ }
+      }
+      const admission = await ledger.admitBatch(input);
+      if (admission.kind === "blocked") return { kind: "blocked", reason: admission.blockReason };
+      if (admission.kind === "admitted") return { kind: "started", handle: encodeHandle({ customerId: input.customerId, commandId: input.commandId, token: admission.admissionToken, revision: 1, phase: "admitted" }) };
+      existing = await read(input.customerId, input.commandId);
+      return { kind: "replay", handle: handleFor(existing), state: semanticState(existing) };
+    },
+    async authorizeDispatch(opaque, at) {
+      const handle = decodeHandle(opaque);
+      const command = await ledger.markBatchDispatching(handle.customerId, handle.commandId, handle.token, handle.revision, at);
+      return encodeHandle({ ...handle, revision: command.revision, phase: command.phase });
+    },
+    async recordAcknowledgement(opaque, input) {
+      const handle = decodeHandle(opaque);
+      if (!ledger.markBatchEvaluatingConfirmation) throw new Error("invitation acknowledgement persistence is unavailable");
+      const command = await ledger.markBatchEvaluatingConfirmation({ customerId: handle.customerId, commandId: handle.commandId, admissionToken: handle.token, expectedRevision: handle.revision, correlationId: input.correlationId, targetOutcomes: input.outcomes, at: input.at });
+      return encodeHandle({ ...handle, revision: command.revision, phase: command.phase });
+    },
+    async settle(opaque, input) {
+      const handle = decodeHandle(opaque);
+      if (input.projections) await ledger.finishBatchWithParticipantProjections({ customerId: handle.customerId, commandId: handle.commandId, expectedRevision: handle.revision, expectedPhase: handle.phase as "dispatching" | "evaluating_confirmation" | "settled", phase: "settled", correlationId: input.correlationId, httpStatus: input.httpStatus, resultCode: input.resultCode, targetOutcomes: input.outcomes, projections: input.projections });
+      else await ledger.finishBatch({ customerId: handle.customerId, commandId: handle.commandId, expectedRevision: handle.revision, expectedPhase: handle.phase as "dispatching" | "evaluating_confirmation" | "settled", phase: "settled", correlationId: input.correlationId, httpStatus: input.httpStatus, resultCode: input.resultCode, targetOutcomes: input.outcomes });
+      return { status: "settled", displayPhase: "settled", correlationId: input.correlationId, httpStatus: input.httpStatus, resultCode: input.resultCode, targets: [], outcome: invitationResult({ commandId: handle.commandId, correlationId: input.correlationId, outcomes: input.outcomes }) };
+    },
+    async failBeforeDispatch(opaque, input) {
+      const handle = decodeHandle(opaque);
+      await ledger.failAdmitted(handle.customerId, handle.commandId, handle.revision, input.at, { httpStatus: input.httpStatus, resultCode: input.resultCode, reason: input.reason });
+      const current = await ledger.readCommand(handle.customerId, handle.commandId);
+      return current ? semanticState(current) : { status: "settled", displayPhase: "settled", correlationId: null, httpStatus: input.httpStatus, resultCode: input.resultCode, targets: [], outcome: invitationResult({ commandId: handle.commandId, correlationId: null, outcomes: [] }) };
+    },
+    async load(customerId, commandId) {
+      const current = await ledger.readCommand(customerId, commandId);
+      return current ? { handle: handleFor(current), state: semanticState(current) } : null;
+    },
+  };
+}
+
+export function createPrismaInvitationStore(prisma: PrismaClient): InvitationStore {
+  return createInvitationStoreFromLedger(createPrismaSalesParticipantInvitationLedger(prisma));
 }

@@ -19,7 +19,7 @@ describe("SalesParticipantWorkspace application boundary", () => {
     const readPage = vi.fn().mockResolvedValue(null);
     const workspace = createSalesParticipantWorkspace({
       reader: readPage,
-      invitationLedger: {} as never,
+      invitationStore: {} as never,
       sessions: {} as never,
       records: {} as never,
       participants: {} as never,
