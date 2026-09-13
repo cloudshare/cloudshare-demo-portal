@@ -283,6 +283,8 @@ model SalesParticipantInvitationCommand {
   admissionTokenHash String?
   admissionLeaseUntil DateTime?
   correlationId String?
+  httpStatus Int?
+  resultCode String?
   createdAt DateTime
   updatedAt DateTime
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -319,6 +321,7 @@ model SalesParticipantInvitationTarget {
   intent String
   expectedInvitationStatus String
   participantRevision String
+  projectionRevision String @default("")
   outcome String?
   reason String?
   command SalesParticipantInvitationCommand @relation(fields: [customerId, commandId], references: [customerId, commandId], onDelete: Cascade)

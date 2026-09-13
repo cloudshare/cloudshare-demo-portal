@@ -376,7 +376,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       } catch (error) {
         const context = error instanceof Error && "context" in error && typeof error.context === "object" && error.context !== null ? error.context as Record<string, unknown> : {};
         const evidence = { request: { method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds }, response: { status: typeof context.responseStatus === "number" ? context.responseStatus : typeof context.status === "number" ? context.status : 0, ...(Object.hasOwn(context, "responseBody") ? { body: context.responseBody } : {}) } } as SalesDeliveryEvidence;
-        const dispatchOutcome = error instanceof CloudShareAuthError || (error instanceof CloudShareRequestError && error.status === 401)
+        const dispatchOutcome = error instanceof CloudShareAuthError
           ? "not_dispatched" as const
           : error instanceof CloudShareRequestError
             ? error.status >= 500 ? "ambiguous_after_dispatch" as const : "provider_rejected" as const

@@ -190,6 +190,7 @@ describe("CloudShare Sales Delivery", () => {
   it.each([
     ["OAuth/pre-write", new CloudShareAuthError("token exchange failed", { method: "POST", path: "/oauth/token", responseStatus: 503 }), "not_dispatched"],
     ["acknowledged provider rejection", new CloudShareRequestError("bad invitation request", 400, { method: "POST", path: "/sales/sales-1/participants/invite", responseStatus: 400 }), "provider_rejected"],
+    ["endpoint authentication rejection", new CloudShareRequestError("unauthorized invitation request", 401, { method: "POST", path: "/sales/sales-1/participants/invite", responseStatus: 401 }), "provider_rejected"],
   ] as const)("classifies %s invitation failures as %s", async (_label, failure, dispatchOutcome) => {
     const requestV4Detailed = vi.fn().mockRejectedValue(failure);
     await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).inviteParticipants("sales-1", ["participant-1"])).resolves.toMatchObject({ dispatchOutcome });
