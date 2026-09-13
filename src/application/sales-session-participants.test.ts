@@ -98,6 +98,22 @@ describe("Sales Session participant invitation", () => {
     expect(registerParticipants).not.toHaveBeenCalled();
     expect(settle).toHaveBeenCalledWith(expect.objectContaining({ state: "settled", result: expect.objectContaining({ status: 503, body: expect.objectContaining({ code: "participant_add_retryable" }) }) }));
   });
+  it("settles OAuth failure inside registration as retry-safe before its participant POST", async () => {
+    const settle = vi.fn();
+    const oauthError = new CloudShareAuthError("OAuth token exchange failed", { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token" });
+    const registerParticipants = vi.fn().mockRejectedValue(oauthError);
+    const workspace = createSalesParticipantWorkspace({
+      now: fixedNow, reader: { readPage: vi.fn().mockResolvedValue(null) }, invitationStore: semanticStore(),
+      addCommandStore: { admit: vi.fn().mockResolvedValue({ kind: "new" }), markDispatched: vi.fn().mockResolvedValue(true), settle },
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) },
+      participants: { list: vi.fn().mockResolvedValue([]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), ensureParticipantCorrelationProperties: vi.fn().mockResolvedValue(correlationProperties()), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([])), registerParticipants }) },
+    });
+    const result = await workspace.addParticipant({ customerId: "customer-1", sessionId: session.id, actor, commandId: "cmd-register-oauth", person: { kind: "existingContact", contactId: contact.id } });
+    expect(registerParticipants).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 503, body: { outcome: "rejected", code: "participant_add_retryable", dispatchOutcome: "not_dispatched", correlationId: expect.any(String) } });
+    expect(settle).toHaveBeenCalledWith(expect.objectContaining({ state: "settled", provenNotDispatched: true, result }));
+  });
   it("keeps a participant POST transport failure ambiguous and non-replayable", async () => {
     const settle = vi.fn();
     const providerWriteError = new CloudShareAuthError("Participant write response was not received", { method: "POST", path: "/v4/sales/remote-sales-1/participants", integrationSurface: "cloudshare.v4.sales.participants" });

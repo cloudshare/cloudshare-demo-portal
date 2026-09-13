@@ -150,11 +150,11 @@ export async function handleRegisterSalesSessionParticipants(deps: BaseDeps, req
     const contactsNeedingRemoteRegistration = contactsNeedingMapping.filter((contact) => !legacyByContactId.has(contact.id) && !(correlatedByContactId.get(contact.id)?.length));
     let created: Awaited<ReturnType<NonNullable<ParticipantDelivery["registerParticipants"]>>> | undefined;
     if (contactsNeedingRemoteRegistration.length) {
-      participantWriteDispatched = true;
       created = await prepared.delivery.registerParticipants!(prepared.session.cloudShareSalesExperienceId, contactsNeedingRemoteRegistration.map((contact) => {
         const value = planned.get(contact.id)!;
         return { firstName: contact.firstName, lastName: contact.lastName, email: contact.email, customProperties: correlationFor(value) };
       }));
+      participantWriteDispatched = true;
     }
     if (created) completedExchanges.push(created);
     const remoteAfterRegistration = legacyByContactId.size > 0 || created
