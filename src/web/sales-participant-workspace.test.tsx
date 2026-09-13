@@ -40,7 +40,7 @@ describe("SalesParticipantWorkspace", () => {
     const request = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.includes("/participants/add")) { addedOnce = true; return new Response(JSON.stringify({ outcome: "registered", participantId: added.id, contactId: "contact-ad-hoc" }), { status: 201 }); }
       if (url.includes("/participants/invite")) throw new Error("invite must not be called");
-      return new Response(JSON.stringify(addedOnce ? { participants: [added], total: 1, offset: 0, limit: 25, hasMore: false, eligibleContacts: [] } : { participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [] }));
+      return new Response(JSON.stringify(addedOnce ? { participants: [added], total: 1, offset: 0, limit: 25, hasMore: false, eligibleContacts: [] } : { participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-ad-hoc", name: "Available Contact", email: "available@example.test" }] }));
     });
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
     await user.click(screen.getByLabelText(/New person/));
