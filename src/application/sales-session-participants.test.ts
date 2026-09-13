@@ -130,6 +130,16 @@ describe("Sales Session participant invitation", () => {
     expect(result).toMatchObject({ status: 409, body: { code: "active_command_conflict", conflictingCommandId: "prior-command", correlationId: expect.any(String), targets: [{ participantId: participant.id, reason: "blocked_by_fence" }] } });
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-1", details: expect.objectContaining({ failureMode: "active_command_conflict", conflictingCommandId: "prior-command" }) }));
   });
+  it.each(["connection", "delivery"] as const)("settles an admitted command when %s preparation throws before dispatch", async (failure) => {
+    const invitationStore = semanticStore(); const diagnostics = { record: vi.fn() }; const inviteParticipants = vi.fn(); const participant = storedParticipant();
+    const connections = { findByCustomerId: failure === "connection" ? vi.fn().mockRejectedValue(new Error("connection storage unavailable")) : vi.fn().mockResolvedValue({ customerId: "customer-1" }) };
+    const deliveryFactory = { forConnection: failure === "delivery" ? vi.fn(() => { throw new Error("delivery construction unavailable"); }) : vi.fn(() => ({ inviteParticipants })) };
+    const result = await handleInviteSalesSessionParticipants({ invitationStore, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections, deliveryFactory, diagnostics }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant) });
+    expect(result).toMatchObject({ status: 502, body: { correlationId: expect.any(String), error: "Certalis could not prepare the native invitation request. Retry after reviewing support diagnostics." } });
+    expect(invitationStore.failBeforeDispatch).toHaveBeenCalledWith(testHandle, expect.objectContaining({ resultCode: "not_dispatched", reason: "not_dispatched" }));
+    expect(inviteParticipants).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-1", outcome: "failure" }));
+  });
   it("creates the documented property definitions and persists the authoritative property-bearing roster", async () => {
     const registered: Array<{ readonly customProperties: readonly { readonly name: string; readonly value: string }[] }> = [];
     const registerParticipants = vi.fn().mockImplementation(async (_salesId, participants) => { registered.push(...participants); return { request: { method: "POST", path: "/v4/sales/remote-sales-1/participants", body: participants }, response: { status: 201 } }; });

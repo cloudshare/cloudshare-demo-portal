@@ -322,12 +322,18 @@ async function runInvitationLifecycle(deps: InviteDeps, request: Request): Promi
     return { status: 409, body: { code: "participant_revision_stale", error, correlationId } };
   }
   invitationHandle = admission.handle;
-  const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) {
+  const correlationId = randomUUID();
+  let deliveryResult: Awaited<ReturnType<typeof resolveDelivery>>;
+  try { deliveryResult = await resolveDelivery(deps, request); }
+  catch (error) {
+    await deps.invitationStore.failBeforeDispatch(invitationHandle, { at: (deps.now ?? (() => new Date()))(), httpStatus: 502, resultCode: "not_dispatched", reason: "not_dispatched" });
+    return failed(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "Certalis could not prepare the native invitation request. Retry after reviewing support diagnostics.", error);
+  }
+  if ("response" in deliveryResult) {
     await deps.invitationStore.failBeforeDispatch(invitationHandle, { at: (deps.now ?? (() => new Date()))(), httpStatus: deliveryResult.response!.status, resultCode: "not_dispatched", reason: "not_dispatched" });
     return deliveryResult.response!;
   }
   const prepared = { session: sessionResult.session, delivery: deliveryResult.delivery };
-  const correlationId = randomUUID();
   let acknowledgedInvite: SalesDeliveryDispatchEvidence | undefined;
   let acknowledgementMarked = false;
   let dispatchMarked = false;
