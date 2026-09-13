@@ -58,23 +58,43 @@ describe("SalesParticipantWorkspace", () => {
     await user.click(screen.getByRole("button", { name: "Inspect" }));
     expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
   });
-  it("reuses the same participant-add command after an uncertain response", async () => {
+  it("blocks retry after an uncertain participant-add response and offers read-only evidence refresh", async () => {
     const user = userEvent.setup();
     const bodies: string[] = [];
     const request = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.includes("/participants/add")) {
         bodies.push(String(init?.body));
-        return new Response(JSON.stringify({ outcome: "needs_attention", code: "participant_add_no_replay", error: "Provider outcome is ambiguous." }), { status: 409 });
+        return new Response(JSON.stringify({ outcome: "needs_attention", code: "participant_add_no_replay", error: "Provider outcome is ambiguous.", correlationId: "corr-ambiguous" }), { status: 409 });
       }
       return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-1", name: "Grace Hopper", email: "grace@example.test" }] }));
     });
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
     await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
     await user.click(screen.getByRole("button", { name: "Add participant" }));
-    await screen.findByText("Provider outcome is ambiguous.");
+    await screen.findByText("Do not retry: CloudShare may have received the participant write.");
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect((screen.getByRole("button", { name: "Add participant" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("link", { name: "Support diagnostics" }).getAttribute("href")).toContain("correlationId=corr-ambiguous");
+    await user.click(screen.getByRole("button", { name: "Refresh evidence" }));
+    await waitFor(() => expect(request.mock.calls.filter(([, init]) => init?.method !== "POST").length).toBeGreaterThan(1));
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("offers an explicit fresh-command retry only when the provider write was not dispatched", async () => {
+    const user = userEvent.setup(); const bodies: string[] = [];
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/participants/add")) { bodies.push(String(init?.body)); return new Response(JSON.stringify({ outcome: "rejected", code: "participant_add_retryable", dispatchOutcome: "not_dispatched", correlationId: "corr-safe" }), { status: 503 }); }
+      return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-1", name: "Grace Hopper", email: "grace@example.test" }] }));
+    });
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
     await user.click(screen.getByRole("button", { name: "Add participant" }));
+    await screen.findByText("No CloudShare participant write was attempted. Retry is safe.");
+    expect(screen.getByRole("link", { name: "Support diagnostics" }).getAttribute("href")).toContain("correlationId=corr-safe");
+    expect((screen.getByRole("button", { name: "Add participant" }) as HTMLButtonElement).disabled).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(bodies).toHaveLength(2));
-    expect(JSON.parse(bodies[0]).commandId).toBe(JSON.parse(bodies[1]).commandId);
+    expect(JSON.parse(bodies[0]).commandId).not.toBe(JSON.parse(bodies[1]).commandId);
   });
 
   it("hydrates bounded query and offset from the URL and rereads on popstate", async () => {

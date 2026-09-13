@@ -38,7 +38,7 @@ export function createPrismaSalesParticipantAddCommandStore(prisma: PrismaClient
     async settle(input) {
       const current = await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, select: { state: true, targetKey: true } });
       if (!current) throw new Error("Participant add command not found");
-      const preDispatch = current.state === "admitted";
+      const preDispatch = current.state === "admitted" || (input.provenNotDispatched === true && current.state === "dispatched");
       const changed = await prisma.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, state: current.state, targetKey: current.targetKey }, data: { state: input.state, targetKey: preDispatch ? `command:${input.commandId}` : current.targetKey, status: input.result.status, resultJson: JSON.stringify(input.result), correlationId: input.result.body.correlationId ?? null, updatedAt: input.now } });
       if (changed.count !== 1) throw new Error("Participant add command settlement lost its ownership fence");
     },
