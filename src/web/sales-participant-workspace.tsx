@@ -6,6 +6,7 @@ import { primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import type { SalesParticipantWorkspaceRow } from "@/domain/sales-participant-workspace";
 import type { InvitationOutcome, InvitationSafeReason } from "@/domain/sales-participant-workspace";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "@/domain/sales-participant-launch-operation";
+import { classifyParticipantAddRecovery, participantAddRecovery } from "@/domain/participant-add-recovery";
 import {
   pruneParticipantSelection,
   reduceParticipantSelection,
@@ -50,9 +51,10 @@ export function SalesParticipantWorkspace(props: {
   const [registrationId, setRegistrationId] = useState("");
   const [adHoc, setAdHoc] = useState({ firstName: "", lastName: "", email: "" });
   const [registrationFeedback, setRegistrationFeedback] = useState<string | null>(null);
-  const [registrationOutcome, setRegistrationOutcome] = useState<{ retryable: boolean; correlationId: string | null; nextRetryAt?: string } | null>(null);
+  const [registrationOutcome, setRegistrationOutcome] = useState<{ retryable: boolean; correlationId: string | null; nextRetryAt?: string; nextAction?: "retry" | "reconcile" } | null>(null);
   const registrationCommand = useRef<{ key: string; commandId: string } | null>(null);
   const automaticRetryCount = useRef(0);
+  const automaticRetryMode = useRef<"quick" | "reconciled">("quick");
   const automaticRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const registrationGeneration = useRef(0);
   const [registrationBusy, setRegistrationBusy] = useState(false);
@@ -71,6 +73,7 @@ export function SalesParticipantWorkspace(props: {
     registrationGeneration.current += 1;
     registrationCommand.current = null;
     automaticRetryCount.current = 0;
+    automaticRetryMode.current = "quick";
     setRegistrationOutcome(null);
     setRegistrationFeedback(null);
     setRegistrationBusy(false);
@@ -191,6 +194,7 @@ export function SalesParticipantWorkspace(props: {
     registrationGeneration.current += 1;
     if (automaticRetryTimer.current) { clearTimeout(automaticRetryTimer.current); automaticRetryTimer.current = null; }
     automaticRetryCount.current = 0;
+    automaticRetryMode.current = "quick";
     registrationCommand.current = null;
     setRegistrationOutcome(null);
     setRegistrationFeedback(null);
@@ -214,16 +218,29 @@ export function SalesParticipantWorkspace(props: {
       if (durableCommandId) registrationCommand.current = { key, commandId: durableCommandId };
       if (!response.ok) {
         const code = textField(result, "code"); const correlationId = textField(result, "correlationId");
-        const retryable = code === "participant_add_retryable" && result?.dispatchOutcome === "not_dispatched";
-        if (retryable && automaticRetryCount.current < 3) {
-          const delayMs = 2_000 * 2 ** automaticRetryCount.current++;
-          const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
-          setRegistrationOutcome({ retryable: true, correlationId: correlationId ?? null, nextRetryAt });
-          automaticRetryTimer.current = setTimeout(() => { automaticRetryTimer.current = null; if (registrationGeneration.current === generation) void registerSelected(true, person); }, delayMs);
-          throw new Error(`CloudShare failed before any participant write. Automatic retry ${automaticRetryCount.current} of 3 is scheduled for ${nextRetryAt}.`);
+        const recovery = classifyParticipantAddRecovery({ code: code ?? undefined, dispatchOutcome: textField(result, "dispatchOutcome") ?? undefined });
+        if (recovery === "quick_retry") {
+          const delays = automaticRetryMode.current === "quick" ? participantAddRecovery.oauthRetryDelaysMs : participantAddRecovery.reconciledRetryDelaysMs;
+          const delayMs = delays[automaticRetryCount.current];
+          if (delayMs !== undefined) {
+            automaticRetryCount.current += 1;
+            const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
+            setRegistrationOutcome({ retryable: true, correlationId: correlationId ?? null, nextRetryAt, nextAction: "retry" });
+            automaticRetryTimer.current = setTimeout(() => { automaticRetryTimer.current = null; if (registrationGeneration.current === generation) void registerSelected(true, person); }, delayMs);
+            throw new Error(`CloudShare failed before any participant write. Automatic ${automaticRetryMode.current === "quick" ? "OAuth" : "recovered add"} retry ${automaticRetryCount.current} of ${delays.length} is scheduled for ${nextRetryAt}.`);
+          }
+          setRegistrationOutcome({ retryable: true, correlationId: correlationId ?? null });
+          throw new Error("Automatic participant-add recovery is exhausted. Manual retry remains safe; open Support diagnostics if it fails again.");
         }
-        setRegistrationOutcome({ retryable, correlationId: correlationId ?? null });
-        throw new Error(code === "participant_add_retryable" ? "CloudShare failed before any participant write. Automatic retries are exhausted; manual retry is safe." : code === "participant_add_no_replay" ? "Do not retry: CloudShare may have received the participant write." : textField(result, "error") ?? `Registration failed (${response.status}).`);
+        if (recovery === "reconcile_only") {
+          const delayMs = participantAddRecovery.ambiguousReconciliationDelayMs;
+          const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
+          setRegistrationOutcome({ retryable: false, correlationId: correlationId ?? null, nextRetryAt, nextAction: "reconcile" });
+          automaticRetryTimer.current = setTimeout(() => { automaticRetryTimer.current = null; if (registrationGeneration.current === generation) void refreshRegistrationEvidence(true, person); }, delayMs);
+          throw new Error(`CloudShare may have received the participant write. It will not be replayed. A read-only status check is scheduled for ${nextRetryAt}.`);
+        }
+        setRegistrationOutcome({ retryable: false, correlationId: correlationId ?? null });
+        throw new Error(textField(result, "error") ?? `Registration failed (${response.status}).`);
       }
       automaticRetryCount.current = 0;
       registrationCommand.current = null;
@@ -233,7 +250,7 @@ export function SalesParticipantWorkspace(props: {
     } catch (cause) { if (registrationGeneration.current === generation) setRegistrationFeedback(cause instanceof Error ? cause.message : "Registration failed; retry or open Support."); }
     finally { if (registrationGeneration.current === generation) setRegistrationBusy(false); }
   };
-  const refreshRegistrationEvidence = async () => {
+  const refreshRegistrationEvidence = async (automatic = false, person?: ParticipantAddPerson) => {
     if (registrationBusy || !registrationCommand.current) return;
     setRegistrationBusy(true);
     setRegistrationFeedback("Checking CloudShare participant status…");
@@ -241,12 +258,27 @@ export function SalesParticipantWorkspace(props: {
       const response = await request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants/add/reconcile`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ commandId: registrationCommand.current.commandId }) });
       const result = await readJsonObject(response); const code = textField(result, "code"); const correlationId = textField(result, "correlationId");
       const retryable = code === "participant_add_retryable" && result?.dispatchOutcome === "not_dispatched";
-      setRegistrationOutcome({ retryable, correlationId: correlationId ?? registrationOutcome?.correlationId ?? null });
-      setRegistrationFeedback(retryable ? "No CloudShare participant write was attempted. Retry is safe." : "Do not retry: CloudShare may have received the participant write.");
+      if (retryable && automatic && person) {
+        automaticRetryMode.current = "reconciled"; automaticRetryCount.current = 0;
+        const delayMs = participantAddRecovery.reconciledRetryDelaysMs[0]; const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
+        automaticRetryCount.current = 1;
+        setRegistrationOutcome({ retryable: true, correlationId: correlationId ?? registrationOutcome?.correlationId ?? null, nextRetryAt, nextAction: "retry" });
+        const generation = registrationGeneration.current;
+        automaticRetryTimer.current = setTimeout(() => { automaticRetryTimer.current = null; if (registrationGeneration.current === generation) void registerSelected(true, person); }, delayMs);
+        setRegistrationFeedback(`CloudShare absence and pre-dispatch evidence agree. Recovered add retry 1 of 4 is scheduled for ${nextRetryAt}.`);
+      } else {
+        setRegistrationOutcome({ retryable, correlationId: correlationId ?? registrationOutcome?.correlationId ?? null });
+        setRegistrationFeedback(retryable ? "CloudShare absence and pre-dispatch evidence agree. Manual retry is safe." : "Do not retry: CloudShare may have received the participant write.");
+      }
       await rereadWorkspace();
     } catch { setRegistrationFeedback("CloudShare status check failed. Do not retry; open Support diagnostics."); }
     finally { setRegistrationBusy(false); }
   };
+  const cancelScheduledRecovery = () => {
+    if (automaticRetryTimer.current) { clearTimeout(automaticRetryTimer.current); automaticRetryTimer.current = null; }
+  };
+  const retryParticipantNow = () => { cancelScheduledRecovery(); void registerSelected(true); };
+  const reconcileParticipantNow = () => { cancelScheduledRecovery(); void refreshRegistrationEvidence(); };
 
   const runAction = async (participant: SalesParticipantWorkspaceRow, action: Action) => {
     if (action === "revoke_launch") { logicalFocus.current = "inspector"; originRef.current = document.activeElement as HTMLElement; setRevokeTarget(participant); return; }
@@ -316,7 +348,7 @@ export function SalesParticipantWorkspace(props: {
       <label htmlFor="participant-query">Search Participants</label>
       <input id="participant-query" value={query} onChange={(event) => { historyMode.current = "push"; setQuery(event.target.value); setOffset(0); }} placeholder="Search name or email" />
       {feedback._announcement ? <p role="alert" aria-live="polite">{feedback._announcement}</p> : null}
-      {page ? <div className={styles.empty}><strong>Add Participant</strong><p>Registration does not send a CloudShare invitation.</p><label><input type="radio" checked={addMode === "existingContact"} disabled={registrationBusy} onChange={() => { startNewRegistrationTarget(); setAddMode("existingContact"); }} /> Existing Opportunity Contact</label>{addMode === "existingContact" ? <><select aria-label="Eligible Opportunity Contact" disabled={registrationBusy || !page.eligibleContacts?.length} value={registrationId} onChange={(event) => { startNewRegistrationTarget(); setRegistrationId(event.target.value); }}><option value="">{page.eligibleContacts?.length ? "Select a Contact" : "No eligible Contacts"}</option>{page.eligibleContacts?.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {contact.email}</option>)}</select></> : null}<label><input type="radio" checked={addMode === "adHoc"} disabled={registrationBusy} onChange={() => { startNewRegistrationTarget(); setAddMode("adHoc"); }} /> New person</label>{addMode === "adHoc" ? <><input aria-label="First name" placeholder="First name" disabled={registrationBusy} value={adHoc.firstName} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, firstName: event.target.value }); }} /><input aria-label="Last name" placeholder="Last name" disabled={registrationBusy} value={adHoc.lastName} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, lastName: event.target.value }); }} /><input aria-label="Email" type="email" placeholder="Email" disabled={registrationBusy} value={adHoc.email} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, email: event.target.value }); }} /></> : null}<button type="button" disabled={registrationBusy || registrationOutcome !== null || (addMode === "existingContact" ? !registrationId : !adHoc.firstName.trim() || !adHoc.lastName.trim() || !adHoc.email.trim())} onClick={() => void registerSelected()}>Add participant</button>{registrationFeedback ? <p role="status">{registrationFeedback}</p> : null}{registrationOutcome ? <p>Correlation ID: <code>{registrationOutcome.correlationId ?? "unavailable"}</code> · <a href={`/sales?tab=support${registrationOutcome.correlationId ? `&correlationId=${encodeURIComponent(registrationOutcome.correlationId)}` : ""}`}>Support diagnostics</a>{registrationOutcome.retryable && !registrationOutcome.nextRetryAt ? <button type="button" onClick={() => void registerSelected(true)}>Retry participant add</button> : registrationOutcome.retryable ? null : <button type="button" onClick={() => void refreshRegistrationEvidence()}>Check CloudShare status</button>}</p> : null}</div> : null}
+      {page ? <div className={styles.empty}><strong>Add Participant</strong><p>Registration does not send a CloudShare invitation.</p><label><input type="radio" checked={addMode === "existingContact"} disabled={registrationBusy} onChange={() => { startNewRegistrationTarget(); setAddMode("existingContact"); }} /> Existing Opportunity Contact</label>{addMode === "existingContact" ? <><select aria-label="Eligible Opportunity Contact" disabled={registrationBusy || !page.eligibleContacts?.length} value={registrationId} onChange={(event) => { startNewRegistrationTarget(); setRegistrationId(event.target.value); }}><option value="">{page.eligibleContacts?.length ? "Select a Contact" : "No eligible Contacts"}</option>{page.eligibleContacts?.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {contact.email}</option>)}</select></> : null}<label><input type="radio" checked={addMode === "adHoc"} disabled={registrationBusy} onChange={() => { startNewRegistrationTarget(); setAddMode("adHoc"); }} /> New person</label>{addMode === "adHoc" ? <><input aria-label="First name" placeholder="First name" disabled={registrationBusy} value={adHoc.firstName} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, firstName: event.target.value }); }} /><input aria-label="Last name" placeholder="Last name" disabled={registrationBusy} value={adHoc.lastName} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, lastName: event.target.value }); }} /><input aria-label="Email" type="email" placeholder="Email" disabled={registrationBusy} value={adHoc.email} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, email: event.target.value }); }} /></> : null}<button type="button" disabled={registrationBusy || registrationOutcome !== null || (addMode === "existingContact" ? !registrationId : !adHoc.firstName.trim() || !adHoc.lastName.trim() || !adHoc.email.trim())} onClick={() => void registerSelected()}>Add participant</button>{registrationFeedback ? <p role="status">{registrationFeedback}</p> : null}{registrationOutcome ? <p>Correlation ID: <code>{registrationOutcome.correlationId ?? "unavailable"}</code> · <a href={`/sales?tab=support${registrationOutcome.correlationId ? `&correlationId=${encodeURIComponent(registrationOutcome.correlationId)}` : ""}`}>Support diagnostics</a>{registrationOutcome.retryable ? <button type="button" onClick={retryParticipantNow}>{registrationOutcome.nextAction === "retry" ? "Retry participant add now" : "Retry participant add"}</button> : <button type="button" onClick={reconcileParticipantNow}>{registrationOutcome.nextAction === "reconcile" ? "Check CloudShare status now" : "Check CloudShare status"}</button>}</p> : null}</div> : null}
       {loadFailed ? null : page?.participants.length ? <div className={styles.tableWrap} role="region" aria-label="Scrollable Participant roster" tabIndex={0}><table aria-label="Participant roster" className={styles.roster}><thead><tr><th>Participant</th><th>Invitation</th><th>Participation</th><th>Participant Environment</th><th>Environment source</th></tr></thead><tbody>{page.participants.map((participant) => { const selected = selection.selectedIds.includes(participant.id); const current = selection.activeId === participant.id; const pageIds = page.participants.map((row) => row.id); return <tr key={participant.id} aria-selected={selected} data-participant-id={participant.id} data-active={current ? "true" : undefined} data-selected={selected ? "true" : undefined} tabIndex={current ? 0 : -1} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; clearedInspectorTarget.current = false; historyMode.current = "push"; setSelection((state) => reduceParticipantSelection(state, { type: "click", id: participant.id, additive: event.ctrlKey || event.metaKey, range: event.shiftKey, pageIds })); }} onKeyDown={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; clearedInspectorTarget.current = false; historyMode.current = "push"; if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "move", direction: event.key === "ArrowDown" ? "next" : "previous", pageIds })); } else if (event.key === " ") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "toggle", id: participant.id, range: event.shiftKey, pageIds })); } else if (event.key === "Enter") { event.preventDefault(); openInspector(participant.id, event.currentTarget); } }}><th scope="row"><strong>{participant.name}</strong><span>{participant.email}</span><button type="button" onClick={(event) => openInspector(participant.id, event.currentTarget)}>Inspect</button></th><td><span className={styles.inlineBadge}>{participant.invitationStatus === "sent" ? "Sent" : "Not sent"}</span></td><td><span className={styles.inlineBadge}>{participant.participationStatus === "inProgress" ? "In progress" : participant.participationStatus === "concluded" ? "Concluded" : "Pending"}</span></td><td>{participant.environment.value ?? "Not observed"}</td><td>{humanEnvironmentSource(participant.environment.source)}</td></tr>; })}</tbody></table></div> : page && page.total === 0 && !query && offset === 0 ? <div className={styles.empty}><p>No Participants are registered for this Sales Session.</p></div> : <p className={styles.empty}>No Participants match this page or search.</p>}
       {offset > 0 ? <button type="button" onClick={() => { historyMode.current = "push"; setOffset(Math.max(0, offset - 25)); }}>Previous</button> : null}{page?.hasMore ? <button type="button" onClick={() => { historyMode.current = "push"; setOffset(offset + 25); }}>Next</button> : null}
     </section>

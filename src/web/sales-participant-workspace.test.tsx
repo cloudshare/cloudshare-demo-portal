@@ -71,11 +71,11 @@ describe("SalesParticipantWorkspace", () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
     await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
     await user.click(screen.getByRole("button", { name: "Add participant" }));
-    await screen.findByText("Do not retry: CloudShare may have received the participant write.");
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    await screen.findByText(/It will not be replayed\. A read-only status check is scheduled for .*Z\./);
+    expect(screen.queryByRole("button", { name: /Retry participant/ })).toBeNull();
     expect((screen.getByRole("button", { name: "Add participant" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole("link", { name: "Support diagnostics" }).getAttribute("href")).toContain("correlationId=corr-ambiguous");
-    await user.click(screen.getByRole("button", { name: "Check CloudShare status" }));
+    await user.click(screen.getByRole("button", { name: "Check CloudShare status now" }));
     await waitFor(() => expect(request.mock.calls.filter(([, init]) => init?.method !== "POST").length).toBeGreaterThan(1));
     expect(bodies).toHaveLength(2);
     expect(request.mock.calls.filter(([url]) => String(url).endsWith("/participants/add"))).toHaveLength(1);
@@ -97,7 +97,7 @@ describe("SalesParticipantWorkspace", () => {
     const select = await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" });
     await user.selectOptions(select, "contact-4");
     await user.click(screen.getByRole("button", { name: "Add participant" }));
-    await screen.findByText("Do not retry: CloudShare may have received the participant write.");
+    await screen.findByText(/It will not be replayed\. A read-only status check is scheduled for .*Z\./);
     expect((screen.getByRole("button", { name: "Add participant" }) as HTMLButtonElement).disabled).toBe(true);
     await user.selectOptions(select, "contact-5");
     expect(screen.queryByText("corr-user4")).toBeNull();
@@ -117,10 +117,10 @@ describe("SalesParticipantWorkspace", () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
     await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
     await user.click(screen.getByRole("button", { name: "Add participant" }));
-    await screen.findByText(/Automatic retry 1 of 3 is scheduled for .*Z\./);
+    await screen.findByText(/Automatic OAuth retry 1 of 3 is scheduled for .*Z\./);
     expect(screen.getByRole("link", { name: "Support diagnostics" }).getAttribute("href")).toContain("correlationId=corr-safe");
     expect((screen.getByRole("button", { name: "Add participant" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.queryByRole("button", { name: "Retry participant add" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry participant add now" })).toBeTruthy();
     await waitFor(() => expect(bodies).toHaveLength(2), { timeout: 4_000 });
     expect(JSON.parse(bodies[0]).commandId).not.toBe(JSON.parse(bodies[1]).commandId);
   });
@@ -150,7 +150,7 @@ describe("SalesParticipantWorkspace", () => {
     const view = render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
     await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
     await user.click(screen.getByRole("button", { name: "Add participant" }));
-    await screen.findByText(/Automatic retry 1 of 3/);
+    await screen.findByText(/Automatic OAuth retry 1 of 3/);
     view.rerender(<SalesParticipantWorkspace sessionId="s2" active request={request} />);
     await waitFor(() => expect(screen.queryByText("old-session-correlation")).toBeNull());
     await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
@@ -184,14 +184,38 @@ describe("SalesParticipantWorkspace", () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
     await user.selectOptions(await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" }), "contact-1");
     await user.click(screen.getByRole("button", { name: "Add participant" }));
-    await screen.findByText("Do not retry: CloudShare may have received the participant write.");
-    await user.click(screen.getByRole("button", { name: "Check CloudShare status" }));
-    await screen.findByText("No CloudShare participant write was attempted. Retry is safe.");
+    await screen.findByText(/It will not be replayed\. A read-only status check is scheduled for .*Z\./);
+    await user.click(screen.getByRole("button", { name: "Check CloudShare status now" }));
+    await screen.findByText("CloudShare absence and pre-dispatch evidence agree. Manual retry is safe.");
     expect(screen.getByRole("button", { name: "Retry participant add" })).toBeTruthy();
     expect(posts).toHaveLength(2);
     expect(posts[1].url).toContain("/reconcile");
     expect(JSON.parse(posts[1].body).commandId).toBe(durableCommandId);
     expect(Object.keys(JSON.parse(posts[1].body))).toEqual(["commandId"]);
+  });
+
+  it("automatically reconciles ambiguity before scheduling the first long recovered add", async () => {
+    const calls: string[] = []; const commandId = "11111111-1111-4111-8111-111111111111";
+    const request = vi.fn(async (url: string) => {
+      calls.push(url);
+      if (url.endsWith("/participants/add/reconcile")) return new Response(JSON.stringify({ outcome: "rejected", code: "participant_add_retryable", dispatchOutcome: "not_dispatched", correlationId: "corr-recovered" }), { status: 503 });
+      if (url.endsWith("/participants/add")) return calls.filter((value) => value.endsWith("/participants/add")).length === 1
+        ? new Response(JSON.stringify({ outcome: "needs_attention", code: "participant_add_no_replay", correlationId: "corr-ambiguous", commandId }), { status: 409 })
+        : new Response(JSON.stringify({ outcome: "registered", participantId: "p-recovered" }), { status: 201 });
+      return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false, eligibleContacts: [{ id: "contact-1", name: "Grace Hopper", email: "grace@example.test" }] }));
+    });
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    const select = await screen.findByRole("combobox", { name: "Eligible Opportunity Contact" });
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-13T17:00:00.000Z"));
+    fireEvent.change(select, { target: { value: "contact-1" } }); fireEvent.click(screen.getByRole("button", { name: "Add participant" }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.getByText(/read-only status check is scheduled for 2026-09-13T17:02:00.000Z/)).toBeTruthy();
+    expect(calls.filter((value) => value.endsWith("/participants/add"))).toHaveLength(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(calls.filter((value) => value.endsWith("/participants/add/reconcile"))).toHaveLength(1);
+    expect(screen.getByText(/Recovered add retry 1 of 4 is scheduled for 2026-09-13T17:04:00.000Z/)).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(calls.filter((value) => value.endsWith("/participants/add"))).toHaveLength(2);
   });
 
   it("hydrates bounded query and offset from the URL and rereads on popstate", async () => {
