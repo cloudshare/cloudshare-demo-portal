@@ -146,7 +146,7 @@ describe("Prisma invitation ledger", () => {
   it("reads dispatching, evaluating confirmation, and settled retained no-replay states after restart", async () => {
     const f = await fixture(); const ledger = createPrismaSalesParticipantInvitationLedger(prisma); const at = new Date(); const target = { participantId: f.participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: f.participant.updatedAt.toISOString() }; const commandId = randomUUID(); const a = await ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, targets: [target], commandId, at }); const d = await ledger.markBatchDispatching(f.customerId, commandId, a.admissionToken!, 1, new Date(at.getTime() + 1)); await expect(ledger.readCurrent(f.customerId, f.participant.id)).resolves.toMatchObject({ command: { phase: "dispatching", revision: 2 } });
     const e = await ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: d.revision, expectedPhase: "dispatching", phase: "evaluating_confirmation", correlationId: "c", targetOutcomes: [{ participantId: f.participant.id, outcome: "confirmation_required", reason: "confirmation_required" }] }); await expect(ledger.readCurrent(f.customerId, f.participant.id)).resolves.toMatchObject({ command: { phase: "evaluating_confirmation", revision: 3 }, outcome: { outcome: "confirmation_required" } });
-    await ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: e.revision, expectedPhase: "evaluating_confirmation", phase: "settled", correlationId: "c", targetOutcomes: [{ participantId: f.participant.id, outcome: "no_replay", reason: "ambiguous_after_dispatch" }] }); await expect(ledger.readCurrent(f.customerId, f.participant.id)).resolves.toMatchObject({ command: { phase: "settled", revision: 4 }, outcome: { outcome: "blocked" } });
+    await ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: e.revision, expectedPhase: "evaluating_confirmation", phase: "settled", correlationId: "c", targetOutcomes: [{ participantId: f.participant.id, outcome: "confirmation_required", reason: "confirmation_required" }] }); await expect(ledger.readCurrent(f.customerId, f.participant.id)).resolves.toMatchObject({ command: { phase: "settled", revision: 4 }, outcome: { outcome: "confirmation_required" } });
   });
 
   it("rejects rewriting a settled Resend no-replay outcome and retains its fence", async () => {
@@ -158,6 +158,15 @@ describe("Prisma invitation ledger", () => {
     await expect(ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: 3, expectedPhase: "settled", phase: "settled", correlationId: "corr", targetOutcomes: [{ participantId: participant.id, outcome: "accepted_unconfirmed", reason: null }] })).rejects.toThrow("invitation command is no longer current");
     await expect(ledger.readCommand(f.customerId, commandId)).resolves.toMatchObject({ outcome: { targets: [{ outcome: "no_replay" }] } });
     await expect(prisma.salesParticipantInvitationFence.count({ where: { customerId: f.customerId, commandId } })).resolves.toBe(1);
+  });
+
+  it("allows a settled initial Invite no-replay to be proven by reconciliation and releases its fence", async () => {
+    const f = await fixture(); const ledger = createPrismaSalesParticipantInvitationLedger(prisma); const at = new Date("2026-09-12T10:00:00.000Z"); const commandId = randomUUID();
+    const admitted = await ledger.admitBatch({ customerId: f.customerId, sessionId: f.sessionId, commandId, at, targets: [{ participantId: f.participant.id, intent: "invite", expectedInvitationStatus: "notSent", participantRevision: f.participant.updatedAt.toISOString() }] });
+    await ledger.markBatchDispatching(f.customerId, commandId, admitted.admissionToken!, 1, at);
+    await ledger.recoverExpiredInvitationCommand!({ customerId: f.customerId, sessionId: f.sessionId, commandId, expectedRevision: 2, at: new Date(at.getTime() + 30_001) });
+    await expect(ledger.finishBatch({ customerId: f.customerId, commandId, expectedRevision: 3, expectedPhase: "settled", phase: "settled", correlationId: "corr", httpStatus: 200, resultCode: "command_reconciled", targetOutcomes: [{ participantId: f.participant.id, outcome: "confirmed_by_reconciliation", reason: null }] })).resolves.toMatchObject({ phase: "settled", revision: 4 });
+    await expect(prisma.salesParticipantInvitationFence.count({ where: { customerId: f.customerId, commandId } })).resolves.toBe(0);
   });
 
   it("persists acknowledged dispatch with exact token, command revision, and every fence before confirmation", async () => {

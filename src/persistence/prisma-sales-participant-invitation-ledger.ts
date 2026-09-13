@@ -32,11 +32,12 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
     const ids = input.targetOutcomes.map((o) => o.participantId);
     const retainedBefore = new Set(command.targets.filter((target) => target.outcome === null || ["no_replay", "confirmation_required"].includes(target.outcome)).map((target) => target.salesSessionParticipantId));
     const legalTransition = (target: typeof command.targets[number], next: InvitationTargetOutcome) => {
-      if (target.outcome === "no_replay") return next.outcome === "no_replay" && next.reason === "ambiguous_after_dispatch";
-      if (target.outcome && target.outcome !== "confirmation_required") return next.outcome === target.outcome && next.reason === target.reason;
-      if (target.intent === "invite" && next.outcome === "accepted_unconfirmed") return false;
-      if (target.intent === "resend" && ["confirmed", "confirmed_by_reconciliation"].includes(next.outcome)) return false;
-      return true;
+      if (target.outcome === null) return target.intent === "invite" ? next.outcome !== "accepted_unconfirmed" : !["confirmed", "confirmed_by_reconciliation"].includes(next.outcome);
+      if (target.outcome === "no_replay") return next.reason === (next.outcome === "no_replay" ? "ambiguous_after_dispatch" : null) && (next.outcome === "no_replay" || (target.intent === "invite" && next.outcome === "confirmed_by_reconciliation"));
+      if (target.outcome === "confirmation_required") return target.intent === "invite"
+        ? ((next.outcome === "confirmation_required" && next.reason === "confirmation_required") || (["confirmed", "confirmed_by_reconciliation"].includes(next.outcome) && next.reason === null))
+        : ((next.outcome === "confirmation_required" && next.reason === "confirmation_required") || (next.outcome === "accepted_unconfirmed" && next.reason === null));
+      return next.outcome === target.outcome && next.reason === target.reason;
     };
     if (command.revision !== input.expectedRevision || command.phase !== input.expectedPhase || (command.phase === "settled" && input.phase !== "settled") || !["evaluating_confirmation", "settled"].includes(input.phase) || command.targets.length !== ids.length || new Set(ids).size !== ids.length || command.targets.some((target) => !ids.includes(target.salesSessionParticipantId)) || command.fences.length !== retainedBefore.size || command.fences.some((fence) => fence.commandId !== input.commandId || fence.revision !== input.expectedRevision || !retainedBefore.has(fence.salesSessionParticipantId)) || input.targetOutcomes.some((outcome) => !invitationOutcomes.includes(outcome.outcome) || (outcome.reason !== null && !safeReasons.includes(outcome.reason as never)) || !legalTransition(command.targets.find((target) => target.salesSessionParticipantId === outcome.participantId)!, outcome))) throw new Error("invitation command is no longer current");
     invitationResult({ commandId: input.commandId, outcomes: input.targetOutcomes, correlationId: input.correlationId });

@@ -176,14 +176,16 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   if (!existingCommand && (scopedSession.operationalStatus !== "active" || scopedSession.cloudShareSalesExperienceId.startsWith("pending:"))) return { status: 409, body: { error: "Participants are available only after this Sales Session is provisioned." } };
   const sessionResult = { session: scopedSession };
   if (existingCommand && ["admitted", "dispatching"].includes(existingCommand.command.phase) && deps.invitationLedger.recoverExpiredInvitationCommand) {
-    await deps.invitationLedger.recoverExpiredInvitationCommand({
-      customerId: request.customerId,
-      sessionId: sessionResult.session.id,
-      commandId: parsed.data.commandId,
-      expectedRevision: existingCommand.command.revision,
-      at: (deps.now ?? (() => new Date()))(),
-    });
-    existingCommand = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
+    try {
+      await deps.invitationLedger.recoverExpiredInvitationCommand({
+        customerId: request.customerId,
+        sessionId: sessionResult.session.id,
+        commandId: parsed.data.commandId,
+        expectedRevision: existingCommand.command.revision,
+        at: (deps.now ?? (() => new Date()))(),
+      });
+      existingCommand = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
+    } catch { /* Exact-scope admission below still runs; phase precedence keeps this replay in progress. */ }
   }
   let admission: Awaited<ReturnType<SalesParticipantInvitationLedger["admitBatch"]>>;
   let selected: Array<Awaited<ReturnType<typeof deps.participants.list>>[number] | undefined> = [];
@@ -282,6 +284,10 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
       }
     }
     const currentResult = first.outcome;
+    if (first.command.phase !== "settled") {
+      const inProgress = invitationResult({ commandId: parsed.data.commandId, correlationId: first.command.correlationId, outcomes: parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: null, reason: null })) });
+      return { status: 202, body: { code: "command_replayed", replayed: true, phase: first.command.phase, ...inProgress } };
+    }
     const status = first.command.httpStatus ?? (currentResult.outcome === "in_progress" || currentResult.outcome === "confirmation_required" ? 202
       : currentResult.outcome === "blocked" ? 409
         : currentResult.outcome === "failed_retryable" ? 502

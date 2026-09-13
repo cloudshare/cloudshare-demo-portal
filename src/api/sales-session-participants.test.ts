@@ -860,6 +860,14 @@ describe("Sales Session participant invitation", () => {
     expect(ledger.markBatchDispatching).not.toHaveBeenCalled();
   });
 
+  it("gives nonterminal phase precedence when restart recovery throws", async () => {
+    const participant = storedParticipant(); const commandId = randomUUID();
+    const current = { command: { customerId: "customer-1", commandId, phase: "dispatching" as const, revision: 2, correlationId: "corr", httpStatus: 409, resultCode: "invitation_no_replay" }, targets: [{ participantId: participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: participant.updatedAt.toISOString() }], outcome: invitationResult({ commandId, correlationId: "corr", outcomes: [{ participantId: participant.id, outcome: "no_replay", reason: "ambiguous_after_dispatch" }] }) };
+    const ledger: SalesParticipantInvitationLedger = { admitBatch: vi.fn().mockResolvedValue({ kind: "same_command", commandId, command: current.command }), markBatchDispatching: vi.fn(), expireAdmitted: vi.fn(), recoverExpiredInvitationCommand: vi.fn().mockRejectedValue(new Error("database unavailable")), failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(current), readCurrent: vi.fn() };
+    const result = await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
+    expect(result).toMatchObject({ status: 202, body: { code: "command_replayed", phase: "dispatching", outcome: "in_progress", targets: [{ outcome: null }] } });
+  });
+
   it("recovers an expired dispatch marker as retained no-replay without redispatching", async () => {
     const participant = storedParticipant(); const commandId = randomUUID(); const inviteParticipants = vi.fn();
     const dispatching = { command: { customerId: "customer-1", commandId, phase: "dispatching" as const, revision: 2, correlationId: null }, targets: [{ participantId: participant.id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: participant.updatedAt.toISOString() }], outcome: invitationResult({ commandId, correlationId: null, outcomes: [{ participantId: participant.id, outcome: null, reason: null }] }) };
