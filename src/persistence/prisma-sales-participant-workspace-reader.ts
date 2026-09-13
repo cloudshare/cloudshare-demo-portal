@@ -7,7 +7,7 @@ import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
 import { invitationOutcomes, type InvitationOutcome, type InvitationSafeReason } from "@/domain/sales-participant-invitation-ledger";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "@/domain/sales-participant-launch-operation";
 
-const invitationSafeReasons = new Set<InvitationSafeReason>(["provider_rejected", "ambiguous_after_dispatch", "confirmation_required", "failed_retryable", "stale_revision", "blocked_by_fence"]);
+const invitationSafeReasons = new Set<InvitationSafeReason>(["not_dispatched", "provider_rejected", "ambiguous_after_dispatch", "confirmation_required", "failed_retryable", "stale_revision", "blocked_by_fence"]);
 const launchOperations = new Set<SalesParticipantLaunchOperationKind>(["generate", "revoke"]);
 const launchOutcomes = new Set<SalesParticipantLaunchOutcome>(["success", "failure"]);
 
