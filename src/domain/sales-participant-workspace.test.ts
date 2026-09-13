@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { eligibleParticipantActions, participantActionReason, primaryParticipantAction, pruneParticipantSelection, reduceParticipantSelection, validateParticipantPage, type SalesParticipantWorkspaceRow } from "./sales-participant-workspace";
+import { eligibleParticipantActions, participantActionReason, primaryParticipantAction, projectParticipantActionAvailability, pruneParticipantSelection, reduceParticipantSelection, validateParticipantPage, type SalesParticipantWorkspaceRow } from "./sales-participant-workspace";
 
-const row: SalesParticipantWorkspaceRow = { id: "p1", participantRevision: "r1", name: "Ada", email: "ada@example.test", invitationStatus: "notSent", participationStatus: "pending", sessionEndsAt: "2026-09-12T12:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environment: { value: null, source: "not_observed" }, environmentAttention: null };
+const row: SalesParticipantWorkspaceRow = { id: "p1", participantRevision: "r1", name: "Ada", email: "ada@example.test", invitationStatus: "notSent", participationStatus: "pending", sessionEndsAt: "2026-09-12T12:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environment: { dimension: "cloudshare_environment", value: null, source: "not_observed" }, environmentAttention: null, actionAvailability: {} as SalesParticipantWorkspaceRow["actionAvailability"], primaryAction: null };
 
 describe("sales participant workspace contract", () => {
   it("keeps invitation and launch eligibility independent", () => {
     expect(eligibleParticipantActions(row, new Date("2026-09-12T11:00:00Z"))).toMatchObject({ invite: true, generate_launch: true, revoke_launch: false });
     expect(eligibleParticipantActions({ ...row, invitationStatus: "sent", activeLaunchCapability: true }, new Date("2026-09-12T13:00:00Z"))).toMatchObject({ resend: false, generate_launch: false, revoke_launch: true });
+  });
+  it("projects controlled availability and available_to_attempt into the server DTO", () => {
+    const { actionAvailability, primaryAction } = projectParticipantActionAvailability(row, new Date("2026-09-12T11:00:00Z"));
+    expect(actionAvailability.invite).toEqual({ available: true, reason: "available_to_attempt" });
+    expect(actionAvailability.resend).toEqual({ available: false, reason: "invitation_not_sent" });
+    expect(primaryAction).toBe("invite");
   });
   it("supports deterministic row navigation and additive selection", () => {
     let state: import("./sales-participant-workspace").ParticipantSelectionState = { activeId: null, selectedIds: [], rangeAnchorId: null };

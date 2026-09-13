@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesParticipantWorkspace } from "./sales-participant-workspace";
 
-const participant = { id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", participantRevision: "2026-07-24T08:00:00.000Z", environment: { value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" } } as const;
+const participant = { id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", participantRevision: "2026-07-24T08:00:00.000Z", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" }, primaryAction: "generate_launch", actionAvailability: { invite: { available: true, reason: "available_to_attempt" }, resend: { available: true, reason: "available_to_attempt" }, generate_launch: { available: true, reason: "available_to_attempt" }, revoke_launch: { available: true, reason: "available_to_attempt" }, open_diagnostics: { available: false, reason: "unavailable_for_state" } } } as const;
 const page = { participants: [participant], total: 1, offset: 0, limit: 25, hasMore: false };
 
 describe("SalesParticipantWorkspace", () => {
@@ -259,7 +259,7 @@ describe("SalesParticipantWorkspace", () => {
     const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", activeLaunchCapability: true, providerCorrelation: true, nativeInvitationsEnabled: true, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null };
     const request = vi.fn(async (_url: string, init?: RequestInit) => {
       if (init?.method === "DELETE") { revoked = true; return new Response(JSON.stringify({ correlationId: "corr-revoke" }), { status: 200 }); }
-      return new Response(JSON.stringify({ ...page, participants: [{ ...row, activeLaunchCapability: !revoked }] }), { status: 200 });
+      return new Response(JSON.stringify({ ...page, participants: [{ ...row, activeLaunchCapability: !revoked, actionAvailability: { ...row.actionAvailability, revoke_launch: revoked ? { available: false, reason: "no_active_launch" } : { available: true, reason: "available_to_attempt" } } }] }), { status: 200 });
     });
     const user = userEvent.setup();
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);

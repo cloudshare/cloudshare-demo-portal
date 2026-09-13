@@ -6,10 +6,14 @@ import type {
 import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
 import { invitationOutcomes, type InvitationOutcome, type InvitationSafeReason } from "@/domain/sales-participant-invitation-ledger";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "@/domain/sales-participant-launch-operation";
+import { projectParticipantActionAvailability } from "@/domain/sales-participant-workspace";
+import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
 
 const invitationSafeReasons = new Set<InvitationSafeReason>(["not_dispatched", "provider_rejected", "ambiguous_after_dispatch", "confirmation_required", "failed_retryable", "stale_revision", "blocked_by_fence"]);
 const launchOperations = new Set<SalesParticipantLaunchOperationKind>(["generate", "revoke"]);
 const launchOutcomes = new Set<SalesParticipantLaunchOutcome>(["success", "failure"]);
+const participationStatuses = new Set(["pending", "inProgress", "concluded"] as const);
+const v3EnvironmentStatusCodes = new Set([0, 2, 3, 4, 5, 7, 8, 9]);
 
 function invitationOutcome(value: string | null | undefined): InvitationOutcome | null {
   return invitationOutcomes.includes(value as InvitationOutcome) ? value as InvitationOutcome : null;
@@ -68,8 +72,10 @@ export function createPrismaSalesParticipantWorkspaceReader(
             participationStatus: true,
             cloudShareParticipantId: true,
             environmentStatus: true,
+            environmentStatusCode: true,
             environmentObservedAt: true,
             environmentAttentionReason: true,
+            environmentAttentionSource: true,
             contact: {
               select: { firstName: true, lastName: true, email: true },
             },
@@ -198,14 +204,19 @@ export function createPrismaSalesParticipantWorkspaceReader(
           const latest = latestByParticipant.get(row.id);
           const launch = launchByParticipant.get(row.id);
           const latestOutcome = invitationOutcome(latest?.outcome);
-          return {
+          if (!participationStatuses.has(row.participationStatus as "pending" | "inProgress" | "concluded")) throw new Error("Invalid persisted Participant participation status.");
+          if (row.environmentStatus !== null && !isProjectableSalesParticipantRosterEnvironment(row.environmentStatus)) throw new Error("Invalid persisted Participant Environment status.");
+          if (row.environmentStatusCode !== null && row.environmentStatusCode !== undefined && !v3EnvironmentStatusCodes.has(row.environmentStatusCode)) throw new Error("Invalid persisted Participant Environment status code.");
+          const environment = isProjectableSalesParticipantRosterEnvironment(row.environmentStatus) && row.environmentObservedAt
+            ? projectSalesParticipantRosterEnvironment(row.environmentStatus, row.environmentObservedAt)
+            : projectSalesParticipantEnvironment(row.environmentStatusCode, row.environmentObservedAt ?? undefined);
+          const projected: Omit<import("@/domain/sales-participant-workspace").SalesParticipantWorkspaceRow, "actionAvailability" | "primaryAction"> = {
             id: row.id,
             participantRevision: row.updatedAt.toISOString(),
             name: `${row.contact.firstName} ${row.contact.lastName}`.trim(),
             email: row.contact.email,
-            invitationStatus:
-              row.invitationStatus === "sent" ? "sent" : "notSent",
-            participationStatus: row.participationStatus,
+            invitationStatus: row.invitationStatus === "sent" ? "sent" : "notSent",
+            participationStatus: row.participationStatus as "pending" | "inProgress" | "concluded",
             sessionEndsAt: sessionEnd.toISOString(),
             nativeInvitationsEnabled:
               session.sendInvitations === "salesProsAndParticipants",
@@ -221,20 +232,15 @@ export function createPrismaSalesParticipantWorkspaceReader(
             latestInvitationCorrelationId:
               latest?.command.correlationId ?? null,
             launchOperation: safeLaunchOperation(launch),
-            environment: {
-              value: row.environmentStatus,
-              source: row.environmentStatus ? "cloudshare_v4_sales_participant_roster" : "not_observed",
-              ...(row.environmentObservedAt
-                ? { observedAt: row.environmentObservedAt.toISOString() }
-                : {}),
-            },
+            environment,
             environmentAttention: row.environmentAttentionReason
               ? {
                   reason: "Participant Environment requires support review.",
-                  source: "Certalis correlation",
+                  source: row.environmentAttentionSource ?? "Certalis correlation",
                 }
               : null,
           };
+          return { ...projected, ...projectParticipantActionAvailability(projected, input.now) };
         }),
       };
       return page;

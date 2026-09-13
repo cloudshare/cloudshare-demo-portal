@@ -1,7 +1,10 @@
 import type { InvitationOutcome, InvitationSafeReason } from "./sales-participant-invitation-ledger";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "./sales-participant-launch-operation";
+import type { SalesParticipantEnvironmentObservation } from "./sales-participant-environment";
 
 export type SalesParticipantAction = "invite" | "resend" | "generate_launch" | "revoke_launch" | "open_diagnostics";
+export type SalesParticipantActionReason = "participant_concluded" | "session_ended" | "invitation_already_sent" | "invitation_not_sent" | "invitation_command_pending" | "participant_correlation_unavailable" | "native_invitations_unavailable" | "no_active_launch" | "available_to_attempt" | "unavailable_for_state";
+export type SalesParticipantActionAvailability = Readonly<Record<SalesParticipantAction, { readonly available: boolean; readonly reason: SalesParticipantActionReason }>>;
 
 export interface SalesParticipantWorkspaceRow {
   readonly id: string;
@@ -9,7 +12,7 @@ export interface SalesParticipantWorkspaceRow {
   readonly name: string;
   readonly email: string;
   readonly invitationStatus: "sent" | "notSent";
-  readonly participationStatus: string;
+  readonly participationStatus: "pending" | "inProgress" | "concluded";
   readonly sessionEndsAt: string;
   readonly nativeInvitationsEnabled: boolean;
   readonly providerCorrelation: boolean;
@@ -25,8 +28,10 @@ export interface SalesParticipantWorkspaceRow {
   readonly latestInvitationReason?: InvitationSafeReason | null;
   readonly latestInvitationCorrelationId?: string | null;
   readonly launchOperation: { readonly operation: SalesParticipantLaunchOperationKind; readonly outcome: SalesParticipantLaunchOutcome; readonly reason: "persistence_failure" | null; readonly correlationId: string | null } | null;
-  readonly environment: { readonly value: string | null; readonly source: string; readonly observedAt?: string };
+  readonly environment: SalesParticipantEnvironmentObservation;
   readonly environmentAttention: { readonly reason: string; readonly source: string } | null;
+  readonly actionAvailability: SalesParticipantActionAvailability;
+  readonly primaryAction: SalesParticipantAction | null;
 }
 
 export interface SalesParticipantWorkspacePage {
@@ -46,7 +51,7 @@ export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, no
     resend: base && row.invitationStatus === "sent",
     generate_launch: open && row.participationStatus !== "concluded",
     revoke_launch: row.activeLaunchCapability,
-    open_diagnostics: Boolean(row.environmentAttention || row.invitationReason || row.currentCommandId) || !base || row.participationStatus === "concluded",
+    open_diagnostics: Boolean(row.environmentAttention || row.invitationReason || row.currentCommandId) || !base,
   };
 }
 
@@ -64,6 +69,25 @@ export function participantActionReason(row: SalesParticipantWorkspaceRow, actio
   if ((action === "invite" || action === "resend") && !row.providerCorrelation) return "Participant correlation is unavailable.";
   if (!row.nativeInvitationsEnabled && (action === "invite" || action === "resend")) return "Native invitations are unavailable.";
   return "Action is unavailable for the current Participant state.";
+}
+
+export function projectParticipantActionAvailability(row: Omit<SalesParticipantWorkspaceRow, "actionAvailability" | "primaryAction">, now: Date): Pick<SalesParticipantWorkspaceRow, "actionAvailability" | "primaryAction"> {
+  const available = eligibleParticipantActions(row as SalesParticipantWorkspaceRow, now);
+  const reason = (action: SalesParticipantAction): SalesParticipantActionReason => {
+    if (available[action]) return "available_to_attempt";
+    if (row.participationStatus === "concluded") return "participant_concluded";
+    if (new Date(row.sessionEndsAt).getTime() <= now.getTime()) return "session_ended";
+    if (action === "invite" && row.invitationStatus === "sent") return "invitation_already_sent";
+    if (action === "resend" && row.invitationStatus === "notSent") return "invitation_not_sent";
+    if ((action === "invite" || action === "resend") && row.currentCommandId) return "invitation_command_pending";
+    if ((action === "invite" || action === "resend") && !row.providerCorrelation) return "participant_correlation_unavailable";
+    if ((action === "invite" || action === "resend") && !row.nativeInvitationsEnabled) return "native_invitations_unavailable";
+    if (action === "revoke_launch" && !row.activeLaunchCapability) return "no_active_launch";
+    return "unavailable_for_state";
+  };
+  const actionAvailability = Object.fromEntries((Object.keys(available) as SalesParticipantAction[]).map((action) => [action, { available: available[action], reason: reason(action) }])) as SalesParticipantActionAvailability;
+  const primaryAction = (["invite", "generate_launch", "resend", "open_diagnostics"] as const).find((action) => available[action]) ?? null;
+  return { actionAvailability, primaryAction };
 }
 
 export type ParticipantSelectionState = { readonly activeId: string | null; readonly selectedIds: readonly string[]; readonly rangeAnchorId: string | null };
