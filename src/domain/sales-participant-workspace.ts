@@ -1,4 +1,4 @@
-import type { InvitationOutcome, InvitationSafeReason } from "./sales-participant-invitation-ledger";
+import type { InvitationOutcome, InvitationSafeReason, InvitationTarget } from "./sales-participant-invitation-ledger";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "./sales-participant-launch-operation";
 import type { SalesParticipantEnvironmentObservation } from "./sales-participant-environment";
 
@@ -42,6 +42,17 @@ export interface SalesParticipantWorkspacePage {
   readonly hasMore: boolean;
 }
 export interface SalesParticipantWorkspaceReader { readPage(input: { customerId: string; sessionId: string; query: string; offset: number; limit: number; now: Date }): Promise<SalesParticipantWorkspacePage | null>; }
+
+/** Application-facing participant workspace boundary. Persistence and ledger
+ * lifecycle details stay behind this deliberately small caller contract. */
+export interface SalesParticipantWorkspace extends SalesParticipantWorkspaceReader {
+  submitInvitation(input: {
+    readonly customerId: string;
+    readonly sessionId: string;
+    readonly commandId: string;
+    readonly targets: readonly InvitationTarget[];
+  }): Promise<{ readonly status: number; readonly body: Record<string, unknown> }>;
+}
 
 export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, now: Date): Readonly<Record<SalesParticipantAction, boolean>> {
   const open = new Date(row.sessionEndsAt).getTime() > now.getTime();
