@@ -291,7 +291,7 @@ describe("CloudShare Sales Delivery", () => {
       .mockResolvedValueOnce({ data: { count: 2, items: [second] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "1", limit: "100" } }, response: { status: 200, body: { count: 2, items: [second] } } });
     const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
 
-    await expect(delivery.listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ id: "participant-1" }), expect.objectContaining({ id: "participant-2" })] });
+    await expect(delivery.listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ id: "participant-1" }), expect.objectContaining({ id: "participant-2" })], exchanges: [{ request: { query: { offset: "0" } } }, { request: { query: { offset: "1" } } }] });
     expect(requestV4Detailed).toHaveBeenNthCalledWith(1, expect.objectContaining({ query: { offset: "0", limit: "100" } }));
     expect(requestV4Detailed).toHaveBeenNthCalledWith(2, expect.objectContaining({ query: { offset: "1", limit: "100" } }));
 

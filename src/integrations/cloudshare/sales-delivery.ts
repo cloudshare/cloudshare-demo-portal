@@ -11,8 +11,8 @@ export interface SalesDeliveryRequestEvidence extends CloudShareRequestDiagnosti
 export interface SalesDeliveryResponseEvidence extends CloudShareResponseDiagnostics {}
 export interface SalesDeliveryEvidence { readonly request: SalesDeliveryRequestEvidence; readonly response: SalesDeliveryResponseEvidence; readonly exchangeId?: string; }
 export type SalesDeliveryDispatchEvidence = SalesDeliveryEvidence & ({ readonly dispatchOutcome: "not_dispatched" | "provider_rejected" | "ambiguous_after_dispatch" } | { readonly dispatchOutcome: "acknowledged" });
-export type CompleteSalesParticipantRoster = { readonly participants: readonly SalesParticipant[]; readonly completeness: "complete"; readonly provenance: { readonly expectedCount: number; readonly returnedCount: number; readonly offsets: readonly number[] } } & SalesDeliveryEvidence;
-export type IncompleteSalesParticipantRoster = { readonly participants: readonly SalesParticipant[]; readonly completeness: "incomplete"; readonly provenance: { readonly expectedCount: number | null; readonly returnedCount: number; readonly offsets: readonly number[]; readonly reason: "count_missing" | "count_malformed" | "count_mismatch" | "pagination_incomplete" } } & SalesDeliveryEvidence;
+export type CompleteSalesParticipantRoster = { readonly participants: readonly SalesParticipant[]; readonly completeness: "complete"; readonly provenance: { readonly expectedCount: number; readonly returnedCount: number; readonly offsets: readonly number[] }; readonly exchanges?: readonly SalesDeliveryEvidence[] } & SalesDeliveryEvidence;
+export type IncompleteSalesParticipantRoster = { readonly participants: readonly SalesParticipant[]; readonly completeness: "incomplete"; readonly provenance: { readonly expectedCount: number | null; readonly returnedCount: number; readonly offsets: readonly number[]; readonly reason: "count_missing" | "count_malformed" | "count_mismatch" | "pagination_incomplete" }; readonly exchanges?: readonly SalesDeliveryEvidence[] } & SalesDeliveryEvidence;
 export type SalesParticipantRoster = CompleteSalesParticipantRoster | IncompleteSalesParticipantRoster;
 export interface CreateSalesDemoSessionInput {
   readonly name: string;
@@ -348,7 +348,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const first = await detailed<z.output<typeof participantsEnvelopeSchema>>({ method: "GET", path, query: { offset: "0", limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
       const firstPage = participantPage(first.data);
       if (firstPage.count === undefined) {
-        return { participants: firstPage.participants.map(mapSalesParticipant), completeness: "incomplete", provenance: { expectedCount: null, returnedCount: firstPage.participants.length, offsets: [0], reason: "count_missing" }, ...participantEvidence(first.evidence) };
+        return { participants: firstPage.participants.map(mapSalesParticipant), completeness: "incomplete", provenance: { expectedCount: null, returnedCount: firstPage.participants.length, offsets: [0], reason: "count_missing" }, exchanges: [first.evidence], ...participantEvidence(first.evidence) };
       }
       const expectedCount = firstPage.count;
       if (expectedCount > PARTICIPANT_MAX_ROWS) throwParticipantPageFailure(first.evidence, expectedCount, firstPage.participants.length, [0], "participant_page_limit_exceeded");
@@ -358,6 +358,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       if (hasDuplicateParticipantIds(rows)) throwParticipantPageFailure(first.evidence, expectedCount, rows.length, offsets, "participant_page_duplicate_id");
       const participantIds = new Set(rows.map((participant) => participant.id));
       let evidence = first.evidence;
+      const exchanges = [first.evidence];
       while (rows.length < expectedCount) {
         if (offsets.length >= PARTICIPANT_MAX_PAGES) throwParticipantPageFailure(evidence, expectedCount, rows.length, offsets, "participant_page_limit_exceeded");
         const offset = rows.length;
@@ -370,8 +371,9 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         normalizedPage.participants.forEach((participant) => participantIds.add(participant.id));
         rows.push(...normalizedPage.participants);
         evidence = page.evidence;
+        exchanges.push(page.evidence);
       }
-      return { participants: rows.map(mapSalesParticipant), completeness: "complete", provenance: { expectedCount, returnedCount: rows.length, offsets }, ...participantEvidence(evidence) };
+      return { participants: rows.map(mapSalesParticipant), completeness: "complete", provenance: { expectedCount, returnedCount: rows.length, offsets }, exchanges, ...participantEvidence(evidence) };
     },
     async inviteParticipants(salesExperienceId, participantIds) {
       try {
