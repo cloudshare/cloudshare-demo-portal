@@ -75,5 +75,15 @@ describe("Prisma participant workspace reader", () => {
     const result = await reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() });
     expect(result?.participants[0]).toMatchObject({ latestInvitationOutcome: "failed_retryable", latestInvitationReason: "not_dispatched" });
   });
+  it.each([
+    { invitationStatus: "invented" },
+    { participationStatus: "joining" },
+    { environmentStatus: "Secret raw provider state" },
+    { environmentStatusCode: 99 },
+    { environmentAttentionReason: "raw provider detail", environmentAttentionSource: "unsafe source" },
+  ])("fails closed for malformed persisted Participant state %#", async (malformed) => {
+    const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-a", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([{ ...row(0), ...malformed }]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationTarget: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([]) } } as never);
+    await expect(reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() })).rejects.toThrow("Invalid persisted Participant");
+  });
   it("requires unarchived Opportunity and Account ancestry", async () => { const findFirst = vi.fn().mockResolvedValue(null); const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst } } as never); await reader.readPage({ customerId: "c1", sessionId: "s1", query: "", offset: 0, limit: 25, now: new Date() }); expect(findFirst.mock.calls[0][0].where).toMatchObject({ opportunity: { archivedAt: null, account: { archivedAt: null } } }); });
 });

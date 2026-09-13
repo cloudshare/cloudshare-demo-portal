@@ -14,6 +14,7 @@ const launchOperations = new Set<SalesParticipantLaunchOperationKind>(["generate
 const launchOutcomes = new Set<SalesParticipantLaunchOutcome>(["success", "failure"]);
 const participationStatuses = new Set(["pending", "inProgress", "concluded"] as const);
 const v3EnvironmentStatusCodes = new Set([0, 2, 3, 4, 5, 7, 8, 9]);
+const environmentAttentionReasons = new Set(["environment_ambiguous_for_project", "environment_not_found_for_project"]);
 
 function invitationOutcome(value: string | null | undefined): InvitationOutcome | null {
   return invitationOutcomes.includes(value as InvitationOutcome) ? value as InvitationOutcome : null;
@@ -205,8 +206,10 @@ export function createPrismaSalesParticipantWorkspaceReader(
           const launch = launchByParticipant.get(row.id);
           const latestOutcome = invitationOutcome(latest?.outcome);
           if (!participationStatuses.has(row.participationStatus as "pending" | "inProgress" | "concluded")) throw new Error("Invalid persisted Participant participation status.");
+          if (row.invitationStatus !== "sent" && row.invitationStatus !== "notSent") throw new Error("Invalid persisted Participant invitation status.");
           if (row.environmentStatus !== null && !isProjectableSalesParticipantRosterEnvironment(row.environmentStatus)) throw new Error("Invalid persisted Participant Environment status.");
           if (row.environmentStatusCode !== null && row.environmentStatusCode !== undefined && !v3EnvironmentStatusCodes.has(row.environmentStatusCode)) throw new Error("Invalid persisted Participant Environment status code.");
+          if ((row.environmentAttentionReason !== null && !environmentAttentionReasons.has(row.environmentAttentionReason)) || (row.environmentAttentionReason === null) !== (row.environmentAttentionSource === null || row.environmentAttentionSource === undefined) || (row.environmentAttentionSource !== null && row.environmentAttentionSource !== undefined && row.environmentAttentionSource !== "cloudshare_v3_owner_email_item_project")) throw new Error("Invalid persisted Participant Environment attention state.");
           const environment = isProjectableSalesParticipantRosterEnvironment(row.environmentStatus) && row.environmentObservedAt
             ? projectSalesParticipantRosterEnvironment(row.environmentStatus, row.environmentObservedAt)
             : projectSalesParticipantEnvironment(row.environmentStatusCode, row.environmentObservedAt ?? undefined);

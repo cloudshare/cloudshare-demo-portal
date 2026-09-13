@@ -511,6 +511,18 @@ describe("Sales Session participant invitation", () => {
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ response: expect.objectContaining({ status: 200, body: expect.objectContaining({ items: [remote] }) }), details: expect.objectContaining({ failureMode: "participant_mapping_persistence", error: expect.stringContaining("database unavailable") }) }));
   });
 
+  it("never invokes the provider POST when the durable dispatch transition fails", async () => {
+    const participant = storedParticipant(); const commandId = randomUUID(); const inviteParticipants = vi.fn();
+    const ledger: SalesParticipantInvitationLedger = {
+      admitBatch: vi.fn().mockResolvedValue({ kind: "admitted", commandId, admissionToken: "required-token" }),
+      markBatchDispatching: vi.fn().mockRejectedValue(new Error("dispatch fence lost")),
+      markBatchEvaluatingConfirmation: vi.fn(), expireAdmitted: vi.fn(), recoverExpiredInvitationCommand: vi.fn(), failAdmitted: vi.fn(), finishBatch: vi.fn(), finishBatchWithParticipantProjections: vi.fn(), readCommand: vi.fn().mockResolvedValue(null), readCurrent: vi.fn(),
+    };
+    await handleInviteSalesSessionParticipants({ invitationLedger: ledger, sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([participant]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1", participant.id, participant.opportunityContactId)])), inviteParticipants }) } }, { customerId: "customer-1", sessionId: session.id, actor, body: explicitInviteBody(participant, "invite", commandId) });
+    expect(ledger.markBatchDispatching).toHaveBeenCalledWith("customer-1", commandId, "required-token", 1, fixedNow());
+    expect(inviteParticipants).not.toHaveBeenCalled();
+  });
+
   it("maps selected portal IDs to customer-scoped provider IDs before native invitation", async () => {
     const inviteParticipants = vi.fn().mockResolvedValue({ request: {}, response: { status: 200 } });
     const result = await handleInviteSalesSessionParticipants({

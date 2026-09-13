@@ -55,7 +55,7 @@ export function createPrismaSalesParticipantInvitationLedger(prisma: PrismaClien
   };
   return {
     async admitBatch(input): Promise<Admission> {
-      if (!input.targets.length || new Set(input.targets.map((target) => target.participantId)).size !== input.targets.length) return { kind: "blocked", commandId: input.commandId };
+      if (!input.targets.length || new Set(input.targets.map((target) => target.participantId)).size !== input.targets.length) return { kind: "blocked", commandId: input.commandId, blockReason: "precondition_failed" };
       const scopeHash = invitationScopeHash(input);
       const token = randomBytes(18).toString("hex");
       const lease = new Date(input.at.getTime() + LEASE_MS);

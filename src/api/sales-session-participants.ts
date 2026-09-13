@@ -210,7 +210,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
   }
     admission = await deps.invitationLedger.admitBatch({ customerId: request.customerId, sessionId: sessionResult.session.id, targets: parsed.data.targets, commandId: parsed.data.commandId, at: (deps.now ?? (() => new Date()))() });
   }
-  let admittedCommand: { commandId: string; admissionToken?: string; revision: number } | undefined;
+  let admittedCommand: { commandId: string; admissionToken: string; revision: number } | undefined;
   if (admission.kind === "same_command") {
     const commandState = await deps.invitationLedger.readCommand(request.customerId, parsed.data.commandId);
     if (!commandState) return { status: 409, body: { code: "invitation_blocked", commandId: parsed.data.commandId } };
@@ -273,9 +273,12 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
             await evidence(deps, request, sessionResult.session, first.command.correlationId ?? randomUUID(), "sales.demo_session.participants.invitation_reconciled", "success", "Retained invitation targets reconciled from the authoritative CloudShare roster.", roster, { commandId: parsed.data.commandId, resolvedParticipantIds: [...resolvedRetainedIds], httpExchanges: roster.exchanges ?? [roster] });
             return { status: unresolved ? 202 : 200, body: { code: unresolved ? "invitation_confirmation_required" : "command_reconciled", phase: reconciled.command.phase, ...reconciled.outcome } };
           }
+          await evidence(deps, request, sessionResult.session, first.command.correlationId ?? randomUUID(), "sales.demo_session.participants.invitation_reconciled", "failure", "Retained invitation targets were not proven by the authoritative CloudShare roster; fences remain fail-closed.", roster, { commandId: parsed.data.commandId, failureMode: roster.completeness === "incomplete" ? "participant_roster_incomplete" : "invitation_reconciliation_unproven", httpExchanges: roster.exchanges ?? [roster] });
         } catch (error) {
           await evidence(deps, request, sessionResult.session, first.command.correlationId ?? randomUUID(), "sales.demo_session.participants.invitation_reconciled", "failure", "Retained invitation reconciliation could not be proven; fences remain fail-closed.", reconciliationRoster, { commandId: parsed.data.commandId, failureMode: "invitation_reconciliation_unproven", httpExchanges: reconciliationRoster?.exchanges ?? (reconciliationRoster ? [reconciliationRoster] : []), error: error instanceof Error ? error.message : String(error) });
         }
+      } else {
+        await evidence(deps, request, sessionResult.session, first.command.correlationId ?? randomUUID(), "sales.demo_session.participants.invitation_reconciled", "failure", "Retained invitation reconciliation could not start; fences remain fail-closed.", undefined, { commandId: parsed.data.commandId, failureMode: "invitation_reconciliation_unavailable" });
       }
     }
     const currentResult = first.outcome;
@@ -349,10 +352,8 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
       await deps.invitationLedger.failAdmitted(request.customerId, admittedCommand.commandId, admittedCommand.revision, (deps.now ?? (() => new Date()))(), { httpStatus: 500, resultCode: "invitation_ledger_unavailable", reason: "failed_retryable" });
       return { status: 500, body: { code: "invitation_ledger_unavailable", error: "The durable invitation confirmation boundary is unavailable." } };
     }
-    if (admittedCommand.admissionToken) {
-      await deps.invitationLedger.markBatchDispatching(request.customerId, admittedCommand.commandId, admittedCommand.admissionToken, admittedCommand.revision, (deps.now ?? (() => new Date()))());
-      dispatchMarked = true;
-    }
+    await deps.invitationLedger.markBatchDispatching(request.customerId, admittedCommand.commandId, admittedCommand.admissionToken, admittedCommand.revision, (deps.now ?? (() => new Date()))());
+    dispatchMarked = true;
     const requested = await prepared.delivery.inviteParticipants!(prepared.session.cloudShareSalesExperienceId, selected.map((participant) => participant!.cloudShareParticipantId));
     acknowledgedInvite = requested;
     completedExchanges.push(requested);
@@ -384,7 +385,7 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     // Cross the durable acknowledgement boundary before any confirmation read.
     // A crash or replay from this point is read-only recovery, never a second POST.
     const confirmationOutcomes = parsed.data.targets.map((target) => ({ participantId: target.participantId, outcome: "confirmation_required" as const, reason: "confirmation_required" as const }));
-    await deps.invitationLedger.markBatchEvaluatingConfirmation({ customerId: request.customerId, commandId: admittedCommand.commandId, admissionToken: admittedCommand.admissionToken!, expectedRevision: 2, correlationId, targetOutcomes: confirmationOutcomes, at: (deps.now ?? (() => new Date()))() });
+    await deps.invitationLedger.markBatchEvaluatingConfirmation({ customerId: request.customerId, commandId: admittedCommand.commandId, admissionToken: admittedCommand.admissionToken, expectedRevision: 2, correlationId, targetOutcomes: confirmationOutcomes, at: (deps.now ?? (() => new Date()))() });
     acknowledgementMarked = true;
     // The documented endpoint acknowledges with an empty 200 response. Treat a
     // subsequent roster read as the only authority for the participant's
@@ -393,7 +394,11 @@ export async function handleInviteSalesSessionParticipants(deps: InviteDeps, req
     completedExchanges.push(...(afterRequest.exchanges ?? [afterRequest]));
     if (afterRequest.completeness === "incomplete") {
       await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare accepted the invitation request, but its participant roster could not be proven complete.", afterRequest, { failureMode: "participant_invitation_confirmation", participantIds, httpExchanges: completedExchanges });
-      const result = invitationResult({ commandId: admittedCommand.commandId, correlationId, outcomes: confirmationOutcomes });
+      const incompleteOutcomes: InvitationTargetOutcome[] = parsed.data.targets.map((target) => target.intent === "resend"
+        ? { participantId: target.participantId, outcome: "accepted_unconfirmed", reason: null }
+        : { participantId: target.participantId, outcome: "confirmation_required", reason: "confirmation_required" });
+      await deps.invitationLedger.finishBatch({ customerId: request.customerId, commandId: admittedCommand.commandId, expectedRevision: 3, expectedPhase: "evaluating_confirmation", phase: "settled", correlationId, httpStatus: 202, resultCode: "participant_roster_incomplete", targetOutcomes: incompleteOutcomes });
+      const result = invitationResult({ commandId: admittedCommand.commandId, correlationId, outcomes: incompleteOutcomes });
       return { status: 202, body: { code: "participant_roster_incomplete", error: "CloudShare accepted the invitation request, but its participant roster could not be proven complete. Do not retry until support diagnostics are reviewed.", ...result } };
     }
     const afterByProviderId = new Map(afterRequest.participants.map((participant) => [participant.id, participant]));
