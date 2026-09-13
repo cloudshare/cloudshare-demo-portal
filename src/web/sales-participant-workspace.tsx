@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./sales-session-workspace.module.css";
 import { primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import type { SalesParticipantWorkspaceRow } from "@/domain/sales-participant-workspace";
+import type { InvitationOutcome, InvitationSafeReason } from "@/domain/sales-participant-invitation-ledger";
+import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "@/domain/sales-participant-launch-operation";
 import {
   participantActionReason,
   primaryParticipantAction,
@@ -178,7 +180,7 @@ export function SalesParticipantWorkspace(props: {
         setGeneratedLaunch(copiedLaunch ? null : { sessionId, participantId: participant.id, url: launch.toString() });
       }
       const confirmationPending = response.status === 202 || code === "confirmation_required" || outcome === "confirmation_required" || outcome === "in_progress";
-      const message = confirmationPending ? `Confirmation pending; the replay fence is retained.${correlationId ? ` Correlation ${correlationId}.` : ""}` : outcome === "completed_with_unconfirmed" || outcome === "accepted_unconfirmed" ? `CloudShare acknowledged the invitation; delivery is unconfirmed. Replay is allowed and the fence is released.${correlationId ? ` Correlation ${correlationId}.` : ""}` : outcome === "failed_retryable" ? "Action failed temporarily; retry is available." : launchUrl ? copiedLaunch ? "Launch link generated and copied." : "Launch link generated. Copy it from the local workspace when clipboard access is available." : correlationId ? `Completed. Correlation ${correlationId}.` : "Completed.";
+      const message = confirmationPending ? `Confirmation pending; the replay fence is retained.${correlationId ? ` Correlation ${correlationId}.` : ""}` : outcome === "completed_with_unconfirmed" || outcome === "accepted_unconfirmed" ? `CloudShare acknowledged the invitation; delivery remains unconfirmed. The same command will not run again. The fence is released; an administrator may start a new Resend.${correlationId ? ` Correlation ${correlationId}.` : ""}` : outcome === "failed_retryable" ? "Action failed temporarily; retry is available." : launchUrl ? copiedLaunch ? "Launch link generated and copied." : "Launch link generated. Copy it from the local workspace when clipboard access is available." : correlationId ? `Completed. Correlation ${correlationId}.` : "Completed.";
       setFeedback((current) => ({ ...current, [participant.id]: message }));
     } catch (cause) {
       setFeedback((current) => ({ ...current, [participant.id]: cause instanceof Error ? cause.message : "Action failed; retry or open Support." }));
@@ -247,15 +249,43 @@ function durableFeedback(participant: SalesParticipantWorkspaceRow): string | nu
   const invitationOutcome = participant.invitationOutcome ?? participant.latestInvitationOutcome;
   const invitationReason = participant.invitationReason ?? participant.latestInvitationReason;
   const invitationCorrelation = participant.invitationCorrelationId ?? participant.latestInvitationCorrelationId;
-  const acknowledgedUnconfirmed = invitationOutcome === "accepted_unconfirmed";
-  const invitationLabel = acknowledgedUnconfirmed
-    ? "acknowledged by CloudShare; delivery unconfirmed; fence released; a new explicitly initiated Resend may be started"
-    : invitationOutcome;
-  const safeReason = acknowledgedUnconfirmed ? null : invitationReason;
-  const invitation = invitationLabel ? `Invitation action: ${invitationLabel}${safeReason ? ` (${safeReason})` : ""}${invitationCorrelation ? `. Correlation ${invitationCorrelation}.` : "."}` : null;
-  const launch = participant.launchOperation ? `Launch ${participant.launchOperation.operation}: ${participant.launchOperation.outcome}${participant.launchOperation.reason ? ` (${participant.launchOperation.reason})` : ""}${participant.launchOperation.correlationId ? `. Correlation ${participant.launchOperation.correlationId}.` : "."}` : null;
+  const invitation = invitationOutcome
+    ? `${invitationOutcomeCopy[invitationOutcome]}${invitationReason ? ` ${invitationReasonCopy[invitationReason]}` : ""}${invitationCorrelation ? ` Correlation ${invitationCorrelation}.` : ""}`
+    : null;
+  const launch = participant.launchOperation
+    ? `${launchOperationCopy[participant.launchOperation.operation]} ${launchOutcomeCopy[participant.launchOperation.outcome]}${participant.launchOperation.reason ? ` ${launchReasonCopy[participant.launchOperation.reason]}` : ""}${participant.launchOperation.correlationId ? ` Correlation ${participant.launchOperation.correlationId}.` : ""}`
+    : null;
   return [invitation, launch].filter(Boolean).join(" ") || null;
 }
+
+const invitationOutcomeCopy: Record<InvitationOutcome, string> = {
+  confirmed: "CloudShare confirmed the invitation.",
+  confirmed_by_reconciliation: "Certalis confirmed the invitation during a CloudShare roster check.",
+  accepted_unconfirmed: "CloudShare acknowledged the invitation; delivery remains unconfirmed. The same command will not run again. The fence is released; an administrator may start a new Resend.",
+  confirmation_required: "CloudShare delivery could not be confirmed. The same command will not run again while its confirmation fence remains in place.",
+  no_replay: "The provider result is ambiguous. The same command will not run again; open Support before starting another invitation action.",
+  failed_retryable: "The invitation action failed without an ambiguous provider result. The same command will not run again.",
+};
+const invitationReasonCopy: Record<InvitationSafeReason, string> = {
+  not_dispatched: "The invitation request did not reach CloudShare.",
+  provider_rejected: "CloudShare rejected the invitation request.",
+  ambiguous_after_dispatch: "CloudShare may have received the request; Support must review it before another invitation action starts.",
+  confirmation_required: "The confirmation fence remains in place.",
+  failed_retryable: "A newly initiated invitation action may be attempted.",
+  stale_revision: "The Participant changed before the invitation action could start.",
+  blocked_by_fence: "Another invitation command is already in progress or awaiting confirmation.",
+};
+const launchOperationCopy: Record<SalesParticipantLaunchOperationKind, string> = {
+  generate: "Launch link generation",
+  revoke: "Launch link revocation",
+};
+const launchOutcomeCopy: Record<SalesParticipantLaunchOutcome, string> = {
+  success: "succeeded.",
+  failure: "failed.",
+};
+const launchReasonCopy: Record<"persistence_failure", string> = {
+  persistence_failure: "Certalis could not save the launch operation.",
+};
 
 function humanEnvironmentSource(value: string): string {
   if (value === "cloudshare_v3_environment") return "Observed from CloudShare Environment";

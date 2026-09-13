@@ -70,5 +70,10 @@ describe("Prisma participant workspace reader", () => {
     expect(JSON.stringify(result)).not.toContain("secret database value");
     expect(JSON.stringify(result)).not.toContain("raw exception");
   });
+  it("projects the closed not-dispatched reason for controlled presentation", async () => {
+    const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "session-a", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([row(0)]) }, salesParticipantInvitationFence: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationCommand: { findMany: vi.fn().mockResolvedValue([]) }, salesParticipantInvitationTarget: { findMany: vi.fn().mockResolvedValue([{ salesSessionParticipantId: "p0", outcome: "failed_retryable", reason: "not_dispatched", command: { correlationId: "latest-corr" } }]) }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([]) } } as never);
+    const result = await reader.readPage({ customerId: "customer-a", sessionId: "session-a", query: "", offset: 0, limit: 25, now: new Date() });
+    expect(result?.participants[0]).toMatchObject({ latestInvitationOutcome: "failed_retryable", latestInvitationReason: "not_dispatched" });
+  });
   it("requires unarchived Opportunity and Account ancestry", async () => { const findFirst = vi.fn().mockResolvedValue(null); const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst } } as never); await reader.readPage({ customerId: "c1", sessionId: "s1", query: "", offset: 0, limit: 25, now: new Date() }); expect(findFirst.mock.calls[0][0].where).toMatchObject({ opportunity: { archivedAt: null, account: { archivedAt: null } } }); });
 });

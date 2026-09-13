@@ -207,9 +207,10 @@ describe("SalesParticipantWorkspace", () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
     await user.click(await screen.findByRole("button", { name: "Inspect" }));
     await user.click(screen.getByRole("button", { name: "Resend" }));
-    const status = await screen.findByText(/CloudShare acknowledged the invitation; delivery is unconfirmed. Replay is allowed and the fence is released/);
+    const status = await screen.findByText(/CloudShare acknowledged the invitation; delivery remains unconfirmed. The same command will not run again. The fence is released; an administrator may start a new Resend/);
     expect(status.textContent).toContain("corr-unconfirmed");
     expect(status.textContent).not.toContain("retained");
+    expect(status.textContent).not.toContain("Replay is allowed");
     expect(status.textContent).not.toBe("Completed. Correlation corr-unconfirmed.");
   });
   it("exposes every disabled action reason through described visible text", async () => {
@@ -344,12 +345,46 @@ describe("SalesParticipantWorkspace", () => {
   });
   it("restores direct-link focus and exposes semantic selection, durable feedback, and canonical Activity", async () => {
     window.history.replaceState({}, "", "/sales?participantActive=p1&participantFocus=inspector");
-    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, latestInvitationOutcome: "accepted_unconfirmed", latestInvitationReason: "provider_acknowledged", latestInvitationCorrelationId: "invite-corr", launchOperation: { operation: "generate", outcome: "failure", reason: "persistence_failure", correlationId: "launch-corr" }, environmentAttention: null };
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, latestInvitationOutcome: "accepted_unconfirmed", latestInvitationReason: null, latestInvitationCorrelationId: "invite-corr", launchOperation: { operation: "generate", outcome: "failure", reason: "persistence_failure", correlationId: "launch-corr" }, environmentAttention: null };
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify({ ...page, participants: [row] }))} />);
     const inspector = await screen.findByRole("complementary", { name: "Participant inspector" }); await waitFor(() => expect(document.activeElement).toBe(inspector));
-    const status = screen.getByRole("status"); expect(status.textContent).toContain("invite-corr"); expect(status.textContent).toContain("acknowledged by CloudShare"); expect(status.textContent).toContain("fence released"); expect(status.textContent).toContain("new explicitly initiated Resend may be started"); expect(status.textContent).not.toContain("replay allowed"); expect(status.textContent).not.toContain("accepted_unconfirmed"); expect(status.textContent).not.toContain("provider_acknowledged"); expect(status.textContent).toContain("persistence_failure"); expect(status.textContent).toContain("launch-corr");
+    const status = screen.getByRole("status"); expect(status.textContent).toContain("invite-corr"); expect(status.textContent).toContain("acknowledged the invitation"); expect(status.textContent).toContain("same command will not run again"); expect(status.textContent).toContain("fence is released"); expect(status.textContent).toContain("administrator may start a new Resend"); expect(status.textContent).not.toContain("Replay is allowed"); expect(status.textContent).not.toContain("accepted_unconfirmed"); expect(status.textContent).not.toContain("persistence_failure"); expect(status.textContent).toContain("Certalis could not save the launch operation"); expect(status.textContent).toContain("launch-corr");
     expect(screen.getByRole("link", { name: "View Activity" }).getAttribute("href")).toBe("/sales/sessions/s1?area=activity&correlationId=invite-corr");
     expect(screen.getByRole("region", { name: "Scrollable Participant roster" }).getAttribute("tabindex")).toBe("0");
     fireEvent.click(screen.getByRole("row", { name: /Ada Lovelace/ })); expect(screen.getByRole("row", { name: /Ada Lovelace/ }).getAttribute("aria-selected")).toBe("true"); expect(screen.getByText(/1 selected/)).toBeTruthy();
+  });
+
+  it.each([
+    ["confirmed", null, "CloudShare confirmed the invitation."],
+    ["confirmed_by_reconciliation", null, "Certalis confirmed the invitation during a CloudShare roster check."],
+    ["accepted_unconfirmed", null, "The same command will not run again. The fence is released; an administrator may start a new Resend."],
+    ["confirmation_required", "confirmation_required", "CloudShare delivery could not be confirmed. The same command will not run again while its confirmation fence remains in place."],
+    ["no_replay", "ambiguous_after_dispatch", "The provider result is ambiguous. The same command will not run again; open Support before starting another invitation action."],
+    ["failed_retryable", "not_dispatched", "The invitation request did not reach CloudShare."],
+    ["failed_retryable", "provider_rejected", "CloudShare rejected the invitation request."],
+    ["failed_retryable", "failed_retryable", "A newly initiated invitation action may be attempted."],
+    ["failed_retryable", "stale_revision", "The Participant changed before the invitation action could start."],
+    ["failed_retryable", "blocked_by_fence", "Another invitation command is already in progress or awaiting confirmation."],
+  ] as const)("renders controlled durable invitation feedback for %s / %s", async (outcome, reason, expected) => {
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, latestInvitationOutcome: outcome, latestInvitationReason: reason, latestInvitationCorrelationId: "invite-corr", launchOperation: null, environmentAttention: null };
+    window.history.replaceState({}, "", "/sales?participantActive=p1&participantFocus=inspector");
+    render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify({ ...page, participants: [row] }))} />);
+    const text = (await screen.findByRole("status")).textContent ?? "";
+    expect(text).toContain(expected);
+    for (const token of ["confirmed_by_reconciliation", "accepted_unconfirmed", "confirmation_required", "no_replay", "failed_retryable", "not_dispatched", "provider_rejected", "ambiguous_after_dispatch", "stale_revision", "blocked_by_fence"]) expect(text).not.toContain(token);
+  });
+
+  it.each([
+    ["generate", "success", null, "Launch link generation succeeded."],
+    ["generate", "failure", "persistence_failure", "Launch link generation failed. Certalis could not save the launch operation."],
+    ["revoke", "success", null, "Launch link revocation succeeded."],
+    ["revoke", "failure", "persistence_failure", "Launch link revocation failed. Certalis could not save the launch operation."],
+  ] as const)("renders controlled durable launch feedback for %s / %s", async (operation, outcome, reason, expected) => {
+    const row = { ...participant, sessionEndsAt: "2099-01-01T00:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: { operation, outcome, reason, correlationId: "launch-corr" }, environmentAttention: null };
+    window.history.replaceState({}, "", "/sales?participantActive=p1&participantFocus=inspector");
+    render(<SalesParticipantWorkspace sessionId="s1" active request={async () => new Response(JSON.stringify({ ...page, participants: [row] }))} />);
+    const text = (await screen.findByRole("status")).textContent ?? "";
+    expect(text).toContain(expected);
+    for (const token of ["generate", "revoke", "success", "failure", "persistence_failure"]) expect(text).not.toContain(token);
   });
 });
