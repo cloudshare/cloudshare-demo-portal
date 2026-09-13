@@ -21,7 +21,7 @@ describe("Sales participant instant launch", () => {
   it("persists only a hash and returns the Certalis capability once", async () => {
     const d = deps(); const result = await handleCreateSalesParticipantLaunchLink(d, { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor });
     expect(result.status).toBe(201); expect(result.body.launchUrl).toMatch(/^\/sales\/launch\//);
-    expect(d.links.regenerate).toHaveBeenCalledWith(expect.objectContaining({ tokenHash: expect.not.stringContaining(result.body.launchUrl.replace("/sales/launch/", "")) }), now);
+    expect(d.links.regenerate).toHaveBeenCalledWith(expect.objectContaining({ tokenHash: expect.not.stringContaining(result.body.launchUrl.replace("/sales/launch/", "")) }), now, expect.any(String));
     expect(JSON.stringify(d.links.regenerate.mock.calls)).not.toContain("/sales/launch/");
   });
   it("regeneration revokes prior capability and cross-customer ownership is not disclosed", async () => {
