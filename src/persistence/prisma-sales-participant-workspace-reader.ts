@@ -78,11 +78,11 @@ export function createPrismaSalesParticipantWorkspaceReader(
             },
           },
         }),
-        prisma.opportunityContact.findMany({
+        prisma.opportunityContact?.findMany({
           where: { customerId: input.customerId, opportunityId: session.opportunityId, archivedAt: null, opportunity: { archivedAt: null, account: { archivedAt: null } }, salesSessionParticipants: { none: { customerId: input.customerId, salesDemoSessionId: input.sessionId } } },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: 50,
           select: { id: true, firstName: true, lastName: true, email: true },
-        }),
+        }) ?? Promise.resolve([]),
       ]);
       const participantIds = rows.map((row) => row.id);
       // Query one row per bounded page participant. Prisma distinct may be

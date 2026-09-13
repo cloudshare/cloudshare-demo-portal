@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import { createPrismaSalesParticipantWorkspaceReader } from "./prisma-sales-participant-workspace-reader";
 function row(i: number) { return { id: `p${i}`, updatedAt: new Date("2026-01-01T00:00:00Z"), createdAt: new Date(2026, 0, i + 1), invitationStatus: "notSent", participationStatus: "pending", cloudShareParticipantId: `provider-${i}`, cloudShareRosterEnvironmentReference: null, environmentStatus: null, environmentObservedAt: null, environmentAttentionReason: null, contact: { firstName: "Ada", lastName: `${i}`, email: `ada${i}@example.test` }, launchLinks: [] }; }
 describe("Prisma participant workspace reader", () => {
+  it("projects only bounded, active, unregistered contacts for the exact session opportunity", async () => {
+    const contactFindMany = vi.fn().mockResolvedValue([{ id: "contact-good", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test" }]);
+    const reader = createPrismaSalesParticipantWorkspaceReader({ salesDemoSession: { findFirst: vi.fn().mockResolvedValue({ id: "s1", opportunityId: "opp-1", end: "2026-12-01T12:00", timeZone: "UTC", sendInvitations: "dontSend" }) }, opportunityContact: { findMany: contactFindMany }, salesSessionParticipant: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) }, salesParticipantLaunchOperation: { findMany: vi.fn().mockResolvedValue([]) } } as never);
+    const page = await reader.readPage({ customerId: "customer-a", sessionId: "s1", query: "", offset: 0, limit: 25, now: new Date() });
+    expect(page?.eligibleContacts).toEqual([{ id: "contact-good", name: "Ada Lovelace", email: "ada@example.test" }]);
+    expect(contactFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ customerId: "customer-a", opportunityId: "opp-1", archivedAt: null, opportunity: { archivedAt: null, account: { archivedAt: null } }, salesSessionParticipants: { none: { customerId: "customer-a", salesDemoSessionId: "s1" } } }), take: 50 }));
+  });
   it.each([0, 1, 25, 26, 500])("bounds page size for %i rows", async (count) => {
     const rows = Array.from({ length: Math.min(count, 25) }, (_, i) => row(i));
     const findMany = vi.fn().mockResolvedValue(rows), countFn = vi.fn().mockResolvedValue(count);
