@@ -180,7 +180,7 @@ describe("Sales Participant monitoring", () => {
     const user = userEvent.setup();
     const fetchSales = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
       if (input === "/api/sales/accounts") return json({ contacts: [] });
-      if (input === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "closed", source: "schedule_calculation", nativeInvitationsAvailable: false } }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: null, participationStatus: "pending", firstJoined: null, envStatus: null }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants/provider" && !init?.method) return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "closed", source: "schedule_calculation", nativeInvitationsAvailable: false } }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: null, participationStatus: "pending", firstJoined: null, envStatus: null }] });
       return json({});
     });
     render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
@@ -212,7 +212,7 @@ describe("Sales Participant monitoring", () => {
   it("keeps the invitation Select control as the first monitoring column", async () => {
     const fetchSales = vi.fn().mockImplementation(async (input: string) => {
       if (input === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", archivedAt: null }] });
-      if (input === "/api/sales/enablement-sessions/session-1/participants") return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "open", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: "2026-07-18T09:15:00.000Z", participationStatus: "pending", firstJoined: "2026-07-18T10:00:00+01:00", envStatus: null }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants/provider") return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "open", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: "2026-07-18T09:15:00.000Z", participationStatus: "pending", firstJoined: "2026-07-18T10:00:00+01:00", envStatus: null }] });
       return json({});
     });
     render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
@@ -248,7 +248,7 @@ describe("Sales Participant monitoring", () => {
         { id: "contact-5", opportunityId: "opportunity-1", firstName: "New", lastName: "Two", archivedAt: null },
       ] });
       if (input.endsWith("/participants/invite") && init?.method === "POST") { inviteBodies.push(String(init.body)); return json({ invitationConfirmation: "confirmed", correlationId: "corr-invite" }); }
-      if (input.endsWith("/participants") && !init?.method) return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "open", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [
+      if (input.endsWith("/participants/provider") && !init?.method) return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "open", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [
         { id: "pending-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Pending", invitationStatus: "notSent", participationStatus: refreshed ? "concluded" : "pending", firstJoined: null, envStatus: null },
         { id: "pending-2", opportunityContactId: "contact-2", firstName: "Linus", lastName: "Pending", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null },
         { id: "concluded", opportunityContactId: "contact-3", firstName: "Grace", lastName: "Concluded", invitationStatus: "sent", participationStatus: "concluded", firstJoined: null, envStatus: null },
@@ -285,7 +285,7 @@ describe("Sales Participant monitoring", () => {
     const user = userEvent.setup();
     const fetchSales = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
       if (input === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", archivedAt: null }] });
-      if (input === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "open", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants/provider" && !init?.method) return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "open", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null }] });
       if (input === "/api/sales/enablement-sessions/session-1/participants/invite") return json({ correlationId: "corr-invite-1", invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1 });
       return json({});
     });
@@ -301,7 +301,7 @@ describe("Sales Participant monitoring", () => {
     const user = userEvent.setup();
     const fetchSales = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
       if (input === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", archivedAt: null }] });
-      if (input === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "open", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null, needsAttention: true, requiresCorrelationRepair: true, monitoringMessage: "CloudShare returned this participant without its Certalis correlation properties." }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants/provider" && !init?.method) return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "open", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null, needsAttention: true, requiresCorrelationRepair: true, monitoringMessage: "CloudShare returned this participant without its Certalis correlation properties." }] });
       if (input === "/api/sales/enablement-sessions/session-1/participants") return json({ participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null }], correlationId: "corr-repair-1" }, 201);
       return json({});
     });

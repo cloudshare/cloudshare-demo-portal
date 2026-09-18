@@ -471,7 +471,7 @@ export function SalesSessionParticipants({ session, fetchSales, onOpenSupport }:
     setLoading(true);
     if (!preserveOperationEvidence) setOperationFailed(false);
     try {
-      const [recordsResponse, participantsResponse] = await Promise.all([fetchSales("/api/sales/accounts", { cache: "no-store" }), fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants`, { cache: "no-store" })]);
+      const [recordsResponse, participantsResponse] = await Promise.all([fetchSales("/api/sales/accounts", { cache: "no-store" }), fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants/provider`, { cache: "no-store" })]);
       const recordsBody = await recordsResponse.json() as { contacts?: Contact[]; error?: string };
       const participantsBody = await participantsResponse.json() as { session?: { accessWindow: SalesSessionAccessWindow }; participants?: SalesParticipant[]; error?: string; correlationId?: string };
       if (!recordsResponse.ok || !participantsResponse.ok) { if (!preserveOperationEvidence) setCorrelationId(participantsBody.correlationId ?? null); throw new Error(recordsBody.error ?? participantsBody.error ?? "Could not load Sales Participant monitoring."); }

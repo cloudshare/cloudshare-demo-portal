@@ -100,7 +100,7 @@ describe("Sales Session workspace", () => {
     const user = userEvent.setup();
     let verifyCalls = 0;
     vi.spyOn(window, "fetch").mockImplementation(async (input) => {
-      if (String(input).includes("/participants/page")) return new Response(JSON.stringify(data), { status: 200 });
+      if (String(input).includes("/participants?")) return new Response(JSON.stringify(data), { status: 200 });
       if (String(input).includes("/workspace")) return new Response(JSON.stringify(data), { status: 200 });
       verifyCalls += 1;
       return verifyCalls === 1
@@ -447,7 +447,7 @@ describe("Sales Session workspace", () => {
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.includes("/verify")) return verify;
-      if (url.includes("/participants/page")) return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false }), { status: 200 });
+      if (url.includes("/participants?")) return new Response(JSON.stringify({ participants: [], total: 0, offset: 0, limit: 25, hasMore: false }), { status: 200 });
       return new Response(JSON.stringify(url.includes("session-2") ? next : data), { status: 200 });
     });
     const rendered = render(<StrictMode><SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
