@@ -23,6 +23,23 @@ describe("SalesParticipantWorkspace", () => {
     expect(detailRow?.querySelector("td")?.getAttribute("colspan")).toBe("5");
     expect(within(detailRow as HTMLElement).getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
   });
+  it("toggles the active row control between Inspect and Close", async () => {
+    const user = userEvent.setup();
+    const request = vi.fn(async () => new Response(JSON.stringify(page)));
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+
+    const inspect = await screen.findByRole("button", { name: "Inspect" });
+    await user.click(inspect);
+
+    expect(screen.getByRole("button", { name: "Close" })).toBe(inspect);
+    expect(screen.queryByRole("complementary", { name: "Participant inspector" })).not.toBeNull();
+    expect(within(screen.getByRole("complementary", { name: "Participant inspector" })).queryByRole("button", { name: "Close" })).toBeNull();
+
+    await user.click(inspect);
+
+    expect(screen.queryByRole("complementary", { name: "Participant inspector" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Inspect" })).toBe(inspect);
+  });
   it("registers one eligible contact once, rereads the canonical page, and inspects the new Participant", async () => {
     const user = userEvent.setup();
     const registered = { ...participant, id: "registered-1", name: "Grace Hopper", email: "grace@example.test" };
