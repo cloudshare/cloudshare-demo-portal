@@ -10,6 +10,19 @@ const page = { participants: [participant], total: 1, offset: 0, limit: 25, hasM
 
 describe("SalesParticipantWorkspace", () => {
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); window.history.replaceState({}, "", "/sales"); });
+  it.each([0, 1, 2])( "places the inspector directly after the active %s visible row", async (index) => {
+    const rows = [0, 1, 2].map((row) => ({ ...participant, id: `p${row + 1}`, name: `Participant ${row + 1}`, email: `p${row + 1}@example.test` }));
+    const request = vi.fn(async () => new Response(JSON.stringify({ participants: rows, total: rows.length, offset: 0, limit: 25, hasMore: false })));
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    const table = await screen.findByRole("table", { name: "Participant roster" });
+    const activeRow = within(table).getAllByRole("row")[index + 1];
+    await user.click(within(activeRow).getByRole("button", { name: "Inspect" }));
+    const detailRow = activeRow.nextElementSibling;
+    expect(detailRow?.tagName).toBe("TR");
+    expect(detailRow?.querySelector("td")?.getAttribute("colspan")).toBe("5");
+    expect(within(detailRow as HTMLElement).getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
+  });
   it("registers one eligible contact once, rereads the canonical page, and inspects the new Participant", async () => {
     const user = userEvent.setup();
     const registered = { ...participant, id: "registered-1", name: "Grace Hopper", email: "grace@example.test" };
