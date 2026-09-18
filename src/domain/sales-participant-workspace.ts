@@ -8,7 +8,7 @@ export type InvitationSafeReason = "not_dispatched" | "provider_rejected" | "amb
 
 export type SalesParticipantAction = "invite" | "resend" | "generate_launch" | "revoke_launch" | "extend_environment" | "open_diagnostics";
 export type SalesParticipantActionReason = "participant_concluded" | "session_ended" | "invitation_already_sent" | "invitation_not_sent" | "invitation_command_pending" | "participant_correlation_unavailable" | "native_invitations_unavailable" | "no_active_launch" | "environment_not_eligible" | "available_to_attempt" | "unavailable_for_state";
-export type SalesParticipantActionAvailability = Readonly<Record<SalesParticipantAction, { readonly available: boolean; readonly reason: SalesParticipantActionReason }>>;
+export type SalesParticipantActionAvailability = Readonly<Record<Exclude<SalesParticipantAction, "extend_environment">, { readonly available: boolean; readonly reason: SalesParticipantActionReason }>> & Partial<Readonly<Record<"extend_environment", { readonly available: boolean; readonly reason: SalesParticipantActionReason }>>>;
 
 export interface SalesParticipantWorkspaceRow {
   readonly id: string;
