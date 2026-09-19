@@ -39,3 +39,5 @@ Review repair loop 1: concrete SQLite Add/Invite interleavings exposed cancellat
 UI recovery RED/GREEN: after a rejected pre-admission POST and explicit saved-state-null GET, Cancel remained disabled (expected false, received true). The control now permits a manually confirmed resubmission with the same command ID; no automatic POST or new identity. All three real component interaction tests pass.
 
 Review repair loop 1 final gates: lint and typecheck passed; full suite 284 files / 2360 tests passed; actual Next build passed with 58 static pages. Browser and live acceptance remain separate gates.
+
+Review repair loop 2: cancellation-during-mint RED exposed a false opened/success diagnostic and audit claiming redirect. GREEN records provider success as participant_launch.minted with protected response and a pending-final-check message; the denied race records opened/failure. No evidence await was moved after the final access reread. All 15 launch tests, lint, typecheck and full 284 files / 2360 tests pass. Prior actual build remains unaffected by this audit/message-only change; no schema or provider behavior changed.

@@ -85,16 +85,17 @@ async function launchEvidence(deps: Deps, link: Awaited<ReturnType<SalesParticip
     failureMode: context.failureMode ?? (status === undefined ? "transport_failure" : "http_failure"),
     ...(oauthFailure ? (status === undefined ? {} : { status }) : { cause: context.cause ?? null, network: context.network ?? null, tls: context.tls ?? null }),
   } : undefined;
+  const operation = outcome === "success" ? "sales.demo_session.participant_launch.minted" : "sales.demo_session.participant_launch.opened";
   const customerId = link?.customerId ?? null;
   const subjectId = link?.salesSessionParticipantId ?? null;
   await deps.diagnostics?.record({
-    source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.opened", outcome, customerId,
+    source: "sales-participant-launch", operation, outcome, customerId,
     actor: { type: "anonymous" }, subject: { type: "sales_session_participant", id: subjectId },
-    message: outcome === "success" ? "Sales participant launch redirected." : "Sales participant launch blocked.", correlationId,
+    message: outcome === "success" ? "CloudShare sponsored link minted; final access check is pending." : "Sales participant launch blocked.", correlationId,
     ...(sponsored ? { request: sponsored.request as Record<string, unknown>, response: sponsored.response as Record<string, unknown>, details: { integrationSurface: "cloudshare.v4.sales.sponsored_link" } } : {}),
     ...(protectedFailure && failureEvidence ? { request: failureEvidence.request as Record<string, unknown> | null, response: failureEvidence.response as Record<string, unknown> | null, details: protectedFailure } : {}),
   });
-  await deps.audit?.write({ id: randomUUID(), customerId, action: "sales.demo_session.participant_launch.opened", subjectType: "sales_session_participant", subjectId, outcome: outcome === "success" ? "success" : "failure", correlationId, occurredAt: new Date() });
+  await deps.audit?.write({ id: randomUUID(), customerId, action: operation, subjectType: "sales_session_participant", subjectId, outcome: outcome === "success" ? "success" : "failure", correlationId, occurredAt: new Date() });
 }
 async function launchDenied(deps: Deps, link: Awaited<ReturnType<SalesParticipantLaunchLinkRepository["findByTokenHash"]>>, correlationId: string, _reason: string, failure?: unknown) {
   try { await launchEvidence(deps, link, correlationId, "failure", undefined, failure); } catch { /* Denial evidence must never turn a safe 404 into a 500. */ }

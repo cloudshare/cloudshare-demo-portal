@@ -51,13 +51,17 @@ describe("Sales participant instant launch", () => {
     const mint = d.deliveryFactory.forConnection().createSponsoredLink;
     mint.mockImplementation(async () => {
       d.sessions.findById.mockResolvedValue({ ...Object(session), cancellationRequestedAt: now });
-      return { loginUrl: "https://cloudshare.example.test/sensitive", request: {}, response: {} };
+      return { loginUrl: "https://cloudshare.example.test/sensitive", request: {}, response: { body: { loginUrl: "https://cloudshare.example.test/sensitive" } } };
     });
     const result = await handleSalesParticipantLaunch(d, "a".repeat(43));
     expect(mint).toHaveBeenCalledOnce();
     expect(result.status).toBe(404);
     expect(result).not.toHaveProperty("redirect");
     expect(JSON.stringify(result)).not.toContain("sensitive");
+    expect(d.diagnostics.record).not.toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.participant_launch.opened", outcome: "success" }));
+    expect(d.audit.write).not.toHaveBeenCalledWith(expect.objectContaining({ action: "sales.demo_session.participant_launch.opened", outcome: "success" }));
+    expect(d.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.participant_launch.minted", outcome: "success", response: { body: { loginUrl: "https://cloudshare.example.test/sensitive" } } }));
+    expect(d.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.participant_launch.opened", outcome: "failure" }));
   });
   it("redirects only in its active window and never returns the CloudShare URL in a body", async () => {
     const d = deps(); d.links.findByTokenHash.mockResolvedValue({ id: "link-1", customerId: "certalis", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: null, createdAt: now });
