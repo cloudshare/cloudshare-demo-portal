@@ -2,8 +2,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { SalesParticipantWorkspaceRow } from "@/domain/sales-participant-workspace";
 type Selection = { mode: "all"; excludedIds: string[] } | { mode: "selected"; participantIds: string[] };
-type ExtensionResult = { commandId: string; selection: Selection; outcome: string; finished: boolean; reconcile?: boolean; sessionEnd?: string | null; timeZone?: string; targets: { participantId: string; outcome: string; confirmedExpiry: string | null; retryable: boolean }[] };
-export function SalesParticipantExtension({ sessionId, rows, request, onRefreshed }: { sessionId: string; rows: readonly SalesParticipantWorkspaceRow[]; request(url: string, init?: RequestInit): Promise<Response>; onRefreshed(): Promise<boolean> }) {
+type ExtensionResult = { commandId: string; selection: Selection; outcome: string; finished: boolean; accessConfirmed?: boolean; reconcile?: boolean; sessionEnd?: string | null; timeZone?: string; targets: { participantId: string; outcome: string; confirmedExpiry: string | null; retryable: boolean }[] };
+export function SalesParticipantExtension({ sessionId, rows, request, onRefreshed, onAccessConfirmed }: { sessionId: string; rows: readonly SalesParticipantWorkspaceRow[]; request(url: string, init?: RequestInit): Promise<Response>; onRefreshed(): Promise<boolean>; onAccessConfirmed?(): Promise<void> }) {
   const [excluded, setExcluded] = useState<string[]>([]);
   const [result, setResult] = useState<ExtensionResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -58,6 +58,8 @@ export function SalesParticipantExtension({ sessionId, rows, request, onRefreshe
       if (body.commandId && Array.isArray(body.targets)) {
         setResult(body);
         if (body.finished) command.current = null;
+        if (body.accessConfirmed) await onAccessConfirmed?.();
+        if (generation.current !== current) return;
         const refreshed = await reread.current();
         if (generation.current !== current) return;
         if (!refreshed) setMessage("Extension result is saved, but the Participant page could not be reread. Reopen Participants to read it again.");

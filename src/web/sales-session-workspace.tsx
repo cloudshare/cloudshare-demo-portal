@@ -92,6 +92,18 @@ function SalesSessionWorkspaceState({
       authenticatedRequest(lifecycle.current.token)(url, init),
     [authenticatedRequest],
   );
+  const rereadConfirmedAccess = async () => {
+    const token = lifecycle.current.token;
+    try {
+      const response = await authenticatedRequest(token)(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace`, { cache: "no-store" });
+      const next = await response.json() as SalesSessionWorkspaceResponse;
+      if (!lifecycle.current.active || lifecycle.current.token !== token) return;
+      if (!response.ok || next.summary?.id !== sessionId) throw new Error("summary_unavailable");
+      setWorkspace(next);
+    } catch {
+      if (lifecycle.current.active && lifecycle.current.token === token) setVerification("Extension access is confirmed, but the Session summary could not be reread. Reopen the Session to read its current End.");
+    }
+  };
   const handleSessionExpired = () => {
     if (lifecycle.current.active) (shellExpiry ?? fallbackExpiry)();
   };
@@ -518,7 +530,7 @@ function SalesSessionWorkspaceState({
         </div>
       </nav>
       {area === "participants" ? (
-        <SalesParticipantWorkspace sessionId={sessionId} active request={participantRequest} />
+        <SalesParticipantWorkspace sessionId={sessionId} active request={participantRequest} onAccessConfirmed={rereadConfirmedAccess} />
       ) : null}
       {area === "activity" ? (
         <section className={styles.panel}>

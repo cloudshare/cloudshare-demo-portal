@@ -131,10 +131,10 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
       try {
         const { participant, remote } = await identify(target.participantId, target);
         surface = "cloudshare.v3";
-        const resolved = await environments.observe({ ownerEmail: target.email, projectId: target.projectId });
-        exchanges.push(...resolved.exchanges);
-        if (resolved.environmentId !== target.environmentId) throw new Error("environment_identity_changed");
         if (target.state === "pending") {
+          const resolved = await environments.observe({ ownerEmail: target.email, projectId: target.projectId });
+          exchanges.push(...resolved.exchanges);
+          if (resolved.environmentId !== target.environmentId) throw new Error("environment_identity_changed");
           // Projection reads update updatedAt; authority is the exact identity above and current eligibility/expiry.
           if (participant.participationStatus === "concluded" || !eligible(remote) || ![2, 3].includes(resolved.statusCode) || instant(resolved.expirationTime)?.toISOString() !== target.preExpiry) throw new Error("extension_preflight_changed");
           target = { ...target, state: "dispatched", reason: "readback_required" };

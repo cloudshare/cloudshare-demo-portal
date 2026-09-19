@@ -52,6 +52,24 @@ describe("Sales Participant extension HTTP seam", () => {
     expect(f.environments.extendById.mock.calls.map(call => call[0])).toEqual(change === "observation only" ? ["opaque1", "opaque2"] : ["opaque1"]);
     expect(f.environments.observeById.mock.calls.filter(call => call[0] === "opaque1")).toHaveLength(2);
   });
+  it("reconciles a dispatched captured Environment by ID when later owner/Project resolution becomes ambiguous", async () => {
+    const f = fixture();
+    f.environments.extendById.mockRejectedValueOnce(new Error("timeout"));
+    await handleExtendSalesParticipants(f.deps, f.request);
+    f.environments.observe.mockRejectedValue(new Error("multiple matches"));
+    f.setExpiry("2026-09-21T10:00:00Z");
+    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, reconcile: true } })).toMatchObject({ body: { outcome: "completed" } });
+    expect(f.environments.extendById).toHaveBeenCalledOnce();
+    expect(f.environments.observe).toHaveBeenCalledTimes(2);
+    expect(f.environments.observeById).toHaveBeenLastCalledWith("opaque1");
+  });
+  it("keeps ambiguous owner/Project resolution fail-closed before dispatch", async () => {
+    const f = fixture();
+    const observe = f.environments.observe.getMockImplementation()!;
+    f.environments.observe.mockImplementationOnce(observe).mockRejectedValue(new Error("multiple matches"));
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ body: { targets: [{ outcome: "failed_retryable" }] } });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
   it("retains ambiguity across a fresh command and only reconciles with GET", async () => {
     const f = fixture();
     f.environments.extendById.mockImplementationOnce(async () => { throw new Error("lost acknowledgement"); });

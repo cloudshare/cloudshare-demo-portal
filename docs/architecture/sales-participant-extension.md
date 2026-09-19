@@ -70,3 +70,16 @@ an empty correlation result and an explicit-source 400 before the correction. It
 covers the actual extension link, parsed Support route, correlation request and rendered
 evidence, plus authenticated Customer scope and exclusion of other Customers/commands.
 The protected diagnostics projection and all other source boundaries are unchanged.
+
+### Captured-ID reconciliation and Session summary readback
+
+A dispatched target now keeps exact local Participant/Contact/roster correlation checks
+and reads its captured opaque Environment ID directly. Mutable owner/Project resolution
+remains mandatory before a pending target dispatches; it cannot strand a previously
+dispatched target's read-only recovery. Regression coverage proves later list ambiguity
+still permits captured-ID readback without another PUT, while pending ambiguity blocks.
+
+Confirmed access, including partial extension outcomes, now requests an authenticated
+parent Session workspace reread so the header shows the persisted End. The callback does
+not copy the extension result into the header. Real command-control tests cover completed
+and partial outcomes and reject a delayed summary response after changing Sessions.
