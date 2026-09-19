@@ -233,7 +233,7 @@ Each implementation slice must run through an explicit branch-and-PR workflow. D
 accumulate as local-only commits.
 
 - The ticket task must explicitly spawn and coordinate all three mandatory internal roles before
-  completion: implementation/TDD with `gpt-5.6-luna` at low reasoning; independent Standards plus
+  completion: implementation/TDD with `gpt-6-astra` at low reasoning; independent Standards plus
   Spec/security review with `gpt-5.6-sol` at high reasoning (especially for integration or security
   work); and browser/live QA with `gpt-5.6-terra` at medium reasoning. Model and effort must be set at
   spawn time, using the closest available explicit equivalent only when a requested model is unavailable
