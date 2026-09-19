@@ -192,6 +192,7 @@ model SalesTrialEnrollment {
 // Immutable portal-to-CloudShare correlation. Sales Experiences are never
 // deleted by Certalis; this record preserves commercial delivery history.
 model SalesDemoSession {
+  cancellationRequestedAt DateTime?
   extensionCommands SalesParticipantExtensionCommand[]
   id                          String   @id
   customerId                  String
@@ -630,6 +631,8 @@ model AuditTrailEntry {
   @@index([correlationId])
 }
 model SalesParticipantExtensionCommand {
+  /// Shared Session/environment fence for extension and terminal cancellation.
+  operation String @default("extension")
   customerId String
   commandId String
   sessionId String
