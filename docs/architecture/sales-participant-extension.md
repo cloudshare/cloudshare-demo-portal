@@ -21,3 +21,21 @@ Confirmed targets can preserve access even when other targets are unresolved. Th
 Deterministic API, persistence, adapter and browser-component tests cover ordering, selection, immutable correlation, concurrency/restart fencing, ambiguity/no replay, safe retry and Customer isolation. Per-command audit and protected diagnostic records retain provider exchanges and transport failures. GAP-35 is existing live evidence for the tenant-default extension, not live proof of this new combined Session flow.
 
 Independent review, browser interaction/console QA, disposable live UI extension with provider readback and support diagnostics, and human QA on port 3000 remain lifecycle gates owned by the ticket orchestrator. The implementation does not mutate live assets or the port-3000 checkout.
+
+### Eligibility projection on entry (repair round 2)
+
+Opening the canonical Participant workspace automatically posts to the authenticated,
+Customer-scoped `participants/refresh` endpoint. This invokes the existing provider-read
+Participant projection handler server-side and returns only completion metadata and a
+correlation ID. It does not perform provider writes or return the provider roster. The
+browser then rereads the bounded local Participant page before enabling extension selection.
+The canonical Participant GET remains local; there is no manual Resync control or polling.
+Session generations fence delayed refresh/history responses, and page generations fence
+superseded bounded reads. Extension and reconciliation results also trigger a bounded reread.
+A failed eligibility read leaves extension disabled with a read-only retry.
+
+Live QA exposed the missing projection trigger: an exactly correlated provider Participant
+was in progress with a Ready environment while the local row remained Pending/Not observed.
+Automated coverage proves entry refresh, bounded reread, default selection, Inspect/Close,
+Customer isolation, provider-read-only behavior, safe response metadata, and stale Session
+response rejection. Live acceptance must be rerun on this repaired head.

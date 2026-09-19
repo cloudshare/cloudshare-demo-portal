@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { CloudShareAuthError, CloudShareResponseError } from "@/integrations/cloudshare/errors";
-import { handleInviteSalesSessionParticipants as inviteSalesSessionParticipants, handleListSalesSessionParticipants as listSalesSessionParticipants, handleRegisterSalesSessionParticipants as registerSalesSessionParticipants } from "@/api/sales-session-participants";
+import { handleRefreshSalesParticipantEligibility, handleInviteSalesSessionParticipants as inviteSalesSessionParticipants, handleListSalesSessionParticipants as listSalesSessionParticipants, handleRegisterSalesSessionParticipants as registerSalesSessionParticipants } from "@/api/sales-session-participants";
 import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales-environment";
 import { invitationResult, type InvitationHandle, type InvitationState, type InvitationStore } from "@/domain/sales-participant-invitation-store";
 import { createSalesParticipantWorkspace } from "@/application/sales-session-participants";
@@ -968,4 +968,17 @@ describe("Sales Session participant invitation", () => {
     expect(result).toMatchObject({ status: 409, body: { outcome: "blocked", targets: [{ outcome: "no_replay" }] } }); expect(inviteParticipants).not.toHaveBeenCalled();
   });
 
+});
+
+it("refreshes scoped eligibility using provider reads and returns only safe completion metadata", async () => {
+  const providerWrite = vi.fn();
+  const listParticipants = vi.fn().mockResolvedValue(rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), participationStatus: "inProgress", environmentId: "provider-env-secret", envStatus: "Ready" }]));
+  const save = vi.fn();
+  const deps = { now: fixedNow, sessions: { findById: vi.fn(async (customerId: string) => customerId === "customer-1" ? session : null) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save, recordEnvironmentObservation: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: providerWrite, readSession: vi.fn(), listParticipants, registerParticipants: providerWrite, updateSession: providerWrite, inviteParticipants: providerWrite }) } };
+  const result = await handleRefreshSalesParticipantEligibility(deps as never, { customerId: "customer-1", sessionId: session.id, actor });
+  expect(result).toEqual({ status: 200, body: { outcome: "refreshed", correlationId: expect.any(String) } });
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-1", participationStatus: "inProgress", environmentStatus: "Ready" }));
+  expect(providerWrite).not.toHaveBeenCalled();
+  expect((await handleRefreshSalesParticipantEligibility(deps as never, { customerId: "other", sessionId: session.id, actor })).status).toBe(404);
+  expect(listParticipants).toHaveBeenCalledOnce();
 });

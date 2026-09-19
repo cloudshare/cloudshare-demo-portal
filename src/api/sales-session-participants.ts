@@ -54,3 +54,15 @@ export async function handleListSalesSessionParticipants(
 ) {
   return readSalesSessionParticipants(deps, request);
 }
+
+/** Refresh local eligibility from provider reads without returning the provider roster. */
+export async function handleRefreshSalesParticipantEligibility(
+  deps: SalesSessionParticipantsDependencies,
+  request: Omit<SalesSessionParticipantsRequest, "body">,
+) {
+  const result = await readSalesSessionParticipants(deps, request);
+  const correlationId = typeof result.body.correlationId === "string" ? result.body.correlationId : undefined;
+  return { status: result.status, body: result.status === 200
+    ? { outcome: "refreshed", correlationId }
+    : { error: "Participant eligibility could not be refreshed. Open Support before extending.", correlationId } };
+}

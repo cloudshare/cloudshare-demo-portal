@@ -1,3 +1,4 @@
+import { handleRefreshSalesParticipantEligibility } from "@/api/sales-session-participants";
 import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
 import { createCloudShareSalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
 import { handleExtendSalesParticipants, salesParticipantExtensionResult, type SalesParticipantExtensionRequest } from "@/api/sales-participant-extension";
@@ -386,7 +387,7 @@ export interface Services {
   diagnostics: DiagnosticLogRepository;
   salesTrialEnrollments: SalesTrialEnrollmentRepository;
   salesParticipantWorkspace: SalesParticipantWorkspace;
-  salesParticipantExtension: { submit(request: SalesParticipantExtensionRequest): ReturnType<typeof handleExtendSalesParticipants>; latest(customerId: string, sessionId: string): Promise<ReturnType<typeof salesParticipantExtensionResult> | null> };
+  salesParticipantExtension: { refresh(request: Omit<SalesParticipantExtensionRequest, "body">): ReturnType<typeof handleRefreshSalesParticipantEligibility>; submit(request: SalesParticipantExtensionRequest): ReturnType<typeof handleExtendSalesParticipants>; latest(customerId: string, sessionId: string): Promise<ReturnType<typeof salesParticipantExtensionResult> | null> };
   /** Redaction-applying write seam every instrumented flow records through. */
   diagnosticRecorder: DiagnosticRecorder;
   adminMonitoringAttempts: AdminMonitoringAttemptRepository;
@@ -529,6 +530,12 @@ export function getServices(): Services {
   });
   const extensionCommands = createPrismaSalesParticipantExtensionCommandStore(prisma);
   const salesParticipantExtension: Services["salesParticipantExtension"] = {
+    refresh: request => handleRefreshSalesParticipantEligibility({
+      sessions: createPrismaSalesDemoSessionRepository(prisma), items: createPrismaItemRepository(prisma), records: createPrismaSalesRecordRepository(prisma), participants: createPrismaSalesSessionParticipantRepository(prisma), connections: cloudshareConnections,
+      deliveryFactory: { forConnection: connection => createCloudShareSalesDelivery(cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })) },
+      salesEnvironmentFactory: { forConnection: connection => createCloudShareSalesEnvironmentSource(cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })) },
+      diagnostics: diagnosticRecorder, audit,
+    }, request),
     submit: request => handleExtendSalesParticipants({
       commands: extensionCommands,
       sessions: createPrismaSalesDemoSessionRepository(prisma),
