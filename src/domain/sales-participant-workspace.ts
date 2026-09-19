@@ -6,9 +6,9 @@ export const invitationOutcomes = ["confirmed", "confirmed_by_reconciliation", "
 export type InvitationOutcome = typeof invitationOutcomes[number];
 export type InvitationSafeReason = "not_dispatched" | "provider_rejected" | "ambiguous_after_dispatch" | "confirmation_required" | "failed_retryable" | "stale_revision" | "blocked_by_fence";
 
-export type SalesParticipantAction = "invite" | "resend" | "generate_launch" | "revoke_launch" | "extend_environment" | "open_diagnostics";
-export type SalesParticipantActionReason = "participant_concluded" | "session_ended" | "invitation_already_sent" | "invitation_not_sent" | "invitation_command_pending" | "participant_correlation_unavailable" | "native_invitations_unavailable" | "no_active_launch" | "environment_not_eligible" | "available_to_attempt" | "unavailable_for_state";
-export type SalesParticipantActionAvailability = Readonly<Record<Exclude<SalesParticipantAction, "extend_environment">, { readonly available: boolean; readonly reason: SalesParticipantActionReason }>> & Partial<Readonly<Record<"extend_environment", { readonly available: boolean; readonly reason: SalesParticipantActionReason }>>>;
+export type SalesParticipantAction = "invite" | "resend" | "generate_launch" | "revoke_launch" | "open_diagnostics";
+export type SalesParticipantActionReason = "participant_concluded" | "session_ended" | "invitation_already_sent" | "invitation_not_sent" | "invitation_command_pending" | "participant_correlation_unavailable" | "native_invitations_unavailable" | "no_active_launch" | "available_to_attempt" | "unavailable_for_state";
+export type SalesParticipantActionAvailability = Readonly<Record<SalesParticipantAction, { readonly available: boolean; readonly reason: SalesParticipantActionReason }>>;
 
 export interface SalesParticipantWorkspaceRow {
   readonly id: string;
@@ -33,7 +33,6 @@ export interface SalesParticipantWorkspaceRow {
   readonly launchOperation: { readonly operation: SalesParticipantLaunchOperationKind; readonly outcome: SalesParticipantLaunchOutcome; readonly reason: "persistence_failure" | null; readonly correlationId: string | null } | null;
   readonly environment: SalesParticipantEnvironmentObservation;
   readonly environmentAttention: { readonly reason: string; readonly source: string } | null;
-  readonly extension?: { readonly available: boolean; readonly reason: string | null };
   readonly actionAvailability: SalesParticipantActionAvailability;
   readonly primaryAction: SalesParticipantAction | null;
 }
@@ -102,13 +101,11 @@ export interface SalesParticipantWorkspace {
 export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, now: Date): Readonly<Record<SalesParticipantAction, boolean>> {
   const open = new Date(row.sessionEndsAt).getTime() > now.getTime();
   const base = open && row.participationStatus !== "concluded" && row.nativeInvitationsEnabled && row.providerCorrelation && row.currentCommandId === null;
-  const environmentEligible = row.participationStatus !== "concluded" && (row.environment.value === "Ready" || row.environment.value === "Suspended");
   return {
     invite: base && row.invitationStatus === "notSent",
     resend: base && row.invitationStatus === "sent",
     generate_launch: open && row.participationStatus !== "concluded",
     revoke_launch: row.activeLaunchCapability,
-    extend_environment: environmentEligible,
     open_diagnostics: Boolean(row.environmentAttention || row.invitationReason || row.latestInvitationReason || row.currentCommandId),
   };
 }
@@ -141,11 +138,10 @@ export function projectParticipantActionAvailability(row: Omit<SalesParticipantW
     if ((action === "invite" || action === "resend") && !row.providerCorrelation) return "participant_correlation_unavailable";
     if ((action === "invite" || action === "resend") && !row.nativeInvitationsEnabled) return "native_invitations_unavailable";
     if (action === "revoke_launch" && !row.activeLaunchCapability) return "no_active_launch";
-    if (action === "extend_environment") return "environment_not_eligible";
     return "unavailable_for_state";
   };
   const actionAvailability = Object.fromEntries((Object.keys(available) as SalesParticipantAction[]).map((action) => [action, { available: available[action], reason: reason(action) }])) as SalesParticipantActionAvailability;
-  const primaryAction = (["invite", "generate_launch", "resend", "extend_environment", "open_diagnostics"] as const).find((action) => available[action]) ?? null;
+  const primaryAction = (["invite", "generate_launch", "resend", "open_diagnostics"] as const).find((action) => available[action]) ?? null;
   return { actionAvailability, primaryAction };
 }
 

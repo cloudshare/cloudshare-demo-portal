@@ -100,6 +100,7 @@ describe("Sales Session workspace", () => {
     const user = userEvent.setup();
     let verifyCalls = 0;
     vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      if (String(input).endsWith("/participants/extend")) return new Response("null", { status: 200 });
       if (String(input).includes("/participants?")) return new Response(JSON.stringify(data), { status: 200 });
       if (String(input).includes("/workspace")) return new Response(JSON.stringify(data), { status: 200 });
       verifyCalls += 1;

@@ -1,35 +1,23 @@
-import type { SalesParticipantExtensionCommand, SalesParticipantExtensionCommandStore } from "@/domain/sales-participant-extension-command";
-
+import { extensionIdentity, newExtensionCommand, type SalesParticipantExtensionCommand, type SalesParticipantExtensionCommandStore } from "@/domain/sales-participant-extension-command";
 export function createInMemorySalesParticipantExtensionCommandStore(): SalesParticipantExtensionCommandStore {
   const rows = new Map<string, SalesParticipantExtensionCommand>();
+  const key = (customerId: string, commandId: string) => JSON.stringify([customerId, commandId]);
   return {
     async admit(input) {
-      const key = `${input.customerId}:${input.commandId}`;
-      const existing = rows.get(key);
-      if (existing) {
-        const same = existing.sessionId === input.sessionId && existing.targetEnd === input.targetEnd && existing.targets.map((target) => target.participantId).join(",") === input.targets.map((target) => target.participantId).join(",");
-        return same ? { kind: "existing", command: existing } : { kind: "mismatch" };
-      }
-      const command: SalesParticipantExtensionCommand = { customerId: input.customerId, sessionId: input.sessionId, commandId: input.commandId, targetEnd: input.targetEnd, dispatchState: "admitted", revision: 1, correlationId: null, targets: input.targets.map((target) => ({ ...target, outcome: "pending", reason: null, confirmedExpiry: null })) };
-      rows.set(key, command);
-      return { kind: "new", command };
+      const existing = rows.get(key(input.customerId, input.commandId));
+      if (existing) return { kind: extensionIdentity(existing) === extensionIdentity(input) ? "existing" : "mismatch", command: structuredClone(existing) };
+      if ([...rows.values()].some(row => row.customerId === input.customerId && !row.finished && (row.sessionId === input.sessionId || row.targets.some(t => input.targets.some(candidate => candidate.environmentId === t.environmentId || candidate.participantId === t.participantId))))) return { kind: "blocked" };
+      const command = newExtensionCommand(input);
+      rows.set(key(input.customerId, input.commandId), command);
+      return { kind: "new", command: structuredClone(command) };
     },
-    async markDispatching(input) {
-      const key = `${input.customerId}:${input.commandId}`;
-      const current = rows.get(key);
-      if (!current || current.revision !== input.expectedRevision || current.dispatchState !== "admitted") return false;
-      rows.set(key, { ...current, dispatchState: "dispatching", revision: current.revision + 1 });
+    async latest(customerId, sessionId) { return structuredClone([...rows.values()].filter(row => row.customerId === customerId && row.sessionId === sessionId).at(-1) ?? null); },
+    async save(command, expectedRevision) {
+      const current = rows.get(key(command.customerId, command.commandId));
+      if (!current || current.revision !== expectedRevision || extensionIdentity(current) !== extensionIdentity(command)) return false;
+      rows.set(key(command.customerId, command.commandId), structuredClone({ ...command, revision: expectedRevision + 1 }));
       return true;
     },
-    async settle(input) {
-      const key = `${input.customerId}:${input.commandId}`;
-      const current = rows.get(key);
-      if (!current || current.revision !== input.expectedRevision || current.dispatchState !== "dispatching") throw new Error("extension command is no longer current");
-      const byId = new Map(input.targets.map((target) => [target.participantId, target]));
-      const command = { ...current, dispatchState: input.dispatchState, revision: current.revision + 1, correlationId: input.correlationId, targets: current.targets.map((target) => ({ ...target, ...(byId.get(target.participantId) ?? {}) })) };
-      rows.set(key, command);
-      return command;
-    },
-    async read(customerId, commandId) { return rows.get(`${customerId}:${commandId}`) ?? null; },
+    async read(customerId, commandId) { return structuredClone(rows.get(key(customerId, commandId)) ?? null); },
   };
 }

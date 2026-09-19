@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { createInMemorySalesParticipantExtensionCommandStore } from "./in-memory-sales-participant-extension-command";
-
+export const admission = {
+  customerId: "customer-a", sessionId: "session-a", commandId: "cmd-1", experienceId: "experience", timeZone: "UTC", selectionKey: "all",
+  targets: [{ participantId: "p1", participantRevision: "r1", providerParticipantId: "provider-p1", contactId: "contact", email: "person@example.com", projectId: "project", environmentId: "v3-env-1", preExpiry: "2026-09-18T10:00:00Z" }],
+};
 describe("Sales participant extension command store", () => {
-  it("admits once, fences dispatch, and preserves confirmed per-target expiry", async () => {
+  it("fences overlapping commands and preserves dispatch through stale writes and replay", async () => {
     const store = createInMemorySalesParticipantExtensionCommandStore();
-    const target = { participantId: "p1", participantRevision: "r1", environmentId: "v3-env-1", preExpiry: "2026-09-18T10:00:00Z" };
-    const first = await store.admit({ customerId: "customer-a", sessionId: "session-a", commandId: "cmd-1", targetEnd: "2026-09-18T11:00:00Z", targets: [target] });
+    const first = await store.admit(admission);
     expect(first.kind).toBe("new");
-    expect((await store.admit({ customerId: "customer-a", sessionId: "session-a", commandId: "cmd-1", targetEnd: "2026-09-18T11:00:00Z", targets: [target] })).kind).toBe("existing");
-    expect(await store.markDispatching({ customerId: "customer-a", commandId: "cmd-1", expectedRevision: 1 })).toBe(true);
-    const settled = await store.settle({ customerId: "customer-a", commandId: "cmd-1", expectedRevision: 2, dispatchState: "settled", correlationId: "corr-1", targets: [{ participantId: "p1", outcome: "confirmed", reason: null, confirmedExpiry: "2026-09-19T10:00:00Z" }] });
-    expect(settled.targets[0]).toMatchObject({ outcome: "confirmed", confirmedExpiry: "2026-09-19T10:00:00Z" });
-    expect(await store.markDispatching({ customerId: "customer-a", commandId: "cmd-1", expectedRevision: 3 })).toBe(false);
+    expect((await store.admit({ ...admission, commandId: "cmd-2" })).kind).toBe("blocked");
+    const command = first.command!;
+    const dispatched = { ...command, targets: command.targets.map(target => ({ ...target, state: "dispatched" as const })) };
+    expect(await store.save(dispatched, command.revision)).toBe(true);
+    expect(await store.save(command, command.revision)).toBe(false);
+    expect((await store.read(admission.customerId, admission.commandId))?.targets[0]?.state).toBe("dispatched");
+    expect((await store.admit({ ...admission, targets: [{ ...admission.targets[0]!, environmentId: "other" }] })).kind).toBe("mismatch");
+    expect(await store.read("other-customer", admission.commandId)).toBeNull();
   });
 });

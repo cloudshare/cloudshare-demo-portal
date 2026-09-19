@@ -19,91 +19,91 @@ model Heartbeat {
 }
 
 model Customer {
-  id                            String                              @id @default(cuid())
-  slug                          String                              @unique
-  name                          String
-  workspace                     String                              @default("certification")
-  createdAt                     DateTime                            @default(now())
-  users                         User[]
-  exams                         Exam[]
-  items                         Item[]
-  examAttempts                  ExamAttempt[]
-  cloudShareConnection          CloudShareConnection?
-  salesAccounts                 SalesAccount[]
-  salesOpportunities            SalesOpportunity[]
-  opportunityContacts           OpportunityContact[]
-  salesDemoSessions             SalesDemoSession[]
-  invitationCommands            SalesParticipantInvitationCommand[]
-  extensionCommands             SalesParticipantExtensionCommand[]
-  launchOperations              SalesParticipantLaunchOperation[]
-  salesTrialOfferings           SalesTrialOffering[]
-  salesTrialEnrollments         SalesTrialEnrollment[]
-  salesTimezoneCache            SalesTimezoneCache?
+  extensionCommands SalesParticipantExtensionCommand[]
+  id                   String                @id @default(cuid())
+  slug                 String                @unique
+  name                 String
+  workspace            String                @default("certification")
+  createdAt            DateTime              @default(now())
+  users                User[]
+  exams                Exam[]
+  items                Item[]
+  examAttempts         ExamAttempt[]
+  cloudShareConnection CloudShareConnection?
+  salesAccounts        SalesAccount[]
+  salesOpportunities   SalesOpportunity[]
+  opportunityContacts  OpportunityContact[]
+  salesDemoSessions    SalesDemoSession[]
+  invitationCommands   SalesParticipantInvitationCommand[]
+  launchOperations     SalesParticipantLaunchOperation[]
+  salesTrialOfferings  SalesTrialOffering[]
+  salesTrialEnrollments SalesTrialEnrollment[]
+  salesTimezoneCache   SalesTimezoneCache?
   salesTrialPortalConfiguration SalesTrialPortalConfiguration?
-  salesSessionNameTemplate      String                              @default("{account} - {opportunity} ({revision}) - {item}")
+  salesSessionNameTemplate String @default("{account} - {opportunity} ({revision}) - {item}")
 }
 
 model SalesAccount {
-  id            String             @id
-  customerId    String
-  name          String
-  kind          String
-  archivedAt    DateTime?
-  createdAt     DateTime
-  updatedAt     DateTime
-  customer      Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id         String   @id
+  customerId String
+  name       String
+  kind       String
+  archivedAt DateTime?
+  createdAt  DateTime
+  updatedAt  DateTime
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   opportunities SalesOpportunity[]
 
-  @@unique([customerId, id])
   @@index([customerId, updatedAt])
+  @@unique([customerId, id])
 }
 
 model SalesOpportunity {
-  id           String               @id
-  customerId   String
-  accountId    String
-  name         String
-  status       String
-  archivedAt   DateTime?
-  createdAt    DateTime
-  updatedAt    DateTime
-  customer     Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  account      SalesAccount         @relation(fields: [customerId, accountId], references: [customerId, id], onDelete: Restrict)
-  contacts     OpportunityContact[]
+  id         String   @id
+  customerId String
+  accountId  String
+  name       String
+  status     String
+  archivedAt DateTime?
+  createdAt  DateTime
+  updatedAt  DateTime
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  account    SalesAccount @relation(fields: [customerId, accountId], references: [customerId, id], onDelete: Restrict)
+  contacts   OpportunityContact[]
   demoSessions SalesDemoSession[]
 
-  @@unique([customerId, id])
   @@index([customerId, accountId, updatedAt])
+  @@unique([customerId, id])
 }
 
 model OpportunityContact {
-  id                       String                    @id
-  customerId               String
-  opportunityId            String
-  firstName                String
-  lastName                 String
-  email                    String
-  normalizedEmail          String                    @default("")
-  source                   String                    @default("relationship")
-  syncStatus               String                    @default("not_applicable")
-  sourceSessionId          String?
-  archivedAt               DateTime?
-  createdAt                DateTime
-  updatedAt                DateTime
-  customer                 Customer                  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  opportunity              SalesOpportunity          @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
+  id            String   @id
+  customerId    String
+  opportunityId String
+  firstName     String
+  lastName      String
+  email         String
+  normalizedEmail String   @default("")
+  source        String   @default("relationship")
+  syncStatus    String   @default("not_applicable")
+  sourceSessionId String?
+  archivedAt    DateTime?
+  createdAt     DateTime
+  updatedAt     DateTime
+  customer      Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  opportunity   SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
   salesSessionParticipants SalesSessionParticipant[]
 
-  @@unique([customerId, id])
   @@index([customerId, opportunityId, updatedAt])
   @@index([customerId, opportunityId, normalizedEmail])
+  @@unique([customerId, id])
 }
 
 // A Sales-owned, archive-only reusable CloudShare delivery template.  Resource
 // identifiers are selected from live per-Customer reads and are never a manual
 // authoring field.
 model Item {
-  id                     String               @id
+  id                     String   @id
   customerId             String
   name                   String
   description            String
@@ -118,16 +118,16 @@ model Item {
   archivedAt             DateTime?
   createdAt              DateTime
   updatedAt              DateTime
-  customer               Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer               Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   demoSessions           SalesDemoSession[]
   trialOfferings         SalesTrialOffering[]
 
-  @@unique([customerId, id])
   @@index([customerId, status])
+  @@unique([customerId, id])
 }
 
 model SalesTrialOffering {
-  id                          String                 @id
+  id                          String   @id
   customerId                  String
   itemId                      String
   title                       String
@@ -150,8 +150,8 @@ model SalesTrialOffering {
   updatedAt                   DateTime
   publishedAt                 DateTime?
   unpublishedAt               DateTime?
-  customer                    Customer               @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  item                        Item                   @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
+  customer                    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  item                        Item     @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
   enrollments                 SalesTrialEnrollment[]
 
   @@unique([customerId, id])
@@ -160,29 +160,29 @@ model SalesTrialOffering {
 }
 
 model SalesTrialEnrollment {
-  id                                   String             @id
-  customerId                           String
-  salesTrialOfferingId                 String
-  portalUserId                         String
-  email                                String
-  firstName                            String
-  lastName                             String
-  cloudShareParticipantId              String?
-  invitationStatus                     String             @default("notSent")
-  participationStatus                  String             @default("pending")
+  id                                 String   @id
+  customerId                         String
+  salesTrialOfferingId               String
+  portalUserId                       String
+  email                              String
+  firstName                          String
+  lastName                           String
+  cloudShareParticipantId            String?
+  invitationStatus                   String   @default("notSent")
+  participationStatus                String   @default("pending")
   cloudShareRosterEnvironmentReference String?
-  environmentStatus                    String?
-  observedExpirationTime               String?
-  firstJoined                          String?
-  status                               String
-  attentionReason                      String?
-  lastLaunchedAt                       DateTime?
-  lastReconciledAt                     DateTime
-  createdAt                            DateTime
-  updatedAt                            DateTime
-  customer                             Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  offering                             SalesTrialOffering @relation(fields: [customerId, salesTrialOfferingId], references: [customerId, id], onDelete: Cascade)
-  user                                 User               @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  environmentStatus                  String?
+  observedExpirationTime             String?
+  firstJoined                        String?
+  status                             String
+  attentionReason                    String?
+  lastLaunchedAt                     DateTime?
+  lastReconciledAt                   DateTime
+  createdAt                          DateTime
+  updatedAt                          DateTime
+  customer                           Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  offering                           SalesTrialOffering @relation(fields: [customerId, salesTrialOfferingId], references: [customerId, id], onDelete: Cascade)
+  user                               User               @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
 
   @@unique([customerId, salesTrialOfferingId, portalUserId])
   @@unique([cloudShareParticipantId])
@@ -192,11 +192,12 @@ model SalesTrialEnrollment {
 // Immutable portal-to-CloudShare correlation. Sales Experiences are never
 // deleted by Certalis; this record preserves commercial delivery history.
 model SalesDemoSession {
-  id                          String                              @id
+  extensionCommands SalesParticipantExtensionCommand[]
+  id                          String   @id
   customerId                  String
   opportunityId               String
   itemId                      String
-  cloudShareSalesExperienceId String                              @unique
+  cloudShareSalesExperienceId String   @unique
   externalId                  String
   type                        String
   start                       String
@@ -206,25 +207,24 @@ model SalesDemoSession {
   salesProDisplayName         String
   registrationType            String
   sendInvitations             String
-  sessionName                 String                              @default("")
-  revision                    Int                                 @default(1)
-  operationalStatus           String                              @default("active")
+  sessionName                 String   @default("")
+  revision                    Int      @default(1)
+  operationalStatus           String   @default("active")
   attentionReason             String?
   experienceStatus            String?
   experienceStatusObservedAt  DateTime?
   experienceStatusSource      String?
   createdAt                   DateTime
-  customer                    Customer                            @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  opportunity                 SalesOpportunity                    @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
-  item                        Item                                @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
+  customer                    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  opportunity                 SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
+  item                        Item             @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
   participants                SalesSessionParticipant[]
   invitationCommands          SalesParticipantInvitationCommand[]
-  extensionCommands           SalesParticipantExtensionCommand[]
   launchOperations            SalesParticipantLaunchOperation[]
 
+  @@index([customerId, opportunityId, createdAt])
   @@unique([customerId, id])
   @@unique([customerId, opportunityId, revision])
-  @@index([customerId, opportunityId, createdAt])
   @@index([customerId, itemId])
   @@index([customerId, externalId])
 }
@@ -233,33 +233,33 @@ model SalesDemoSession {
 /// Sales Experience. Invite and monitoring fields are reconciled from
 /// CloudShare; no invitation URL is retained.
 model SalesSessionParticipant {
-  id                                   String                             @id
-  customerId                           String
-  salesDemoSessionId                   String
-  opportunityContactId                 String
-  cloudShareParticipantId              String                             @unique
-  invitationStatus                     String
-  lastInvitedAt                        DateTime?
-  invitedBy                            String?
-  participationStatus                  String
-  firstJoined                          String?
+  extensionTargets SalesParticipantExtensionTarget[]
+  id                          String   @id
+  customerId                  String
+  salesDemoSessionId          String
+  opportunityContactId        String
+  cloudShareParticipantId     String   @unique
+  invitationStatus            String
+  lastInvitedAt               DateTime?
+  invitedBy                   String?
+  participationStatus         String
+  firstJoined                 String?
   /// Server-only numeric v4 Sales-roster reference. This is not a v3 Environment ID.
   cloudShareRosterEnvironmentReference String?
-  environmentStatus                    String?
-  environmentStatusCode                Int?
-  environmentObservedAt                DateTime?
-  environmentAttentionReason           String?
-  environmentAttentionSource           String?
-  lastReconciledAt                     DateTime
-  createdAt                            DateTime
-  updatedAt                            DateTime
-  session                              SalesDemoSession                   @relation(fields: [customerId, salesDemoSessionId], references: [customerId, id], onDelete: Cascade)
-  contact                              OpportunityContact                 @relation(fields: [customerId, opportunityContactId], references: [customerId, id], onDelete: Restrict)
-  launchLinks                          SalesParticipantLaunchLink[]
-  invitationTargets                    SalesParticipantInvitationTarget[]
-  invitationFences                     SalesParticipantInvitationFence[]
-  extensionTargets                     SalesParticipantExtensionTarget[]
-  launchOperations                     SalesParticipantLaunchOperation[]
+  environmentStatus           String?
+  environmentStatusCode       Int?
+  environmentObservedAt       DateTime?
+  environmentAttentionReason  String?
+  environmentAttentionSource  String?
+  lastReconciledAt            DateTime
+  createdAt                   DateTime
+  updatedAt                   DateTime
+  session                     SalesDemoSession @relation(fields: [customerId, salesDemoSessionId], references: [customerId, id], onDelete: Cascade)
+  contact                     OpportunityContact @relation(fields: [customerId, opportunityContactId], references: [customerId, id], onDelete: Restrict)
+  launchLinks                 SalesParticipantLaunchLink[]
+  invitationTargets            SalesParticipantInvitationTarget[]
+  invitationFences             SalesParticipantInvitationFence[]
+  launchOperations            SalesParticipantLaunchOperation[]
 
   @@unique([customerId, salesDemoSessionId, opportunityContactId])
   @@unique([customerId, id])
@@ -269,157 +269,120 @@ model SalesSessionParticipant {
 /// Opaque public launch capability. Only a SHA-256 digest is persisted; the
 /// browser-visible plaintext exists once, in the Sales Admin copy response.
 model SalesParticipantLaunchLink {
-  id                        String                  @id
-  customerId                String
-  salesDemoSessionId        String
+  id                    String @id
+  customerId            String
+  salesDemoSessionId    String
   salesSessionParticipantId String
-  tokenHash                 String                  @unique
-  revokedAt                 DateTime?
-  createdAt                 DateTime
-  participant               SalesSessionParticipant @relation(fields: [salesSessionParticipantId], references: [id], onDelete: Cascade)
+  tokenHash             String @unique
+  revokedAt             DateTime?
+  createdAt             DateTime
+  participant           SalesSessionParticipant @relation(fields: [salesSessionParticipantId], references: [id], onDelete: Cascade)
 
   @@index([customerId, salesDemoSessionId, salesSessionParticipantId])
 }
 
 model SalesParticipantInvitationCommand {
-  customerId          String
-  commandId           String
-  sessionId           String
-  scopeHash           String
-  phase               String
-  revision            Int                                @default(1)
-  admissionTokenHash  String?
+  customerId String
+  commandId String
+  sessionId String
+  scopeHash String
+  phase String
+  revision Int @default(1)
+  admissionTokenHash String?
   admissionLeaseUntil DateTime?
-  correlationId       String?
-  httpStatus          Int?
-  resultCode          String?
-  createdAt           DateTime
-  updatedAt           DateTime
-  customer            Customer                           @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  session             SalesDemoSession                   @relation(fields: [customerId, sessionId], references: [customerId, id], onDelete: Cascade)
-  targets             SalesParticipantInvitationTarget[]
-  fences              SalesParticipantInvitationFence[]
-
+  correlationId String?
+  httpStatus Int?
+  resultCode String?
+  createdAt DateTime
+  updatedAt DateTime
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  session SalesDemoSession @relation(fields: [customerId, sessionId], references: [customerId, id], onDelete: Cascade)
+  targets SalesParticipantInvitationTarget[]
+  fences SalesParticipantInvitationFence[]
   @@id([customerId, commandId])
 }
 
 /// Durable at-most-once fence for canonical Participant registration.
 model SalesParticipantAddCommand {
-  customerId    String
-  commandId     String
-  sessionId     String
-  targetKey     String   @default("")
-  payloadHash   String
-  state         String
-  status        Int?
-  resultJson    String?
-  correlationId String?
-  createdAt     DateTime
-  updatedAt     DateTime
-
+  customerId       String
+  commandId        String
+  sessionId        String
+  targetKey        String   @default("")
+  payloadHash      String
+  state            String
+  status           Int?
+  resultJson       String?
+  correlationId    String?
+  createdAt        DateTime
+  updatedAt        DateTime
   @@id([customerId, commandId])
   @@unique([customerId, sessionId, commandId])
-  @@unique([customerId, sessionId, targetKey])
   @@index([customerId, sessionId, createdAt])
+  @@unique([customerId, sessionId, targetKey])
 }
 
 /// Safe, non-secret outcome history for admin participant launch actions.
 model SalesParticipantLaunchOperation {
-  id                        String                  @id
-  customerId                String
-  salesDemoSessionId        String
+  id                       String   @id
+  customerId               String
+  salesDemoSessionId       String
   salesSessionParticipantId String
-  correlationId             String
-  operation                 String
-  outcome                   String
-  safeReason                String?
-  occurredAt                DateTime
-  revision                  Int
-  customer                  Customer                @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  session                   SalesDemoSession        @relation(fields: [customerId, salesDemoSessionId], references: [customerId, id], onDelete: Cascade)
-  participant               SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
-
+  correlationId            String
+  operation                String
+  outcome                  String
+  safeReason               String?
+  occurredAt               DateTime
+  revision                 Int
+  customer                 Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  session                  SalesDemoSession @relation(fields: [customerId, salesDemoSessionId], references: [customerId, id], onDelete: Cascade)
+  participant              SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
   @@index([customerId, salesDemoSessionId, salesSessionParticipantId, occurredAt])
   @@index([customerId, salesDemoSessionId, occurredAt])
 }
 
 model SalesParticipantInvitationTarget {
-  customerId                String
-  commandId                 String
+  customerId String
+  commandId String
   salesSessionParticipantId String
-  ordinal                   Int
-  intent                    String
-  expectedInvitationStatus  String
-  participantRevision       String
-  projectionRevision        String                            @default("")
-  outcome                   String?
-  reason                    String?
-  command                   SalesParticipantInvitationCommand @relation(fields: [customerId, commandId], references: [customerId, commandId], onDelete: Cascade)
-  participant               SalesSessionParticipant           @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
-
+  ordinal Int
+  intent String
+  expectedInvitationStatus String
+  participantRevision String
+  projectionRevision String @default("")
+  outcome String?
+  reason String?
+  command SalesParticipantInvitationCommand @relation(fields: [customerId, commandId], references: [customerId, commandId], onDelete: Cascade)
+  participant SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
   @@id([customerId, commandId, salesSessionParticipantId])
   @@unique([customerId, commandId, ordinal])
 }
 
 model SalesParticipantInvitationFence {
-  customerId                String
+  customerId String
   salesSessionParticipantId String
-  commandId                 String
-  revision                  Int                               @default(1)
-  acquiredAt                DateTime
-  command                   SalesParticipantInvitationCommand @relation(fields: [customerId, commandId], references: [customerId, commandId], onDelete: Cascade)
-  participant               SalesSessionParticipant           @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
-
+  commandId String
+  revision Int @default(1)
+  acquiredAt DateTime
+  command SalesParticipantInvitationCommand @relation(fields: [customerId, commandId], references: [customerId, commandId], onDelete: Cascade)
+  participant SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
   @@id([customerId, salesSessionParticipantId])
 }
 
-model SalesParticipantExtensionCommand {
-  customerId    String
-  commandId     String
-  sessionId     String
-  targetEnd     String
-  dispatchState String
-  revision      Int                               @default(1)
-  correlationId String?
-  createdAt     DateTime
-  updatedAt     DateTime
-  customer      Customer                          @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  session       SalesDemoSession                  @relation(fields: [customerId, sessionId], references: [customerId, id], onDelete: Cascade)
-  targets       SalesParticipantExtensionTarget[]
-
-  @@id([customerId, commandId])
-}
-
-model SalesParticipantExtensionTarget {
-  customerId                String
-  commandId                 String
-  salesSessionParticipantId String
-  participantRevision       String
-  environmentId             String
-  preExpiry                 String
-  outcome                   String
-  reason                    String?
-  confirmedExpiry           String?
-  command                   SalesParticipantExtensionCommand @relation(fields: [customerId, commandId], references: [customerId, commandId], onDelete: Cascade)
-  participant               SalesSessionParticipant          @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
-
-  @@id([customerId, commandId, salesSessionParticipantId])
-}
-
 model User {
-  id                      String                 @id @default(cuid())
-  customerId              String
-  email                   String                 @unique
-  firstName               String?
-  lastName                String?
-  passwordHash            String
-  role                    String
-  createdAt               DateTime               @default(now())
-  lastSalesTimeZone       String?
+  id           String          @id @default(cuid())
+  customerId   String
+  email        String          @unique
+  firstName    String?
+  lastName     String?
+  passwordHash String
+  role         String
+  createdAt    DateTime        @default(now())
+  lastSalesTimeZone String?
   lastSalesExperienceType String?
-  customer                Customer               @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  sessions                PortalSession[]
-  salesTrialEnrollments   SalesTrialEnrollment[]
+  customer     Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  sessions     PortalSession[]
+  salesTrialEnrollments SalesTrialEnrollment[]
+
 }
 
 /// Explicitly enables one Customer-owned Sales Trial participant portal. This
@@ -432,16 +395,14 @@ model SalesTrialPortalConfiguration {
   customer            Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 }
 
-/**
- * Per-Customer cache of the documented v3 timezone catalogue. It is a cache,
+/** Per-Customer cache of the documented v3 timezone catalogue. It is a cache,
  * never a source of truth: the reader records freshness and can report a
- * fallback instead of silently inventing timezones.
- */
+ * fallback instead of silently inventing timezones. */
 model SalesTimezoneCache {
-  customerId String   @id
+  customerId String @id
   valuesJson String
-  fetchedAt  DateTime
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  fetchedAt DateTime
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 }
 
 model PortalSession {
@@ -465,7 +426,7 @@ model CloudShareConnection {
 }
 
 model Exam {
-  id                    String              @id
+  id                    String   @id
   customerId            String
   title                 String
   description           String
@@ -489,34 +450,34 @@ model Exam {
   policyName            String
   instructorId          String
   instructorName        String
-  customer              Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer              Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   attempts              ExamAttempt[]
-  deliveryAvailability  String              @default("individual")
+  deliveryAvailability  String   @default("individual")
   cohortSessions        CohortExamSession[]
 
   @@index([customerId, status])
 }
 
 model CohortExamSession {
-  id                       String    @id
-  customerId               String
-  examId                   String
-  name                     String
-  admissionStartsAt        DateTime
-  admissionEndsAt          DateTime?
-  capacity                 Int?
-  status                   String
-  cloudShareTrainingId     String?
-  cloudShareExperienceId   String?
-  cloudShareTeamId         String?
-  publishedAt              DateTime?
-  admissionClosedAt        DateTime?
-  retiredAt                DateTime?
-  lastPublishError         String?
+  id                 String   @id
+  customerId         String
+  examId             String
+  name               String
+  admissionStartsAt  DateTime
+  admissionEndsAt    DateTime?
+  capacity           Int?
+  status             String
+  cloudShareTrainingId  String?
+  cloudShareExperienceId String?
+  cloudShareTeamId      String?
+  publishedAt        DateTime?
+  admissionClosedAt  DateTime?
+  retiredAt          DateTime?
+  lastPublishError   String?
   lastPublishCorrelationId String?
-  createdAt                DateTime
-  updatedAt                DateTime
-  exam                     Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  createdAt          DateTime
+  updatedAt          DateTime
+  exam               Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
 
   @@index([customerId, examId, status])
   @@index([examId, createdAt])
@@ -524,38 +485,38 @@ model CohortExamSession {
 }
 
 model CohortMonitoringObservation {
-  id               String   @id @default(cuid())
-  customerId       String
-  cohortSessionId  String
-  rowKey           String
-  signature        String
+  id              String   @id @default(cuid())
+  customerId      String
+  cohortSessionId String
+  rowKey          String
+  signature       String
   consecutiveReads Int      @default(1)
-  observedAt       DateTime
+  observedAt      DateTime
 
   @@unique([customerId, cohortSessionId, rowKey])
   @@index([cohortSessionId, observedAt])
 }
 
 model ExamAttempt {
-  id              String     @id
-  customerId      String
-  candidateId     String
-  examId          String
+  id          String     @id
+  customerId  String
+  candidateId String
+  examId      String
   cohortSessionId String?
-  status          String
-  scheduledFor    DateTime?
-  createdAt       DateTime
-  updatedAt       DateTime   @updatedAt
-  customer        Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  exam            Exam       @relation(fields: [examId], references: [id], onDelete: Cascade)
-  labLaunch       LabLaunch?
-  examClock       ExamClock?
+  status      String
+  scheduledFor DateTime?
+  createdAt   DateTime
+  updatedAt   DateTime   @updatedAt
+  customer    Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  exam        Exam       @relation(fields: [examId], references: [id], onDelete: Cascade)
+  labLaunch   LabLaunch?
+  examClock   ExamClock?
 
-  @@unique([candidateId, cohortSessionId])
   @@index([candidateId, createdAt])
   @@index([examId, createdAt])
   @@index([customerId, candidateId])
   @@index([cohortSessionId, createdAt])
+  @@unique([candidateId, cohortSessionId])
 }
 
 model ExamAttemptAdmissionLock {
@@ -589,12 +550,12 @@ model LabLaunch {
 }
 
 model ExamClock {
-  examAttemptId    String      @id
-  status           String
-  elapsedAtPauseMs Int
-  startedAt        DateTime?
-  updatedAt        DateTime
-  examAttempt      ExamAttempt @relation(fields: [examAttemptId], references: [id], onDelete: Cascade)
+  examAttemptId     String      @id
+  status            String
+  elapsedAtPauseMs  Int
+  startedAt         DateTime?
+  updatedAt         DateTime
+  examAttempt       ExamAttempt @relation(fields: [examAttemptId], references: [id], onDelete: Cascade)
 }
 
 model EnvironmentRecord {
@@ -667,4 +628,32 @@ model AuditTrailEntry {
   @@index([actorEmail])
   @@index([subjectType, subjectId])
   @@index([correlationId])
+}
+model SalesParticipantExtensionCommand {
+  customerId String
+  commandId String
+  sessionId String
+  activeSessionId String?
+  identity String
+  state String
+  revision Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  session SalesDemoSession @relation(fields: [customerId, sessionId], references: [customerId, id], onDelete: Cascade)
+  targets SalesParticipantExtensionTarget[]
+  @@id([customerId, commandId])
+  @@unique([customerId, activeSessionId])
+}
+model SalesParticipantExtensionTarget {
+  customerId String
+  commandId String
+  salesSessionParticipantId String
+  activeParticipantId String?
+  activeEnvironmentId String?
+  command SalesParticipantExtensionCommand @relation(fields: [customerId, commandId], references: [customerId, commandId], onDelete: Cascade)
+  participant SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
+  @@id([customerId, commandId, salesSessionParticipantId])
+  @@unique([customerId, activeParticipantId])
+  @@unique([customerId, activeEnvironmentId])
 }
