@@ -7,6 +7,7 @@ import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales
 import { handleCreateSalesParticipantLaunchLink, handleSalesParticipantLaunch } from "./sales-participant-launch";
 import { handleExtendSalesParticipants } from "./sales-participant-extension";
 import { createInMemorySalesParticipantExtensionCommandStore } from "@/persistence/in-memory-sales-participant-extension-command";
+import { CloudShareRequestError } from "@/integrations/cloudshare/errors";
 import { handleRegisterSalesSessionParticipants } from "./sales-session-participants";
 const exchange = { request: { method: "GET" as const, path: "/fixture" }, response: { status: 200, body: null } };
 function fixture() {
@@ -25,7 +26,7 @@ function fixture() {
     return { attemptedOperation: "archive_environment", integrationSurface: "cloudshare.v3.env.action.archive", method: "PUT", path: "/envs/actions/archive", externalIds: { environmentId: id }, request: exchange.request, response: exchange.response };
   }) };
   const delivery: ReturnType<SalesCancellationDependencies["provider"]>["delivery"] = {
-    readSession: vi.fn<ReturnType<SalesCancellationDependencies["provider"]>["delivery"]["readSession"]>(async () => ({ id: "experience1", status: "inProgress", end, labels, ...exchange })),
+    readSession: vi.fn<ReturnType<SalesCancellationDependencies["provider"]>["delivery"]["readSession"]>(async () => ({ id: "experience1", status: "inProgress", start: "2026-09-19T09:00", timeZone: "UTC", end, labels, ...exchange })),
     listParticipants: vi.fn<ReturnType<SalesCancellationDependencies["provider"]>["delivery"]["listParticipants"]>(async () => ({ completeness: "complete", provenance: { expectedCount: 1, returnedCount: 1, offsets: [0] }, participants: [{ id: "remote1", email: "ada@example.test", firstName: "Ada", lastName: "Example", invitationStatus: "notSent", invitedBy: null, firstJoined: null, participationStatus: "inProgress", envStatus: "Ready", environmentId: "17", customProperties: { certalisSalesParticipantId: "p1", certalisOpportunityContactId: "contact1" } }], ...exchange })),
     updateSession: vi.fn<ReturnType<SalesCancellationDependencies["provider"]>["delivery"]["updateSession"]>(async (id, changes) => { end = changes.end!; if (changes.cancelled) labels = ["certalis:cancelled"]; return { id, ...exchange }; }),
   };
@@ -42,6 +43,79 @@ function fixture() {
   return { deps, request, environments, delivery, controller, setArchived: () => { archived = true; } };
 }
 describe("Sales cancellation API", () => {
+  it("keeps a lost DELETE fenced and reconciles only the exact Experience GET", async () => {
+    const f = fixture();
+    let dispatched = false, absent = false;
+    vi.mocked(f.delivery.readSession).mockImplementation(async () => {
+      if (absent) throw new CloudShareRequestError("Not found", 404);
+      if (dispatched) throw new Error("Read unavailable");
+      return { id: "experience1", status: "notStarted", start: "2026-09-20T10:00", timeZone: "UTC", ...exchange };
+    });
+    const deleteSession = vi.fn(async () => {
+      expect((await f.deps.commands.read("c1", f.request.body.commandId))?.deletion?.state).toBe("dispatched");
+      dispatched = true;
+      throw new Error("DELETE response lost");
+    });
+    Object.assign(f.delivery, { deleteSession });
+    expect(await handleCancelSalesDemoSession(f.deps, f.request)).toMatchObject({ status: 202, body: { experienceDeleted: false, accessRetryable: false, deletionPending: false } });
+    expect(await handleCancelSalesDemoSession(f.deps, { ...f.request, body: { ...f.request.body, retrySafe: true } })).toMatchObject({ status: 202 });
+    absent = true;
+    expect(await handleCancelSalesDemoSession(f.deps, { ...f.request, body: { ...f.request.body, reconcile: true } })).toMatchObject({ status: 200, body: { experienceDeleted: true } });
+    expect(deleteSession).toHaveBeenCalledTimes(1);
+    expect(f.delivery.readSession).toHaveBeenLastCalledWith("experience1");
+    expect(f.delivery.updateSession).not.toHaveBeenCalled();
+  });
+  it("uses the current provider timezone and refuses DELETE when Start crosses before dispatch", async () => {
+    const f = fixture();
+    // Local Session Start is 09:00 UTC. Provider 06:30 New York is 10:30 UTC.
+    vi.mocked(f.delivery.readSession).mockResolvedValueOnce({ id: "experience1", status: "notStarted", start: "2026-09-19T06:30", timeZone: "America/New_York", ...exchange }).mockResolvedValue({ id: "experience1", status: "notStarted", start: "2026-09-19T05:30", timeZone: "America/New_York", ...exchange });
+    const deleteSession = vi.fn(); Object.assign(f.delivery, { deleteSession });
+    expect(await handleCancelSalesDemoSession(f.deps, f.request)).toMatchObject({ status: 202, body: { deletionPending: true } });
+    expect(deleteSession).not.toHaveBeenCalled();
+    expect(f.environments.observe).not.toHaveBeenCalled();
+    expect(f.delivery.updateSession).not.toHaveBeenCalled();
+  });
+  it("adds an explicitly confirmed DELETE step without resetting a prior End dispatch", async () => {
+    const f = fixture();
+    const admitted = await f.deps.commands.admit({ customerId: "c1", sessionId: "s1", commandId: f.request.body.commandId, experienceId: "experience1", cancelledAt: "2026-09-19T09:30:00Z", actor: f.request.actor, timeZone: "UTC", targetEnd: "2026-09-19T09:30", targets: [] });
+    await f.deps.commands.save({ ...admitted.command!, accessState: "dispatched" }, 1);
+    let deleted = false;
+    vi.mocked(f.delivery.readSession).mockImplementation(async () => {
+      if (deleted) throw new CloudShareRequestError("Not found", 404);
+      return { id: "experience1", status: "notStarted", start: "2026-09-20T10:00", timeZone: "UTC", ...exchange };
+    });
+    const deleteSession = vi.fn(async () => { deleted = true; return exchange; }); Object.assign(f.delivery, { deleteSession });
+    expect(await handleCancelSalesDemoSession(f.deps, { ...f.request, body: { ...f.request.body, deleteFuture: true } })).toMatchObject({ status: 200, body: { experienceDeleted: true } });
+    expect(await f.deps.commands.read("c1", f.request.body.commandId)).toMatchObject({ accessState: "dispatched", targetEnd: "2026-09-19T09:30", cancelledAt: "2026-09-19T09:30:00Z", deletion: { state: "confirmed" } });
+    expect(f.delivery.updateSession).not.toHaveBeenCalled();
+    expect(deleteSession).toHaveBeenCalledTimes(1);
+  });
+  it.each([undefined, "Unrecognized/Zone"])("fails closed when provider timezone is %s", async timeZone => {
+    const f = fixture();
+    vi.mocked(f.delivery.readSession).mockResolvedValue({ id: "experience1", status: "notStarted", start: "2026-09-20T10:00", timeZone, ...exchange });
+    const deleteSession = vi.fn(); Object.assign(f.delivery, { deleteSession });
+    expect(await handleCancelSalesDemoSession(f.deps, f.request)).toMatchObject({ status: 502 });
+    expect(deleteSession).not.toHaveBeenCalled();
+    expect(await f.deps.commands.read("c1", f.request.body.commandId)).toBeNull();
+  });
+  it("deletes a future provider Experience once while preserving portal history", async () => {
+    const f = fixture();
+    let deleted = false;
+    vi.mocked(f.delivery.readSession).mockImplementation(async () => {
+      if (deleted) throw new CloudShareRequestError("Not found", 404);
+      return { id: "experience1", status: "notStarted", start: "2026-09-19T16:30", timeZone: "UTC", end: "2026-09-20T16:30", ...exchange };
+    });
+    const deleteSession = vi.fn(async () => { deleted = true; return { request: { method: "DELETE" as const, path: "/sales/experience1" }, response: { status: 204 } }; });
+    Object.assign(f.delivery, { deleteSession });
+    expect(await handleCancelSalesDemoSession(f.deps, f.request)).toMatchObject({ status: 200, body: { outcome: "cancelled", experienceDeleted: true } });
+    expect(deleteSession).toHaveBeenCalledTimes(1);
+    expect(f.environments.observe).not.toHaveBeenCalled();
+    expect(f.controller.archiveEnvironment).not.toHaveBeenCalled();
+    expect(f.delivery.updateSession).not.toHaveBeenCalled();
+    expect(f.deps.sessions.updateEnd).not.toHaveBeenCalled();
+    expect(await f.deps.sessions.findById!("c1", "s1")).toMatchObject({ cloudShareSalesExperienceId: "experience1" });
+    expect(await f.deps.participants.list("c1", "s1")).toHaveLength(1);
+  });
   it("cancels a fully correlated Session whose creation diagnostics need attention", async () => {
     const f = fixture();
     const session = (await f.deps.sessions.findById!("c1", "s1"))!;

@@ -332,6 +332,12 @@ _Avoid_: Exam, Cohort Exam Session, generic session.
 **Sales Experience**:
 The CloudShare v4 resource backing a Sales Enablement Session.
 
+**Sales Session Cancellation**:
+Ends access to a Sales Enablement Session while retaining its portal Session, Participants,
+original schedule, correlations, Activity and Support history. An active or previously run Sales
+Experience is retained; an Experience whose current CloudShare Start is in the future is, by
+the agreed business definition, not yet run and may be removed.
+
 **Certification**:
 The whole path/journey a Candidate takes — training plus one or more exams, some potentially
 outside CloudShare. Acknowledged as the real-world umbrella but **deliberately not built**; the

@@ -13,13 +13,24 @@ it("requires destructive-impact confirmation and shows retained history and per-
   await waitFor(() => expect((screen.getByRole("button", { name: "Cancel Session" }) as HTMLButtonElement).disabled).toBe(false));
   await userEvent.click(screen.getByRole("button", { name: "Cancel Session" }));
   expect(request.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
-  expect(screen.getByRole("alertdialog").textContent).toContain("will not be deleted");
+  expect(screen.getByRole("alertdialog").textContent).toContain("future Start will be deleted from CloudShare");
+  expect(screen.getByRole("alertdialog").textContent).toContain("All portal history is retained");
   await userEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
   expect(await screen.findByRole("heading", { name: "Cancelled" })).toBeTruthy();
   expect(screen.getByText(/Environment archived/)).toBeTruthy();
   expect(screen.getByRole("link", { name: "Open cancellation diagnostics" }).getAttribute("href")).toContain("correlationId=cmd");
   expect(onAdmitted).toHaveBeenCalled();
   expect(JSON.parse(request.mock.calls.find(([, init]) => init?.method === "POST")![1]!.body as string)).toMatchObject({ confirmed: true });
+});
+it("confirms a separate future deletion step and shows retained portal history", async () => {
+  const result = { commandId: "cmd", correlationId: "cmd", status: "Cancellation needs attention", cancelledAt: "2026-09-19T10:00:00.000Z", accessConfirmed: false, accessRetryable: false, futureDeletionAvailable: true, targets: [], reconcile: true };
+  const request = vi.fn(async (_url: string, init?: RequestInit) => json(init?.method === "POST" ? { ...result, status: "Cancelled", experienceDeleted: true, futureDeletionAvailable: false, reconcile: false } : result));
+  render(<SalesSessionCancellation sessionId="s1" request={request} onAdmitted={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "Cancel future Experience" }));
+  expect(request.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  await userEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
+  expect(await screen.findByText("Future CloudShare Experience deleted. All portal history is retained.")).toBeTruthy();
+  expect(JSON.parse(request.mock.calls.find(([, init]) => init?.method === "POST")![1]!.body as string)).toMatchObject({ commandId: "cmd", confirmed: true, deleteFuture: true });
 });
 it("offers only read-only reconciliation when every provider write was already attempted", async () => {
   const result = { commandId: "cmd", correlationId: "cmd", status: "Cancellation needs attention", outcome: "needs_attention", cancelledAt: "2026-09-19T10:00:00.000Z", accessConfirmed: false, accessRetryable: false, targets: [{ participantId: "p1", outcome: "dispatched", retryable: false }], reconcile: true };

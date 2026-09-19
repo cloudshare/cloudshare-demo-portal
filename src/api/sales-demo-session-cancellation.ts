@@ -6,15 +6,17 @@ import type { EnvironmentController } from "@/domain/environment";
 import { cloudShareWallClockToInstant, formatCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
 import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales-environment";
+import { CloudShareRequestError } from "@/integrations/cloudshare/errors";
+import type { SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 export interface SalesCancellationDependencies extends Omit<SalesParticipantExtensionDependencies, "commands" | "provider"> {
   commands: SalesCancellationStore;
-  provider(connection: Parameters<SalesParticipantExtensionDependencies["provider"]>[0]): ReturnType<SalesParticipantExtensionDependencies["provider"]> & { controller: Pick<EnvironmentController, "archiveEnvironment"> };
+  provider(connection: Parameters<SalesParticipantExtensionDependencies["provider"]>[0]): ReturnType<SalesParticipantExtensionDependencies["provider"]> & { delivery: Pick<SalesDelivery, "deleteSession">; controller: Pick<EnvironmentController, "archiveEnvironment"> };
 }
-const schema = z.object({ commandId: z.string().uuid(), confirmed: z.literal(true), reconcile: z.boolean().optional(), retrySafe: z.boolean().optional() }).strict();
+const schema = z.object({ commandId: z.string().uuid(), confirmed: z.literal(true), reconcile: z.boolean().optional(), retrySafe: z.boolean().optional(), deleteFuture: z.boolean().optional() }).strict();
 const denied = (status: number, error: string) => ({ status, body: { error } });
 export async function handleCancelSalesDemoSession(deps: SalesCancellationDependencies, request: SalesParticipantExtensionRequest) {
   const parsed = schema.safeParse(request.body);
-  if (!parsed.success) return denied(400, "Confirm that cancellation ends access and archives participant environments.");
+  if (!parsed.success) return denied(400, "Confirm cancellation: future CloudShare Experiences are deleted; other Experiences are ended with participant environments archived. Portal history is retained.");
   let command: SalesCancellationCommand | null = null;
   const exchanges: { request: unknown; response: unknown }[] = [];
   let surface = "portal.sales";
@@ -33,18 +35,30 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
     if (!session || session.customerId !== request.customerId) return denied(404, "Sales Session was not found.");
     command = await deps.commands.read(request.customerId, parsed.data.commandId);
     if (command && (command.sessionId !== session.id || command.experienceId !== session.cloudShareSalesExperienceId)) return denied(409, "Cancellation belongs to a different Session.");
-    if (command && ((!parsed.data.reconcile && !parsed.data.retrySafe) || command.finished)) return salesCancellationResult(command);
+    if (command && ((!parsed.data.reconcile && !parsed.data.retrySafe && !parsed.data.deleteFuture) || command.finished)) return salesCancellationResult(command);
     if (!command && parsed.data.reconcile) return denied(404, "Cancellation command was not found.");
     const connection = await deps.connections.findByCustomerId(request.customerId);
     if (!connection || connection.customerId !== request.customerId) return denied(409, "Connect CloudShare before cancelling.");
     const { delivery, environments, controller } = deps.provider(connection);
+    const readProviderSession = async () => {
+      surface = "cloudshare.v4";
+      const remote = await delivery.readSession(session.cloudShareSalesExperienceId);
+      exchanges.push(remote);
+      if (remote.id !== session.cloudShareSalesExperienceId) throw new Error("experience_correlation");
+      return remote;
+    };
+    const futureStart = (remote: Awaited<ReturnType<typeof readProviderSession>>) => {
+      const start = remote.start && remote.timeZone && cloudShareWallClockToInstant(remote.start.replace(/(T\d\d:\d\d):00(?:\.0+)?$/, "$1"), remote.timeZone);
+      if (!start) throw new Error("provider_start_or_timezone_unavailable");
+      return start.getTime() > (deps.now ?? (() => new Date()))().getTime();
+    };
+    let initialRemote: Awaited<ReturnType<typeof readProviderSession>> | undefined;
     const identify = async () => {
       const item = await deps.items.findById(session.itemId);
       if (!item || item.customerId !== request.customerId) throw new Error("item_correlation");
       surface = "cloudshare.v4";
-      const remoteSession = await delivery.readSession(session.cloudShareSalesExperienceId);
-      exchanges.push(remoteSession);
-      if (remoteSession.id !== session.cloudShareSalesExperienceId) throw new Error("experience_correlation");
+      const remoteSession = await readProviderSession();
+      initialRemote = remoteSession;
       const local = await deps.participants.list(request.customerId, session.id);
       const roster = await delivery.listParticipants(session.cloudShareSalesExperienceId);
       exchanges.push(...(roster.exchanges ?? [roster]));
@@ -66,8 +80,11 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
     if (!command) {
       if (!session.cloudShareSalesExperienceId || session.cloudShareSalesExperienceId === "unprovisioned" || session.cloudShareSalesExperienceId.startsWith("pending:")) return denied(409, "Only a provisioned Sales Session can be cancelled.");
       const identities = await identify();
+      const future = futureStart(initialRemote!);
       const targets: SalesCancellationTarget[] = [];
       for (const { neverLaunched, ...identity } of identities) {
+        // Future provider Start is the agreed rule; no v3 archive eligibility applies.
+        if (future) { targets.push({ ...identity, environmentId: null, state: "pending" }); continue; }
         surface = "cloudshare.v3";
         let resolved;
         try { resolved = await environments.observe({ ownerEmail: identity.email, projectId: identity.projectId }); }
@@ -92,7 +109,36 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
       if (admitted.kind === "blocked" || admitted.kind === "mismatch") return denied(409, "Another operation owns this Session or Environment. Reconcile it before cancelling.");
       command = admitted.command!;
       if (admitted.kind !== "new") return salesCancellationResult(command);
+      if (future) await persist({ ...command, deletion: { state: "pending", providerStart: initialRemote!.start!, timeZone: initialRemote!.timeZone! } });
       await record("success", "Cancellation admitted; further access is blocked.");
+    }
+    if (parsed.data.deleteFuture && !command.deletion) {
+      const remote = await readProviderSession();
+      if (!futureStart(remote)) throw new Error("experience_is_no_longer_future");
+      await persist({ ...command, deletion: { state: "pending", providerStart: remote.start!, timeZone: remote.timeZone! } });
+    }
+    if (command.deletion) {
+      if (command.deletion.state === "pending" && !parsed.data.reconcile) {
+        if (!delivery.deleteSession) throw new Error("delete_adapter_unavailable");
+        // Fresh authoritative Start/timezone immediately precedes the durable dispatch fence.
+        const remote = await readProviderSession();
+        if (!futureStart(remote)) throw new Error("experience_is_no_longer_future");
+        await persist({ ...command, deletion: { state: "dispatched", providerStart: remote.start!, timeZone: remote.timeZone!, dispatchedAt: (deps.now ?? (() => new Date()))().toISOString() } });
+        if (!futureStart(remote)) throw new Error("experience_is_no_longer_future");
+        try { exchanges.push(await delivery.deleteSession(command.experienceId)); }
+        catch (error) { await record("failure", "Experience deletion requires read-only reconciliation; do not replay.", error); }
+      }
+      if (command.deletion!.state === "dispatched") {
+        try { await readProviderSession(); }
+        catch (error) {
+          if (!(error instanceof CloudShareRequestError) || error.status !== 404) throw error;
+          const evidence = projectCloudShareFailureEvidence(error);
+          if (evidence) exchanges.push(evidence);
+          await persist({ ...command, deletion: { ...command.deletion!, state: "confirmed" }, finished: true });
+        }
+      }
+      await record(command.finished ? "success" : "failure", command.finished ? "Future CloudShare Experience removed; all portal history retained." : "Experience deletion needs attention.");
+      return salesCancellationResult(command);
     }
     for (const original of command.targets) {
       if (original.state === "archived" || original.state === "no_environment" || (original.state === "not_dispatched" && !parsed.data.retrySafe)) continue;
@@ -147,5 +193,6 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
   }
 }
 export function salesCancellationResult(command: SalesCancellationCommand) {
-  return { status: command.finished ? 200 : 202, body: { commandId: command.commandId, correlationId: command.commandId, outcome: command.finished ? "cancelled" : "needs_attention", status: command.finished ? "Cancelled" : "Cancellation needs attention", cancelledAt: command.cancelledAt, accessConfirmed: command.accessState === "confirmed", accessRetryable: command.accessState === "pending", targets: command.targets.map(t => ({ participantId: t.participantId, participantName: t.participantName ?? "Participant", outcome: t.state, retryable: t.state === "not_dispatched" || t.state === "pending" })), reconcile: !command.finished } };
+  const experienceDeleted = command.deletion?.state === "confirmed";
+  return { status: command.finished ? 200 : 202, body: { commandId: command.commandId, correlationId: command.commandId, outcome: command.finished ? "cancelled" : "needs_attention", status: command.finished ? "Cancelled" : "Cancellation needs attention", cancelledAt: command.cancelledAt, experienceDeleted, deletionPending: command.deletion?.state === "pending", futureDeletionAvailable: !command.finished && !command.deletion, accessConfirmed: experienceDeleted || command.accessState === "confirmed", accessRetryable: !command.deletion && command.accessState === "pending", targets: command.targets.map(t => ({ participantId: t.participantId, participantName: t.participantName ?? "Participant", outcome: experienceDeleted ? "experience_deleted" : t.state, retryable: !command.deletion && (t.state === "not_dispatched" || t.state === "pending") })), reconcile: !command.finished } };
 }

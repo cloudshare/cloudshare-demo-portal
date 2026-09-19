@@ -1,6 +1,18 @@
 # Issue 351 cancellation verification
 
+## Current agreed requirement (supersedes the original no-DELETE scope below)
+
+The user's 2026-09-19 decision defines a current provider Start in the future as not yet run. Cancellation may DELETE that CloudShare Experience while retaining all portal Session, Participant, original schedule, correlation, Activity and Support history. It does not require a no-external-use attestation, historical-use reconstruction or an unchanged original provider Start. Other Experiences keep the archive + End path. Preparing archive remains fail-closed and open for later user testing.
+
+The typed v4 DELETE uses `/sales/{id}` and accepts empty 204. Eligibility parses fresh provider Start with its provider timezone, rechecks immediately before durable dispatch and checks elapsed time again after saving the fence. A crossed/unknown Start or invalid timezone produces no DELETE. The unconditional provider request still has an unavoidable time/change race; no conditional endpoint contract is claimed.
+
+A separate optional deletion step in the existing command JSON retains the prior End `accessState` unchanged. Explicit recovery confirmation can add that unattempted step to the failed scheduled command; no old End request is reset or replayed. Dispatched deletion allows only exact-ID GET reconciliation; 404 confirms current absence, without claiming who caused it. No portal rows or schedule are removed. No schema migration or new command framework is introduced.
+
+Revised-scope RED/GREEN: future handler expected 200/`experienceDeleted: true`, received 202/needs-attention before implementation; typed adapter expected one DELETE but observed zero in its empty implementation; confirmation tests failed on old no-deletion copy/missing recovery control; fixture deletion expected 204 but received no matching fixture. All now pass. Coverage includes provider timezone, Start crossover, missing timezone, ambiguity without replay, recovery preserving the failed End step, and SQLite restart retention. The three exact synthetic `future-delete`, `future-delete-ambiguous`, and `future-delete-crossover` transport cases are simulated evidence only. Future DELETE live proof, exact-head review, browser controls/console and human acceptance remain separate pending gates.
+
 ## Automated development evidence
+
+Revised future-Start scope validation: lint, typecheck, full automated suite (284 files / 2,372 tests), and production Next.js build passed on 2026-09-19. An initial full-suite attempt hit a Windows Vite realpath error before collection in an unchanged test file; the unchanged rerun passed. These checks do not replace the pending review/browser/live gates above.
 
 The replacement implementation starts from checkpoint e27d86f. Failed draft files were preserved outside the repository by the lifecycle task, then replaced.
 

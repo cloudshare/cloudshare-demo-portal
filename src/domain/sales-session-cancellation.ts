@@ -26,6 +26,13 @@ export interface SalesCancellationCommand extends SalesCancellationAdmission {
   readonly revision: number;
   readonly accessState: "pending" | "dispatched" | "confirmed";
   readonly finished: boolean;
+  /** Separate provider action; never resets or replaces a prior End dispatch. */
+  readonly deletion?: {
+    readonly state: "pending" | "dispatched" | "confirmed";
+    readonly providerStart: string;
+    readonly timeZone: string;
+    readonly dispatchedAt?: string;
+  };
 }
 export interface SalesCancellationStore {
   admit(input: SalesCancellationAdmission): Promise<{ kind: "new" | "existing" | "blocked" | "mismatch"; command?: SalesCancellationCommand }>;

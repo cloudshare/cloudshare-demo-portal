@@ -5,6 +5,7 @@ type Result = ReturnType<typeof salesCancellationResult>["body"];
 export function SalesSessionCancellation({ sessionId, request, onAdmitted }: { sessionId: string; request(url: string, init?: RequestInit): Promise<Response>; onAdmitted(): void }) {
   const [result, setResult] = useState<Result | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [confirmationMode, setConfirmationMode] = useState<"cancel" | "deleteFuture">("cancel");
   const [busy, setBusy] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [savedAbsent, setSavedAbsent] = useState(false);
@@ -29,7 +30,7 @@ export function SalesSessionCancellation({ sessionId, request, onAdmitted }: { s
     finally { if (active.current) setBusy(false); }
   };
   useEffect(() => { active.current = true; void read(); return () => { active.current = false; }; }, [url, request]); // eslint-disable-line react-hooks/exhaustive-deps
-  const run = async (mode: "cancel" | "reconcile" | "retrySafe") => {
+  const run = async (mode: "cancel" | "reconcile" | "retrySafe" | "deleteFuture") => {
     if (busy) return;
     commandId.current ??= crypto.randomUUID();
     setBusy(true); setSavedAbsent(false); setMessage(null); setConfirming(false);
@@ -47,14 +48,16 @@ export function SalesSessionCancellation({ sessionId, request, onAdmitted }: { s
   };
   return <section aria-label="Cancel Sales Enablement Session" style={{ border: "1px solid #d5a6a6", borderRadius: 8, padding: "1rem", marginBlock: "1rem" }}>
     <h2>{result?.status ?? "Cancel Sales Enablement Session"}</h2>
-    <p>Cancellation stops access and archives participant environments. The CloudShare Experience and all Session, Participant, Activity and Support history are retained.</p>
-    {result ? <><p>Cancellation requested: <time>{result.cancelledAt}</time> (UTC). Experience end and label: {result.accessConfirmed ? "confirmed" : "needs attention"}.</p>
-      <ul>{result.targets.map(target => <li key={target.participantId}>{target.participantName}: {target.outcome === "archived" ? "Environment archived" : target.outcome === "no_environment" ? "Never launched; no Environment found" : target.retryable ? "Not attempted; safe retry available" : "Awaiting read-only reconciliation"}</li>)}</ul>
+    <p>Cancellation stops access. A future CloudShare Experience is deleted; an Experience whose Start has arrived is ended and its participant environments archived. All portal Session, Participant, Activity and Support history is retained.</p>
+    {result ? <><p>Cancellation requested: <time>{result.cancelledAt}</time> (UTC).</p>
+      <p>{result.experienceDeleted ? "Future CloudShare Experience deleted. All portal history is retained." : result.accessConfirmed ? "Experience end and label confirmed." : "Provider cancellation needs attention."}</p>
+      <ul>{result.targets.map(target => <li key={target.participantId}>{target.participantName}: {target.outcome === "experience_deleted" ? "CloudShare Experience removed; Participant history retained" : target.outcome === "archived" ? "Environment archived" : target.outcome === "no_environment" ? "Never launched; no Environment found" : target.retryable ? "Not attempted; safe retry available" : "Awaiting read-only reconciliation"}</li>)}</ul>
       {result.reconcile ? <button type="button" disabled={busy} onClick={() => void run("reconcile")}>Check cancellation result</button> : null}
       {result.targets.some(t => t.retryable) || result.accessRetryable ? <button type="button" disabled={busy} onClick={() => void run("retrySafe")}>Retry unattempted cancellation steps</button> : null}
+      {result.futureDeletionAvailable || result.deletionPending ? <button type="button" disabled={busy} onClick={() => { setConfirmationMode("deleteFuture"); setConfirming(true); }}>Cancel future Experience</button> : null}
       <p><a href={`/sales?tab=support&correlationId=${encodeURIComponent(result.correlationId)}`}>Open cancellation diagnostics</a></p>
-    </> : confirming ? <div role="alertdialog" aria-label="Confirm Session cancellation"><p>This ends participant access immediately, archives every currently bound participant Environment, and ends the Sales Experience now. This cannot be undone in Certalis. The Experience and history will not be deleted.</p><button type="button" disabled={busy} onClick={() => void run("cancel")}>Confirm cancellation</button><button type="button" onClick={() => setConfirming(false)}>Keep Session</button></div>
-      : <button type="button" disabled={busy || !loaded || (commandId.current !== null && !savedAbsent)} onClick={() => setConfirming(true)}>Cancel Session</button>}
+    </> : !confirming ? <button type="button" disabled={busy || !loaded || (commandId.current !== null && !savedAbsent)} onClick={() => { setConfirmationMode("cancel"); setConfirming(true); }}>Cancel Session</button> : null}
+    {confirming ? <div role="alertdialog" aria-label="Confirm Session cancellation"><p>This ends participant access immediately. An Experience with a future Start will be deleted from CloudShare. Otherwise its participant environments are archived and the Experience is ended. All portal history is retained. This cannot be undone.</p>{confirmationMode === "deleteFuture" ? <p>This attempts only an unattempted future-Experience deletion after checking its current Start. Earlier cancellation attempts will not be replayed.</p> : null}<button type="button" disabled={busy} onClick={() => void run(confirmationMode)}>Confirm cancellation</button><button type="button" onClick={() => setConfirming(false)}>Keep Session</button></div> : null}
     {message ? <p role="status">{message} <button type="button" disabled={busy} onClick={() => void read()}>Check saved cancellation state</button> <a href={commandId.current ? `/sales?tab=support&correlationId=${encodeURIComponent(commandId.current)}` : "/sales?tab=support"}>Open Support</a></p> : null}
   </section>;
 }

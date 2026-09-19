@@ -1186,6 +1186,8 @@ environments and whether any CloudShare role/RBAC permissions differ from suspen
 
 ## GAP-20 — Experience cleanup is delete-only; no archive/hide lifecycle
 
+**Agreed Sales exception (2026-09-19, issue #351):** the user defines an Experience with current provider Start in the future as not yet run and permits its deletion. The selected implementation uses documented `DELETE /v4/sales/{id}` (204), with fresh provider Start/timezone checks and a separate durable deletion step; all portal records and history remain. Other Experiences retain archive + End behavior. The failed End PUT below is preserved and never replayed. No historical-use attestation is required. Future DELETE live proof remains pending; the unconditional provider endpoint has no documented atomic Start guard.
+
 **Sales cancellation update (2026-09-19, issue #351):** updating an active Sales Experience End succeeded (GAP-19), but scheduled End-before-Start was explicitly rejected. Owned Session `110561c6-26f4-4e3d-b82f-9996686cbb5c` had Start `2026-09-19T16:30:00Z`, with no invitation or launch. Cancellation `26648bd1-d455-4e65-ba3d-027cda70737c` at `2026-09-19T14:52:21.756Z` retained a `no_environment` target; its v4 End PUT returned 400 requiring End greater than scheduledStart (`16:30` UTC). GET confirmed unchanged `notStarted`, Start `2026-09-19T16:30:00Z`, End `2026-09-20T16:30:00Z`, and empty labels. The command remains unfinished with access state `dispatched`; the UI reports needs attention and no write was retried. Scheduled cancellation acceptance is blocked by this observed contract, not awaiting an unrun QA check. No Start rewrite, deletion or other workaround was attempted.
 
 **Jira tracking:** [BAC-26400](https://cloudshare.atlassian.net/browse/BAC-26400)

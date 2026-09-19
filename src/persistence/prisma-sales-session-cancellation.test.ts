@@ -52,6 +52,9 @@ it("persists revision fencing, immutable binding, restart recovery and cross-com
     expect(await store.save({ ...command, targets: command.targets.map(t => ({ ...t, state: "dispatched" })) }, 1)).toBe(true);
     const restarted = createPrismaSalesCancellationStore(prisma);
     expect((await restarted.read(id, "cancel"))?.targets[0]?.state).toBe("dispatched");
+    const beforeDeletion = (await restarted.read(id, "cancel"))!;
+    expect(await restarted.save({ ...beforeDeletion, accessState: "dispatched", deletion: { state: "dispatched", providerStart: "2026-09-20T09:00", timeZone: "UTC", dispatchedAt: now.toISOString() } }, beforeDeletion.revision)).toBe(true);
+    expect(await createPrismaSalesCancellationStore(prisma).read(id, "cancel")).toMatchObject({ accessState: "dispatched", targetEnd: input.targetEnd, deletion: { state: "dispatched", providerStart: "2026-09-20T09:00", timeZone: "UTC" } });
     expect(await restarted.read("other-customer", "cancel")).toBeNull();
     expect((await restarted.admit({ ...input, experienceId: "other-experience" })).kind).toBe("mismatch");
     expect((await restarted.admit({ ...input, targets: [{ ...input.targets[0]!, environmentId: "replacement" }] })).kind).toBe("mismatch");
