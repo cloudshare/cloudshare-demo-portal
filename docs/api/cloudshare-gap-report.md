@@ -1176,7 +1176,7 @@ Live-verify the archive action against a disposable CloudShare environment befor
 documented product contract. Confirm whether the action is idempotent for already-archived
 environments and whether any CloudShare role/RBAC permissions differ from suspend/resume.
 
-**Update (2026-09-19, issue #351):** owned Environment `EN0YJ4FccxfRaT4KGQmnoUWw2`, bound to Experience `EX1gJO4tHEshMyVUT-IAe0sQ2` and local Session `2cdb83d1-fc60-4202-bfcf-abf1edf908e9`, was observed with GET 200/status 2 (Ready), rechecked as 2, archived with PUT 204, and confirmed by exact-ID GET 200/status 4 (Archived). Cancellation command/correlation `541646d1-aaf4-493c-bff1-823f56b122e3` is retained at `2026-09-19T14:45:19.613Z`; v4 End/label PUT and confirming GET returned 200. This is one verified Ready-state transition, not proof of idempotency, RBAC equivalence or support for every status. Earlier status-8 Preparing preflight was rejected locally before any command or provider write. A separate proposed Preparing probe later read status 2 and stopped without direct archive dispatch. Preparing support remains unresolved; scheduled cancellation QA remains pending.
+**Update (2026-09-19, issue #351):** owned Environment `EN0YJ4FccxfRaT4KGQmnoUWw2`, bound to Experience `EX1gJO4tHEshMyVUT-IAe0sQ2` and local Session `2cdb83d1-fc60-4202-bfcf-abf1edf908e9`, was observed with GET 200/status 2 (Ready), rechecked as 2, archived with PUT 204, and confirmed by exact-ID GET 200/status 4 (Archived). Cancellation command/correlation `541646d1-aaf4-493c-bff1-823f56b122e3` is retained at `2026-09-19T14:45:19.613Z`; v4 End/label PUT and confirming GET returned 200. This is one verified Ready-state transition, not proof of idempotency, RBAC equivalence or support for every status. Earlier status-8 Preparing preflight was rejected locally before any command or provider write. A separate proposed Preparing probe later read status 2 and stopped without direct archive dispatch. Preparing support remains unresolved; scheduled cancellation rejection is recorded under GAP-20.
 
 **Code reference:** `src/integrations/cloudshare/environment-controller.ts`,
 `src/domain/exam-attempt-runtime-lifecycle.ts`,
@@ -1185,6 +1185,8 @@ environments and whether any CloudShare role/RBAC permissions differ from suspen
 ---
 
 ## GAP-20 — Experience cleanup is delete-only; no archive/hide lifecycle
+
+**Sales cancellation update (2026-09-19, issue #351):** updating an active Sales Experience End succeeded (GAP-19), but scheduled End-before-Start was explicitly rejected. Owned Session `110561c6-26f4-4e3d-b82f-9996686cbb5c` had Start `2026-09-19T16:30:00Z`, with no invitation or launch. Cancellation `26648bd1-d455-4e65-ba3d-027cda70737c` at `2026-09-19T14:52:21.756Z` retained a `no_environment` target; its v4 End PUT returned 400 requiring End greater than scheduledStart (`16:30` UTC). GET confirmed unchanged `notStarted`, Start `2026-09-19T16:30:00Z`, End `2026-09-20T16:30:00Z`, and empty labels. The command remains unfinished with access state `dispatched`; the UI reports needs attention and no write was retried. Scheduled cancellation acceptance is blocked by this observed contract, not awaiting an unrun QA check. No Start rewrite, deletion or other workaround was attempted.
 
 **Jira tracking:** [BAC-26400](https://cloudshare.atlassian.net/browse/BAC-26400)
 
