@@ -1144,8 +1144,8 @@ environment was not left running.
 
 | Field | Detail |
 |---|---|
-| **Status** | Unverified — endpoint shape identified during issue #250 QA follow-up and isolated behind the CloudShare environment controller |
-| **Verified live** | No |
+| **Status** | Partially verified — Ready-to-Archived confirmed for one owned Sales Environment; endpoint remains undocumented and other source states remain unverified |
+| **Verified live** | 2026-09-19: issue #351 active cancellation, Ready (2) to Archived (4) |
 
 **Observed behaviour**
 
@@ -1175,6 +1175,8 @@ ID. Candidate responses must continue to hide sponsored-link URLs and credential
 Live-verify the archive action against a disposable CloudShare environment before treating this as a
 documented product contract. Confirm whether the action is idempotent for already-archived
 environments and whether any CloudShare role/RBAC permissions differ from suspend/resume.
+
+**Update (2026-09-19, issue #351):** owned Environment `EN0YJ4FccxfRaT4KGQmnoUWw2`, bound to Experience `EX1gJO4tHEshMyVUT-IAe0sQ2` and local Session `2cdb83d1-fc60-4202-bfcf-abf1edf908e9`, was observed with GET 200/status 2 (Ready), rechecked as 2, archived with PUT 204, and confirmed by exact-ID GET 200/status 4 (Archived). Cancellation command/correlation `541646d1-aaf4-493c-bff1-823f56b122e3` is retained at `2026-09-19T14:45:19.613Z`; v4 End/label PUT and confirming GET returned 200. This is one verified Ready-state transition, not proof of idempotency, RBAC equivalence or support for every status. Earlier status-8 Preparing preflight was rejected locally before any command or provider write. A separate proposed Preparing probe later read status 2 and stopped without direct archive dispatch. Preparing support remains unresolved; scheduled cancellation QA remains pending.
 
 **Code reference:** `src/integrations/cloudshare/environment-controller.ts`,
 `src/domain/exam-attempt-runtime-lifecycle.ts`,
