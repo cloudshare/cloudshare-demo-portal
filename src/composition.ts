@@ -531,7 +531,7 @@ export function getServices(): Services {
   const salesParticipantExtension: Services["salesParticipantExtension"] = {
     submit: request => handleExtendSalesParticipants({
       commands: extensionCommands,
-      sessions: { ...createPrismaSalesDemoSessionRepository(prisma), updateEnd: async (customerId, sessionId, end) => { const updated = await prisma.salesDemoSession.updateMany({ where: { customerId, id: sessionId }, data: { end } }); if (updated.count !== 1) throw new Error("Session projection unavailable"); } },
+      sessions: createPrismaSalesDemoSessionRepository(prisma),
       participants: createPrismaSalesSessionParticipantRepository(prisma), records: createPrismaSalesRecordRepository(prisma), items: createPrismaItemRepository(prisma), connections: cloudshareConnections,
       provider: connection => { const client = cloudshareClientFactory.forConnection(connection, { scope: "workflow", workflow: { actor: request.actor, subject: { type: "sales_demo_session", id: request.sessionId }, source: "sales-participant-extension", correlationId: (request.body as { commandId: string }).commandId } }); return { delivery: createCloudShareSalesDelivery(client) as Required<ReturnType<typeof createCloudShareSalesDelivery>>, environments: createCloudShareSalesEnvironmentSource(client) as Required<ReturnType<typeof createCloudShareSalesEnvironmentSource>> }; },
       diagnostics: diagnosticRecorder, audit,

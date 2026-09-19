@@ -60,6 +60,16 @@ describe("Sales Participant extension HTTP seam", () => {
     expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, selection: { mode: "all", excludedIds: ["p1"] } } })).toMatchObject({ status: 409 });
     expect(f.environments.extendById).not.toHaveBeenCalled();
   });
+  it("does not confirm access when the End readback belongs to an ended Experience, including reconciliation", async () => {
+    const f = fixture();
+    let reads = 0;
+    f.delivery.readSession.mockImplementation(async () => ({ id: "experience1", status: ++reads >= 3 ? "ended" as never : "inProgress", end: "2026-09-21T10:00", ...exchange }));
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 202, body: { outcome: "needs_attention", accessConfirmed: false } });
+    expect(f.deps.sessions.updateEnd).not.toHaveBeenCalled();
+    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, reconcile: true } })).toMatchObject({ status: 202, body: { outcome: "needs_attention", accessConfirmed: false } });
+    expect(f.delivery.updateSession).toHaveBeenCalledTimes(1);
+    expect(f.deps.sessions.updateEnd).not.toHaveBeenCalled();
+  });
   it("does not replay an ambiguous Sales Experience PUT", async () => {
     const f = fixture();
     f.delivery.updateSession.mockImplementationOnce(async () => { throw new Error("timeout"); });

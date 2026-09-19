@@ -51,6 +51,8 @@ export interface SalesDemoSessionRepository {
   updateOperationalState?(customerId: string, id: string, state: { cloudShareSalesExperienceId?: string; salesProEmail?: string; salesProDisplayName?: string; operationalStatus: "active" | "needs_attention"; attentionReason?: string | null; experienceStatus?: CloudShareSalesExperienceStatus | null; experienceStatusObservedAt?: Date | null }): Promise<void>;
   recordExperienceObservations?(customerId: string, observations: readonly { readonly id: string; readonly experienceStatus: CloudShareSalesExperienceStatus; readonly experienceStatusObservedAt: Date; readonly experienceStatusSource?: "cloudshare_v4_sales_list" | "cloudshare_v4_get_sales" }[]): Promise<void>;
   recordExperienceObservation?(customerId: string, id: string, observation: { readonly experienceStatus: CloudShareSalesExperienceStatus; readonly experienceStatusObservedAt: Date }): Promise<void>;
+  /** Project a confirmed provider access window onto the exact Customer-owned Session. */
+  updateEnd?(customerId: string, id: string, end: string): Promise<void>;
   updateDisplayName?(id: string, sessionName: string): Promise<void>;
 }
 

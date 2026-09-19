@@ -20,7 +20,7 @@ const selectionSchema = z.discriminatedUnion("mode", [
 const schema = z.object({ commandId: z.string().uuid(), selection: selectionSchema, reconcile: z.boolean().optional(), retrySafe: z.boolean().optional() }).strict();
 export interface SalesParticipantExtensionDependencies {
   commands: SalesParticipantExtensionCommandStore;
-  sessions: Pick<SalesDemoSessionRepository, "findById"> & { updateEnd(customerId: string, sessionId: string, end: string): Promise<void> };
+  sessions: Pick<SalesDemoSessionRepository, "findById"> & Required<Pick<SalesDemoSessionRepository, "updateEnd">>;
   participants: Pick<SalesSessionParticipantRepository, "list">;
   records: Pick<SalesRecordRepository, "findContact">;
   items: Pick<ItemRepository, "findById">;
@@ -178,6 +178,12 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
       }
       const readback = await delivery.readSession(command!.experienceId);
       exchanges.push(readback);
+      if (readback.status !== "notStarted" && readback.status !== "inProgress") {
+        // An ended Experience rejects access even if its End covers the expiry.
+        // Retain the dispatched fence; reconciliation must never replay its PUT.
+        if (command!.accessState === "confirmed") await persist({ ...command!, accessState: "dispatched" });
+        throw new Error("experience_access_unavailable");
+      }
       const actualEnd = providerEnd(readback.end, command!.timeZone);
       const targetEnd = command!.targetEnd && providerEnd(command!.targetEnd, command!.timeZone);
       if (readback.id === command!.experienceId && actualEnd && targetEnd && actualEnd >= targetEnd) {
