@@ -74,7 +74,7 @@ export function SalesParticipantExtension({ sessionId, rows, request, onRefreshe
   };
   const eligible = rows.filter(row => row.participationStatus !== "concluded" && (row.environment.value === "Ready" || row.environment.value === "Suspended"));
   return <>
-    {!ready ? <div role="status">{message ?? "Reading current Participant eligibility…"}{message ? <button type="button" onClick={() => setRefreshAttempt(value => value + 1)}>Retry Participant read</button> : null}</div> : null}
+    {!ready ? <div role="status">{message ?? "Reading current Participant eligibilityâ€¦"}{message ? <button type="button" onClick={() => setRefreshAttempt(value => value + 1)}>Retry Participant read</button> : null}</div> : null}
     <fieldset aria-label="Extend Participant environments" disabled={busy || !ready}>
     <legend>Extend Participant environments</legend>
     <p>All eligible active Participants across every page are selected by default. Deselect people on this page to narrow the extension. CloudShare determines the added time.</p>

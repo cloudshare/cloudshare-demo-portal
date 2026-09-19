@@ -50,3 +50,12 @@ and unchanged pre-expiry. An ambiguous peer retains its fence and receives readb
 The regression runs the real projection refresh between admission and command recovery;
 observation-only changes permit the safe target once, while changed identity, concluded
 status, expiry or Environment binding still prevent dispatch.
+### Encoding-only correction
+
+Next compilation exposed one invalid UTF-8 byte in the extension component: offset 4881
+contained `85` in the eligibility-loading text. The repair replaced only that byte with
+the intended ellipsis bytes `E2 80 A6`; prefix and suffix byte equality confirmed that all
+other source bytes were preserved, including the existing valid UTF-8 ellipsis. A fatal
+`TextDecoder` regression failed on the original bytes and passed after this replacement.
+No behavior or workflow changed. Validation includes actual Next production compilation
+in addition to the fatal decoder, typecheck, lint and full test suite.
