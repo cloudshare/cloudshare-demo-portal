@@ -96,16 +96,16 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
     };
     if (!command) {
       if (remoteSession.status === "ended" || session.operationalStatus !== "active") return denied(409, "Only an active Sales Session can be extended.");
-      const candidates = selection.mode === "selected" ? [...new Set(selection.participantIds)] : local.filter(p => p.participationStatus !== "concluded" && !selection.excludedIds.includes(p.id) && roster.participants.some(r => r.id === p.cloudShareParticipantId && eligible(r))).map(p => p.id);
+      const candidates = selection.mode === "selected" ? [...new Set(selection.participantIds)] : local.filter(p => !selection.excludedIds.includes(p.id) && roster.participants.some(r => r.id === p.cloudShareParticipantId && eligible(r, p.participationStatus))).map(p => p.id);
       if (!candidates.length || candidates.length > 100) return denied(409, "Choose between 1 and 100 active Participants to extend.");
       const targets: SalesParticipantExtensionIdentity[] = [];
       for (const id of candidates.sort()) {
         const { participant, contact, remote } = await identify(id);
-        if (participant.participationStatus === "concluded" || !eligible(remote)) return denied(409, "A selected Participant is no longer eligible. Refresh the roster.");
+        if (!eligible(remote, participant.participationStatus)) return denied(409, "A selected Participant is no longer eligible. Refresh the roster.");
         surface = "cloudshare.v3";
         const before = await environments.observe({ ownerEmail: contact.email, projectId: item.project.id });
         exchanges.push(...before.exchanges);
-        if (![2, 3].includes(before.statusCode) || !instant(before.expirationTime)) throw new Error("environment_ineligible");
+        if (![2, 3, 4].includes(before.statusCode) || !instant(before.expirationTime)) throw new Error("environment_ineligible");
         targets.push({ participantId: id, participantRevision: participant.updatedAt.toISOString(), providerParticipantId: remote.id, contactId: contact.id, email: contact.email, projectId: item.project.id, environmentId: before.environmentId, preExpiry: instant(before.expirationTime)!.toISOString() });
       }
       if (new Set(targets.map(t => t.environmentId)).size !== targets.length) throw new Error("environment_ambiguous");
@@ -136,7 +136,7 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
           exchanges.push(...resolved.exchanges);
           if (resolved.environmentId !== target.environmentId) throw new Error("environment_identity_changed");
           // Projection reads update updatedAt; authority is the exact identity above and current eligibility/expiry.
-          if (participant.participationStatus === "concluded" || !eligible(remote) || ![2, 3].includes(resolved.statusCode) || instant(resolved.expirationTime)?.toISOString() !== target.preExpiry) throw new Error("extension_preflight_changed");
+          if (!eligible(remote, participant.participationStatus) || ![2, 3, 4].includes(resolved.statusCode) || instant(resolved.expirationTime)?.toISOString() !== target.preExpiry) throw new Error("extension_preflight_changed");
           target = { ...target, state: "dispatched", reason: "readback_required" };
           await targetState(target); // Durable no-replay point, immediately before PUT.
           try { const extension = await environments.extendById(target.environmentId); exchanges.push(extension.exchange); }
@@ -203,7 +203,8 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
     return command ? { status: 202, body: { ...salesParticipantExtensionResult(command).body, outcome: "needs_attention", error: "Extension requires read-only reconciliation. No mutation will be replayed." } } : denied(502, "Extension preflight failed. No extension was dispatched; inspect Support before trying again.");
   }
 }
-function eligible(participant: SalesParticipant) { return participant.participationStatus !== "concluded" && participant.environmentId !== null && (participant.envStatus === "Ready" || participant.envStatus === "Suspended"); }
+// Archived retains existing work and can be extended even when participation has concluded.
+function eligible(participant: SalesParticipant, localStatus: SalesParticipant["participationStatus"]) { return participant.environmentId !== null && (participant.envStatus === "Archived" || (localStatus !== "concluded" && participant.participationStatus !== "concluded" && (participant.envStatus === "Ready" || participant.envStatus === "Suspended"))); }
 function instant(value: string): Date | null { const date = (/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value) || /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)) ? new Date(value) : null; return date && Number.isFinite(date.getTime()) ? date : null; }
 function providerEnd(value: string | null | undefined, timeZone: string) { return value ? instant(value) ?? cloudShareWallClockToInstant(value.replace(/(T\d\d:\d\d):00(?:\.0+)?$/, "$1"), timeZone) : null; }
 export function salesParticipantExtensionResult(command: SalesParticipantExtensionCommand) {

@@ -52,6 +52,51 @@ describe("Sales Participant extension HTTP seam", () => {
     expect(f.environments.extendById.mock.calls.map(call => call[0])).toEqual(change === "observation only" ? ["opaque1", "opaque2"] : ["opaque1"]);
     expect(f.environments.observeById.mock.calls.filter(call => call[0] === "opaque1")).toHaveLength(2);
   });
+  it.each(["inProgress", "concluded"] as const)("extends an exactly bound Archived environment with %s participation", async participationStatus => {
+    const f = fixture();
+    const local = await f.deps.participants.list("c1", "s1");
+    vi.mocked(f.deps.participants.list).mockResolvedValue(local.map(row => ({ ...row, participationStatus })));
+    const roster = await f.delivery.listParticipants();
+    f.delivery.listParticipants.mockResolvedValue({ ...roster, participants: roster.participants.map(row => ({ ...row, participationStatus, envStatus: "Archived" })) });
+    const observe = f.environments.observe.getMockImplementation()!;
+    f.environments.observe.mockImplementation(async input => ({ ...await observe(input), statusCode: 4 as never }));
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 200, body: { outcome: "completed", accessConfirmed: true } });
+    expect(f.environments.extendById).toHaveBeenCalledOnce();
+    expect(f.environments.extendById).toHaveBeenCalledWith("opaque1");
+  });
+  it.each(["Deleted", "Ready"])("does not admit an unrelated concluded %s Participant", async envStatus => {
+    const f = fixture();
+    const roster = await f.delivery.listParticipants();
+    f.delivery.listParticipants.mockResolvedValue({ ...roster, participants: roster.participants.map(row => ({ ...row, participationStatus: "concluded", envStatus })) });
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 409 });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
+  it("does not dispatch an Archived target that becomes Deleted during preflight", async () => {
+    const f = fixture();
+    const roster = await f.delivery.listParticipants();
+    f.delivery.listParticipants.mockResolvedValue({ ...roster, participants: roster.participants.map(row => ({ ...row, envStatus: "Archived" })) });
+    const before = await f.environments.observe({ ownerEmail: "ada@example.com", projectId: "project1" });
+    f.environments.observe.mockResolvedValueOnce({ ...before, statusCode: 4 as never }).mockResolvedValue({ ...before, statusCode: 5 as never });
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ body: { targets: [{ outcome: "failed_retryable", retryable: true }] } });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
+  it("does not extend an Archived environment through an ended Sales Experience", async () => {
+    const f = fixture();
+    const roster = await f.delivery.listParticipants();
+    f.delivery.listParticipants.mockResolvedValue({ ...roster, participants: roster.participants.map(row => ({ ...row, envStatus: "Archived" })) });
+    const remote = await f.delivery.readSession();
+    f.delivery.readSession.mockResolvedValue({ ...remote, status: "ended" as never });
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 409 });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
+  it("keeps Archived readback with increased retention pending until usable state is observed without replay", async () => {
+    const f = fixture();
+    f.environments.observeById.mockResolvedValueOnce({ environmentId: "opaque1", statusCode: 4 as never, expirationTime: "2026-09-21T10:00:00Z", exchanges: [exchange] });
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 202, body: { accessConfirmed: false, targets: [{ outcome: "needs_attention", retryable: false }] } });
+    expect(f.delivery.updateSession).not.toHaveBeenCalled();
+    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, reconcile: true } })).toMatchObject({ status: 200, body: { accessConfirmed: true } });
+    expect(f.environments.extendById).toHaveBeenCalledOnce();
+  });
   it("reconciles a dispatched captured Environment by ID when later owner/Project resolution becomes ambiguous", async () => {
     const f = fixture();
     f.environments.extendById.mockRejectedValueOnce(new Error("timeout"));

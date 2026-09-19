@@ -73,3 +73,16 @@ it("keeps extension disabled after a failed eligibility read and retries only th
   expect(reread).toHaveBeenCalledOnce();
   expect(request.mock.calls.filter(([url]) => url.endsWith("/refresh"))).toHaveLength(2);
 });
+
+it("selects existing Archived environments even when concluded, without including Deleted or other concluded rows", async () => {
+  const request = async (url: string) => Response.json(url.endsWith("/refresh") ? { outcome: "refreshed" } : null);
+  render(<SalesParticipantExtension sessionId="s1" request={request} onRefreshed={async () => true} rows={[
+    { id: "archived", name: "Archived Ada", participationStatus: "concluded", environment: { value: "Archived" } },
+    { id: "deleted", name: "Deleted Grace", participationStatus: "inProgress", environment: { value: "Deleted" } },
+    { id: "concluded", name: "Concluded Katherine", participationStatus: "concluded", environment: { value: "Ready" } },
+  ] as never} />);
+  await waitFor(() => expect((screen.getByRole("group", { name: "Extend Participant environments" }) as HTMLFieldSetElement).disabled).toBe(false));
+  expect((screen.getByRole("checkbox", { name: "Extend Archived Ada" }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.queryByRole("checkbox", { name: "Extend Deleted Grace" })).toBeNull();
+  expect(screen.queryByRole("checkbox", { name: "Extend Concluded Katherine" })).toBeNull();
+});

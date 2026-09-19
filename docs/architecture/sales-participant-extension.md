@@ -83,3 +83,24 @@ Confirmed access, including partial extension outcomes, now requests an authenti
 parent Session workspace reread so the header shows the persisted End. The callback does
 not copy the extension result into the header. Real command-control tests cover completed
 and partial outcomes and reject a delayed summary response after changing Sessions.
+
+
+### Existing Archived environments are extension-eligible
+
+The clarified extension contract treats Archived as retained work with exhausted runtime,
+not Deleted. [CloudShare policy documentation](https://support.cloudshare.com/hc/en-us/articles/200702135-Creating-and-Editing-Environment-Policies)
+confirms that an environment is archived during storage time, can be made accessible by
+extending it, and is deleted when storage expires. An exactly correlated existing Archived environment is eligible even when
+local or roster participation is Concluded, provided the Sales Session is extendable.
+This exception applies only to extension selection and admission; unrelated Concluded
+rows, Deleted environments, and other Participant actions keep their existing rules.
+The unique owner/Project resolver, Contact/roster correlation, opaque ID, pre-expiry,
+Customer scope and durable dispatch fences remain mandatory. V3 preflight accepts status
+4 (Archived) as well as 2/3; Deleted or changed bindings before dispatch remain blocked.
+
+An increased retention expiry while the post-PUT environment is still Archived does not
+prove usable access. Such a target remains pending read-only reconciliation, without
+replaying the extension or claiming success. Ready/Suspended plus increased expiry must
+be observed before confirming that target and reconciling the Session End. The Archived
+restore transition itself still requires separately authorized live evidence; GAP-35 is
+not proof of that transition. Deterministic API/UI regressions cover this distinction.

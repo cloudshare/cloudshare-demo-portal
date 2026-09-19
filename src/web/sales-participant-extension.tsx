@@ -74,12 +74,12 @@ export function SalesParticipantExtension({ sessionId, rows, request, onRefreshe
       }
     } finally { if (generation.current === current) setBusy(false); }
   };
-  const eligible = rows.filter(row => row.participationStatus !== "concluded" && (row.environment.value === "Ready" || row.environment.value === "Suspended"));
+  const eligible = rows.filter(row => row.environment.value === "Archived" || (row.participationStatus !== "concluded" && (row.environment.value === "Ready" || row.environment.value === "Suspended")));
   return <>
     {!ready ? <div role="status">{message ?? "Reading current Participant eligibility…"}{message ? <button type="button" onClick={() => setRefreshAttempt(value => value + 1)}>Retry Participant read</button> : null}</div> : null}
     <fieldset aria-label="Extend Participant environments" disabled={busy || !ready}>
     <legend>Extend Participant environments</legend>
-    <p>All eligible active Participants across every page are selected by default. Deselect people on this page to narrow the extension. CloudShare determines the added time.</p>
+    <p>All eligible Participants across every page are selected by default, including existing Archived environments. Deselect people on this page to narrow the extension. CloudShare determines the added time.</p>
     <div>{eligible.map(row => <label key={row.id} style={{ display: "inline-flex", gap: 6, marginRight: 16 }}><input type="checkbox" aria-label={`Extend ${row.name}`} checked={!excluded.includes(row.id)} disabled={Boolean(result && !result.finished)} onChange={event => setExcluded(current => event.target.checked ? current.filter(id => id !== row.id) : [...current, row.id])} />{row.name}</label>)}</div>
     {excluded.length ? <p>{excluded.length} Participant{excluded.length === 1 ? "" : "s"} excluded across pages. <button type="button" onClick={() => setExcluded([])}>Select all eligible</button></p> : null}
     <button type="button" disabled={Boolean(result && !result.finished)} onClick={() => void run("extend")}>Extend selected Participants</button>
