@@ -42,6 +42,13 @@ function fixture() {
   return { deps, request, environments, delivery, controller, setArchived: () => { archived = true; } };
 }
 describe("Sales cancellation API", () => {
+  it("cancels a fully correlated Session whose creation diagnostics need attention", async () => {
+    const f = fixture();
+    const session = (await f.deps.sessions.findById!("c1", "s1"))!;
+    f.deps.sessions.findById = async () => ({ ...session, operationalStatus: "needs_attention", attentionReason: "Certalis support evidence persistence failed after durable provider correlation" });
+    expect(await handleCancelSalesDemoSession(f.deps, f.request)).toMatchObject({ status: 200 });
+    expect(f.controller.archiveEnvironment).toHaveBeenCalledWith("opaque/v3+id");
+  });
   it("blocks launch, link generation, participant registration and extension while cleanup is pending", async () => {
     const f = fixture();
     const session = (await f.deps.sessions.findById!("c1", "s1"))!;

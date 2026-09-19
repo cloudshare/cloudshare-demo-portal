@@ -28,3 +28,14 @@ Actual Next production build passed (58 static pages). Isolated `prisma/qa351-fi
 ## Gates still open
 
 This document records development checkpoints, not acceptance. Independent review, browser QA, disposable live cancellation including scheduled End-before-Start behavior, and human QA remain required. No provider or shared database mutation is authorized by these offline tests. GAP-19 archive and GAP-33 historical Environment inventory limitations remain open.
+
+
+Review repair loop 1: concrete SQLite Add/Invite interleavings exposed cancellation admission while an Add could still publish (expected blocked, received new). A fully correlated needs_attention Session exposed the operational-status guard (expected 200, received 409). The focused persistence/API command then passed 14 tests after transactional admission/dispatch checks, publication quiescence, and a current local roster identity check. Existing Add/Invite/application coverage passed 112 tests. No schema change.
+
+`npm test -- src/api/sales-participant-launch.test.ts`: cancellation during sponsored-link minting returned 302 in RED; after the authoritative Session/window reread it passes all 15 tests and returns no redirect or bearer URL. This is not atomic launch/cancellation: a cancellation after the final reread, a previously released link, or provider/browser work already in flight remains governed by provider End enforcement. Live QA must verify that enforcement and allocation timing; no durable launch framework was added.
+
+`npm test -- src/integrations/cloudshare/sales-cancellation-fixture.test.ts`: after a typed empty implementation, both real assertions failed (undefined instead of 200/503); both pass with the exact synthetic transport scenarios. The initial missing-module failure was setup-only. Fixture-only IDs use `qa351-{fixture,active,ambiguous,retry}-sales-experience`, corresponding local Participant/Contact IDs and opaque v3 Environment IDs. The fixture scenario has never launched. Active archives successfully. Ambiguous archives but returns 503 and fails the first post-write read, requiring later read-only reconciliation. Retry fails the second owner-email list read after admission, before archive dispatch. State survives client creation and resets on server restart. This simulation is not live CloudShare evidence.
+
+UI recovery RED/GREEN: after a rejected pre-admission POST and explicit saved-state-null GET, Cancel remained disabled (expected false, received true). The control now permits a manually confirmed resubmission with the same command ID; no automatic POST or new identity. All three real component interaction tests pass.
+
+Review repair loop 1 final gates: lint and typecheck passed; full suite 284 files / 2360 tests passed; actual Next build passed with 58 static pages. Browser and live acceptance remain separate gates.

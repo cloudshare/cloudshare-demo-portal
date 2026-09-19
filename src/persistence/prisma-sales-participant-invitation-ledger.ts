@@ -92,6 +92,8 @@ function createInvitationLedgerInternals(prisma: PrismaClient): InvitationLedger
       }
       try {
         const transactionResult = await prisma.$transaction(async (tx): Promise<"admitted" | "same_command"> => {
+          const session = await tx.salesDemoSession.findUnique({ where: { customerId_id: { customerId: input.customerId, id: input.sessionId } }, select: { cancellationRequestedAt: true } });
+          if (!session || session.cancellationRequestedAt) throw new Error("participant_unavailable");
           const existing = await tx.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, include: { targets: { orderBy: { ordinal: "asc" } } } });
           if (existing) { if (existing.scopeHash !== scopeHash) throw new Error("command_id_mismatch"); return "same_command"; }
           const participants = await tx.salesSessionParticipant.findMany({ where: { customerId: input.customerId, salesDemoSessionId: input.sessionId, id: { in: input.targets.map((target) => target.participantId) } }, select: { id: true, invitationStatus: true, updatedAt: true } });
@@ -127,6 +129,8 @@ function createInvitationLedgerInternals(prisma: PrismaClient): InvitationLedger
       return prisma.$transaction(async (tx) => {
         const command = await tx.salesParticipantInvitationCommand.findUnique({ where: { customerId_commandId: { customerId, commandId } }, include: { targets: { orderBy: { ordinal: "asc" } }, fences: true } });
         if (!command || command.revision !== expectedRevision || command.phase !== "admitted" || command.admissionTokenHash !== hash(admissionToken) || !command.admissionLeaseUntil || command.admissionLeaseUntil <= at || command.fences.length !== command.targets.length || command.targets.some((target) => !command.fences.some((fence) => fence.salesSessionParticipantId === target.salesSessionParticipantId))) throw new Error("invitation admission is no longer current");
+        const session = await tx.salesDemoSession.findUnique({ where: { customerId_id: { customerId, id: command.sessionId } }, select: { cancellationRequestedAt: true } });
+        if (!session || session.cancellationRequestedAt) throw new Error("invitation admission is no longer current");
         const updated = await tx.salesParticipantInvitationCommand.updateMany({ where: { customerId, commandId, revision: expectedRevision, phase: "admitted", admissionTokenHash: hash(admissionToken) }, data: { phase: "dispatching", revision: { increment: 1 }, updatedAt: at } });
         if (updated.count !== 1) throw new Error("invitation admission is no longer current");
         for (const fence of command.fences) { const claimed = await tx.salesParticipantInvitationFence.updateMany({ where: { customerId, salesSessionParticipantId: fence.salesSessionParticipantId, commandId, revision: expectedRevision }, data: { revision: { increment: 1 } } }); if (claimed.count !== 1) throw new Error("invitation fence is no longer current"); }

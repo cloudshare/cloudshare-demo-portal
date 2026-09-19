@@ -28,3 +28,18 @@ it("offers only read-only reconciliation when every provider write was already a
   await screen.findByRole("heading", { name: "Cancellation needs attention" });
   expect(screen.queryByRole("button", { name: "Retry unattempted cancellation steps" })).toBeNull();
 });
+
+it("allows explicit resubmission of the same identity after a saved-state-null read", async () => {
+  const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST" ? new Response(JSON.stringify({ error: "Admission deferred" }), { status: 409 }) : json(null));
+  render(<SalesSessionCancellation sessionId="s1" request={request} onAdmitted={() => {}} />);
+  await waitFor(() => expect((screen.getByRole("button", { name: "Cancel Session" }) as HTMLButtonElement).disabled).toBe(false));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel Session" }));
+  await userEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Check saved cancellation state" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Cancel Session" }) as HTMLButtonElement).disabled).toBe(false));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel Session" }));
+  await userEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
+  const posts = request.mock.calls.filter(([, init]) => init?.method === "POST");
+  expect(posts).toHaveLength(2);
+  expect(JSON.parse(posts[1]![1]!.body as string).commandId).toBe(JSON.parse(posts[0]![1]!.body as string).commandId);
+});

@@ -64,7 +64,7 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
       return identities;
     };
     if (!command) {
-      if (session.operationalStatus !== "active" || session.cloudShareSalesExperienceId.startsWith("pending:")) return denied(409, "Only a provisioned Sales Session can be cancelled.");
+      if (!session.cloudShareSalesExperienceId || session.cloudShareSalesExperienceId === "unprovisioned" || session.cloudShareSalesExperienceId.startsWith("pending:")) return denied(409, "Only a provisioned Sales Session can be cancelled.");
       const identities = await identify();
       const targets: SalesCancellationTarget[] = [];
       for (const { neverLaunched, ...identity } of identities) {

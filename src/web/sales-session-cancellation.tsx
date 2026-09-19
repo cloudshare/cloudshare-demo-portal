@@ -7,6 +7,7 @@ export function SalesSessionCancellation({ sessionId, request, onAdmitted }: { s
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(true);
   const [loaded, setLoaded] = useState(false);
+  const [savedAbsent, setSavedAbsent] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const commandId = useRef<string | null>(null);
   const active = useRef(false);
@@ -22,6 +23,7 @@ export function SalesSessionCancellation({ sessionId, request, onAdmitted }: { s
       if (value !== null && (typeof value.commandId !== "string" || !Array.isArray(value.targets))) throw new Error("invalid_cancellation_state");
       if (!active.current) return;
       if (value) { setResult(value); commandId.current = value.commandId; admitted.current(); }
+      setSavedAbsent(value === null);
       setLoaded(true); setMessage(null);
     } catch { if (active.current) setMessage("Cancellation state could not be read. Retry the status check before cancelling."); }
     finally { if (active.current) setBusy(false); }
@@ -30,7 +32,7 @@ export function SalesSessionCancellation({ sessionId, request, onAdmitted }: { s
   const run = async (mode: "cancel" | "reconcile" | "retrySafe") => {
     if (busy) return;
     commandId.current ??= crypto.randomUUID();
-    setBusy(true); setMessage(null); setConfirming(false);
+    setBusy(true); setSavedAbsent(false); setMessage(null); setConfirming(false);
     try {
       const response = await request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ commandId: commandId.current, confirmed: true, ...(mode === "cancel" ? {} : { [mode]: true }) }) });
       const value = await response.json() as Result;
@@ -52,7 +54,7 @@ export function SalesSessionCancellation({ sessionId, request, onAdmitted }: { s
       {result.targets.some(t => t.retryable) || result.accessRetryable ? <button type="button" disabled={busy} onClick={() => void run("retrySafe")}>Retry unattempted cancellation steps</button> : null}
       <p><a href={`/sales?tab=support&correlationId=${encodeURIComponent(result.correlationId)}`}>Open cancellation diagnostics</a></p>
     </> : confirming ? <div role="alertdialog" aria-label="Confirm Session cancellation"><p>This ends participant access immediately, archives every currently bound participant Environment, and ends the Sales Experience now. This cannot be undone in Certalis. The Experience and history will not be deleted.</p><button type="button" disabled={busy} onClick={() => void run("cancel")}>Confirm cancellation</button><button type="button" onClick={() => setConfirming(false)}>Keep Session</button></div>
-      : <button type="button" disabled={busy || !loaded || commandId.current !== null} onClick={() => setConfirming(true)}>Cancel Session</button>}
+      : <button type="button" disabled={busy || !loaded || (commandId.current !== null && !savedAbsent)} onClick={() => setConfirming(true)}>Cancel Session</button>}
     {message ? <p role="status">{message} <button type="button" disabled={busy} onClick={() => void read()}>Check saved cancellation state</button> <a href={commandId.current ? `/sales?tab=support&correlationId=${encodeURIComponent(commandId.current)}` : "/sales?tab=support"}>Open Support</a></p> : null}
   </section>;
 }

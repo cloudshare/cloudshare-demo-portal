@@ -3,6 +3,8 @@ import { PrismaClient } from "@prisma/client";
 import { afterAll, expect, it } from "vitest";
 import { createPrismaSalesCancellationStore } from "./prisma-sales-session-cancellation";
 import { createPrismaSalesParticipantExtensionCommandStore } from "./prisma-sales-participant-extension-command";
+import { createPrismaSalesParticipantAddCommandStore } from "./prisma-sales-participant-add-command";
+import { createPrismaInvitationStore } from "./prisma-sales-participant-invitation-ledger";
 const prisma = new PrismaClient();
 afterAll(() => prisma.$disconnect());
 it("persists revision fencing, immutable binding, restart recovery and cross-command exclusion in SQLite", async () => {
@@ -17,8 +19,34 @@ it("persists revision fencing, immutable binding, restart recovery and cross-com
     await prisma.salesSessionParticipant.create({ data: { id, customerId: id, salesDemoSessionId: id, opportunityContactId: id, cloudShareParticipantId: id, invitationStatus: "notSent", participationStatus: "inProgress", lastReconciledAt: now, createdAt: now, updatedAt: now } });
     const store = createPrismaSalesCancellationStore(prisma);
     const input = { customerId: id, sessionId: id, commandId: "cancel", experienceId: id, cancelledAt: now.toISOString(), actor: { type: "admin", id: "actor" }, timeZone: "UTC", targetEnd: "2026-09-19T10:00", targets: [{ participantId: id, providerParticipantId: id, contactId: id, email: "ada@example.test", projectId: "project", environmentId: "opaque/v3-id+value", state: "pending" as const }] };
+    const adds = createPrismaSalesParticipantAddCommandStore(prisma);
+    const add = { customerId: id, sessionId: id, commandId: "concurrent-add", payloadHash: "person", now };
+    // Cancellation's roster was captured above; Add has passed its early access read.
+    expect((await adds.admit(add)).kind).toBe("new");
+    expect((await store.admit(input)).kind).toBe("blocked");
+    expect(await adds.markDispatched(add)).toBe(true);
+    expect((await store.admit(input)).kind).toBe("blocked");
+    await adds.settle({ ...add, state: "needs_attention", result: { status: 409, body: { outcome: "needs_attention" } } });
+    expect((await store.admit(input)).kind).toBe("blocked");
+    expect(await adds.markDispatched(add)).toBe(false); // Ambiguity never replays.
+    // Read-only reconciliation can settle the existing binding; inventory is rechecked.
+    await adds.settle({ ...add, state: "settled", result: { status: 200, body: { outcome: "already_registered", participantId: id } } });
+    // A settled Add can change the roster between inventory and admission.
+    await prisma.salesSessionParticipant.update({ where: { id }, data: { cloudShareParticipantId: "new-provider-binding" } });
+    expect((await store.admit(input)).kind).toBe("blocked");
+    await prisma.salesSessionParticipant.update({ where: { id }, data: { cloudShareParticipantId: id } });
+    const invitations = createPrismaInvitationStore(prisma);
+    const invite = { customerId: id, sessionId: id, commandId: "concurrent-invite", at: now, allowNew: true, targets: [{ participantId: id, intent: "invite" as const, expectedInvitationStatus: "notSent" as const, participantRevision: now.toISOString() }] };
+    const invitation = await invitations.begin(invite);
+    expect(invitation.kind).toBe("started");
+    expect((await store.admit(input)).kind).toBe("blocked");
+    if (invitation.kind !== "started") throw new Error("Expected invitation admission");
+    await invitations.failBeforeDispatch(invitation.handle, { at: now, httpStatus: 502, resultCode: "not_dispatched", reason: "not_dispatched" });
     const admitted = await store.admit(input);
     expect(admitted.kind).toBe("new");
+    // Stale application allowNew cannot authorize a later provider publication.
+    expect((await adds.admit({ ...add, commandId: "late-add" })).kind).toBe("blocked");
+    expect((await invitations.begin({ ...invite, commandId: "late-invite" })).kind).toBe("blocked");
     expect(admitted.command?.targets[0]?.environmentId).toBe("opaque/v3-id+value");
     const command = admitted.command!;
     expect(await store.save({ ...command, targets: command.targets.map(t => ({ ...t, state: "dispatched" })) }, 1)).toBe(true);
