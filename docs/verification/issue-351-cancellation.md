@@ -64,6 +64,12 @@ The successful cancellation's protected diagnostic rows existed under the correc
 
 Repaired Support browser verification, independent exact-head review and human acceptance remain pending. This repair changes no provider status gate, command lifecycle or diagnostics framework.
 
+## Activity projection repair (2026-09-19)
+
+The parent-authorized bounded repair addresses successful cancellation appearing as an incomplete Activity workflow. Admission and completion share `sales.demo_session.cancel` metadata, so metadata alone cannot establish completion. The workspace now reads the exact Customer/Session/correlation cancellation command and exposes only a controlled completed outcome; diagnostic steps and Support correlation remain intact. Unfinished commands and mismatched Customer, Session, correlation or operation remain incomplete. No protected diagnostic bodies/messages, provider calls, schema changes or cancellation writes were added.
+
+RED: `npx vitest run src/persistence/prisma-sales-session-workspace-repository.test.ts -t 'projects future cancellation Activity'` failed for a matched finished command with confirmed deletion (expected success, received incomplete); its admission-only negative passed. GREEN: affected repository/domain/API suites passed 47 tests before the four binding-negative cases were added. Full suite subsequently passed 284 files / 2378 tests, including those negatives and retained failed transport evidence under successful durable completion. Lint, typecheck and the production build (58 static pages) passed. Browser readback, independent exact-head review and human acceptance are separate gates.
+
 ## Scheduled cancellation: observed provider rejection
 
 Owned Session `110561c6-26f4-4e3d-b82f-9996686cbb5c` was scheduled for `2026-09-19T16:30:00Z`, with no invitation or launch. Cancellation command `26648bd1-d455-4e65-ba3d-027cda70737c` at `2026-09-19T14:52:21.756Z` recorded a `no_environment` target. The v4 End PUT returned an explicit 400 requiring End greater than scheduledStart (`16:30` UTC). GET showed unchanged `notStarted`, Start `2026-09-19T16:30:00Z`, End `2026-09-20T16:30:00Z` and labels `[]`. Command access remains `dispatched` and unfinished; the UI reports needs attention. No write was retried. This completes the scheduled QA attempt but blocks scheduled cancellation acceptance; it does not authorize changing Start or deleting the Experience. GAP-20 records the contract limitation. Preparing remains independently unresolved.

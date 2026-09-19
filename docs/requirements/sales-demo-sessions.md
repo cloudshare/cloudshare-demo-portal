@@ -82,6 +82,10 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
   CloudShare Experience dimensions independently, and returns persisted Participant data only.
   Activity selects operation metadata and correlation IDs only; protected request/response
   evidence, provider identifiers, and sponsored links stay exclusively in Sales Support.
+  Cancellation completion additionally uses the durable cancellation command matched to the
+  Customer, Session, and correlation. Confirmed completion displays `Sales Session cancelled.`;
+  admission alone stays incomplete. Only this controlled outcome reaches Activity, while
+  diagnostic steps and the exact-correlation Support link remain available.
 - A `provisioning` Session with a persisted `pending:` Sales Experience reference is a stale
   pre-dispatch reservation, not a usable Session workspace target. The local read returns a safe
   conflict state without making any CloudShare call; missing, archived, and cross-Customer IDs

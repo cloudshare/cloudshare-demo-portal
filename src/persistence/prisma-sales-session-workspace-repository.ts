@@ -56,8 +56,26 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         ? new Set(presentedRows.filter((entry) => entry.operation === "sales.demo_session.created" && entry.outcome === "failure" && entry.correlationId).map((entry) => entry.correlationId as string))
         : new Set<string>();
       const projectedActivity = presentedRows.map((entry) => projectSafeSalesSessionActivity({ ...entry, sessionCreationAmbiguous: Boolean((explicitAmbiguousCorrelation && entry.correlationId === explicitAmbiguousCorrelation) || legacyAmbiguousCorrelations.has(entry.correlationId ?? "")) }, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+      // Cancellation admission and completion share diagnostic metadata. Only
+      // the exact durable command can establish completion; messages stay private.
+      const cancellationCorrelations = [...new Set(presentedRows.filter((entry) => entry.operation === "sales.demo_session.cancel" && entry.correlationId).map((entry) => entry.correlationId!))];
+      const completedCancellations = new Set<string>();
+      if (cancellationCorrelations.length) {
+        const commands = await prisma.salesParticipantExtensionCommand.findMany({
+          where: { customerId, sessionId: session.id, operation: "cancellation", commandId: { in: cancellationCorrelations } },
+          select: { customerId: true, sessionId: true, commandId: true, operation: true, state: true },
+        });
+        for (const command of commands) {
+          if (command.customerId !== customerId || command.sessionId !== session.id || command.operation !== "cancellation" || !cancellationCorrelations.includes(command.commandId)) continue;
+          let state;
+          try { state = JSON.parse(command.state); } catch { continue; }
+          if (state?.customerId === customerId && state.sessionId === session.id && state.commandId === command.commandId && state.experienceId === session.cloudShareSalesExperienceId && state.finished === true && (state.deletion ? state.deletion.state === "confirmed" : state.accessState === "confirmed")) completedCancellations.add(command.commandId);
+        }
+      }
       const allActivityGroups = groupSafeSalesSessionActivity(projectedActivity).map((group) =>
-        probe ? { ...group, outcome: "incomplete" as const, summary: "Business outcome and evidence are incomplete." } : group,
+        probe ? { ...group, outcome: "incomplete" as const, summary: "Business outcome and evidence are incomplete." }
+          : group.correlationId && completedCancellations.has(group.correlationId)
+            ? { ...group, outcome: "success" as const, summary: "Sales Session cancelled." } : group,
       );
       const activityGroups = allActivityGroups.slice(0, MAX_PRESENTED_ACTIVITY_GROUPS);
       const presentationCapped = allActivityGroups.length > MAX_PRESENTED_ACTIVITY_GROUPS;
