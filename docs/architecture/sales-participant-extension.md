@@ -39,3 +39,14 @@ was in progress with a Ready environment while the local row remained Pending/No
 Automated coverage proves entry refresh, bounded reread, default selection, Inspect/Close,
 Customer isolation, provider-read-only behavior, safe response metadata, and stale Session
 response rejection. Live acceptance must be rerun on this repaired head.
+
+### Safe retry after observation refresh (repair round 3)
+
+The admitted Participant timestamp remains historical evidence, not retry authority:
+read-only roster projection refreshes advance `updatedAt`. Before dispatching a durably
+unattempted target, retry checks the exact current Participant/Contact/provider identity,
+email, Project and opaque Environment binding, local non-concluded status, live eligibility,
+and unchanged pre-expiry. An ambiguous peer retains its fence and receives readbacks only.
+The regression runs the real projection refresh between admission and command recovery;
+observation-only changes permit the safe target once, while changed identity, concluded
+status, expiry or Environment binding still prevent dispatch.

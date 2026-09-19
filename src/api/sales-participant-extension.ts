@@ -135,7 +135,8 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
         exchanges.push(...resolved.exchanges);
         if (resolved.environmentId !== target.environmentId) throw new Error("environment_identity_changed");
         if (target.state === "pending") {
-          if (participant.updatedAt.toISOString() !== target.participantRevision || !eligible(remote) || ![2, 3].includes(resolved.statusCode) || instant(resolved.expirationTime)?.toISOString() !== target.preExpiry) throw new Error("extension_preflight_changed");
+          // Projection reads update updatedAt; authority is the exact identity above and current eligibility/expiry.
+          if (participant.participationStatus === "concluded" || !eligible(remote) || ![2, 3].includes(resolved.statusCode) || instant(resolved.expirationTime)?.toISOString() !== target.preExpiry) throw new Error("extension_preflight_changed");
           target = { ...target, state: "dispatched", reason: "readback_required" };
           await targetState(target); // Durable no-replay point, immediately before PUT.
           try { const extension = await environments.extendById(target.environmentId); exchanges.push(extension.exchange); }

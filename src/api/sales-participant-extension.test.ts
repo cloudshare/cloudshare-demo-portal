@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleExtendSalesParticipants, type SalesParticipantExtensionDependencies } from "./sales-participant-extension";
+import { handleRefreshSalesParticipantEligibility } from "./sales-session-participants";
 import { createInMemorySalesParticipantExtensionCommandStore } from "@/persistence/in-memory-sales-participant-extension-command";
 const exchange = { request: { method: "GET" as const, path: "/fixture" }, response: { status: 200 } };
 function fixture() {
@@ -13,10 +14,11 @@ function fixture() {
   return { deps, request, order, environments, delivery, setExpiry: (value: string) => { expiry = value; } };
 }
 describe("Sales Participant extension HTTP seam", () => {
-  it("retries only an unattempted target while its peer remains ambiguous, preserving partial access", async () => {
+  it.each(["observation only", "contact identity", "concluded", "expiry", "environment"])("recovers after projection refresh with %s changes without replaying an ambiguous peer", async change => {
     const f = fixture();
     const first = (await f.deps.participants.list("c1", "s1"))[0]!;
-    vi.mocked(f.deps.participants.list).mockResolvedValue([first, { ...first, id: "p2", opportunityContactId: "contact2", cloudShareParticipantId: "remote2" }]);
+    let local = [first, { ...first, id: "p2", opportunityContactId: "contact2", cloudShareParticipantId: "remote2" }];
+    vi.mocked(f.deps.participants.list).mockImplementation(async () => local);
     const contact = await f.deps.records.findContact("c1", "contact1");
     vi.mocked(f.deps.records.findContact).mockImplementation(async (_customer, id) => ({ ...contact!, id, email: id === "contact1" ? "ada@example.com" : "grace@example.com" }));
     const roster = await f.delivery.listParticipants();
@@ -29,8 +31,26 @@ describe("Sales Participant extension HTTP seam", () => {
     f.environments.extendById.mockImplementation(async (id: string) => { if (id === "opaque1") throw new Error("timeout"); secondExpiry = "2026-09-21T10:00:00Z"; return { environmentId: id, exchange }; });
     f.environments.observeById.mockImplementation(async (id: string) => ({ environmentId: id, statusCode: 2 as const, expirationTime: id === "opaque1" ? "2026-09-20T10:00:00Z" : secondExpiry, exchanges: [exchange] }));
     expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ body: { finished: false, targets: [{ outcome: "needs_attention", retryable: false }, { outcome: "failed_retryable", retryable: true }] } });
-    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, retrySafe: true } })).toMatchObject({ body: { outcome: "needs_attention", accessConfirmed: true, targets: [{ outcome: "needs_attention" }, { outcome: "confirmed" }] } });
-    expect(f.environments.extendById.mock.calls.map(call => call[0])).toEqual(["opaque1", "opaque2"]);
+    const refreshed = await handleRefreshSalesParticipantEligibility({
+      ...f.deps,
+      participants: { ...f.deps.participants, save: async (row: typeof first) => { local = local.map(current => current.id === row.id ? row : current); }, recordEnvironmentObservation: vi.fn() },
+      deliveryFactory: { forConnection: () => f.delivery },
+    } as unknown as Parameters<typeof handleRefreshSalesParticipantEligibility>[0], f.request);
+    expect(refreshed.status).toBe(200);
+    expect(local[1]!.updatedAt.toISOString()).not.toBe(first.updatedAt.toISOString());
+    const recovered = await f.deps.commands.latest("c1", "s1");
+    expect(recovered?.commandId).toBe(f.request.body.commandId);
+    expect(recovered?.targets.map(target => target.state)).toEqual(["dispatched", "not_dispatched"]);
+    if (change === "contact identity") local[1] = { ...local[1]!, opportunityContactId: "changed" };
+    if (change === "concluded") local[1] = { ...local[1]!, participationStatus: "concluded" };
+    if (change === "expiry") secondExpiry = "2026-09-20T11:00:00Z";
+    if (change === "environment") {
+      const observe = f.environments.observe.getMockImplementation()!;
+      f.environments.observe.mockImplementation(async input => ({ ...await observe(input), environmentId: input.ownerEmail === "grace@example.com" ? "replacement" : "opaque1" }));
+    }
+    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, retrySafe: true } })).toMatchObject({ body: { outcome: "needs_attention", accessConfirmed: change === "observation only", targets: [{ outcome: "needs_attention" }, { outcome: change === "observation only" ? "confirmed" : "failed_retryable" }] } });
+    expect(f.environments.extendById.mock.calls.map(call => call[0])).toEqual(change === "observation only" ? ["opaque1", "opaque2"] : ["opaque1"]);
+    expect(f.environments.observeById.mock.calls.filter(call => call[0] === "opaque1")).toHaveLength(2);
   });
   it("retains ambiguity across a fresh command and only reconciles with GET", async () => {
     const f = fixture();
