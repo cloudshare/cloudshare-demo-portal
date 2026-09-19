@@ -103,7 +103,7 @@ function SalesSessionWorkspaceState({
       if (!response.ok || next.summary?.id !== sessionId) throw new Error("summary_unavailable");
       setWorkspace(next);
     } catch {
-      if (lifecycle.current.active && lifecycle.current.token === token) setVerification("Extension access is confirmed, but the Session summary could not be reread. Reopen the Session to read its current End.");
+      if (lifecycle.current.active && lifecycle.current.token === token) setVerification("The Session summary could not be reread. Showing the last known summary; reopen the Session to read its current End.");
     }
   };
   const handleSessionExpired = () => {
@@ -384,6 +384,8 @@ function SalesSessionWorkspaceState({
       setVerification(
         `Verified from CloudShare: ${body.experienceStatus} at ${body.observedAt}. Correlation ${body.correlationId}.`,
       );
+      await rereadConfirmedAccess();
+      if (!lifecycle.current.active || lifecycle.current.token !== token) return;
       router.refresh();
     } catch (cause) {
       if (lifecycle.current.active && lifecycle.current.token === token)
@@ -405,7 +407,7 @@ function SalesSessionWorkspaceState({
   };
   return (
     <section aria-label="Sales Session workspace" className={styles.workspace}>
-      <SalesSessionCancellation key={sessionId} sessionId={sessionId} request={participantRequest} onAdmitted={() => { setCancelled(true); }} />
+      <SalesSessionCancellation key={sessionId} sessionId={sessionId} request={participantRequest} onAdmitted={() => { setCancelled(true); void rereadConfirmedAccess(); }} />
       <header className={styles.summary}>
         <div className={styles.summaryTopline}>
           <div className={styles.contextTrail}>

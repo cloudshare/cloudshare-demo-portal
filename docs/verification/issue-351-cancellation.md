@@ -70,6 +70,14 @@ The parent-authorized bounded repair addresses successful cancellation appearing
 
 RED: `npx vitest run src/persistence/prisma-sales-session-workspace-repository.test.ts -t 'projects future cancellation Activity'` failed for a matched finished command with confirmed deletion (expected success, received incomplete); its admission-only negative passed. GREEN: affected repository/domain/API suites passed 47 tests before the four binding-negative cases were added. Full suite subsequently passed 284 files / 2378 tests, including those negatives and retained failed transport evidence under successful durable completion. Lint, typecheck and the production build (58 static pages) passed. Browser readback, independent exact-head review and human acceptance are separate gates.
 
+## Mounted Session summary refresh repair (2026-09-19)
+
+Human QA of Session `d9d48bcb-c60b-489c-acdf-0b3f716f18cd` found the header retaining its previous End after cancellation. Retained readback established that CloudShare and local `Session.end` already held `2026-09-19T21:14`; Verify truthfully observed `inProgress`. The cancellation callback only disabled access, and Verify updated only the status dimension, leaving the mounted local summary stale.
+
+Two component REDs reproduced the stale End after normal cancellation confirmation and after Verify. Both now pass using the existing guarded, no-store local workspace reread. A failed reread retains the last known summary with an explicit message; a delayed reread after Session navigation cannot replace the new Session or refresh its router. Provider status remains independently observed, including `inProgress`; this repair changes no provider call, persistence, schema, or retained history.
+
+Validation: lint, typecheck and production build passed; full suite passed (284 files, 2382 tests). Exact-head independent review, browser readback and human QA remain separate gates. The primary port 3000 checkout was not changed by this repair.
+
 ## Scheduled cancellation: observed provider rejection
 
 Owned Session `110561c6-26f4-4e3d-b82f-9996686cbb5c` was scheduled for `2026-09-19T16:30:00Z`, with no invitation or launch. Cancellation command `26648bd1-d455-4e65-ba3d-027cda70737c` at `2026-09-19T14:52:21.756Z` recorded a `no_environment` target. The v4 End PUT returned an explicit 400 requiring End greater than scheduledStart (`16:30` UTC). GET showed unchanged `notStarted`, Start `2026-09-19T16:30:00Z`, End `2026-09-20T16:30:00Z` and labels `[]`. Command access remains `dispatched` and unfinished; the UI reports needs attention. No write was retried. This completes the scheduled QA attempt but blocks scheduled cancellation acceptance; it does not authorize changing Start or deleting the Experience. GAP-20 records the contract limitation. Preparing remains independently unresolved.

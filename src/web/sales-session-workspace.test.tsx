@@ -101,6 +101,69 @@ describe("Sales Session workspace", () => {
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/verify"), expect.objectContaining({ method: "POST" }));
   });
 
+  it("rereads the persisted cancellation End after Verify without inventing an ended status", async () => {
+    let persistedEnd = data.summary.end;
+    let experience = data.summary.experience;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      if (String(input).endsWith("/workspace")) return new Response(JSON.stringify({ ...data, summary: { ...data.summary, end: persistedEnd, experience } }), { status: 200 });
+      experience = { ...experience, value: "inProgress", observedAt: "2026-07-24T09:01:00.000Z" };
+      return new Response(JSON.stringify({ correlationId: "verify-cancelled", experienceStatus: "inProgress", observedAt: "2026-07-24T09:01:00.000Z", freshness: "fresh", source: "cloudshare_v4_get_sales" }), { status: 200 });
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="details" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    // Cancellation has already persisted its confirmed End while this workspace remains mounted.
+    persistedEnd = "2026-07-24T09:01";
+    await userEvent.setup().click(screen.getByRole("button", { name: "Verify now" }));
+    expect((await screen.findByRole("status")).textContent).toContain("Verified from CloudShare: inProgress");
+    await waitFor(() => expect(screen.queryByText("2026-07-24T09:01")).not.toBeNull());
+    expect(screen.getByText("In progress")).not.toBeNull();
+    expect(screen.queryByText("Ended")).toBeNull();
+  });
+
+  it("keeps the last known End and explains a failed summary reread after Verify", async () => {
+    let verified = false;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      if (String(input).endsWith("/verify")) {
+        verified = true;
+        return Response.json({ correlationId: "verify-1", experienceStatus: "inProgress", observedAt: "2026-07-24T09:01:00.000Z", freshness: "fresh", source: "cloudshare_v4_get_sales" });
+      }
+      return verified ? Response.json({ error: "unavailable" }, { status: 503 }) : Response.json(data);
+    });
+    render(<SalesSessionWorkspace sessionId="session-1" area="details" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Verify now" }));
+    expect(await screen.findByText(/Showing the last known summary/)).not.toBeNull();
+    expect(screen.getByText(data.summary.end)).not.toBeNull();
+    expect(screen.getByText("In progress")).not.toBeNull();
+  });
+
+  it("ignores a delayed post-Verify summary reread after navigating to another Session", async () => {
+    let verified = false;
+    let release!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => { release = resolve; });
+    const next = { ...data, summary: { ...data.summary, id: "session-2", sessionName: "Replacement session" } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("session-2")) return Response.json(next);
+      if (url.endsWith("/verify")) {
+        verified = true;
+        return Response.json({ correlationId: "verify-1", experienceStatus: "inProgress", observedAt: "2026-07-24T09:01:00.000Z", freshness: "fresh", source: "cloudshare_v4_get_sales" });
+      }
+      return verified ? pending : Response.json(data);
+    });
+    const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="details" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Acme enablement" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Verify now" }));
+    await screen.findByText(/Verified from CloudShare: inProgress/);
+    rendered.rerender(<SalesSessionWorkspace sessionId="session-2" area="details" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Replacement session" });
+    const refreshCalls = router.refresh.mock.calls.length;
+    await act(async () => { release(Response.json({ ...data, summary: { ...data.summary, end: "2026-07-24T09:01" } })); });
+    expect(screen.queryByText("2026-07-24T09:01")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Replacement session" })).not.toBeNull();
+    expect(router.refresh.mock.calls.length).toBe(refreshCalls);
+  });
+
   it("keeps the summary safe after invalid or failed verification", async () => {
     const user = userEvent.setup();
     let verifyCalls = 0;
