@@ -2,6 +2,7 @@ import type { DiagnosticActor } from "./diagnostic-log";
 
 export interface SalesCancellationTarget {
   readonly participantId: string;
+  readonly participantName?: string;
   readonly providerParticipantId: string;
   readonly contactId: string;
   readonly email: string;

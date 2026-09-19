@@ -31,5 +31,12 @@ it("persists revision fencing, immutable binding, restart recovery and cross-com
     const extensions = createPrismaSalesParticipantExtensionCommandStore(prisma);
     expect(await extensions.latest(id, id)).toBeNull();
     expect((await extensions.admit({ customerId: id, sessionId: id, commandId: "extension", experienceId: id, timeZone: "UTC", selectionKey: "all", targets: [{ participantId: id, participantRevision: now.toISOString(), providerParticipantId: id, contactId: id, email: "ada@example.test", projectId: "project", environmentId: "opaque/v3-id+value", preExpiry: "2026-09-20T09:00:00Z" }] })).kind).toBe("blocked");
+    // Disposable test data only: race both operations for a fresh Session fence.
+    await prisma.salesParticipantExtensionCommand.deleteMany({ where: { customerId: id } });
+    await prisma.salesDemoSession.update({ where: { id }, data: { cancellationRequestedAt: null } });
+    const extension = { customerId: id, sessionId: id, commandId: "extension-race", experienceId: id, timeZone: "UTC", selectionKey: "all", targets: [{ participantId: id, participantRevision: now.toISOString(), providerParticipantId: id, contactId: id, email: "ada@example.test", projectId: "project", environmentId: "opaque/v3-id+value", preExpiry: "2026-09-20T09:00:00Z" }] };
+    const race = await Promise.all([extensions.admit(extension), restarted.admit({ ...input, commandId: "cancel-race" })]);
+    expect(race.map(result => result.kind).sort()).toEqual(["blocked", "new"]);
+    if (race[0]!.kind === "new") expect((await prisma.salesParticipantExtensionCommand.findUniqueOrThrow({ where: { customerId_commandId: { customerId: id, commandId: "extension-race" } } })).operation).toBe("extension");
   } finally { await prisma.customer.delete({ where: { id } }); }
 });

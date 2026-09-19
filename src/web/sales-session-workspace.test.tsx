@@ -7,6 +7,8 @@ import { SalesSessionWorkspace } from "./sales-session-workspace";
 
 // Extension entry and its real workspace integration are covered in sales-participant-extension.test.tsx.
 vi.mock("./sales-participant-extension", () => ({ SalesParticipantExtension: () => null }));
+// Cancellation controls and their HTTP interaction have a dedicated component test.
+vi.mock("./sales-session-cancellation", () => ({ SalesSessionCancellation: () => null }));
 
 const router = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));

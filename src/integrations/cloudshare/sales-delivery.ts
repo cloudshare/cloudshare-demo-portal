@@ -45,7 +45,7 @@ export interface SalesDelivery {
   listSessions(input: { readonly field?: string; readonly offset: number; readonly limit: number }): Promise<{ readonly sessions: readonly { readonly id: string; readonly status: CloudShareSalesExperienceStatus }[]; readonly total: number } & SalesDeliveryEvidence>;
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
   /** Documented v4 read used only for reconciliation; the provider ID remains server-side. */
-  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus; readonly end?: string | null } & SalesDeliveryEvidence>;
+  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus; readonly end?: string | null; readonly labels?: readonly string[] | null } & SalesDeliveryEvidence>;
   /** Maps CloudShare's versioned invitation-setting wire values to the one fact
    * invite callers need, and preserves the original value for diagnostics. */
   readParticipantInvitationCapability(salesExperienceId: string): Promise<{ readonly participantInvitationsEnabled: boolean; readonly sendInvitations: "salesProsOnly" | "salesParticipantsOnly" | "participantsOnly" | "dontSend" | "salesProsAndParticipants" | "unknown" } & SalesDeliveryEvidence>;
@@ -55,7 +55,7 @@ export interface SalesDelivery {
    * lifecycle policy before they can be exposed. */
   updateSession?(
     salesExperienceId: string,
-    changes: { readonly name?: string; readonly end?: string | null },
+    changes: { readonly name?: string; readonly end?: string | null; readonly cancelled?: true },
   ): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
   /** Ensures the documented Sales user-property definitions used for durable
    * Certalis-to-CloudShare participant correlation. */
@@ -233,7 +233,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async readSession(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, timeoutMs: 10000, schema: salesExperienceReadSchema });
-      return { id: data.id, status: data.status, end: data.end ?? null, ...evidence };
+      return { id: data.id, status: data.status, end: data.end ?? null, labels: data.labels?.every(label => typeof label === "string") ? data.labels as string[] : null, ...evidence };
     },
     async readParticipantInvitationCapability(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
@@ -299,6 +299,10 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         if (Object.hasOwn(current, field)) {
           body[field] = current[field];
         }
+      }
+      if (changes.cancelled) {
+        const labels = z.array(z.string()).parse(current.labels ?? []);
+        body.labels = [...new Set([...labels, "certalis:cancelled"])];
       }
       const { data, evidence: updateEvidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
       return { id: data.id, ...updateEvidence };

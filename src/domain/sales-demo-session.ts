@@ -3,6 +3,8 @@ import type { CloudShareSalesExperienceStatus } from "./sales-session-status";
 
 /** Durable portal correlation for one direct CloudShare Sales Experience. */
 export interface SalesDemoSession {
+  /** Terminal local access fence, persisted atomically with cancellation admission. */
+  readonly cancellationRequestedAt?: Date | null;
   readonly id: string;
   readonly customerId: string;
   readonly opportunityId: string;

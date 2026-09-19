@@ -15,6 +15,7 @@ import { statusBadgeStyle } from "./status-badge";
 import styles from "./sales-session-workspace.module.css";
 import type { SalesSessionWorkspaceResponse } from "@/domain/sales-session-workspace";
 import type { SalesSessionVerifyResponse } from "@/api/sales-session-reconciliation";
+import { SalesSessionCancellation } from "./sales-session-cancellation";
 import { SalesParticipantWorkspace } from "./sales-participant-workspace";
 
 type Area = "participants" | "activity" | "details";
@@ -41,6 +42,7 @@ function SalesSessionWorkspaceState({
   readonly queueHref: string;
 }) {
   const router = useRouter();
+  const [cancelled, setCancelled] = useState(false);
   const [workspace, setWorkspace] =
     useState<SalesSessionWorkspaceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -403,6 +405,7 @@ function SalesSessionWorkspaceState({
   };
   return (
     <section aria-label="Sales Session workspace" className={styles.workspace}>
+      <SalesSessionCancellation key={sessionId} sessionId={sessionId} request={participantRequest} onAdmitted={() => { setCancelled(true); }} />
       <header className={styles.summary}>
         <div className={styles.summaryTopline}>
           <div className={styles.contextTrail}>
@@ -530,7 +533,7 @@ function SalesSessionWorkspaceState({
         </div>
       </nav>
       {area === "participants" ? (
-        <SalesParticipantWorkspace sessionId={sessionId} active request={participantRequest} onAccessConfirmed={rereadConfirmedAccess} />
+        <SalesParticipantWorkspace sessionId={sessionId} active cancelled={cancelled} request={participantRequest} onAccessConfirmed={rereadConfirmedAccess} />
       ) : null}
       {area === "activity" ? (
         <section className={styles.panel}>

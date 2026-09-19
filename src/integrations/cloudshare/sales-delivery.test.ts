@@ -29,6 +29,17 @@ function documentedParticipant(overrides: Record<string, unknown> = {}) {
 }
 
 describe("CloudShare Sales Delivery", () => {
+  it("cancels with a full PUT that merges the reserved label and preserves Start and unrelated labels", async () => {
+    const full = { id: "sales-1", name: "Scheduled", type: "demo", projectId: "project-1", blueprintIds: ["bp-1"], cloudshareRegionIds: ["region-1"], policyId: "policy-1", opportunity: "Acme", mainSalesPro: { email: "sales@example.test" }, registrationType: "registeredParticipantsOnly", start: "2026-09-20T09:00", end: "2026-09-21T09:00", timeZone: "UTC", labels: ["customer-label", "certalis:cancelled"] };
+    const send = vi.fn<HttpClient["send"]>(async () => ({ status: 200, body: JSON.stringify(full) }));
+    const client = createCloudShareClient({ http: { send }, endpoints: { v4BaseUrl: "https://fixture.test/v4", v3BaseUrl: "https://fixture.test/v3" }, tokenProvider: { getToken: async () => "fixture" }, v3: { apiId: "fixture", apiKey: "fixture" }, observer: createCloudShareNoopRequestObserver() });
+    await createCloudShareSalesDelivery(client).updateSession!("sales-1", { end: "2026-09-19T10:00", cancelled: true });
+    expect(send.mock.calls.map(([request]) => request.method)).toEqual(["GET", "PUT"]);
+    expect(JSON.parse(send.mock.calls[1]![0].body!)).toMatchObject({ start: "2026-09-20T09:00", end: "2026-09-19T10:00", labels: ["customer-label", "certalis:cancelled"] });
+    full.labels = ["customer-label"];
+    await createCloudShareSalesDelivery(client).updateSession!("sales-1", { end: "2026-09-19T10:00", cancelled: true });
+    expect(JSON.parse(send.mock.calls[3]![0].body!)).toMatchObject({ labels: ["customer-label", "certalis:cancelled"] });
+  });
   it("reads the documented filtered, paginated Sales Experience list", async () => {
     const requestV4Detailed = vi.fn().mockResolvedValue({ data: { count: 1, items: [{ id: "sales-1", status: "inProgress" }] }, request: { method: "GET", path: "/sales" }, response: { status: 200 } });
     const result = await createCloudShareSalesDelivery({ requestV4Detailed } as never).listSessions({ field: "status=in(inProgress)", offset: 0, limit: 25 });

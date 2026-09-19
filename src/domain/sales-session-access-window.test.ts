@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { projectSalesSessionAccessWindow } from "./sales-session-access-window";
 
 describe("Sales Session access window", () => {
+  it("closes local access immediately when cancellation is admitted even while provider cleanup is pending", () => {
+    const session = { start: "2026-07-19T08:00", end: "2026-07-19T10:00", timeZone: "UTC", cancellationRequestedAt: new Date("2026-07-19T09:00:00Z") };
+    expect(projectSalesSessionAccessWindow(session, new Date("2026-07-19T09:00:00Z"))).toMatchObject({ value: "closed", nativeInvitationsAvailable: false });
+  });
   it("projects invitation access from the schedule without inventing a provider lifecycle", () => {
     const before = projectSalesSessionAccessWindow({ start: "2026-07-20T09:00", end: "2026-07-20T10:00", timeZone: "UTC" }, new Date("2026-07-19T09:00:00Z"));
     const open = projectSalesSessionAccessWindow({ start: "2026-07-19T08:00", end: "2026-07-19T10:00", timeZone: "UTC" }, new Date("2026-07-19T09:00:00Z"));

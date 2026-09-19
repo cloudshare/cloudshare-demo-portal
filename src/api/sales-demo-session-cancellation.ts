@@ -3,8 +3,9 @@ import { randomUUID } from "node:crypto";
 import type { SalesCancellationCommand, SalesCancellationStore, SalesCancellationTarget } from "@/domain/sales-session-cancellation";
 import type { SalesParticipantExtensionDependencies, SalesParticipantExtensionRequest } from "./sales-participant-extension";
 import type { EnvironmentController } from "@/domain/environment";
-import { formatCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
+import { cloudShareWallClockToInstant, formatCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
 import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
+import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales-environment";
 export interface SalesCancellationDependencies extends Omit<SalesParticipantExtensionDependencies, "commands" | "provider"> {
   commands: SalesCancellationStore;
   provider(connection: Parameters<SalesParticipantExtensionDependencies["provider"]>[0]): ReturnType<SalesParticipantExtensionDependencies["provider"]> & { controller: Pick<EnvironmentController, "archiveEnvironment"> };
@@ -19,7 +20,7 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
   let surface = "portal.sales";
   const record = async (outcome: "success" | "failure", message: string, error?: unknown, participantId?: string) => {
     const failure = projectCloudShareFailureEvidence(error);
-    await deps.diagnostics.record({ source: "sales-session-cancellation", operation: "sales.demo_session.cancel", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: request.sessionId }, correlationId: parsed.data.commandId, outcome, message, request: failure?.request ?? null, response: failure?.response ?? null, details: { integrationSurface: surface, attemptedOperation: "cancel_sales_session", participantId: participantId ?? null, httpExchanges: exchanges } });
+    await deps.diagnostics.record({ source: "sales-session-cancellation", operation: "sales.demo_session.cancel", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: request.sessionId }, correlationId: parsed.data.commandId, outcome, message, request: failure?.request ?? null, response: failure?.response ?? null, details: { integrationSurface: surface, attemptedOperation: "cancel_sales_session", participantId: participantId ?? null, environmentId: command?.targets.find(t => t.participantId === participantId)?.environmentId ?? null, failureMode: error instanceof Error ? error.message : null, httpExchanges: exchanges } });
     await deps.audit.write({ id: randomUUID(), occurredAt: (deps.now ?? (() => new Date()))(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.cancel", subjectType: "sales_demo_session", subjectId: request.sessionId, correlationId: parsed.data.commandId, outcome, details: { participantId: participantId ?? null } });
   };
   const persist = async (next: SalesCancellationCommand) => {
@@ -48,7 +49,7 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
       const roster = await delivery.listParticipants(session.cloudShareSalesExperienceId);
       exchanges.push(...(roster.exchanges ?? [roster]));
       if (roster.completeness !== "complete" || roster.provenance.expectedCount !== roster.participants.length || roster.participants.length !== local.length) throw new Error("roster_incomplete_or_unbound");
-      const identities: Omit<SalesCancellationTarget, "environmentId" | "state">[] = [];
+      const identities: (Omit<SalesCancellationTarget, "environmentId" | "state"> & { neverLaunched: boolean })[] = [];
       for (const participant of local) {
         if (participant.customerId !== request.customerId || participant.salesDemoSessionId !== session.id) throw new Error("participant_correlation");
         const contact = await deps.records.findContact(request.customerId, participant.opportunityContactId);
@@ -57,22 +58,33 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
         const byLocal = roster.participants.filter(p => p.customProperties.certalisSalesParticipantId === participant.id);
         const byContact = roster.participants.filter(p => p.customProperties.certalisOpportunityContactId === contact.id);
         if (remote.length !== 1 || byLocal.length !== 1 || byContact.length !== 1 || remote[0] !== byLocal[0] || remote[0] !== byContact[0] || remote[0]!.email.toLowerCase() !== contact.email.toLowerCase()) throw new Error("participant_correlation");
-        identities.push({ participantId: participant.id, providerParticipantId: remote[0]!.id, contactId: contact.id, email: contact.email, projectId: item.project.id });
+        identities.push({ participantId: participant.id, participantName: `${contact.firstName} ${contact.lastName}`.trim(), providerParticipantId: remote[0]!.id, contactId: contact.id, email: contact.email, projectId: item.project.id, neverLaunched: participant.participationStatus === "pending" && !participant.firstJoined && remote[0]!.participationStatus === "pending" && !remote[0]!.firstJoined && remote[0]!.environmentId === null });
       }
       if (new Set(identities.map(t => t.providerParticipantId)).size !== identities.length) throw new Error("duplicate_identity");
       return identities;
     };
     if (!command) {
+      if (session.operationalStatus !== "active" || session.cloudShareSalesExperienceId.startsWith("pending:")) return denied(409, "Only a provisioned Sales Session can be cancelled.");
       const identities = await identify();
       const targets: SalesCancellationTarget[] = [];
-      for (const identity of identities) {
+      for (const { neverLaunched, ...identity } of identities) {
         surface = "cloudshare.v3";
-        const resolved = await environments.observe({ ownerEmail: identity.email, projectId: identity.projectId });
+        let resolved;
+        try { resolved = await environments.observe({ ownerEmail: identity.email, projectId: identity.projectId }); }
+        catch (error) {
+          if (error instanceof SalesEnvironmentResolutionError) exchanges.push(...error.exchanges);
+          if (neverLaunched && error instanceof SalesEnvironmentResolutionError && error.reason === "environment_not_found_for_project") {
+            targets.push({ ...identity, environmentId: null, state: "no_environment" });
+            continue;
+          }
+          throw error;
+        }
         exchanges.push(...resolved.exchanges);
         if (!resolved.environmentId || ![2, 3, 4].includes(resolved.statusCode)) throw new Error("environment_unavailable");
         targets.push({ ...identity, environmentId: resolved.environmentId, state: resolved.statusCode === 4 ? "archived" : "pending" });
       }
-      if (new Set(targets.map(t => t.environmentId)).size !== targets.length) throw new Error("environment_ambiguous");
+      const bound = targets.filter(t => t.environmentId !== null);
+      if (new Set(bound.map(t => t.environmentId)).size !== bound.length) throw new Error("environment_ambiguous");
       const now = (deps.now ?? (() => new Date()))();
       const targetEnd = formatCloudShareWallClock(now, session.timeZone);
       if (!targetEnd) throw new Error("cancellation_timezone");
@@ -111,6 +123,23 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
       }
       await saveTarget(target);
     }
+    surface = "cloudshare.v4";
+    if (command!.accessState === "pending" && !parsed.data.reconcile) {
+      await persist({ ...command!, accessState: "dispatched" });
+      try { exchanges.push(await delivery.updateSession(command!.experienceId, { end: command!.targetEnd, cancelled: true })); }
+      catch (error) { await record("failure", "Experience end/label update requires read-only reconciliation.", error); }
+    }
+    const readback = await delivery.readSession(command!.experienceId);
+    exchanges.push(readback);
+    const actualEnd = readback.end && cloudShareWallClockToInstant(readback.end.replace(/(T\d\d:\d\d):00(?:\.0+)?$/, "$1"), command!.timeZone);
+    const targetEnd = cloudShareWallClockToInstant(command!.targetEnd, command!.timeZone);
+    if (readback.id === command!.experienceId && actualEnd && targetEnd && actualEnd.getTime() === targetEnd.getTime() && readback.labels?.includes("certalis:cancelled")) {
+      await deps.sessions.updateEnd(request.customerId, session.id, command!.targetEnd);
+      await persist({ ...command!, accessState: "confirmed" });
+    }
+    const finished = command!.accessState === "confirmed" && command!.targets.every(t => t.state === "archived" || t.state === "no_environment");
+    await record(finished ? "success" : "failure", finished ? "Sales Session cancelled; history retained." : "Cancellation needs attention.");
+    await persist({ ...command!, finished });
     return salesCancellationResult(command!);
   } catch (error) {
     try { await record("failure", "Cancellation needs attention.", error); } catch { /* Keep durable fences if diagnostics are unavailable. */ }
@@ -118,5 +147,5 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
   }
 }
 export function salesCancellationResult(command: SalesCancellationCommand) {
-  return { status: command.finished ? 200 : 202, body: { commandId: command.commandId, correlationId: command.commandId, outcome: command.finished ? "cancelled" : "needs_attention", status: command.finished ? "Cancelled" : "Cancellation needs attention", cancelledAt: command.cancelledAt, accessConfirmed: command.accessState === "confirmed", targets: command.targets.map(t => ({ participantId: t.participantId, outcome: t.state, retryable: t.state === "not_dispatched" || t.state === "pending" })), reconcile: !command.finished } };
+  return { status: command.finished ? 200 : 202, body: { commandId: command.commandId, correlationId: command.commandId, outcome: command.finished ? "cancelled" : "needs_attention", status: command.finished ? "Cancelled" : "Cancellation needs attention", cancelledAt: command.cancelledAt, accessConfirmed: command.accessState === "confirmed", accessRetryable: command.accessState === "pending", targets: command.targets.map(t => ({ participantId: t.participantId, participantName: t.participantName ?? "Participant", outcome: t.state, retryable: t.state === "not_dispatched" || t.state === "pending" })), reconcile: !command.finished } };
 }

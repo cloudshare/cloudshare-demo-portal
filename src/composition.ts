@@ -1,4 +1,10 @@
+<<<<<<< HEAD
 import { createCloudShareSalesEnvironmentModule } from "@/integrations/cloudshare/environment-observation";
+=======
+import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
+import { createPrismaSalesCancellationStore } from "@/persistence/prisma-sales-session-cancellation";
+import { handleCancelSalesDemoSession, salesCancellationResult } from "@/api/sales-demo-session-cancellation";
+>>>>>>> 1c592f1c (Wire retained-history Sales Session cancellation and access gates)
 import { handleRefreshSalesParticipantEligibility } from "@/api/sales-session-participants";
 import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
 import { createCloudShareSalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
@@ -388,6 +394,7 @@ export interface Services {
   diagnostics: DiagnosticLogRepository;
   salesTrialEnrollments: SalesTrialEnrollmentRepository;
   salesParticipantWorkspace: SalesParticipantWorkspace;
+  salesSessionCancellation: { submit(request: SalesParticipantExtensionRequest): ReturnType<typeof handleCancelSalesDemoSession>; latest(customerId: string, sessionId: string): Promise<ReturnType<typeof salesCancellationResult> | null> };
   salesParticipantExtension: { refresh(request: Omit<SalesParticipantExtensionRequest, "body">): ReturnType<typeof handleRefreshSalesParticipantEligibility>; submit(request: SalesParticipantExtensionRequest): ReturnType<typeof handleExtendSalesParticipants>; latest(customerId: string, sessionId: string): Promise<ReturnType<typeof salesParticipantExtensionResult> | null> };
   /** Redaction-applying write seam every instrumented flow records through. */
   diagnosticRecorder: DiagnosticRecorder;
@@ -529,6 +536,18 @@ export function getServices(): Services {
     mode: config.runtime.mode,
     trace: traceCloudShare,
   });
+  const cancellationCommands = createPrismaSalesCancellationStore(prisma);
+  const salesSessionCancellation: Services["salesSessionCancellation"] = {
+    submit: request => handleCancelSalesDemoSession({
+      commands: cancellationCommands, sessions: createPrismaSalesDemoSessionRepository(prisma),
+      participants: createPrismaSalesSessionParticipantRepository(prisma), records: createPrismaSalesRecordRepository(prisma), items: createPrismaItemRepository(prisma), connections: cloudshareConnections,
+      provider: connection => {
+        const client = cloudshareClientFactory.forConnection(connection, { scope: "workflow", workflow: { actor: request.actor, subject: { type: "sales_demo_session", id: request.sessionId }, source: "sales-session-cancellation", correlationId: (request.body as { commandId: string }).commandId } });
+        return { delivery: createCloudShareSalesDelivery(client) as Required<ReturnType<typeof createCloudShareSalesDelivery>>, environments: createCloudShareSalesEnvironmentSource(client) as Required<ReturnType<typeof createCloudShareSalesEnvironmentSource>>, controller: createCloudShareEnvironmentController(client) };
+      }, diagnostics: diagnosticRecorder, audit,
+    }, request),
+    latest: async (customerId, sessionId) => { const command = await cancellationCommands.latest(customerId, sessionId); return command ? salesCancellationResult(command) : null; },
+  };
   const extensionCommands = createPrismaSalesParticipantExtensionCommandStore(prisma);
   const salesParticipantExtension: Services["salesParticipantExtension"] = {
     refresh: request => handleRefreshSalesParticipantEligibility({
@@ -673,6 +692,7 @@ export function getServices(): Services {
     salesTrialEnrollments,
     salesParticipantWorkspace,
     salesParticipantExtension,
+    salesSessionCancellation,
     diagnosticRecorder,
     adminMonitoringAttempts,
     adminCandidates,

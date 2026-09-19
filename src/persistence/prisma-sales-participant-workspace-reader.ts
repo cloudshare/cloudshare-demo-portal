@@ -24,7 +24,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
     async readPage(input) {
       const session = await prisma.salesDemoSession.findFirst({
         where: { id: input.sessionId, customerId: input.customerId, opportunity: { archivedAt: null, account: { archivedAt: null } } },
-        select: { id: true, opportunityId: true, end: true, timeZone: true, sendInvitations: true },
+        select: { id: true, opportunityId: true, end: true, timeZone: true, sendInvitations: true, cancellationRequestedAt: true },
       });
       if (!session) return null;
       const sessionEnd = cloudShareWallClockToInstant(session.end, session.timeZone);
@@ -139,6 +139,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
             invitationStatus: row.invitationStatus === "sent" ? "sent" : "notSent",
             participationStatus: row.participationStatus as "pending" | "inProgress" | "concluded",
             sessionEndsAt: sessionEnd.toISOString(),
+            sessionCancelled: Boolean(session.cancellationRequestedAt),
             nativeInvitationsEnabled:
               session.sendInvitations === "salesProsAndParticipants",
             providerCorrelation: Boolean(row.cloudShareParticipantId),
