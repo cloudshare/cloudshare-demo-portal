@@ -1,3 +1,8 @@
+import { handleRefreshSalesParticipantEligibility } from "@/api/sales-session-participants";
+import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
+import { createCloudShareSalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
+import { handleExtendSalesParticipants, salesParticipantExtensionResult, type SalesParticipantExtensionRequest } from "@/api/sales-participant-extension";
+import { createPrismaSalesParticipantExtensionCommandStore } from "@/persistence/prisma-sales-participant-extension-command";
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { loadConfig, secretValues, type Config } from "@/config";
@@ -382,6 +387,7 @@ export interface Services {
   diagnostics: DiagnosticLogRepository;
   salesTrialEnrollments: SalesTrialEnrollmentRepository;
   salesParticipantWorkspace: SalesParticipantWorkspace;
+  salesParticipantExtension: { refresh(request: Omit<SalesParticipantExtensionRequest, "body">): ReturnType<typeof handleRefreshSalesParticipantEligibility>; submit(request: SalesParticipantExtensionRequest): ReturnType<typeof handleExtendSalesParticipants>; latest(customerId: string, sessionId: string): Promise<ReturnType<typeof salesParticipantExtensionResult> | null> };
   /** Redaction-applying write seam every instrumented flow records through. */
   diagnosticRecorder: DiagnosticRecorder;
   adminMonitoringAttempts: AdminMonitoringAttemptRepository;
@@ -522,6 +528,23 @@ export function getServices(): Services {
     mode: config.runtime.mode,
     trace: traceCloudShare,
   });
+  const extensionCommands = createPrismaSalesParticipantExtensionCommandStore(prisma);
+  const salesParticipantExtension: Services["salesParticipantExtension"] = {
+    refresh: request => handleRefreshSalesParticipantEligibility({
+      sessions: createPrismaSalesDemoSessionRepository(prisma), items: createPrismaItemRepository(prisma), records: createPrismaSalesRecordRepository(prisma), participants: createPrismaSalesSessionParticipantRepository(prisma), connections: cloudshareConnections,
+      deliveryFactory: { forConnection: connection => createCloudShareSalesDelivery(cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })) },
+      salesEnvironmentFactory: { forConnection: connection => createCloudShareSalesEnvironmentSource(cloudshareClientFactory.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })) },
+      diagnostics: diagnosticRecorder, audit,
+    }, request),
+    submit: request => handleExtendSalesParticipants({
+      commands: extensionCommands,
+      sessions: createPrismaSalesDemoSessionRepository(prisma),
+      participants: createPrismaSalesSessionParticipantRepository(prisma), records: createPrismaSalesRecordRepository(prisma), items: createPrismaItemRepository(prisma), connections: cloudshareConnections,
+      provider: connection => { const client = cloudshareClientFactory.forConnection(connection, { scope: "workflow", workflow: { actor: request.actor, subject: { type: "sales_demo_session", id: request.sessionId }, source: "sales-participant-extension", correlationId: (request.body as { commandId: string }).commandId } }); return { delivery: createCloudShareSalesDelivery(client) as Required<ReturnType<typeof createCloudShareSalesDelivery>>, environments: createCloudShareSalesEnvironmentSource(client) as Required<ReturnType<typeof createCloudShareSalesEnvironmentSource>> }; },
+      diagnostics: diagnosticRecorder, audit,
+    }, request),
+    latest: async (customerId, sessionId) => { const command = await extensionCommands.latest(customerId, sessionId); return command ? salesParticipantExtensionResult(command) : null; },
+  };
   const salesParticipantWorkspace = createSalesParticipantWorkspace({
     reader: createPrismaSalesParticipantWorkspaceReader(prisma), invitationStore,
     sessions: createPrismaSalesDemoSessionRepository(prisma), records: createPrismaSalesRecordRepository(prisma), participants: createPrismaSalesSessionParticipantRepository(prisma), addCommandStore: createPrismaSalesParticipantAddCommandStore(prisma),
@@ -648,6 +671,7 @@ export function getServices(): Services {
     diagnostics,
     salesTrialEnrollments,
     salesParticipantWorkspace,
+    salesParticipantExtension,
     diagnosticRecorder,
     adminMonitoringAttempts,
     adminCandidates,

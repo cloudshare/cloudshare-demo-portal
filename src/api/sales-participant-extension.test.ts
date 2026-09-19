@@ -1,0 +1,173 @@
+import { describe, expect, it, vi } from "vitest";
+import { handleExtendSalesParticipants, type SalesParticipantExtensionDependencies } from "./sales-participant-extension";
+import { handleRefreshSalesParticipantEligibility } from "./sales-session-participants";
+import { createInMemorySalesParticipantExtensionCommandStore } from "@/persistence/in-memory-sales-participant-extension-command";
+const exchange = { request: { method: "GET" as const, path: "/fixture" }, response: { status: 200 } };
+function fixture() {
+  let expiry = "2026-09-20T10:00:00Z", end = "2026-09-20T09:00";
+  const order: string[] = [];
+  const participant = { id: "p1", customerId: "c1", salesDemoSessionId: "s1", opportunityContactId: "contact1", cloudShareParticipantId: "remote1", participationStatus: "inProgress", updatedAt: new Date("2026-09-19T01:00:00Z") };
+  const environments = { observe: vi.fn(async (_input: { ownerEmail: string; projectId: string }) => ({ environmentId: "opaque1", statusCode: 2 as const, expirationTime: expiry, exchanges: [exchange] })), observeById: vi.fn(async (_id: string) => { order.push("read-expiry"); return { environmentId: "opaque1", statusCode: 2 as const, expirationTime: expiry, exchanges: [exchange] }; }), extendById: vi.fn(async (_id: string) => { order.push("extend"); expiry = "2026-09-21T10:00:00Z"; return { environmentId: "opaque1", exchange }; }) };
+  const delivery = { readSession: vi.fn(async () => ({ id: "experience1", status: "inProgress" as const, end, ...exchange })), listParticipants: vi.fn(async () => ({ participants: [{ id: "remote1", email: "ada@example.com", participationStatus: "inProgress", envStatus: "Ready", environmentId: "numeric-roster-reference", customProperties: { certalisSalesParticipantId: "p1", certalisOpportunityContactId: "contact1" } }], completeness: "complete", ...exchange })), updateSession: vi.fn(async (_id, changes) => { order.push("update-end"); end = changes.end; return { id: "experience1", ...exchange }; }) };
+  const deps = { commands: createInMemorySalesParticipantExtensionCommandStore(), sessions: { findById: vi.fn(async (customerId) => customerId === "c1" ? { id: "s1", customerId: "c1", itemId: "item1", opportunityId: "op1", cloudShareSalesExperienceId: "experience1", end, timeZone: "UTC", operationalStatus: "active" } : null), updateEnd: vi.fn(async () => {}) }, items: { findById: vi.fn(async () => ({ customerId: "c1", project: { id: "project1" } })) }, records: { findContact: vi.fn(async () => ({ id: "contact1", customerId: "c1", opportunityId: "op1", email: "ada@example.com", archivedAt: null })) }, participants: { list: vi.fn(async () => [participant]) }, connections: { findByCustomerId: vi.fn(async () => ({ customerId: "c1" })) }, provider: () => ({ delivery, environments }), diagnostics: { record: vi.fn(async () => {}) }, audit: { write: vi.fn(async () => {}) }, now: () => new Date("2026-09-19T08:00:00Z") } as unknown as SalesParticipantExtensionDependencies;
+  const request = { customerId: "c1", sessionId: "s1", actor: { type: "admin", id: "admin" }, body: { commandId: "9bc409ad-9217-4943-8e1d-e18a0ddbbf54", selection: { mode: "all", excludedIds: [] } } };
+  return { deps, request, order, environments, delivery, setExpiry: (value: string) => { expiry = value; } };
+}
+describe("Sales Participant extension HTTP seam", () => {
+  it.each(["observation only", "contact identity", "concluded", "expiry", "environment"])("recovers after projection refresh with %s changes without replaying an ambiguous peer", async change => {
+    const f = fixture();
+    const first = (await f.deps.participants.list("c1", "s1"))[0]!;
+    let local = [first, { ...first, id: "p2", opportunityContactId: "contact2", cloudShareParticipantId: "remote2" }];
+    vi.mocked(f.deps.participants.list).mockImplementation(async () => local);
+    const contact = await f.deps.records.findContact("c1", "contact1");
+    vi.mocked(f.deps.records.findContact).mockImplementation(async (_customer, id) => ({ ...contact!, id, email: id === "contact1" ? "ada@example.com" : "grace@example.com" }));
+    const roster = await f.delivery.listParticipants();
+    f.delivery.listParticipants.mockResolvedValue({ ...roster, participants: [...roster.participants, { ...roster.participants[0]!, id: "remote2", email: "grace@example.com", customProperties: { certalisSalesParticipantId: "p2", certalisOpportunityContactId: "contact2" } }] });
+    let secondReads = 0, secondExpiry = "2026-09-20T10:00:00Z";
+    f.environments.observe.mockImplementation(async ({ ownerEmail }: { ownerEmail: string }) => {
+      if (ownerEmail === "grace@example.com" && ++secondReads === 2) throw new Error("preflight unavailable");
+      return { environmentId: ownerEmail === "ada@example.com" ? "opaque1" : "opaque2", statusCode: 2 as const, expirationTime: ownerEmail === "ada@example.com" ? "2026-09-20T10:00:00Z" : secondExpiry, exchanges: [exchange] };
+    });
+    f.environments.extendById.mockImplementation(async (id: string) => { if (id === "opaque1") throw new Error("timeout"); secondExpiry = "2026-09-21T10:00:00Z"; return { environmentId: id, exchange }; });
+    f.environments.observeById.mockImplementation(async (id: string) => ({ environmentId: id, statusCode: 2 as const, expirationTime: id === "opaque1" ? "2026-09-20T10:00:00Z" : secondExpiry, exchanges: [exchange] }));
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ body: { finished: false, targets: [{ outcome: "needs_attention", retryable: false }, { outcome: "failed_retryable", retryable: true }] } });
+    const refreshed = await handleRefreshSalesParticipantEligibility({
+      ...f.deps,
+      participants: { ...f.deps.participants, save: async (row: typeof first) => { local = local.map(current => current.id === row.id ? row : current); }, recordEnvironmentObservation: vi.fn() },
+      deliveryFactory: { forConnection: () => f.delivery },
+    } as unknown as Parameters<typeof handleRefreshSalesParticipantEligibility>[0], f.request);
+    expect(refreshed.status).toBe(200);
+    expect(local[1]!.updatedAt.toISOString()).not.toBe(first.updatedAt.toISOString());
+    const recovered = await f.deps.commands.latest("c1", "s1");
+    expect(recovered?.commandId).toBe(f.request.body.commandId);
+    expect(recovered?.targets.map(target => target.state)).toEqual(["dispatched", "not_dispatched"]);
+    if (change === "contact identity") local[1] = { ...local[1]!, opportunityContactId: "changed" };
+    if (change === "concluded") local[1] = { ...local[1]!, participationStatus: "concluded" };
+    if (change === "expiry") secondExpiry = "2026-09-20T11:00:00Z";
+    if (change === "environment") {
+      const observe = f.environments.observe.getMockImplementation()!;
+      f.environments.observe.mockImplementation(async input => ({ ...await observe(input), environmentId: input.ownerEmail === "grace@example.com" ? "replacement" : "opaque1" }));
+    }
+    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, retrySafe: true } })).toMatchObject({ body: { outcome: "needs_attention", accessConfirmed: change === "observation only", targets: [{ outcome: "needs_attention" }, { outcome: change === "observation only" ? "confirmed" : "failed_retryable" }] } });
+    expect(f.environments.extendById.mock.calls.map(call => call[0])).toEqual(change === "observation only" ? ["opaque1", "opaque2"] : ["opaque1"]);
+    expect(f.environments.observeById.mock.calls.filter(call => call[0] === "opaque1")).toHaveLength(2);
+  });
+  it.each(["inProgress", "concluded"] as const)("extends an exactly bound Archived environment with %s participation", async participationStatus => {
+    const f = fixture();
+    const local = await f.deps.participants.list("c1", "s1");
+    vi.mocked(f.deps.participants.list).mockResolvedValue(local.map(row => ({ ...row, participationStatus })));
+    const roster = await f.delivery.listParticipants();
+    f.delivery.listParticipants.mockResolvedValue({ ...roster, participants: roster.participants.map(row => ({ ...row, participationStatus, envStatus: "Archived" })) });
+    const observe = f.environments.observe.getMockImplementation()!;
+    f.environments.observe.mockImplementation(async input => ({ ...await observe(input), statusCode: 4 as never }));
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 200, body: { outcome: "completed", accessConfirmed: true } });
+    expect(f.environments.extendById).toHaveBeenCalledOnce();
+    expect(f.environments.extendById).toHaveBeenCalledWith("opaque1");
+  });
+  it.each(["Deleted", "Ready"])("does not admit an unrelated concluded %s Participant", async envStatus => {
+    const f = fixture();
+    const roster = await f.delivery.listParticipants();
+    f.delivery.listParticipants.mockResolvedValue({ ...roster, participants: roster.participants.map(row => ({ ...row, participationStatus: "concluded", envStatus })) });
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 409 });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
+  it("does not dispatch an Archived target that becomes Deleted during preflight", async () => {
+    const f = fixture();
+    const roster = await f.delivery.listParticipants();
+    f.delivery.listParticipants.mockResolvedValue({ ...roster, participants: roster.participants.map(row => ({ ...row, envStatus: "Archived" })) });
+    const before = await f.environments.observe({ ownerEmail: "ada@example.com", projectId: "project1" });
+    f.environments.observe.mockResolvedValueOnce({ ...before, statusCode: 4 as never }).mockResolvedValue({ ...before, statusCode: 5 as never });
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ body: { targets: [{ outcome: "failed_retryable", retryable: true }] } });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
+  it("does not extend an Archived environment through an ended Sales Experience", async () => {
+    const f = fixture();
+    const roster = await f.delivery.listParticipants();
+    f.delivery.listParticipants.mockResolvedValue({ ...roster, participants: roster.participants.map(row => ({ ...row, envStatus: "Archived" })) });
+    const remote = await f.delivery.readSession();
+    f.delivery.readSession.mockResolvedValue({ ...remote, status: "ended" as never });
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 409 });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
+  it("keeps Archived readback with increased retention pending until usable state is observed without replay", async () => {
+    const f = fixture();
+    f.environments.observeById.mockResolvedValueOnce({ environmentId: "opaque1", statusCode: 4 as never, expirationTime: "2026-09-21T10:00:00Z", exchanges: [exchange] });
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 202, body: { accessConfirmed: false, targets: [{ outcome: "needs_attention", retryable: false }] } });
+    expect(f.delivery.updateSession).not.toHaveBeenCalled();
+    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, reconcile: true } })).toMatchObject({ status: 200, body: { accessConfirmed: true } });
+    expect(f.environments.extendById).toHaveBeenCalledOnce();
+  });
+  it("reconciles a dispatched captured Environment by ID when later owner/Project resolution becomes ambiguous", async () => {
+    const f = fixture();
+    f.environments.extendById.mockRejectedValueOnce(new Error("timeout"));
+    await handleExtendSalesParticipants(f.deps, f.request);
+    f.environments.observe.mockRejectedValue(new Error("multiple matches"));
+    f.setExpiry("2026-09-21T10:00:00Z");
+    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, reconcile: true } })).toMatchObject({ body: { outcome: "completed" } });
+    expect(f.environments.extendById).toHaveBeenCalledOnce();
+    expect(f.environments.observe).toHaveBeenCalledTimes(2);
+    expect(f.environments.observeById).toHaveBeenLastCalledWith("opaque1");
+  });
+  it("keeps ambiguous owner/Project resolution fail-closed before dispatch", async () => {
+    const f = fixture();
+    const observe = f.environments.observe.getMockImplementation()!;
+    f.environments.observe.mockImplementationOnce(observe).mockRejectedValue(new Error("multiple matches"));
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ body: { targets: [{ outcome: "failed_retryable" }] } });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
+  it("retains ambiguity across a fresh command and only reconciles with GET", async () => {
+    const f = fixture();
+    f.environments.extendById.mockImplementationOnce(async () => { throw new Error("lost acknowledgement"); });
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 202, body: { outcome: "needs_attention", targets: [{ outcome: "needs_attention", retryable: false }] } });
+    const fresh = { ...f.request, body: { ...f.request.body, commandId: "aec409ad-9217-4943-8e1d-e18a0ddbbf54" } };
+    expect(await handleExtendSalesParticipants(f.deps, fresh)).toMatchObject({ status: 409 });
+    f.setExpiry("2026-09-21T10:00:00Z");
+    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, reconcile: true } })).toMatchObject({ status: 200, body: { outcome: "completed" } });
+    expect(f.environments.extendById).toHaveBeenCalledTimes(1);
+  });
+  it("rejects another Customer and duplicate correlation without dispatch", async () => {
+    const f = fixture();
+    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, customerId: "c2" })).toMatchObject({ status: 404 });
+    const roster = await f.delivery.listParticipants();
+    f.delivery.listParticipants.mockResolvedValue({ ...roster, participants: [...roster.participants, { ...roster.participants[0]!, id: "duplicate" }] });
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 502 });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
+  it("accepts the live v3 RFC1123 GMT expiry without host-timezone inference", async () => {
+    const f = fixture();
+    f.setExpiry("Sun, 20 Sep 2026 10:00:00 GMT");
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 200 });
+  });
+  it("honours narrowed default-all selection", async () => {
+    const f = fixture();
+    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, selection: { mode: "all", excludedIds: ["p1"] } } })).toMatchObject({ status: 409 });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
+  it("does not confirm access when the End readback belongs to an ended Experience, including reconciliation", async () => {
+    const f = fixture();
+    let reads = 0;
+    f.delivery.readSession.mockImplementation(async () => ({ id: "experience1", status: ++reads >= 3 ? "ended" as never : "inProgress", end: "2026-09-21T10:00", ...exchange }));
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 202, body: { outcome: "needs_attention", accessConfirmed: false } });
+    expect(f.deps.sessions.updateEnd).not.toHaveBeenCalled();
+    expect(await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, reconcile: true } })).toMatchObject({ status: 202, body: { outcome: "needs_attention", accessConfirmed: false } });
+    expect(f.delivery.updateSession).toHaveBeenCalledTimes(1);
+    expect(f.deps.sessions.updateEnd).not.toHaveBeenCalled();
+  });
+  it("does not replay an ambiguous Sales Experience PUT", async () => {
+    const f = fixture();
+    f.delivery.updateSession.mockImplementationOnce(async () => { throw new Error("timeout"); });
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 202, body: { accessConfirmed: false } });
+    await handleExtendSalesParticipants(f.deps, { ...f.request, body: { ...f.request.body, reconcile: true } });
+    expect(f.environments.extendById).toHaveBeenCalledTimes(1);
+    expect(f.delivery.updateSession).toHaveBeenCalledTimes(1);
+  });
+  it("extends the exact resolved environment, reconciles expiry before End, and never replays", async () => {
+    const f = fixture();
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 200, body: { outcome: "completed", targets: [{ participantId: "p1", outcome: "confirmed", confirmedExpiry: "2026-09-21T10:00:00.000Z" }] } });
+    expect(f.order).toEqual(["extend", "read-expiry", "update-end"]);
+    expect(f.environments.extendById).toHaveBeenCalledWith("opaque1");
+    await handleExtendSalesParticipants(f.deps, f.request);
+    expect(f.environments.extendById).toHaveBeenCalledTimes(1);
+    expect(f.delivery.updateSession).toHaveBeenCalledTimes(1);
+  });
+});

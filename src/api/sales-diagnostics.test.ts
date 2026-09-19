@@ -376,3 +376,13 @@ describe("Sales diagnostics handler", () => {
     expect((unrelated.body as { entries: unknown[] }).entries).toEqual([]);
   });
 });
+
+it.each([{}, { source: "sales-participant-extension" }])("returns only owned extension evidence for a correlation with filters %j", async filters => {
+  const diagnostics = createInMemoryDiagnosticLogRepository();
+  for (const [customerId, correlationId, message] of [["owned", "extension-command", "retained extension evidence"], ["other", "extension-command", "other Customer"], ["owned", "unrelated", "other command"]]) {
+    await diagnostics.append({ source: "sales-participant-extension", operation: "sales.demo_session.participants.extend", outcome: "success", customerId, correlationId, message });
+  }
+  const result = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "owned", query: { correlationId: "extension-command", ...filters } });
+  expect(result.status).toBe(200);
+  expect((result.body as { entries: { message: string }[] }).entries.map(entry => entry.message)).toEqual(["retained extension evidence"]);
+});

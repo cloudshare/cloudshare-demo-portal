@@ -19,6 +19,7 @@ model Heartbeat {
 }
 
 model Customer {
+  extensionCommands SalesParticipantExtensionCommand[]
   id                   String                @id @default(cuid())
   slug                 String                @unique
   name                 String
@@ -191,6 +192,7 @@ model SalesTrialEnrollment {
 // Immutable portal-to-CloudShare correlation. Sales Experiences are never
 // deleted by Certalis; this record preserves commercial delivery history.
 model SalesDemoSession {
+  extensionCommands SalesParticipantExtensionCommand[]
   id                          String   @id
   customerId                  String
   opportunityId               String
@@ -231,6 +233,7 @@ model SalesDemoSession {
 /// Sales Experience. Invite and monitoring fields are reconciled from
 /// CloudShare; no invitation URL is retained.
 model SalesSessionParticipant {
+  extensionTargets SalesParticipantExtensionTarget[]
   id                          String   @id
   customerId                  String
   salesDemoSessionId          String
@@ -625,4 +628,32 @@ model AuditTrailEntry {
   @@index([actorEmail])
   @@index([subjectType, subjectId])
   @@index([correlationId])
+}
+model SalesParticipantExtensionCommand {
+  customerId String
+  commandId String
+  sessionId String
+  activeSessionId String?
+  identity String
+  state String
+  revision Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  session SalesDemoSession @relation(fields: [customerId, sessionId], references: [customerId, id], onDelete: Cascade)
+  targets SalesParticipantExtensionTarget[]
+  @@id([customerId, commandId])
+  @@unique([customerId, activeSessionId])
+}
+model SalesParticipantExtensionTarget {
+  customerId String
+  commandId String
+  salesSessionParticipantId String
+  activeParticipantId String?
+  activeEnvironmentId String?
+  command SalesParticipantExtensionCommand @relation(fields: [customerId, commandId], references: [customerId, commandId], onDelete: Cascade)
+  participant SalesSessionParticipant @relation(fields: [customerId, salesSessionParticipantId], references: [customerId, id], onDelete: Cascade)
+  @@id([customerId, commandId, salesSessionParticipantId])
+  @@unique([customerId, activeParticipantId])
+  @@unique([customerId, activeEnvironmentId])
 }

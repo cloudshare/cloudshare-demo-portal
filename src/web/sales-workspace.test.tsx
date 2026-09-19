@@ -3,6 +3,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SalesParticipantExtension } from "./sales-participant-extension";
+import { parseSalesWorkspaceRouteState } from "./sales-shell-route";
+import { handleGetSalesDiagnosticLog } from "@/api/sales-diagnostics";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { SalesSessionParticipants, SalesWorkspace } from "./sales-workspace";
 
 vi.mock("./session-expiry", async (importOriginal) => ({
@@ -17,6 +21,30 @@ const deferred = <T,>() => { let resolve!: (value: T) => void; return { promise:
 
 describe("Sales Item authoring", () => {
   afterEach(() => { vi.restoreAllMocks(); router.push.mockClear(); router.replace.mockClear(); router.refresh.mockClear(); });
+
+  it("opens retained extension diagnostics through the real link, Support route and correlation request", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-participant-extension", operation: "sales.demo_session.participants.extend", outcome: "success", customerId: "owned", correlationId: "extension-command", message: "Extension evidence visible" });
+    const request = vi.fn(async (url: string) => json(url.endsWith("/refresh") ? { outcome: "refreshed" } : { commandId: "extension-command", selection: { mode: "all", excludedIds: [] }, outcome: "completed", finished: true, targets: [] }));
+    const view = render(<SalesParticipantExtension sessionId="s1" rows={[]} request={request} onRefreshed={async () => true} />);
+    const link = await screen.findByRole("link", { name: "Open extension diagnostics" });
+    let destination: URL | undefined;
+    link.addEventListener("click", event => { event.preventDefault(); destination = new URL((link as HTMLAnchorElement).href); });
+    await userEvent.setup().click(link);
+    expect(destination!.searchParams.get("correlationId")).toBe("extension-command");
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async input => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/sales/diagnostics") {
+        const result = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "owned", query: Object.fromEntries(url.searchParams) });
+        return json(result.body, result.status);
+      }
+      return json({});
+    });
+    window.history.replaceState({}, "", destination!.pathname + destination!.search);
+    view.rerender(<SalesWorkspace email="admin@example.test" initialRoute={parseSalesWorkspaceRouteState(Object.fromEntries(destination!.searchParams))} />);
+    expect(await screen.findByText("Extension evidence visible")).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith("/api/sales/diagnostics?") && new URL(String(url), "http://localhost").searchParams.get("correlationId") === "extension-command")).toBe(true);
+  });
 
   it("renders Trial Offerings inside the Sales workspace shell with the left-nav section active", async () => {
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {

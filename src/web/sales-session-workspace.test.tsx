@@ -5,6 +5,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionWorkspace } from "./sales-session-workspace";
 
+// Extension entry and its real workspace integration are covered in sales-participant-extension.test.tsx.
+vi.mock("./sales-participant-extension", () => ({ SalesParticipantExtension: () => null }));
+
 const router = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
@@ -100,6 +103,7 @@ describe("Sales Session workspace", () => {
     const user = userEvent.setup();
     let verifyCalls = 0;
     vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      if (String(input).endsWith("/participants/extend")) return new Response("null", { status: 200 });
       if (String(input).includes("/participants?")) return new Response(JSON.stringify(data), { status: 200 });
       if (String(input).includes("/workspace")) return new Response(JSON.stringify(data), { status: 200 });
       verifyCalls += 1;

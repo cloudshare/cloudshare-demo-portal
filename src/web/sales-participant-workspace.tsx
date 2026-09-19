@@ -1,5 +1,6 @@
 "use client";
 
+import { SalesParticipantExtension } from "./sales-participant-extension";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./sales-session-workspace.module.css";
 import { primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
@@ -27,6 +28,7 @@ type ParticipantAddPerson = { kind: "existingContact"; contactId: string } | { k
 export function SalesParticipantWorkspace(props: {
   readonly sessionId: string;
   readonly active: boolean;
+  readonly onAccessConfirmed?: () => Promise<void>;
   readonly request: (url: string, init?: RequestInit) => Promise<Response>;
 }) {
   const { sessionId, active, request } = props;
@@ -63,6 +65,7 @@ export function SalesParticipantWorkspace(props: {
   const historyMode = useRef<"push" | "replace">("replace");
   const lastUrl = useRef<string | null>(null);
   const logicalFocus = useRef<"row" | "inspector">(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("participantFocus") === "inspector" ? "inspector" : "row");
+  const pageReadGeneration = useRef(0);
   const href = useCallback(() => `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants?${query ? `query=${encodeURIComponent(query)}&` : ""}offset=${offset}&limit=25`, [offset, query, sessionId]);
   const activeParticipant = page?.participants.find((row) => row.id === selection.activeId) ?? null;
 
@@ -110,10 +113,11 @@ export function SalesParticipantWorkspace(props: {
   useEffect(() => {
     if (!active) return;
     let disposed = false;
+    const readGeneration = ++pageReadGeneration.current;
     void request(href(), { cache: "no-store" }).then(async (response) => {
-      if (disposed) return;
+      if (disposed || pageReadGeneration.current !== readGeneration) return;
       const body = (await response.json()) as ParticipantPage;
-      if (disposed) return;
+      if (disposed || pageReadGeneration.current !== readGeneration) return;
       if (!response.ok || !Array.isArray(body.participants)) { setLoadFailed(true); setPage(null); setFeedback((current) => ({ ...current, _announcement: "Participant roster could not be loaded; retry or open Support." })); return; }
       setLoadFailed(false);
       setPage(body);
@@ -135,8 +139,8 @@ export function SalesParticipantWorkspace(props: {
         }
         return next;
       });
-    }).catch(() => { if (!disposed) { setLoadFailed(true); setPage(null); setFeedback((messages) => ({ ...messages, _announcement: "Participant roster could not be loaded; retry or open Support." })); } });
-    return () => { disposed = true; };
+    }).catch(() => { if (!disposed && pageReadGeneration.current === readGeneration) { setLoadFailed(true); setPage(null); setFeedback((messages) => ({ ...messages, _announcement: "Participant roster could not be loaded; retry or open Support." })); } });
+    return () => { disposed = true; pageReadGeneration.current += 1; };
   }, [active, href, inspectorOpen, offset, query, request]);
   useEffect(() => {
     if (!inspectorOpen || !selection.activeId || !page || page.participants.some((participant) => participant.id === selection.activeId)) return;
@@ -182,13 +186,16 @@ export function SalesParticipantWorkspace(props: {
   };
 
   const rereadWorkspace = async () => {
+    const readGeneration = ++pageReadGeneration.current;
     try {
       const response = await request(href(), { cache: "no-store" });
       const next = await readJsonObject(response);
-      if (response.ok && Array.isArray(next?.participants)) setPage(next as ParticipantPage);
+      if (pageReadGeneration.current !== readGeneration) return false;
+      if (response.ok && Array.isArray(next?.participants)) { setPage(next as ParticipantPage); return true; }
     } catch {
       // Action feedback is more useful than replacing it with a secondary reread failure.
     }
+    return false;
   };
   const startNewRegistrationTarget = () => {
     registrationGeneration.current += 1;
@@ -350,6 +357,7 @@ export function SalesParticipantWorkspace(props: {
       <input id="participant-query" value={query} onChange={(event) => { historyMode.current = "push"; setQuery(event.target.value); setOffset(0); }} placeholder="Search name or email" />
       {feedback._announcement ? <p role="alert" aria-live="polite">{feedback._announcement}</p> : null}
       {page ? <div className={styles.empty}><strong>Add Participant</strong><p>Registration does not send a CloudShare invitation.</p><label><input type="radio" checked={addMode === "existingContact"} disabled={registrationBusy} onChange={() => { startNewRegistrationTarget(); setAddMode("existingContact"); }} /> Existing Opportunity Contact</label>{addMode === "existingContact" ? <><select aria-label="Eligible Opportunity Contact" disabled={registrationBusy || !page.eligibleContacts?.length} value={registrationId} onChange={(event) => { startNewRegistrationTarget(); setRegistrationId(event.target.value); }}><option value="">{page.eligibleContacts?.length ? "Select a Contact" : "No eligible Contacts"}</option>{page.eligibleContacts?.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {contact.email}</option>)}</select></> : null}<label><input type="radio" checked={addMode === "adHoc"} disabled={registrationBusy} onChange={() => { startNewRegistrationTarget(); setAddMode("adHoc"); }} /> New person</label>{addMode === "adHoc" ? <><input aria-label="First name" placeholder="First name" disabled={registrationBusy} value={adHoc.firstName} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, firstName: event.target.value }); }} /><input aria-label="Last name" placeholder="Last name" disabled={registrationBusy} value={adHoc.lastName} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, lastName: event.target.value }); }} /><input aria-label="Email" type="email" placeholder="Email" disabled={registrationBusy} value={adHoc.email} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, email: event.target.value }); }} /></> : null}<button type="button" disabled={registrationBusy || registrationOutcome !== null || (addMode === "existingContact" ? !registrationId : !adHoc.firstName.trim() || !adHoc.lastName.trim() || !adHoc.email.trim())} onClick={() => void registerSelected()}>Add participant</button>{registrationFeedback ? <p role="status">{registrationFeedback}</p> : null}{registrationOutcome ? <p>Correlation ID: <code>{registrationOutcome.correlationId ?? "unavailable"}</code> · <a href={`/sales?tab=support${registrationOutcome.correlationId ? `&correlationId=${encodeURIComponent(registrationOutcome.correlationId)}` : ""}`}>Support diagnostics</a>{registrationOutcome.retryable ? <button type="button" onClick={retryParticipantNow}>{registrationOutcome.nextAction === "retry" ? "Retry participant add now" : "Retry participant add"}</button> : <button type="button" onClick={reconcileParticipantNow}>{registrationOutcome.nextAction === "reconcile" ? "Check CloudShare status now" : "Check CloudShare status"}</button>}</p> : null}</div> : null}
+      {active && page ? <SalesParticipantExtension key={sessionId} sessionId={sessionId} rows={page.participants} request={request} onRefreshed={rereadWorkspace} onAccessConfirmed={props.onAccessConfirmed} /> : null}
       {loadFailed ? null : page?.participants.length ? <div className={styles.tableWrap} role="region" aria-label="Scrollable Participant roster" tabIndex={0}><table aria-label="Participant roster" className={styles.roster}><thead><tr><th>Participant</th><th>Invitation</th><th>Participation</th><th>Participant Environment</th><th>Environment source</th></tr></thead><tbody>{page.participants.map((participant) => { const selected = selection.selectedIds.includes(participant.id); const current = selection.activeId === participant.id; const pageIds = page.participants.map((row) => row.id); return <React.Fragment key={participant.id}><tr aria-selected={selected} data-participant-id={participant.id} data-active={current ? "true" : undefined} data-selected={selected ? "true" : undefined} tabIndex={current ? 0 : -1} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; clearedInspectorTarget.current = false; historyMode.current = "push"; setSelection((state) => reduceParticipantSelection(state, { type: "click", id: participant.id, additive: event.ctrlKey || event.metaKey, range: event.shiftKey, pageIds })); }} onKeyDown={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; clearedInspectorTarget.current = false; historyMode.current = "push"; if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "move", direction: event.key === "ArrowDown" ? "next" : "previous", pageIds })); } else if (event.key === " ") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "toggle", id: participant.id, range: event.shiftKey, pageIds })); } else if (event.key === "Enter") { event.preventDefault(); openInspector(participant.id, event.currentTarget); } }}><th scope="row"><strong>{participant.name}</strong><span>{participant.email}</span><button type="button" aria-expanded={current && inspectorOpen} onClick={(event) => current && inspectorOpen ? closeInspector() : openInspector(participant.id, event.currentTarget)}>{current && inspectorOpen ? "Close" : "Inspect"}</button></th><td><span className={styles.inlineBadge}>{participant.invitationStatus === "sent" ? "Sent" : "Not sent"}</span></td><td><span className={styles.inlineBadge}>{participant.participationStatus === "inProgress" ? "In progress" : participant.participationStatus === "concluded" ? "Concluded" : "Pending"}</span></td><td>{participant.environment.value ?? "Not observed"}</td><td>{humanEnvironmentSource(participant.environment.source)}</td></tr>{current && inspectorOpen && activeParticipant ? <tr><td colSpan={5}>{<ParticipantInspector participant={activeParticipant} sessionId={sessionId} inspectorRef={inspectorRef} feedback={feedback[activeParticipant.id]} generatedLaunchUrl={generatedLaunch?.participantId === activeParticipant.id && generatedLaunch.sessionId === sessionId ? generatedLaunch.url : null} onClose={closeInspector} onAction={runAction} />}</td></tr> : null}</React.Fragment>; })}</tbody></table></div> : page && page.total === 0 && !query && offset === 0 ? <div className={styles.empty}><p>No Participants are registered for this Sales Session.</p></div> : <p className={styles.empty}>No Participants match this page or search.</p>}
       {offset > 0 ? <button type="button" onClick={() => { historyMode.current = "push"; setOffset(Math.max(0, offset - 25)); }}>Previous</button> : null}{page?.hasMore ? <button type="button" onClick={() => { historyMode.current = "push"; setOffset(offset + 25); }}>Next</button> : null}
     </section>

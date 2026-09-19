@@ -5,6 +5,13 @@ import { createPrismaSalesDemoSessionRepository } from "./prisma-sales-demo-sess
 const session = { id: "session-1", customerId: "certalis", opportunityId: "opp-1", itemId: "item-1", cloudShareSalesExperienceId: "pending:session-1", externalId: "session1", type: "demo" as const, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProEmail: "admin@certalis.demo", salesProDisplayName: "Admin", registrationType: "registeredParticipantsOnly" as const, sendInvitations: "salesProsAndParticipants" as const, revision: 1, operationalStatus: "provisioning" as const, createdAt: new Date() };
 
 describe("Prisma Sales Enablement Session repository", () => {
+  it("projects End only onto the Customer-owned Session and rejects a missing row", async () => {
+    const updateMany = vi.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    const repository = createPrismaSalesDemoSessionRepository({ salesDemoSession: { updateMany } } as never);
+    await repository.updateEnd!("customer-a", "session-1", "2026-09-21T10:00");
+    expect(updateMany).toHaveBeenCalledWith({ where: { customerId: "customer-a", id: "session-1" }, data: { end: "2026-09-21T10:00" } });
+    await expect(repository.updateEnd!("customer-b", "session-1", "2026-09-21T10:00")).rejects.toThrow("Sales Enablement Session was not found for this Customer");
+  });
   it("normalizes only the Customer + Opportunity + revision uniqueness violation", async () => {
     const create = vi.fn().mockRejectedValue({ code: "P2002", meta: { target: ["customerId", "opportunityId", "revision"] } });
     const repository = createPrismaSalesDemoSessionRepository({ salesDemoSession: { create } } as never);
