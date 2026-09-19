@@ -59,3 +59,14 @@ other source bytes were preserved, including the existing valid UTF-8 ellipsis. 
 `TextDecoder` regression failed on the original bytes and passed after this replacement.
 No behavior or workflow changed. Validation includes actual Next production compilation
 in addition to the fatal decoder, typecheck, lint and full test suite.
+
+### Support source visibility correction
+
+The live extension retained its correlated diagnostic records, but Sales Support queried
+only its existing source allowlist, which omitted `sales-participant-extension`. Adding
+that exact source makes retained records visible through the ordinary correlation link
+and explicit source filter without replay or migration. Regression coverage failed with
+an empty correlation result and an explicit-source 400 before the correction. It now
+covers the actual extension link, parsed Support route, correlation request and rendered
+evidence, plus authenticated Customer scope and exclusion of other Customers/commands.
+The protected diagnostics projection and all other source boundaries are unchanged.

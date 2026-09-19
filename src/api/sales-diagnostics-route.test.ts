@@ -33,6 +33,13 @@ describe("Sales diagnostics HTTP isolation", () => {
     mockHandleGetDiagnosticLog.mockResolvedValue({ status: 200, body: { entries: [], page: { hasMore: false, nextOffset: null } } });
   });
 
+  it("allows the exact extension source while deriving Customer scope from the authenticated admin", async () => {
+    mockGetPortalAdminSession.mockResolvedValue({ customerId: "owned", role: "admin", workspace: "sales" });
+    const response = await getSalesDiagnostics(new Request("http://localhost/api/sales/diagnostics?source=sales-participant-extension&correlationId=extension-command&customerId=other"));
+    expect(response.status).toBe(200);
+    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ customerId: "owned", query: expect.objectContaining({ source: "sales-participant-extension", correlationId: "extension-command" }) }));
+  });
+
   it("keeps the Sales Customer scope while preserving the requested Sales diagnostic source", async () => {
     mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
 
