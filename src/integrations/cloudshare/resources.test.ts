@@ -5,6 +5,7 @@ import type { HttpClient } from "./http";
 import {
   createCloudShareExamAuthoringSource,
   createCloudShareResourceLister,
+  createCloudShareResourceDiscovery,
   createCloudShareSalesItemResourceSource,
   CloudShareSalesResourceReadError,
 } from "./resources";
@@ -74,6 +75,67 @@ function makeAuthoringSourceWithRealClient(
 
   return createCloudShareExamAuthoringSource(client);
 }
+
+describe("createCloudShareResourceDiscovery", () => {
+  it("retains detailed evidence and the historical synthetic exchange for fallback clients", async () => {
+    const payload = { id: "provider-id", name: "Provider name", storageLeaseMinutes: 90, token: "protected-body" };
+    for (const detailed of [true, false]) {
+      const client = makeClient({ "v3:/projects/p-1/policies/pol-1": payload });
+      if (detailed) {
+        (client.requestV3Detailed as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          exchangeId: "exchange-1", data: { id: "provider-id", name: "Provider name", storageLeaseMinutes: 90 },
+          request: { method: "GET", path: "/projects/p-1/policies/pol-1", headers: { authorization: "[REDACTED]" }, query: { token: "protected-query" } },
+          response: { status: 200, body: payload },
+        });
+      } else delete (client as { requestV3Detailed?: unknown }).requestV3Detailed;
+      const result = await createCloudShareResourceDiscovery(client).readPolicyDetail("p-1", { id: "pol-1", name: "List name" });
+      expect(result.policy).toMatchObject({ id: "pol-1", name: "List name", runtimeLeaseMinutes: null, storageLeaseMinutes: 90 });
+      expect(result.read.data).toEqual({ id: "provider-id", name: "Provider name", storageLeaseMinutes: 90 });
+      expect(result.read.response).toEqual({ status: 200, body: detailed ? payload : { id: "provider-id", name: "Provider name", storageLeaseMinutes: 90 } });
+      expect(result.read.exchangeId).toBe(detailed ? "exchange-1" : undefined);
+      expect(result.read.request).toEqual(detailed
+        ? { method: "GET", path: "/projects/p-1/policies/pol-1", headers: { authorization: "[REDACTED]" }, query: { token: "protected-query" } }
+        : { method: "GET", path: "/projects/p-1/policies/pol-1" });
+    }
+  });
+
+  it("discovers an authoring tuple with default Snapshot Regions and missing Policy timing", async () => {
+    const client = makeClient({
+      "v3:/regions": [{ id: "r-2", name: "Raw", friendlyName: "Friendly", extra: true }],
+      "v3:/projects/p-1/blueprints": [{ id: "bp-1", name: "Blueprint", description: "Description" }],
+      "v3:/projects/p-1/blueprints/bp-1": { CreateFromVersions: [
+        { Id: "snap-2", Name: "Two", IsDefault: false, Regions: [] },
+        { Id: "snap-1", Name: "One", IsDefault: true, Regions: ["r-1", { Id: "r-2", Name: "Region" }] },
+      ] },
+      "v3:/projects/p-1/policies": [{ id: "pol-1", name: "List name" }],
+      "v3:/projects/p-1/policies/pol-1": { id: "different", name: "Detail name" },
+    });
+    const discovery = createCloudShareResourceDiscovery(client);
+    expect((await discovery.readRegions()).data).toEqual([{ id: "r-2", name: "Raw", friendlyName: "Friendly" }]);
+    expect((await discovery.readProjectBlueprints("p-1")).data).toEqual([{ id: "bp-1", name: "Blueprint", description: "Description" }]);
+    expect((await discovery.readBlueprintDetail("p-1", "bp-1")).data).toMatchObject({
+      id: "bp-1", name: "bp-1", description: "", defaultSnapshotId: "snap-1",
+      snapshots: [{ id: "snap-2", name: "Two", isDefault: false, regionIds: [] }, { id: "snap-1", name: "One", isDefault: true, regionIds: ["r-1", "r-2"] }],
+    });
+    const list = await discovery.readProjectPolicies("p-1");
+    expect((await discovery.readPolicyDetail("p-1", list.data[0]!)).policy).toMatchObject({
+      id: "pol-1", name: "List name", runtimeLeaseMinutes: null, storageLeaseMinutes: null,
+      diagnosticResponse: { status: 200, body: { id: "different", name: "Detail name" } },
+    });
+    expect(client.requestV3Detailed).toHaveBeenCalledTimes(5);
+  });
+
+  it("reads Projects with their protected exchange for either authoring caller", async () => {
+    const client = makeClient({ "v3:/projects": [{ id: "p-2", name: "Two" }, { id: "p-1", name: "One" }] });
+    await expect(createCloudShareResourceDiscovery(client).readProjects()).resolves.toEqual({
+      data: [{ id: "p-2", name: "Two" }, { id: "p-1", name: "One" }],
+      request: { method: "GET", path: "/projects" },
+      response: { status: 200, body: [{ id: "p-2", name: "Two" }, { id: "p-1", name: "One" }] },
+      integrationSurface: "cloudshare.v3.projects",
+    });
+    expect(client.requestV3Detailed).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("createCloudShareResourceLister", () => {
   const mockClient = makeClient({
@@ -624,6 +686,101 @@ describe("createCloudShareExamAuthoringSource", () => {
 });
 
 describe("createCloudShareSalesItemResourceSource", () => {
+  it("retains successful sibling Blueprint evidence in input order and the first input failure", async () => {
+    const source = createCloudShareSalesItemResourceSource(makeClient({
+      "v3:/projects/p-1/blueprints/two": { id: "two", name: "Two" },
+      "v3:/projects/p-1/blueprints/one": { id: "one", name: "One" },
+    }));
+    await expect(source.readProjectBlueprintDetails("p-1", ["missing-first", "two", "missing-last", "one"])).rejects.toMatchObject({
+      cause: new Error("No mock for v3 /projects/p-1/blueprints/missing-first"),
+      completedReads: [
+        { data: { id: "two", snapshots: [], defaultSnapshotId: null }, request: { path: "/projects/p-1/blueprints/two" } },
+        { data: { id: "one", snapshots: [], defaultSnapshotId: null }, request: { path: "/projects/p-1/blueprints/one" } },
+      ],
+    });
+  });
+
+  it("Exam awaits the list observer and permits a successful sibling observer after prompt rejection", async () => {
+    const client = makeClient({
+      "v3:/projects/p-1/policies": [{ id: "slow", name: "List name" }, { id: "missing", name: "Missing" }],
+      "v3:/projects/p-1/policies/slow": { id: "slow", name: "Detail name", runtimeLeaseMinutes: 20 },
+    });
+    const original = (client.requestV3Detailed as ReturnType<typeof vi.fn>).getMockImplementation()!;
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    let releaseObserver!: () => void;
+    const observerGate = new Promise<void>((resolve) => { releaseObserver = resolve; });
+    (client.requestV3Detailed as ReturnType<typeof vi.fn>).mockImplementation(async (spec: { path: string }) => {
+      if (spec.path.endsWith("/slow")) await readGate;
+      return original(spec);
+    });
+    const observed: string[] = [];
+    const source = createCloudShareExamAuthoringSource(client, { onReadSuccess: async ({ path }) => {
+      observed.push(path);
+      if (path.endsWith("/policies")) await observerGate;
+    } });
+    const rejected = expect(source.listProjectPolicies("p-1")).rejects.toThrow("No mock for v3 /projects/p-1/policies/missing");
+    await vi.waitFor(() => expect(observed).toEqual(["/projects/p-1/policies"]));
+    expect(client.requestV3Detailed).toHaveBeenCalledTimes(1);
+    releaseObserver();
+    await rejected;
+    expect(observed).toEqual(["/projects/p-1/policies"]);
+    releaseRead();
+    await vi.waitFor(() => expect(observed).toEqual(["/projects/p-1/policies", "/projects/p-1/policies/slow"]));
+    expect(client.requestV3Detailed).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps Item summaries distinct from Exam descriptions and retains provider ordering", async () => {
+    const client = makeClient({
+      "v3:/projects/p-1/blueprints": [
+        { id: "bp-2", name: "Two", description: "Full description" },
+        { id: "bp-1", name: "One" },
+      ],
+    });
+    await expect(createCloudShareExamAuthoringSource(client).listProjectBlueprints("p-1")).resolves.toEqual([
+      { id: "bp-2", name: "Two", description: "Full description" },
+      { id: "bp-1", name: "One", description: "" },
+    ]);
+    expect((await createCloudShareSalesItemResourceSource(client).readProjectBlueprints("p-1")).data).toEqual([
+      { id: "bp-2", name: "Two" }, { id: "bp-1", name: "One" },
+    ]);
+    expect(client.requestV3Detailed).toHaveBeenCalledTimes(2);
+  });
+
+  it("Exam rejects promptly while Item waits for sibling policy evidence and selects the first list failure", async () => {
+    for (const kind of ["exam", "item"] as const) {
+      const client = makeClient({ "v3:/projects/p-1/policies": [
+        { id: "slow", name: "Slow" }, { id: "fast", name: "Fast" },
+      ] });
+      const original = (client.requestV3Detailed as ReturnType<typeof vi.fn>).getMockImplementation()!;
+      let release!: () => void;
+      const delayed = new Promise<void>((resolve) => { release = resolve; });
+      const slowError = new Error("first in list");
+      const fastError = new Error("first to fail");
+      const events: string[] = [];
+      (client.requestV3Detailed as ReturnType<typeof vi.fn>).mockImplementation(async (spec: Parameters<NonNullable<CloudShareClient["requestV3Detailed"]>>[0]) => {
+        events.push(spec.path);
+        if (spec.path.endsWith("/slow")) { await delayed; throw slowError; }
+        if (spec.path.endsWith("/fast")) throw fastError;
+        return original(spec);
+      });
+      let observed: unknown;
+      const pending = (kind === "exam"
+        ? createCloudShareExamAuthoringSource(client, { onReadSuccess: async ({ path }) => { events.push(`observed:${path}`); } }).listProjectPolicies("p-1")
+        : createCloudShareSalesItemResourceSource(client).readProjectPolicies("p-1")
+      ).catch((error: unknown) => { observed = error; });
+      await vi.waitFor(() => expect(events).toContain("/projects/p-1/policies/fast"));
+      if (kind === "exam") {
+        await vi.waitFor(() => expect(observed).toBe(fastError));
+        expect(events).toEqual(["/projects/p-1/policies", "observed:/projects/p-1/policies", "/projects/p-1/policies/slow", "/projects/p-1/policies/fast"]);
+      } else expect(observed).toBeUndefined();
+      release();
+      await pending;
+      if (kind === "item") expect(observed).toMatchObject({ cause: slowError, completedReads: [{ request: { path: "/projects/p-1/policies" } }] });
+      expect(client.requestV3Detailed).toHaveBeenCalledTimes(3);
+    }
+  });
+
   it("preserves completed policy exchanges when a sibling policy detail fails", async () => {
     const source = createCloudShareSalesItemResourceSource(makeClient({
       "v3:/projects/p-1/policies": [{ id: "pol-1", name: "One" }, { id: "pol-2", name: "Two" }],

@@ -55,6 +55,27 @@ them requires a coordinated persistence/projection migration, outside this slice
 and repeat exact-head review/QA before proceeding; this bridge neither changes nor waives its
 Preparing-state gate. See [environment-module-verification.md](environment-module-verification.md).
 
+## Resource discovery
+
+`createCloudShareResourceDiscovery` in `integrations/cloudshare/resources.ts` owns the actual
+single-resource reads and normalization for Projects, Regions, Project Blueprints, Blueprint
+detail/Snapshots, Project Policies and Policy detail. Both Exam and Sales Item authoring adapters
+use that interface. It owns the existing v3 paths, schemas, default Snapshot/Region projection,
+missing timing evidence and detailed/fallback exchange conversion. Policy discovery returns the
+normalized authoring Policy alongside the original parsed detail read: list identity and name
+remain authoritative for authoring, while Item completed-read evidence keeps its original shape.
+
+Exam retains descriptions, awaited diagnostic observers and `Promise.all` failure timing. Sales
+Item retains its summary projection, `allSettled` groups, completed exchanges and first input-order
+failure. Authoring validation, Customer-specific clients, cache/invalidation and diagnostic
+operation/resource anchors remain with their callers. Legacy resource-sync keeps its separate
+cached list workflow. No universal resource engine or v4 transport is introduced.
+
+Deletion test: removing discovery would restore duplicated retrieval and Snapshot/Region/Policy
+normalization in the two authoring adapters. The extraction deletes that duplication; it does not
+add a forwarding facade over the old adapters. See
+[resource-discovery-verification.md](resource-discovery-verification.md) for checks and limitations.
+
 ## Candidate admission
 
 Candidate admission is the portal-owned lifecycle shared by Individual Exam Delivery and Cohort
