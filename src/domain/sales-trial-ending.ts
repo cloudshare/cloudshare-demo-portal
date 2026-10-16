@@ -1,17 +1,17 @@
 import { cloudShareWallClockToInstant, formatCloudShareWallClock } from "./cloudshare-wall-clock";
-import type { SalesEnvironmentObservation } from "@/integrations/cloudshare/sales-environment";
+import type { SalesEnvironmentReading } from "./environment-observation";
 
 export function calculateSalesTrialEnding(input: {
-  readonly observations: readonly Pick<SalesEnvironmentObservation, "statusCode" | "expirationTime">[];
+  readonly observations: readonly Pick<SalesEnvironmentReading, "state" | "expiry">[];
   readonly now: Date;
   readonly timeZone: string;
   readonly providerEnd?: string | null;
   readonly persistedTerminalTarget?: string | null;
 }) {
-  const active = input.observations.filter(({ statusCode }) => statusCode !== 5 && statusCode !== 9);
+  const active = input.observations.filter(({ state }) => state !== "deleted" && state !== "creation_failed");
   const latestExpiry = active.reduce<Date | null>((latest, observation) => {
-    const parsed = new Date(observation.expirationTime);
-    if (Number.isNaN(parsed.getTime())) throw new Error("CloudShare returned an invalid Environment expirationTime.");
+    const parsed = observation.expiry.trial;
+    if (parsed === null) throw new Error("CloudShare returned an invalid Environment expirationTime.");
     return latest === null || parsed > latest ? parsed : latest;
   }, null);
   const rawDesired = latestExpiry

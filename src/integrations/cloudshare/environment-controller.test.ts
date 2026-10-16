@@ -25,6 +25,16 @@ function mockClient(over: Partial<CloudShareClient> = {}): CloudShareClient {
 }
 
 describe("createCloudShareEnvironmentController", () => {
+  it.each(["", "accepted"])("preserves legacy text-only command evidence for %j", async (body) => {
+    const requestV3Text = vi.fn().mockResolvedValue(body);
+    const controller = createCloudShareEnvironmentController(mockClient({ requestV3TextDetailed: undefined, requestV3Text }));
+    await expect(controller.archiveEnvironment("retained-id")).resolves.toEqual({
+      attemptedOperation: "archive_environment", integrationSurface: "cloudshare.v3.env.action.archive",
+      method: "PUT", path: "/api/v3/envs/actions/archive", externalIds: { environmentId: "retained-id" },
+      request: { method: "PUT", path: "/api/v3/envs/actions/archive" }, response: body ? { body } : null,
+    });
+    expect(requestV3Text).toHaveBeenCalledWith({ method: "PUT", path: "/envs/actions/archive", query: { envId: "retained-id" } });
+  });
   it("issues a PUT to the documented v3 suspend action endpoint for the given CloudShare envId", async () => {
     const requestV3TextDetailed = vi.fn().mockResolvedValue({
       data: "",

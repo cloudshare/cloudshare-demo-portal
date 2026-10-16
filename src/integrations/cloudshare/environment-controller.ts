@@ -1,3 +1,4 @@
+import { dispatchEnvironmentCommand } from "./environment-command";
 import type { CloudShareClient } from "./client";
 import type { EnvironmentCommandResult, EnvironmentController } from "@/domain/environment";
 
@@ -20,12 +21,9 @@ export function createCloudShareEnvironmentController(
     const attemptedOperation = `${action}_environment` as const;
     const integrationSurface = `cloudshare.v3.env.action.${action}`;
 
-    if (client.requestV3TextDetailed) {
-      const result = await client.requestV3TextDetailed({
-        method: "PUT",
-        path,
-        query: { envId: environmentExternalId },
-      });
+    const dispatched = await dispatchEnvironmentCommand(client, environmentExternalId, action);
+    if (dispatched.detailed) {
+      const result = dispatched.detailed;
       return {
         attemptedOperation,
         integrationSurface,
@@ -38,11 +36,7 @@ export function createCloudShareEnvironmentController(
       };
     }
 
-    const body = await client.requestV3Text({
-      method: "PUT",
-      path,
-      query: { envId: environmentExternalId },
-    });
+    const body = dispatched.text!;
     return {
       attemptedOperation,
       integrationSurface,

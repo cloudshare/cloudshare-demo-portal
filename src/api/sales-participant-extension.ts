@@ -10,7 +10,8 @@ import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-lo
 import type { AuditRepository } from "@/domain/audit-trail";
 import { cloudShareWallClockToInstant, formatCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
 import { requireCompleteSalesParticipantRoster, type SalesDelivery, type SalesParticipant } from "@/integrations/cloudshare/sales-delivery";
-import type { SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
+import type { SalesEnvironmentModule } from "@/domain/environment-observation";
+import { parseSessionEnvironmentExpiry as instant } from "@/integrations/cloudshare/environment-observation";
 import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 const selectionSchema = z.discriminatedUnion("mode", [
@@ -25,7 +26,7 @@ export interface SalesParticipantExtensionDependencies {
   records: Pick<SalesRecordRepository, "findContact">;
   items: Pick<ItemRepository, "findById">;
   connections: Pick<CloudShareConnectionRepository, "findByCustomerId">;
-  provider(connection: CloudShareConnectionRecord): { delivery: Pick<SalesDelivery, "readSession" | "listParticipants"> & Required<Pick<SalesDelivery, "updateSession">>; environments: Required<SalesEnvironmentSource> };
+  provider(connection: CloudShareConnectionRecord): { delivery: Pick<SalesDelivery, "readSession" | "listParticipants"> & Required<Pick<SalesDelivery, "updateSession">>; environments: Required<SalesEnvironmentModule> };
   diagnostics: DiagnosticRecorder;
   audit: Pick<AuditRepository, "write">;
   now?: () => Date;
@@ -105,8 +106,8 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
         surface = "cloudshare.v3";
         const before = await environments.observe({ ownerEmail: contact.email, projectId: item.project.id });
         exchanges.push(...before.exchanges);
-        if (![2, 3, 4].includes(before.statusCode) || !instant(before.expirationTime)) throw new Error("environment_ineligible");
-        targets.push({ participantId: id, participantRevision: participant.updatedAt.toISOString(), providerParticipantId: remote.id, contactId: contact.id, email: contact.email, projectId: item.project.id, environmentId: before.environmentId, preExpiry: instant(before.expirationTime)!.toISOString() });
+        if (!["ready", "suspended", "archived"].includes(before.state) || !before.expiry.session) throw new Error("environment_ineligible");
+        targets.push({ participantId: id, participantRevision: participant.updatedAt.toISOString(), providerParticipantId: remote.id, contactId: contact.id, email: contact.email, projectId: item.project.id, environmentId: before.environmentId, preExpiry: before.expiry.session.toISOString() });
       }
       if (new Set(targets.map(t => t.environmentId)).size !== targets.length) throw new Error("environment_ambiguous");
       const admitted = await deps.commands.admit({ customerId: request.customerId, sessionId: session.id, commandId: parsed.data.commandId, selectionKey, experienceId: session.cloudShareSalesExperienceId, timeZone: session.timeZone, targets });
@@ -136,7 +137,7 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
           exchanges.push(...resolved.exchanges);
           if (resolved.environmentId !== target.environmentId) throw new Error("environment_identity_changed");
           // Projection reads update updatedAt; authority is the exact identity above and current eligibility/expiry.
-          if (!eligible(remote, participant.participationStatus) || ![2, 3, 4].includes(resolved.statusCode) || instant(resolved.expirationTime)?.toISOString() !== target.preExpiry) throw new Error("extension_preflight_changed");
+          if (!eligible(remote, participant.participationStatus) || !["ready", "suspended", "archived"].includes(resolved.state) || resolved.expiry.session?.toISOString() !== target.preExpiry) throw new Error("extension_preflight_changed");
           target = { ...target, state: "dispatched", reason: "readback_required" };
           await targetState(target); // Durable no-replay point, immediately before PUT.
           try { const extension = await environments.extendById(target.environmentId); exchanges.push(extension.exchange); }
@@ -148,8 +149,8 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
         if (target.state === "dispatched") {
           const after = await environments.observeById(target.environmentId);
           exchanges.push(...after.exchanges);
-          const expiry = instant(after.expirationTime);
-          target = after.environmentId === target.environmentId && [2, 3].includes(after.statusCode) && expiry && expiry.getTime() > Date.parse(target.preExpiry)
+          const expiry = after.expiry.session;
+          target = after.environmentId === target.environmentId && ["ready", "suspended"].includes(after.state) && expiry && expiry.getTime() > Date.parse(target.preExpiry)
             ? { ...target, state: "confirmed", reason: null, confirmedExpiry: expiry.toISOString() }
             : { ...target, reason: "provider_unconfirmed" };
         }
@@ -205,7 +206,6 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
 }
 // Archived retains existing work and can be extended even when participation has concluded.
 function eligible(participant: SalesParticipant, localStatus: SalesParticipant["participationStatus"]) { return participant.environmentId !== null && (participant.envStatus === "Archived" || (localStatus !== "concluded" && participant.participationStatus !== "concluded" && (participant.envStatus === "Ready" || participant.envStatus === "Suspended"))); }
-function instant(value: string): Date | null { const date = (/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value) || /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)) ? new Date(value) : null; return date && Number.isFinite(date.getTime()) ? date : null; }
 function providerEnd(value: string | null | undefined, timeZone: string) { return value ? instant(value) ?? cloudShareWallClockToInstant(value.replace(/(T\d\d:\d\d):00(?:\.0+)?$/, "$1"), timeZone) : null; }
 export function salesParticipantExtensionResult(command: SalesParticipantExtensionCommand) {
   const completed = command.finished && command.targets.every(t => t.state === "confirmed") && command.accessState === "confirmed";

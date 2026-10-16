@@ -1,3 +1,4 @@
+import { createSalesEnvironmentModule } from "@/integrations/cloudshare/environment-observation";
 import { describe, expect, it, vi } from "vitest";
 import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
 import type { Item, ItemRepository } from "@/domain/item";
@@ -2765,12 +2766,12 @@ describe("Sales Trial Offering API", () => {
           { environmentId: "env-ready" }, { environmentId: "env-archived" }, { environmentId: "env-deleted" },
         ], request: {}, response: {} }), updateSession,
       }) } as never,
-      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById: vi.fn(async (id: string) => ({
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(), observeById: vi.fn(async (id: string) => ({
         environmentId: id,
         statusCode: id === "env-archived" ? 4 : id === "env-deleted" ? 5 : 2,
         expirationTime: id === "env-archived" ? "Tue, 01 Sep 2026 14:30:00 GMT" : "Tue, 01 Sep 2026 13:00:00 GMT",
         exchanges: [],
-      })) }) },
+      })) })) },
       diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }), audit,
     } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
 
@@ -2805,7 +2806,7 @@ describe("Sales Trial Offering API", () => {
       { failureMode: "sales_delivery_update_missing", overrides: { deliveryFactory: { forConnection: vi.fn().mockReturnValue({}) },
         salesEnvironmentFactory: { forConnection: vi.fn() } } },
       { failureMode: "environment_getextended_missing", overrides: { deliveryFactory: { forConnection: vi.fn().mockReturnValue({ updateSession: vi.fn() }) },
-        salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn() }) } } },
+        salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn() })) } } },
     ];
     for (const scenario of scenarios) {
       const repository = createOfferingRepository();
@@ -2841,7 +2842,7 @@ describe("Sales Trial Offering API", () => {
         listParticipants: vi.fn().mockResolvedValue({ participants: [], request: {}, response: {} }),
         updateSession: vi.fn(),
       }) } as never,
-      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observeById: vi.fn() }) },
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(), observeById: vi.fn() })) },
     } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
     const [failure] = await diagnosticRepository.query({
       operation: "sales.trial_offering.end",
@@ -2878,7 +2879,7 @@ describe("Sales Trial Offering API", () => {
         listParticipants: vi.fn().mockResolvedValue({ participants: [1, 2, 3].map((n) => ({ environmentId: `env-${n}` })), request: {}, response: {} }),
         updateSession: vi.fn().mockResolvedValue({ id: "sales-deferred", request: {}, response: {} }),
       }) } as never,
-      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById }) },
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(), observeById })) },
     } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
     expect(result).toMatchObject({ status: 202, body: { needsAttention: true, offering: { status: "ending" } } });
     expect(observeById).toHaveBeenCalledTimes(2);
@@ -2904,9 +2905,9 @@ describe("Sales Trial Offering API", () => {
         listParticipants: vi.fn().mockResolvedValue({ participants: [{ environmentId: "env-1" }], request: {}, response: {} }),
         updateSession,
       }) } as never,
-      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById: vi.fn(async () => ({
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(), observeById: vi.fn(async () => ({
         environmentId: "env-1", statusCode, expirationTime: "Tue, 01 Sep 2026 14:00:00 GMT", exchanges: [],
-      })) }) },
+      })) })) },
     } as never);
     await handleEndSalesTrialOffering(deps, { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
     statusCode = 5;
@@ -2936,9 +2937,9 @@ describe("Sales Trial Offering API", () => {
         listParticipants: vi.fn().mockResolvedValue({ participants: [{ environmentId: "env-1" }, { environmentId: "env-2" }], request: {}, response: {} }),
         updateSession,
       }) } as never,
-      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById: vi.fn(async (id: string) => ({
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(), observeById: vi.fn(async (id: string) => ({
         environmentId: id, statusCode: 2, expirationTime: "Tue, 01 Sep 2026 14:00:00 GMT", exchanges: [],
-      })) }) },
+      })) })) },
     } as never), { customerId: "customer-1", actor: { type: "system" }, id: "offering-deferred" });
     expect(result).toMatchObject({ status: 202, body: { reconciliationInProgress: true } });
     expect(updateSession).not.toHaveBeenCalled();

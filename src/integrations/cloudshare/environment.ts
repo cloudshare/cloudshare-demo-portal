@@ -1,5 +1,6 @@
+import { mapCloudShareEnvironmentStatus, cloudShareV3EnvironmentStatusCode } from "./environment-observation";
 import { z } from "zod";
-import type { EnvironmentStateEvidenceSource, EnvironmentStateReadEvidence, EnvironmentStatus } from "@/domain/environment";
+import type { EnvironmentStateEvidenceSource, EnvironmentStateReadEvidence } from "@/domain/environment";
 import type { CloudShareClient } from "./client";
 import { CloudShareRequestError } from "./errors";
 
@@ -24,38 +25,8 @@ const v3EnvironmentSchema = z
     message: "Expected CloudShare environment status field",
   });
 
-/** Fold a raw CloudShare status string onto the domain {@link EnvironmentStatus}. */
-export function mapCloudShareEnvironmentStatus(raw: string): EnvironmentStatus {
-  switch (raw.trim().toLowerCase()) {
-    case "ready":
-    case "running":
-    case "started":
-    case "resumed":
-      return "running";
-    case "suspended":
-    case "stopped":
-    case "paused":
-    case "off":
-      return "suspended";
-    case "created":
-    case "creating":
-    case "preparing":
-    case "pending":
-      return "created";
-    case "archived":
-      return "archived";
-    case "deleted":
-    case "deleting":
-      return "deleted";
-    default:
-      return "unknown";
-  }
-}
-
-/** Exact v3 Environment statusCode; used by Sales read models without reusing v4 roster envStatus. */
-export function cloudShareV3EnvironmentStatusCode(value: unknown): number | null {
-  return value === 2 || value === 3 || value === 4 || value === 5 || value === 7 || value === 8 || value === 9 ? value : null;
-}
+// Compatibility exports remain available to external-lease and existing callers.
+export { mapCloudShareEnvironmentStatus, cloudShareV3EnvironmentStatusCode } from "./environment-observation";
 
 export function createCloudShareEnvironmentSource(
   client: CloudShareClient,

@@ -1,3 +1,4 @@
+import type { SalesEnvironmentModule, SalesEnvironmentReading, SalesEnvironmentState } from "@/domain/environment-observation";
 import { randomUUID } from "node:crypto";
 import type { AuditRepository } from "@/domain/audit-trail";
 import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
@@ -31,7 +32,6 @@ import {
 } from "@/integrations/cloudshare/sales-delivery";
 import {
   SalesEnvironmentResolutionError,
-  type SalesEnvironmentSource,
 } from "@/integrations/cloudshare/sales-environment";
 import {
   CloudShareRequestError,
@@ -84,7 +84,7 @@ export interface SalesTrialEnrollmentDeps {
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
       >,
       options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
-    ): Pick<Required<SalesEnvironmentSource>, "observe" | "observeById" | "extendById">;
+    ): Pick<Required<SalesEnvironmentModule>, "observe" | "observeById" | "extendById">;
   };
   readonly deliveryFactory?: {
     forConnection(
@@ -744,7 +744,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
     const preflightEnrollment = applyEnvironmentObservation(enrollment, preflight, now);
 
     if (reconcileOnly) {
-      if (!isExtendEligibleEnvironmentStatus(preflight.statusCode)) {
+      if (!isExtendEligibleEnvironmentStatus(preflight.state)) {
         const ineligible = {
           ...preflightEnrollment,
           status: "active" as const,
@@ -770,7 +770,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
           request,
           correlationId,
           EXTEND_UNAVAILABLE,
-          ineligibleReasonForStatus(preflight.statusCode),
+          ineligibleReasonForStatus(preflight.state),
           preflight.environmentId,
           preflight.exchanges,
           ineligible.id,
@@ -779,7 +779,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
           status: 409,
           body: {
             error: EXTEND_UNAVAILABLE,
-            reason: ineligibleReasonForStatus(preflight.statusCode),
+            reason: ineligibleReasonForStatus(preflight.state),
             correlationId,
           },
         };
@@ -811,7 +811,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
           request,
           correlationId,
           reconciled,
-          preflight.expirationTime,
+          preflight.expiry.raw,
           preflight.environmentId,
           undefined,
           preflight.exchanges,
@@ -855,7 +855,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
       };
     }
 
-    if (!isExtendEligibleEnvironmentStatus(preflight.statusCode)) {
+    if (!isExtendEligibleEnvironmentStatus(preflight.state)) {
       const ineligible = {
         ...preflightEnrollment,
         status: "active" as const,
@@ -881,7 +881,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
         request,
         correlationId,
         EXTEND_UNAVAILABLE,
-        ineligibleReasonForStatus(preflight.statusCode),
+        ineligibleReasonForStatus(preflight.state),
         preflight.environmentId,
         preflight.exchanges,
         ineligible.id,
@@ -890,7 +890,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
         status: 409,
         body: {
           error: EXTEND_UNAVAILABLE,
-          reason: ineligibleReasonForStatus(preflight.statusCode),
+          reason: ineligibleReasonForStatus(preflight.state),
           correlationId,
         },
       };
@@ -948,7 +948,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
     }
 
     const updatedEnrollment = applyEnvironmentObservation(preflightEnrollment, observed, now);
-    if (!isExtendEligibleEnvironmentStatus(observed.statusCode)) {
+    if (!isExtendEligibleEnvironmentStatus(observed.state)) {
       const ineligible = {
         ...updatedEnrollment,
         status: "active" as const,
@@ -974,7 +974,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
         request,
         correlationId,
         EXTEND_UNAVAILABLE,
-        ineligibleReasonForStatus(observed.statusCode),
+        ineligibleReasonForStatus(observed.state),
         preflight.environmentId,
         [...preflight.exchanges, extension.exchange, ...observed.exchanges],
         ineligible.id,
@@ -983,7 +983,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
         status: 409,
         body: {
           error: EXTEND_UNAVAILABLE,
-          reason: ineligibleReasonForStatus(observed.statusCode),
+          reason: ineligibleReasonForStatus(observed.state),
           correlationId,
         },
       };
@@ -1027,7 +1027,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
       request,
       correlationId,
       reconciled,
-      observed.expirationTime,
+      observed.expiry.raw,
       preflight.environmentId,
       extension.exchange,
       [...preflight.exchanges, extension.exchange, ...observed.exchanges],
@@ -1613,39 +1613,24 @@ function staleMonitoringFallback(
   };
 }
 
-function statusCodeToPersistedEnvironmentStatus(
-  statusCode: number,
-): string | null {
-  if (statusCode === 2) return "Ready";
-  if (statusCode === 3) return "Suspended";
-  if (statusCode === 4) return "Archived";
-  if (statusCode === 5) return "Deleted";
-  if (statusCode === 8) return "Preparing";
-  if (statusCode === 9) return "CreationFailed";
-  return null;
-}
-
 function applyEnvironmentObservation(
   enrollment: SalesTrialEnrollment,
-  observation: Pick<
-    NonNullable<Awaited<ReturnType<NonNullable<SalesEnvironmentSource["observeById"]>>>>,
-    "statusCode" | "expirationTime"
-  >,
+  observation: SalesEnvironmentReading,
   observedAt: Date,
 ): SalesTrialEnrollment {
   return {
     ...enrollment,
     environmentStatus:
-      statusCodeToPersistedEnvironmentStatus(observation.statusCode) ??
+      observation.persistedStatus ??
       enrollment.environmentStatus,
-    observedExpirationTime: observation.expirationTime,
+    observedExpirationTime: observation.expiry.raw,
     lastReconciledAt: observedAt,
     updatedAt: observedAt,
   };
 }
 
-function isExtendEligibleEnvironmentStatus(statusCode: number): boolean {
-  return statusCode === 2 || statusCode === 3 || statusCode === 4 || statusCode === 8;
+function isExtendEligibleEnvironmentStatus(state: SalesEnvironmentState): boolean {
+  return state === "ready" || state === "suspended" || state === "archived" || state === "preparing";
 }
 
 function isPersistedEnvironmentIneligibleForExtend(status: string | null): boolean {
@@ -1653,8 +1638,8 @@ function isPersistedEnvironmentIneligibleForExtend(status: string | null): boole
   return normalizedStatus === "deleted" || normalizedStatus === "creation failed" || normalizedStatus === "creationfailed";
 }
 
-function ineligibleReasonForStatus(statusCode: number): string {
-  if (statusCode === 5 || statusCode === 9) {
+function ineligibleReasonForStatus(state: SalesEnvironmentState): string {
+  if (state === "deleted" || state === "creation_failed") {
     return "CloudShare now reports this retained environment as terminal and not extendable.";
   }
   return "CloudShare does not currently report this retained environment as eligible for extension.";

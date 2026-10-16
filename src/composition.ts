@@ -1,3 +1,4 @@
+import { createCloudShareSalesEnvironmentModule } from "@/integrations/cloudshare/environment-observation";
 import { handleRefreshSalesParticipantEligibility } from "@/api/sales-session-participants";
 import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
 import { createCloudShareSalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
@@ -540,7 +541,7 @@ export function getServices(): Services {
       commands: extensionCommands,
       sessions: createPrismaSalesDemoSessionRepository(prisma),
       participants: createPrismaSalesSessionParticipantRepository(prisma), records: createPrismaSalesRecordRepository(prisma), items: createPrismaItemRepository(prisma), connections: cloudshareConnections,
-      provider: connection => { const client = cloudshareClientFactory.forConnection(connection, { scope: "workflow", workflow: { actor: request.actor, subject: { type: "sales_demo_session", id: request.sessionId }, source: "sales-participant-extension", correlationId: (request.body as { commandId: string }).commandId } }); return { delivery: createCloudShareSalesDelivery(client) as Required<ReturnType<typeof createCloudShareSalesDelivery>>, environments: createCloudShareSalesEnvironmentSource(client) as Required<ReturnType<typeof createCloudShareSalesEnvironmentSource>> }; },
+      provider: connection => { const client = cloudshareClientFactory.forConnection(connection, { scope: "workflow", workflow: { actor: request.actor, subject: { type: "sales_demo_session", id: request.sessionId }, source: "sales-participant-extension", correlationId: (request.body as { commandId: string }).commandId } }); return { delivery: createCloudShareSalesDelivery(client) as Required<ReturnType<typeof createCloudShareSalesDelivery>>, environments: createCloudShareSalesEnvironmentModule(client) as Required<ReturnType<typeof createCloudShareSalesEnvironmentModule>> }; },
       diagnostics: diagnosticRecorder, audit,
     }, request),
     latest: async (customerId, sessionId) => { const command = await extensionCommands.latest(customerId, sessionId); return command ? salesParticipantExtensionResult(command) : null; },

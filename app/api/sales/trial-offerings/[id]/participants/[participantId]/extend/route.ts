@@ -4,8 +4,8 @@ import { getServices } from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleExtendSalesTrialOfferingParticipant } from "@/api/sales-trial-enrollment";
-import { createCloudShareSalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
-import type { SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
+import { createCloudShareSalesEnvironmentModule } from "@/integrations/cloudshare/environment-observation";
+import type { SalesEnvironmentModule } from "@/domain/environment-observation";
 import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
 import { createPrismaSalesTrialEnrollmentRepository } from "@/persistence/prisma-sales-trial-enrollment-repository";
 import { createPrismaSalesTrialOfferingRepository } from "@/persistence/prisma-sales-trial-offering-repository";
@@ -38,9 +38,9 @@ export async function POST(
       connections: services.cloudshareConnections,
       salesEnvironmentFactory: {
         forConnection: (connection, options) =>
-          createCloudShareSalesEnvironmentSource(
+          createCloudShareSalesEnvironmentModule(
             services.cloudshareClientFactory.forConnection(connection, options),
-          ) as Pick<Required<SalesEnvironmentSource>, "observe" | "observeById" | "extendById">,
+          ) as Pick<Required<SalesEnvironmentModule>, "observe" | "observeById" | "extendById">,
       },
       cloudshareObserver: ({ customerId, actor, correlationId, subject }) => {
         const observer = createSalesTrialCloudShareObserver({ diagnostics: services.diagnosticRecorder, customerId, actor, correlationId, source: "sales-trial-enrollment", subject });

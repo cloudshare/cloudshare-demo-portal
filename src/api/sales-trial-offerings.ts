@@ -39,7 +39,7 @@ import {
   isCloudShareErrorAcrossBoundaries,
 } from "@/integrations/cloudshare/errors";
 import type { CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
-import type { SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
+import type { SalesEnvironmentModule } from "@/domain/environment-observation";
 import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
 
 const writeSchema = z.object({
@@ -78,7 +78,7 @@ export interface SalesTrialOfferingsDeps {
     forConnection(
       connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>,
       options?: Parameters<CloudShareClientFactory["forConnection"]>[1],
-    ): SalesEnvironmentSource;
+    ): SalesEnvironmentModule;
   };
   readonly cloudshare?: Pick<CloudShareClientFactory, "forConnection">;
   readonly cloudshareObserver?: (input: { customerId: string; actor: DiagnosticActor; correlationId: string; offeringId: string }) => Parameters<CloudShareClientFactory["forConnection"]>[1];
