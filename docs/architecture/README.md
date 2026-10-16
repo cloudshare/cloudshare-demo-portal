@@ -41,8 +41,10 @@ The CloudShare environment module owns string/numeric normalization, owner/Proje
 getextended reads and expiry parsing. Certification still ignores numeric-only status for its
 runtime state. Session expiry accepts ISO offset/Z and RFC GMT; Trial retains JavaScript Date
 acceptance. Snapshot has no Trial persisted label, so reconciliation retains the previous label.
-The module never treats roster references as authoritative getextended IDs. Suspend, Resume,
-Archive and Extend share a single-dispatch v3 text transport; Archive is unchanged. Certification
+Session and Trial extension resolve environment IDs through owner/Project reads. Trial ending
+preserves its existing behavior of passing roster environment IDs directly to getextended;
+this refactor does not change that correlation path. Suspend, Resume, Archive and Extend share
+a single-dispatch v3 text transport; Archive is unchanged. Certification
 and Sales retain their different historical fallback evidence for clients without detailed reads.
 
 `integrations/cloudshare/sales-environment.ts` remains a compatibility projection over the semantic

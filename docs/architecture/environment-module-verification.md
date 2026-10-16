@@ -19,6 +19,8 @@ evidence. Trial ending retains terminal exclusion, five-minute active buffer, tw
 buffer, upward minute rounding and persisted terminal target. Existing recovery tests retain
 captured-ID reads, ambiguity rejection, Customer isolation, durable dispatch fences and no replay
 after persistence/provider failures. Protected exchange values remain unchanged.
+Session and Trial extension retain owner/Project resolution; Trial ending retains direct
+getextended reads using roster environment IDs. These distinct correlation paths are preserved.
 
 Local verification uses `npm run lint`, `npm run typecheck` and `npm test`; the ticket PR records
 exact-head totals and independent review/QA results. Prisma client generation is local setup only;
