@@ -206,33 +206,67 @@ export class CloudShareSalesResourceReadError extends Error {
   }
 }
 
-export function createCloudShareSalesItemResourceSource(client: CloudShareClient): CloudShareSalesItemResourceSource {
+/** Single-resource retrieval and normalization shared by authoring adapters.
+ * Grouping, observer timing, cache and authoring rules belong to the callers. */
+export function createCloudShareResourceDiscovery(client: CloudShareClient) {
   async function read<T>(path: string, schema: z.ZodType<T, z.ZodType["_def"], unknown>, integrationSurface: string): Promise<CloudShareDetailedResourceRead<T>> {
     const detailed = await requestV3WithDiagnostics(client, { method: "GET", path, schema });
-    const exchange = toDiagnosticExchange(detailed);
-    return { data: detailed.data, ...(exchange.exchangeId ? { exchangeId: exchange.exchangeId } : {}), request: exchange.request, response: exchange.response, integrationSurface };
+    return { data: detailed.data, ...toDiagnosticExchange(detailed), integrationSurface };
   }
   return {
     readProjects: () => read("/projects", projectListSchema, "cloudshare.v3.projects"),
     readRegions: async () => {
       const result = await read("/regions", regionListSchema, "cloudshare.v3.regions");
-      return { ...result, data: result.data.map((region) => ({ id: region.id, name: region.name, ...(region.friendlyName ? { friendlyName: region.friendlyName } : {}) })) };
+      return { ...result, data: result.data.map((region) => ({
+        id: region.id, name: region.name,
+        ...(region.friendlyName ? { friendlyName: region.friendlyName } : {}),
+      })) };
     },
-    readProjectBlueprints: async (projectId) => {
+    readProjectBlueprints: async (projectId: string) => {
       const result = await read(`/projects/${projectId}/blueprints`, blueprintListSchema, "cloudshare.v3.projects.blueprints");
-      return { ...result, data: result.data.map((blueprint) => ({ id: blueprint.id, name: blueprint.name })) };
+      return { ...result, data: result.data.map((blueprint) => ({
+        id: blueprint.id, name: blueprint.name, description: blueprint.description ?? "",
+      })) };
+    },
+    readBlueprintDetail: async (projectId: string, blueprintId: string): Promise<CloudShareDetailedResourceRead<CloudShareBlueprintDetail>> => {
+      const result = await read(`/projects/${projectId}/blueprints/${blueprintId}`, z.preprocess(
+        (value) => normalizeBlueprintDetailPayload(value, blueprintId), blueprintDetailSchema,
+      ), "cloudshare.v3.projects.blueprint_detail");
+      const detail = result.data;
+      return { ...result, data: {
+        id: detail.id, name: detail.name, description: detail.description ?? "",
+        defaultSnapshotId: detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
+        snapshots: detail.createFromVersions.map((snapshot) => ({
+          id: snapshot.id, name: snapshot.name, isDefault: snapshot.isDefault,
+          regionIds: (snapshot.regions ?? []).map((region) => typeof region === "string" ? region : region.id),
+        })),
+        diagnosticSummary: summarizeBlueprintDetailForDiagnostics(detail),
+      } };
+    },
+    readProjectPolicies: (projectId: string) => read(`/projects/${projectId}/policies`, policyListSchema, "cloudshare.v3.projects.policies"),
+    readPolicyDetail: async (projectId: string, policy: { id: string; name: string }): Promise<{ read: CloudShareDetailedResourceRead<z.infer<typeof policyDetailSchema>>; policy: CloudShareExamAuthoringPolicy }> => {
+      const result = await read(`/projects/${projectId}/policies/${policy.id}`, policyDetailSchema, "cloudshare.v3.projects.policy_detail");
+      return { read: result, policy: {
+        id: policy.id, name: policy.name,
+        runtimeLeaseMinutes: result.data.runtimeLeaseMinutes ?? null,
+        storageLeaseMinutes: result.data.storageLeaseMinutes ?? null,
+        diagnosticRequest: result.request, diagnosticResponse: result.response,
+      } };
+    },
+  };
+}
+
+export function createCloudShareSalesItemResourceSource(client: CloudShareClient): CloudShareSalesItemResourceSource {
+  const discovery = createCloudShareResourceDiscovery(client);
+  return {
+    readProjects: discovery.readProjects,
+    readRegions: discovery.readRegions,
+    readProjectBlueprints: async (projectId) => {
+      const result = await discovery.readProjectBlueprints(projectId);
+      return { ...result, data: result.data.map(({ id, name }) => ({ id, name })) };
     },
     readProjectBlueprintDetails: async (projectId, blueprintIds) => {
-      const settled = await Promise.allSettled(blueprintIds.map(async (blueprintId) => {
-        const result = await read(`/projects/${projectId}/blueprints/${blueprintId}`, z.preprocess((value) => normalizeBlueprintDetailPayload(value, blueprintId), blueprintDetailSchema), "cloudshare.v3.projects.blueprint_detail");
-        const detail = result.data;
-        return { ...result, data: {
-          id: detail.id, name: detail.name, description: detail.description ?? "",
-          defaultSnapshotId: detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
-          snapshots: detail.createFromVersions.map((snapshot) => ({ id: snapshot.id, name: snapshot.name, isDefault: snapshot.isDefault, regionIds: (snapshot.regions ?? []).map((region) => typeof region === "string" ? region : region.id) })),
-          diagnosticSummary: summarizeBlueprintDetailForDiagnostics(detail),
-        } satisfies CloudShareBlueprintDetail };
-      }));
+      const settled = await Promise.allSettled(blueprintIds.map((blueprintId) => discovery.readBlueprintDetail(projectId, blueprintId)));
       const reads: CloudShareDetailedResourceRead<CloudShareBlueprintDetail>[] = [];
       let failure: unknown;
       for (const result of settled) {
@@ -243,12 +277,13 @@ export function createCloudShareSalesItemResourceSource(client: CloudShareClient
       return reads;
     },
     readProjectPolicies: async (projectId) => {
-      const list = await read(`/projects/${projectId}/policies`, policyListSchema, "cloudshare.v3.projects.policies");
-      const settled = await Promise.allSettled(list.data.map((policy) => read(`/projects/${projectId}/policies/${policy.id}`, policyDetailSchema, "cloudshare.v3.projects.policy_detail")));
-      const details = settled.filter((result): result is PromiseFulfilledResult<CloudShareDetailedResourceRead<z.infer<typeof policyDetailSchema>>> => result.status === "fulfilled").map((result) => result.value);
+      const list = await discovery.readProjectPolicies(projectId);
+      const settled = await Promise.allSettled(list.data.map((policy) => discovery.readPolicyDetail(projectId, policy)));
+      const details = settled.filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof discovery.readPolicyDetail>>> => result.status === "fulfilled").map((result) => result.value);
       const failed = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
-      if (failed) throw new CloudShareSalesResourceReadError([list, ...details], failed.reason);
-      return { policies: list.data.map((policy, index) => ({ id: policy.id, name: policy.name, runtimeLeaseMinutes: details[index]?.data.runtimeLeaseMinutes ?? null, storageLeaseMinutes: details[index]?.data.storageLeaseMinutes ?? null, diagnosticRequest: details[index]?.request, diagnosticResponse: details[index]?.response })), reads: [list, ...details] };
+      const reads = [list, ...details.map((detail) => detail.read)];
+      if (failed) throw new CloudShareSalesResourceReadError(reads, failed.reason);
+      return { policies: details.map((detail) => detail.policy), reads };
     },
   };
 }
@@ -514,144 +549,52 @@ export function createCloudShareExamAuthoringSource(
   client: CloudShareClient,
   options: CloudShareExamAuthoringSourceOptions = {},
 ): CloudShareExamAuthoringSource {
+  const discovery = createCloudShareResourceDiscovery(client);
+  // Observer anchors and awaiting each observer remain an Exam contract. In
+  // particular the list observer completes before any Policy detail is started.
+  async function observe<T>(
+    read: CloudShareDetailedResourceRead<T>,
+    operation: string,
+    path: string,
+    resourceType: string,
+    resourceIds?: Record<string, string>,
+  ): Promise<void> {
+    await options.onReadSuccess?.({
+      operation, integrationSurface: read.integrationSurface, path, resourceType,
+      ...(resourceIds ? { resourceIds } : {}),
+      ...(read.exchangeId ? { exchangeId: read.exchangeId } : {}),
+      request: read.request, response: read.response,
+    });
+  }
   return {
     async listProjects() {
-      const detailed = await requestV3WithDiagnostics(client, {
-        method: "GET", path: "/projects", schema: projectListSchema,
-      });
-      await options.onReadSuccess?.({
-        operation: "cloudshare.resource_sync.projects.read",
-        integrationSurface: "cloudshare.v3.projects",
-        path: "/projects",
-        resourceType: "project",
-        ...toDiagnosticExchange(detailed),
-      });
-      return detailed.data;
+      const read = await discovery.readProjects();
+      await observe(read, "cloudshare.resource_sync.projects.read", "/projects", "project");
+      return read.data;
     },
     async listRegions() {
-      const detailed = await requestV3WithDiagnostics(client, {
-        method: "GET",
-        path: "/regions",
-        schema: regionListSchema,
-      });
-      await options.onReadSuccess?.({
-        operation: "cloudshare.resource_sync.regions.read",
-        integrationSurface: "cloudshare.v3.regions",
-        path: "/regions",
-        resourceType: "region",
-        ...toDiagnosticExchange(detailed),
-      });
-      const regions = detailed.data;
-      return regions.map((region) => ({
-        id: region.id,
-        name: region.name,
-        ...(region.friendlyName ? { friendlyName: region.friendlyName } : {}),
-      }));
+      const read = await discovery.readRegions();
+      await observe(read, "cloudshare.resource_sync.regions.read", "/regions", "region");
+      return read.data;
     },
     async listProjectBlueprints(projectId) {
-      const detailed = await requestV3WithDiagnostics(client, {
-        method: "GET",
-        path: `/projects/${projectId}/blueprints`,
-        schema: blueprintListSchema,
-      });
-      await options.onReadSuccess?.({
-        operation: "cloudshare.resource_sync.blueprints.read",
-        integrationSurface: "cloudshare.v3.projects.blueprints",
-        path: `/projects/${projectId}/blueprints`,
-        resourceType: "blueprint",
-        resourceIds: { projectId },
-        ...toDiagnosticExchange(detailed),
-      });
-      const blueprints = detailed.data;
-      return blueprints.map((blueprint) => ({
-        id: blueprint.id,
-        name: blueprint.name,
-        description: blueprint.description ?? "",
-      }));
+      const read = await discovery.readProjectBlueprints(projectId);
+      await observe(read, "cloudshare.resource_sync.blueprints.read", `/projects/${projectId}/blueprints`, "blueprint", { projectId });
+      return read.data;
     },
     async listProjectPolicies(projectId) {
-      const list = await requestV3WithDiagnostics(client, {
-        method: "GET",
-        path: `/projects/${projectId}/policies`,
-        schema: policyListSchema,
-      });
-      await options.onReadSuccess?.({
-        operation: "cloudshare.resource_sync.policies.read",
-        integrationSurface: "cloudshare.v3.projects.policies",
-        path: `/projects/${projectId}/policies`,
-        resourceType: "policy",
-        resourceIds: { projectId },
-        ...toDiagnosticExchange(list),
-      });
-      const policies = list.data;
-      return Promise.all(
-        policies.map(async (policy) => {
-          const detailed = await requestV3WithDiagnostics(client, {
-            method: "GET",
-            path: `/projects/${projectId}/policies/${policy.id}`,
-            schema: policyDetailSchema,
-          });
-          const detail = detailed.data;
-          const exchange = toDiagnosticExchange(detailed);
-          await options.onReadSuccess?.({
-            operation: "cloudshare.resource_sync.policy_detail.read",
-            integrationSurface: "cloudshare.v3.projects.policy_detail",
-            path: `/projects/${projectId}/policies/${policy.id}`,
-            resourceType: "policy_detail",
-            resourceIds: { projectId, policyId: policy.id },
-            ...exchange,
-          });
-          return {
-            id: policy.id,
-            name: policy.name,
-            runtimeLeaseMinutes: detail.runtimeLeaseMinutes ?? null,
-            storageLeaseMinutes: detail.storageLeaseMinutes ?? null,
-            diagnosticRequest: exchange.request,
-            diagnosticResponse: exchange.response,
-          };
-        }),
-      );
+      const list = await discovery.readProjectPolicies(projectId);
+      await observe(list, "cloudshare.resource_sync.policies.read", `/projects/${projectId}/policies`, "policy", { projectId });
+      return Promise.all(list.data.map(async (policy) => {
+        const detail = await discovery.readPolicyDetail(projectId, policy);
+        await observe(detail.read, "cloudshare.resource_sync.policy_detail.read", `/projects/${projectId}/policies/${policy.id}`, "policy_detail", { projectId, policyId: policy.id });
+        return detail.policy;
+      }));
     },
     async getBlueprintDetail(projectId, blueprintId) {
-      const detailed = await requestV3WithDiagnostics(client, {
-        method: "GET",
-        path: `/projects/${projectId}/blueprints/${blueprintId}`,
-        schema: z.preprocess(
-          (value) => normalizeBlueprintDetailPayload(value, blueprintId),
-          blueprintDetailSchema,
-        ),
-      });
-      const detail = detailed.data;
-      await options.onReadSuccess?.({
-        operation: "cloudshare.resource_sync.blueprint_detail.read",
-        integrationSurface: "cloudshare.v3.projects.blueprint_detail",
-        path: `/projects/${projectId}/blueprints/${blueprintId}`,
-        resourceType: "blueprint_detail",
-        resourceIds: { projectId, blueprintId },
-        ...toDiagnosticExchange(detailed),
-      });
-
-      return {
-        id: detail.id,
-        name: detail.name,
-        description: detail.description ?? "",
-        defaultSnapshotId:
-          detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
-        diagnosticSummary: summarizeBlueprintDetailForDiagnostics(detail),
-        diagnosticResponse: {
-          status: detailed.response.status,
-          ...(detailed.response.headers ? { headers: detailed.response.headers } : {}),
-          body: detailed.response.body as Record<string, unknown>,
-        },
-        snapshots: detail.createFromVersions.map((snapshot) => ({
-          id: snapshot.id,
-          name: snapshot.name,
-          isDefault: snapshot.isDefault,
-          regionIds: (snapshot.regions ?? []).map((region) =>
-            typeof region === "string" ? region : region.id,
-          ),
-        })),
-      };
+      const read = await discovery.readBlueprintDetail(projectId, blueprintId);
+      await observe(read, "cloudshare.resource_sync.blueprint_detail.read", `/projects/${projectId}/blueprints/${blueprintId}`, "blueprint_detail", { projectId, blueprintId });
+      return { ...read.data, diagnosticResponse: read.response };
     },
   };
 }
