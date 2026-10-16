@@ -45,14 +45,14 @@ vi.mock("@/persistence/prisma-sales-trial-enrollment-repository", () => ({
   createPrismaSalesTrialEnrollmentRepository: mockCreateEnrollmentRepository,
 }));
 
-vi.mock("@/integrations/cloudshare/sales-environment", async () => {
+vi.mock("@/integrations/cloudshare/environment-observation", async () => {
   const actual =
-    await vi.importActual<typeof import("@/integrations/cloudshare/sales-environment")>(
-      "@/integrations/cloudshare/sales-environment",
+    await vi.importActual<typeof import("@/integrations/cloudshare/environment-observation")>(
+      "@/integrations/cloudshare/environment-observation",
     );
   return {
     ...actual,
-    createCloudShareSalesEnvironmentSource: mockCreateCloudShareSalesEnvironmentSource,
+    createCloudShareSalesEnvironmentModule: (...args: unknown[]) => actual.createSalesEnvironmentModule(mockCreateCloudShareSalesEnvironmentSource(...args)),
   };
 });
 

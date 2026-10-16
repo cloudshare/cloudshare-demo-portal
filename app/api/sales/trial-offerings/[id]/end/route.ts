@@ -6,7 +6,7 @@ import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleEndSalesTrialOffering } from "@/api/sales-trial-offerings";
 import { createPrismaSalesTrialOfferingRepository } from "@/persistence/prisma-sales-trial-offering-repository";
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
-import { createCloudShareSalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
+import { createCloudShareSalesEnvironmentModule } from "@/integrations/cloudshare/environment-observation";
 import { createSalesTrialCloudShareObserver } from "@/api/sales-trial-cloudshare-diagnostics";
 
 export async function POST(
@@ -34,7 +34,7 @@ export async function POST(
       },
       salesEnvironmentFactory: {
         forConnection: (connection, options) =>
-          createCloudShareSalesEnvironmentSource(services.cloudshareClientFactory.forConnection(connection, options)),
+          createCloudShareSalesEnvironmentModule(services.cloudshareClientFactory.forConnection(connection, options)),
       },
       cloudshareObserver: ({ customerId, actor, correlationId, offeringId }) => {
         const observer = createSalesTrialCloudShareObserver({ diagnostics: services.diagnosticRecorder, customerId, actor, correlationId, source: "sales-trial-offerings", subject: { type: "sales_trial_offering", id: offeringId }, externalIds: { offeringId } });

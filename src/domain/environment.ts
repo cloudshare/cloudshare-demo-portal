@@ -82,8 +82,11 @@ export interface EnvironmentStateEvidenceSource extends EnvironmentStateSource {
 export interface EnvironmentCommandResult {
   readonly attemptedOperation: "suspend_environment" | "resume_environment" | "archive_environment";
   readonly integrationSurface: string;
-  readonly method: "PUT";
-  readonly path: string;
+  /** Optional transport evidence, not constraints on a command implementation.
+   * A resolved command acknowledges dispatch; authoritative polling determines
+   * the resulting state. Existing CloudShare/simulator evidence stays unchanged. */
+  readonly method?: string;
+  readonly path?: string;
   readonly host?: string;
   readonly externalIds: {
     readonly environmentId: string;

@@ -1,3 +1,4 @@
+import { createSalesEnvironmentModule } from "@/integrations/cloudshare/environment-observation";
 import { describe, expect, it, vi } from "vitest";
 import { handleExtendSalesParticipants, type SalesParticipantExtensionDependencies } from "./sales-participant-extension";
 import { handleRefreshSalesParticipantEligibility } from "./sales-session-participants";
@@ -9,11 +10,25 @@ function fixture() {
   const participant = { id: "p1", customerId: "c1", salesDemoSessionId: "s1", opportunityContactId: "contact1", cloudShareParticipantId: "remote1", participationStatus: "inProgress", updatedAt: new Date("2026-09-19T01:00:00Z") };
   const environments = { observe: vi.fn(async (_input: { ownerEmail: string; projectId: string }) => ({ environmentId: "opaque1", statusCode: 2 as const, expirationTime: expiry, exchanges: [exchange] })), observeById: vi.fn(async (_id: string) => { order.push("read-expiry"); return { environmentId: "opaque1", statusCode: 2 as const, expirationTime: expiry, exchanges: [exchange] }; }), extendById: vi.fn(async (_id: string) => { order.push("extend"); expiry = "2026-09-21T10:00:00Z"; return { environmentId: "opaque1", exchange }; }) };
   const delivery = { readSession: vi.fn(async () => ({ id: "experience1", status: "inProgress" as const, end, ...exchange })), listParticipants: vi.fn(async () => ({ participants: [{ id: "remote1", email: "ada@example.com", participationStatus: "inProgress", envStatus: "Ready", environmentId: "numeric-roster-reference", customProperties: { certalisSalesParticipantId: "p1", certalisOpportunityContactId: "contact1" } }], completeness: "complete", ...exchange })), updateSession: vi.fn(async (_id, changes) => { order.push("update-end"); end = changes.end; return { id: "experience1", ...exchange }; }) };
-  const deps = { commands: createInMemorySalesParticipantExtensionCommandStore(), sessions: { findById: vi.fn(async (customerId) => customerId === "c1" ? { id: "s1", customerId: "c1", itemId: "item1", opportunityId: "op1", cloudShareSalesExperienceId: "experience1", end, timeZone: "UTC", operationalStatus: "active" } : null), updateEnd: vi.fn(async () => {}) }, items: { findById: vi.fn(async () => ({ customerId: "c1", project: { id: "project1" } })) }, records: { findContact: vi.fn(async () => ({ id: "contact1", customerId: "c1", opportunityId: "op1", email: "ada@example.com", archivedAt: null })) }, participants: { list: vi.fn(async () => [participant]) }, connections: { findByCustomerId: vi.fn(async () => ({ customerId: "c1" })) }, provider: () => ({ delivery, environments }), diagnostics: { record: vi.fn(async () => {}) }, audit: { write: vi.fn(async () => {}) }, now: () => new Date("2026-09-19T08:00:00Z") } as unknown as SalesParticipantExtensionDependencies;
+  const deps = { commands: createInMemorySalesParticipantExtensionCommandStore(), sessions: { findById: vi.fn(async (customerId) => customerId === "c1" ? { id: "s1", customerId: "c1", itemId: "item1", opportunityId: "op1", cloudShareSalesExperienceId: "experience1", end, timeZone: "UTC", operationalStatus: "active" } : null), updateEnd: vi.fn(async () => {}) }, items: { findById: vi.fn(async () => ({ customerId: "c1", project: { id: "project1" } })) }, records: { findContact: vi.fn(async () => ({ id: "contact1", customerId: "c1", opportunityId: "op1", email: "ada@example.com", archivedAt: null })) }, participants: { list: vi.fn(async () => [participant]) }, connections: { findByCustomerId: vi.fn(async () => ({ customerId: "c1" })) }, provider: () => ({ delivery, environments: createSalesEnvironmentModule(environments) }), diagnostics: { record: vi.fn(async () => {}) }, audit: { write: vi.fn(async () => {}) }, now: () => new Date("2026-09-19T08:00:00Z") } as unknown as SalesParticipantExtensionDependencies;
   const request = { customerId: "c1", sessionId: "s1", actor: { type: "admin", id: "admin" }, body: { commandId: "9bc409ad-9217-4943-8e1d-e18a0ddbbf54", selection: { mode: "all", excludedIds: [] } } };
   return { deps, request, order, environments, delivery, setExpiry: (value: string) => { expiry = value; } };
 }
 describe("Sales Participant extension HTTP seam", () => {
+  it.each([5, 7, 8, 9, 99])("does not dispatch Session extension for provider status %s", async statusCode => {
+    const f = fixture();
+    const observe = f.environments.observe.getMockImplementation()!;
+    f.environments.observe.mockImplementation(async input => ({ ...await observe(input), statusCode: statusCode as never }));
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 502 });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
+
+  it("retains Session rejection of date-only expiry before dispatch", async () => {
+    const f = fixture();
+    f.setExpiry("2026-09-20");
+    expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 502 });
+    expect(f.environments.extendById).not.toHaveBeenCalled();
+  });
   it.each(["observation only", "contact identity", "concluded", "expiry", "environment"])("recovers after projection refresh with %s changes without replaying an ambiguous peer", async change => {
     const f = fixture();
     const first = (await f.deps.participants.list("c1", "s1"))[0]!;

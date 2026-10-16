@@ -1,3 +1,4 @@
+import { createSalesEnvironmentModule } from "@/integrations/cloudshare/environment-observation";
 import { describe, expect, it, vi } from "vitest";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
@@ -252,11 +253,11 @@ function createDeps(
     diagnostics,
     audit: { write: vi.fn().mockResolvedValue(undefined) },
     salesEnvironmentFactory: {
-      forConnection: vi.fn().mockReturnValue({
+      forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({
         observe,
         observeById,
         extendById,
-      }),
+      })),
     },
     now: () => new Date("2026-08-30T10:00:00.000Z"),
     newId: () => "enrollment-1",
@@ -2775,7 +2776,7 @@ describe("Sales Trial participant environment extension", () => {
     expect(entries.every((entry) => entry.subject?.id === "enrollment-1")).toBe(true);
   });
 
-  it("extends an exact retained environment mapping, reads back the provider state, and returns a safe monitoring projection", async () => {
+  it.each([[4, "Archived"], [8, "Preparing"]] as const)("extends an exact retained environment with status %s, reads back provider state, and returns a safe monitoring projection", async (statusCode, state) => {
     const { deps, enrollments, diagnosticRepository, audit, observe, extendById, observeById } = createDeps();
     await enrollments.save({
       id: "enrollment-1",
@@ -2789,7 +2790,7 @@ describe("Sales Trial participant environment extension", () => {
       invitationStatus: "sent",
       participationStatus: "inProgress",
       cloudShareRosterEnvironmentReference: "env-1",
-      environmentStatus: "Archived",
+      environmentStatus: state,
       observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
       firstJoined: "2026-08-30T10:05:00.000Z",
       status: "active",
@@ -2802,7 +2803,7 @@ describe("Sales Trial participant environment extension", () => {
     observe
       .mockResolvedValueOnce({
         environmentId: "opaque-v3-env-1",
-        statusCode: 4,
+        statusCode,
         expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
         exchanges: [
           {
@@ -2811,19 +2812,19 @@ describe("Sales Trial participant environment extension", () => {
           },
           {
             request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
-            response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
+            response: { status: 200, body: { statusCode, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
           },
         ],
       })
       ;
     observeById.mockResolvedValueOnce({
       environmentId: "opaque-v3-env-1",
-      statusCode: 4,
+      statusCode,
       expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
       exchanges: [
         {
           request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
-          response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
+          response: { status: 200, body: { statusCode, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
         },
       ],
     });
@@ -2846,7 +2847,7 @@ describe("Sales Trial participant environment extension", () => {
       body: {
         participant: expect.objectContaining({
           id: "enrollment-1",
-          envStatus: "Archived",
+          envStatus: state,
           observation: {
             freshness: "stale",
             source: "certalis_sales_trial_enrollment_reconciliation",
@@ -2854,7 +2855,7 @@ describe("Sales Trial participant environment extension", () => {
           },
           environment: {
             dimension: "cloudshare_environment",
-            value: "Archived",
+            value: state,
             source: "certalis_sales_trial_enrollment_reconciliation",
             observedAt: "2026-08-30T10:00:00.000Z",
           },
@@ -2870,7 +2871,7 @@ describe("Sales Trial participant environment extension", () => {
     expect(observeById).toHaveBeenCalledTimes(1);
     expect(observeById).toHaveBeenNthCalledWith(1, "opaque-v3-env-1");
     expect(persisted).toMatchObject({
-      environmentStatus: "Archived",
+      environmentStatus: state,
       observedExpirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
       lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
       updatedAt: new Date("2026-08-30T10:00:00.000Z"),
@@ -3789,7 +3790,7 @@ describe("Sales Trial participant environment extension", () => {
         reserveForExtension,
       },
       salesEnvironmentFactory: {
-        forConnection: vi.fn().mockReturnValue({
+        forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({
           observe,
           observeById: vi.fn().mockResolvedValue({
             environmentId: "opaque-v3-env-1",
@@ -3803,7 +3804,7 @@ describe("Sales Trial participant environment extension", () => {
             ],
           }),
           extendById,
-        }),
+        })),
       },
     });
 
@@ -3875,11 +3876,11 @@ describe("Sales Trial participant environment extension", () => {
           reserveForExtension: vi.fn().mockResolvedValue(false),
         },
         salesEnvironmentFactory: {
-          forConnection: vi.fn().mockReturnValue({
+          forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({
             observe,
             observeById: vi.fn(),
             extendById,
-          }),
+          })),
         },
       }).deps,
       {
