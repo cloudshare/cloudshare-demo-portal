@@ -300,9 +300,9 @@ Exams, Candidates, CloudShare Connections, audits, or diagnostics.
 
 **Sales Trial**:
 The Certalis participant-facing path for exploring published Trial Offerings, enrolling and
-launching a CloudShare environment, and revisiting enrollment history. Registration and password
+launching a CloudShare environment, and continuing active enrollments. Registration and password
 sign-in establish a Customer-scoped portal session; registration itself does not create or read
-any CloudShare resource. Sales Admins publish Offerings and manage participant access extensions.
+any CloudShare resource. Certalis Sales Admins publish Offerings, monitor their history and manage participant access extensions.
 This lifecycle remains separate from Certification and Sales Enablement Sessions.
 _Avoid_: Certification, Exam, Sales Enablement Session.
 
@@ -314,7 +314,7 @@ _Avoid_: Candidate, Sales Admin, Opportunity Contact.
 
 **Trial Offering**:
 A Customer-scoped Sales Trial catalogue entry backed by a shared CloudShare Sales Experience.
-Sales Admins publish it from an Item; Sales Trial Participants discover published Offerings and
+Certalis Sales Admins publish it from an Item; Sales Trial Participants discover published Offerings and
 enroll through the portal. Offering publication/ending and participant enrollment/access retain
 their own lifecycle rules.
 _Avoid_: Exam, Item, Sales Enablement Session.

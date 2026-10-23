@@ -3,6 +3,22 @@
 This project keeps local CloudShare API exports so implementation agents do not infer endpoint
 paths from memory or from earlier slices.
 
+## Source and implementation status (2026-10-23)
+
+**PUBLISHED CONTRACT:** The [current official Infrastructure OpenAPI source](https://cloudshare.stoplight.io/api/v1/projects/cloudshare/AccelerateAPI/nodes/reference/infrastructure-Public-API.openapi.json?branch=main)
+identifies Infrastructure 4.0 and documents v4 Projects, Policies and environment operations.
+The July Experience export listed below has a different scope; its lack of Infrastructure paths
+is not evidence that those v4 contracts are absent. The preserved October 12 Infrastructure export
+and current official source are assessed in the [dated contract-readiness report](../discovery/2026-10-23-cloudshare-v4-contract-readiness.md),
+including pagination, permissions, identity, timing and command limitations.
+
+**SHIPPED MAIN:** At `dc8ec6a5`, #454/#455 share environment and resource-discovery seams but
+retain existing v3 provider traffic. Published replacements are not shipped migrations.
+**LIVE VERIFIED:** This documentation assessment adds no live tenant verification.
+**PENDING:** A Project/Policy read-only migration is conditional on separate scope agreement and
+exact live acceptance; #453 authorizes no transport migration. Unmerged PR448 and its Preparing
+acceptance gate remain independent; see the report for evidence boundaries.
+
 ## Local Reference Files
 
 - `docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
@@ -18,9 +34,10 @@ When changing CloudShare v4 integration code, check these local exports first. I
 contradicts the export, update `docs/api/cloudshare-gap-report.md` with the live evidence and keep
 the adapter isolated behind `src/integrations/cloudshare`.
 
-## Accelerate v4 Paths Currently Used By The Portal
+## Accelerate v4 Training Contract Inventory
 
-The exported v4 bundle lists the following training paths relevant to the MVP:
+The July exported v4 bundle lists the following training paths relevant to the MVP. This is a
+published-contract inventory, not a claim that every operation is shipped or live verified:
 
 | Capability | Method | Path |
 | --- | --- | --- |

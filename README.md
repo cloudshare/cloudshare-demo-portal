@@ -4,9 +4,9 @@ Certalis demo portal for Helios CX to connect its own CloudShare subscription, b
 
 ## Delivery status (2026-10-23)
 
-**SHIPPED MAIN:** Certification MVP issues #39�#47 are closed. The isolated Sales workspace
+**SHIPPED MAIN:** Certification MVP issues #39 through #47 are closed. The isolated Sales workspace
 supports Opportunities, Items and Sales Enablement Sessions. Sales Trials include registration
-(#408), Offering publication (#409), enrollment/launch (#410), history (#415), participant extension
+(#408), Offering publication (#409), enrollment/launch (#410), admin history (#415), participant extension
 (#418), and observability (#416). These delivery lifecycles remain distinct.
 
 **SHIPPED MAIN:** Infrastructure deepening #453 landed as environment observations/commands
@@ -49,7 +49,7 @@ the **Certification demo** or **Sales Trial demo** registration path there.
 | `/register` | Helios Candidate self-registration for the Certification demo |
 | `/sales-trial/register` | Certalis Sales Trial Participant self-registration |
 | `/sales-trial/login` | Certalis Sales Trial Participant sign-in |
-| `/sales-trial` | Customer-scoped published Trial Offerings, enrollment/launch and participation history |
+| `/sales-trial` | Customer-scoped published Trial Offerings, enrollment/launch and continuing active enrollments |
 | `/admin` | **Connect CloudShare** + admin console |
 | `/sales` | Isolated Certalis Sales workspace; no Helios certification data. URL-backed Account → Opportunity → Contact grids support local archive-only commercial records. |
 | `/candidate` | Candidate home — published Exams for the signed-in Customer |
