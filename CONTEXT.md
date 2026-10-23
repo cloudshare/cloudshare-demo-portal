@@ -302,7 +302,8 @@ Exams, Candidates, CloudShare Connections, audits, or diagnostics.
 The Certalis participant-facing path for exploring published Trial Offerings, enrolling and
 launching a CloudShare environment, and continuing active enrollments. Registration and password
 sign-in establish a Customer-scoped portal session; registration itself does not create or read
-any CloudShare resource. Certalis Sales Admins publish Offerings, monitor their history and manage participant access extensions.
+any CloudShare resource. Certalis Sales Admins publish Offerings, monitor their history and manage
+participant access extensions.
 This lifecycle remains separate from Certification and Sales Enablement Sessions.
 _Avoid_: Certification, Exam, Sales Enablement Session.
 
