@@ -9,6 +9,9 @@ import { handleExtendSalesParticipants } from "./sales-participant-extension";
 import { createInMemorySalesParticipantExtensionCommandStore } from "@/persistence/in-memory-sales-participant-extension-command";
 import { CloudShareRequestError } from "@/integrations/cloudshare/errors";
 import { handleRegisterSalesSessionParticipants } from "./sales-session-participants";
+import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
+import { createCloudShareClient, createCloudShareNoopRequestObserver } from "@/integrations/cloudshare/client";
+import type { HttpClient } from "@/integrations/cloudshare/http";
 const exchange = { request: { method: "GET" as const, path: "/fixture" }, response: { status: 200, body: null } };
 function fixture() {
   const now = new Date("2026-09-19T10:00:00Z");
@@ -28,7 +31,7 @@ function fixture() {
   const delivery: ReturnType<SalesCancellationDependencies["provider"]>["delivery"] = {
     readSession: vi.fn<ReturnType<SalesCancellationDependencies["provider"]>["delivery"]["readSession"]>(async () => ({ id: "experience1", status: "inProgress", start: "2026-09-19T09:00", timeZone: "UTC", end, labels, ...exchange })),
     listParticipants: vi.fn<ReturnType<SalesCancellationDependencies["provider"]>["delivery"]["listParticipants"]>(async () => ({ completeness: "complete", provenance: { expectedCount: 1, returnedCount: 1, offsets: [0] }, participants: [{ id: "remote1", email: "ada@example.test", firstName: "Ada", lastName: "Example", invitationStatus: "notSent", invitedBy: null, firstJoined: null, participationStatus: "inProgress", envStatus: "Ready", environmentId: "17", customProperties: { certalisSalesParticipantId: "p1", certalisOpportunityContactId: "contact1" } }], ...exchange })),
-    updateSession: vi.fn<ReturnType<SalesCancellationDependencies["provider"]>["delivery"]["updateSession"]>(async (id, changes) => { end = changes.end!; if (changes.cancelled) labels = ["certalis:cancelled"]; return { id, ...exchange }; }),
+    updateSession: vi.fn<ReturnType<SalesCancellationDependencies["provider"]>["delivery"]["updateSession"]>(async (id, changes, beforeDispatch) => { await beforeDispatch?.(); end = changes.end!; if (changes.cancelled) labels = ["certalis:cancelled"]; return { id, ...exchange }; }),
   };
   const deps: SalesCancellationDependencies = {
     commands, provider: () => ({ delivery, environments, controller }),
@@ -43,6 +46,42 @@ function fixture() {
   return { deps, request, environments, delivery, controller, setArchived: () => { archived = true; } };
 }
 describe("Sales cancellation API", () => {
+  it.each(["GET failure", "incomplete GET", "fence failure", "ambiguous PUT"])("fences only the prepared End PUT after %s and retries only undispatched work", async failure => {
+    const f = fixture();
+    await f.deps.commands.admit({ customerId: "c1", sessionId: "s1", commandId: f.request.body.commandId, experienceId: "experience1", cancelledAt: "2026-09-19T10:00:00Z", actor: f.request.actor, timeZone: "UTC", targetEnd: "2026-09-19T10:00", targets: [] });
+    const full = { id: "experience1", status: "inProgress", name: "Retained", type: "demo", projectId: "project1", blueprintIds: ["bp1"], cloudshareRegionIds: ["region1"], policyId: "policy1", opportunity: "Opportunity", mainSalesPro: { email: "sales@example.test" }, registrationType: "registeredParticipantsOnly", start: "2026-09-19T09:00", end: "2026-09-20T10:00", timeZone: "UTC", labels: ["customer-label"] };
+    let failing = true;
+    const wire: string[] = [];
+    const states: string[] = [];
+    const send: HttpClient["send"] = async request => {
+      wire.push(request.method);
+      states.push((await f.deps.commands.read("c1", f.request.body.commandId))!.accessState);
+      if (request.method === "GET" && failing && failure === "GET failure") return { status: 503, body: "unavailable" };
+      if (request.method === "GET" && failing && failure === "incomplete GET") return { status: 200, body: JSON.stringify({ id: "experience1" }) };
+      if (request.method === "PUT") {
+        if (failing && failure === "ambiguous PUT") throw new Error("lost PUT response");
+        Object.assign(full, JSON.parse(request.body!));
+      }
+      return { status: 200, body: JSON.stringify(full) };
+    };
+    const real = createCloudShareSalesDelivery(createCloudShareClient({ http: { send }, endpoints: { v4BaseUrl: "https://fixture.test/v4", v3BaseUrl: "https://fixture.test/v3" }, tokenProvider: { getToken: async () => "fixture" }, v3: { apiId: "fixture", apiKey: "fixture" }, observer: createCloudShareNoopRequestObserver() }));
+    f.delivery.updateSession = real.updateSession!;
+    f.delivery.readSession = real.readSession;
+    const save = f.deps.commands.save.bind(f.deps.commands);
+    f.deps.commands.save = async (command, revision) => failing && failure === "fence failure" && command.accessState === "dispatched" ? false : save(command, revision);
+    const retry = { ...f.request, body: { ...f.request.body, retrySafe: true } };
+    const ambiguous = failure === "ambiguous PUT";
+    expect(await handleCancelSalesDemoSession(f.deps, retry)).toMatchObject({ status: 202, body: { accessRetryable: !ambiguous } });
+    expect(states[0]).toBe("pending");
+    expect(wire.filter(method => method === "PUT")).toHaveLength(ambiguous ? 1 : 0);
+    expect(await f.deps.commands.read("c1", f.request.body.commandId)).toMatchObject({ accessState: ambiguous ? "dispatched" : "pending" });
+    failing = false;
+    expect(await handleCancelSalesDemoSession(f.deps, f.request)).toMatchObject({ status: 202 }); // No implicit retry.
+    expect(await handleCancelSalesDemoSession(f.deps, retry)).toMatchObject({ status: ambiguous ? 202 : 200, body: { accessRetryable: false } });
+    expect(wire.filter(method => method === "PUT")).toHaveLength(1);
+    expect(states[wire.indexOf("PUT")]).toBe("dispatched");
+    if (!ambiguous) expect(full).toMatchObject({ start: "2026-09-19T09:00", end: "2026-09-19T10:00", labels: ["customer-label", "certalis:cancelled"] });
+  });
   it("keeps a lost DELETE fenced and reconciles only the exact Experience GET", async () => {
     const f = fixture();
     let dispatched = false, absent = false;
@@ -163,7 +202,7 @@ describe("Sales cancellation API", () => {
       return { attemptedOperation: "archive_environment", integrationSurface: "cloudshare.v3", externalIds: { environmentId: id }, method: "PUT", path: "/envs/actions/archive", request: exchange.request, response: exchange.response };
     });
     vi.mocked(f.environments.observeById).mockImplementation(async id => ({ environmentId: id, statusCode: id === "opaque2" && graceArchived ? 4 : 2, expirationTime: "2026-09-20T10:00:00Z", exchanges: [exchange] }));
-    vi.mocked(f.delivery.updateSession).mockRejectedValue(new Error("ambiguous end PUT"));
+    vi.mocked(f.delivery.updateSession).mockImplementation(async (_id, _changes, beforeDispatch) => { await beforeDispatch?.(); throw new Error("ambiguous end PUT"); });
     expect(await handleCancelSalesDemoSession(f.deps, f.request)).toMatchObject({ status: 202, body: { targets: [{ outcome: "dispatched", retryable: false }, { outcome: "not_dispatched", retryable: true }] } });
     expect(await handleCancelSalesDemoSession(f.deps, { ...f.request, body: { ...f.request.body, retrySafe: true } })).toMatchObject({ status: 202, body: { targets: [{ outcome: "dispatched" }, { outcome: "archived" }] } });
     expect(vi.mocked(f.controller.archiveEnvironment).mock.calls.map(([id]) => id)).toEqual(["opaque/v3+id", "opaque2"]);
@@ -197,7 +236,7 @@ describe("Sales cancellation API", () => {
     const f = fixture();
     const result = await handleCancelSalesDemoSession(f.deps, f.request);
     expect(result).toMatchObject({ status: 200, body: { status: "Cancelled", cancelledAt: "2026-09-19T10:00:00.000Z", accessConfirmed: true } });
-    expect(f.delivery.updateSession).toHaveBeenCalledWith("experience1", { end: "2026-09-19T10:00", cancelled: true });
+    expect(f.delivery.updateSession).toHaveBeenCalledWith("experience1", { end: "2026-09-19T10:00", cancelled: true }, expect.any(Function));
     expect(vi.mocked(f.controller.archiveEnvironment).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(f.delivery.updateSession).mock.invocationCallOrder[0]!);
     expect(f.deps.sessions.updateEnd).toHaveBeenCalledWith("c1", "s1", "2026-09-19T10:00");
     expect((await f.deps.commands.latest("c1", "s1"))?.actor).toEqual({ type: "admin", id: "actor1" });

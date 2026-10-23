@@ -171,9 +171,10 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
     }
     surface = "cloudshare.v4";
     if (command!.accessState === "pending" && !parsed.data.reconcile) {
-      await persist({ ...command!, accessState: "dispatched" });
-      try { exchanges.push(await delivery.updateSession(command!.experienceId, { end: command!.targetEnd, cancelled: true })); }
-      catch (error) { await record("failure", "Experience end/label update requires read-only reconciliation.", error); }
+      try { exchanges.push(await delivery.updateSession(command!.experienceId, { end: command!.targetEnd, cancelled: true }, async () => {
+        await persist({ ...command!, accessState: "dispatched" });
+      })); }
+      catch (error) { await record("failure", command!.accessState === "pending" ? "Experience end/label update was not dispatched; explicit retry is available." : "Experience end/label update requires read-only reconciliation.", error); }
     }
     const readback = await delivery.readSession(command!.experienceId);
     exchanges.push(readback);

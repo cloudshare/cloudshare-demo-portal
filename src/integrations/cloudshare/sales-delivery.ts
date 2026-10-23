@@ -57,6 +57,8 @@ export interface SalesDelivery {
   updateSession?(
     salesExperienceId: string,
     changes: { readonly name?: string; readonly end?: string | null; readonly cancelled?: true },
+    /** Awaited after GET/body validation, immediately before PUT; rejection prevents dispatch. */
+    beforeDispatch?: () => Promise<void>,
   ): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
   /** Ensures the documented Sales user-property definitions used for durable
    * Certalis-to-CloudShare participant correlation. */
@@ -261,7 +263,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       }
       throw new Error("CloudShare Sales Pro pagination exceeded the bounded page limit.");
     },
-    async updateSession(salesExperienceId, changes) {
+    async updateSession(salesExperienceId, changes, beforeDispatch) {
       const { data: current, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
       const missingRequiredFields = getMissingRequiredMutableSalesExperienceFields(current);
       if (missingRequiredFields.length > 0) {
@@ -309,6 +311,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         const labels = z.array(z.string()).parse(current.labels ?? []);
         body.labels = [...new Set([...labels, "certalis:cancelled"])];
       }
+      await beforeDispatch?.();
       const { data, evidence: updateEvidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
       return { id: data.id, ...updateEvidence };
     },
