@@ -189,8 +189,8 @@ model SalesTrialEnrollment {
   @@index([customerId, salesTrialOfferingId, updatedAt])
 }
 
-// Immutable portal-to-CloudShare correlation. Sales Experiences are never
-// deleted by Certalis; this record preserves commercial delivery history.
+// Immutable portal record preserves commercial delivery history. The provider
+// Experience may be deleted only under the approved future-Start cancellation rule.
 model SalesDemoSession {
   cancellationRequestedAt DateTime?
   extensionCommands SalesParticipantExtensionCommand[]
