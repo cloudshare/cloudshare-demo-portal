@@ -8,12 +8,14 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "npm run test:launcher && vitest run",
     "test:e2e:live": "vitest run --config vitest.e2e.config.ts",
     "test:watch": "vitest",
     "qa:seed-cohort-rate-limit": "node scripts/seed-local-cohort-rate-limit-qa.mjs",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "dev:tunnel": "node scripts/dev-with-tunnel.mjs",
+    "test:launcher": "node --test scripts/dev-with-tunnel.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.1.0",

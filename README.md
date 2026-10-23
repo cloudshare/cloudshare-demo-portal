@@ -41,6 +41,60 @@ npm run dev
 Open **http://localhost:3000/login** for the shared portal login. Anonymous visitors can choose
 the **Certification demo** or **Sales Trial demo** registration path there.
 
+### Start the portal with the existing Cloudflare tunnel
+
+From the intended checkout, run `npm run dev:tunnel`. This starts its local Next.js
+development server on port **3000**, checks `/api/health` (including persistence), then
+runs the existing **cloudshare-webhooks-dev** connector. `npm run dev` and `npm start`
+remain available separately. The launcher inherits your runtime environment and the
+checkout's normal Next.js `.env` loading; it does not change demo lifecycle defaults.
+
+Prerequisites: complete the usual dependency/database setup above, install `cloudflared`,
+and retain the existing user-local `~/.cloudflared/config.yml` (or `config.yaml`), tunnel
+credentials and named-tunnel lookup permissions. The existing ingress must target
+`http://localhost:3000`. Keep these private files outside Git. The launcher uses
+`cloudflared` from PATH, with a Windows fallback to the standard Program Files (x86)
+installation. For another installation, set `CLOUDFLARED_PATH` to the executable path.
+It does not log in, create a tunnel, change DNS/ingress, install a service or register webhooks.
+
+The manual command `cloudflared tunnel run cloudshare-webhooks-dev` connects that existing
+tunnel to Cloudflare and forwards requests according to its existing configuration.
+The combined command adds `--no-autoupdate` to keep process ownership stable and
+`--metrics 127.0.0.1:20246` for a local `/ready` check. Startup waits up to about 90 seconds
+per service, with bounded HTTP requests. **Connector readiness proves a Cloudflare
+connection only**; public application reachability and signed webhook delivery require
+separate verification. See [Cloudflare's local tunnel guide](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/create-local-tunnel/),
+[run parameters](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/)
+and [readiness implementation](https://github.com/cloudflare/cloudflared/blob/master/metrics/readiness.go).
+
+Leave the command in the foreground. Ctrl+C stops the children it started (including the
+Next.js child process tree); an early exit or startup failure also stops the other child
+and returns a failure status. It refuses occupied ports 3000/20246 and conservatively
+refuses any existing local `cloudflared` process, because the same tunnel may be started
+by name, UUID or config. Stop separately owned services yourself before running it.
+It cannot detect replicas on other machines; avoid starting another connector during startup.
+Force-killing the launcher or closing its terminal bypasses orderly shutdown: inspect
+your local processes before restarting.
+
+Child output is suppressed because tunnel/configuration logs can contain private values.
+Errors identify the failing stage and exit code where available. For an executable error,
+check PATH/`CLOUDFLARED_PATH`; for portal readiness, verify dependencies, Prisma generation,
+migrations and runtime config using ordinary `npm run dev` in a private terminal. For a
+tunnel exit/timeout, check the existing config and credentials locally and Cloudflare
+connectivity; keep any diagnostic output private. No raw config or credentials are printed.
+
+For isolated QA, use `PORTAL_BACKGROUND_JOBS=disabled` **and** `PORTAL_SEED_SOURCE=off`,
+fixture mode and a disposable database as described below. These settings are **not a
+global provider-write firewall**: explicit routes, browser polling, reconciliation and
+webhooks can still perform work. A real public tunnel can receive requests; coordinate
+its use separately from isolated tests. The launcher does not set these QA values for you.
+
+Polling remains authoritative (ADR-003). The existing receiver verifies the signature
+using the Customer selected by its opaque `webhookPath`; register that path manually in
+CloudShare as described under Live mode. This launcher adds no registration or webhook logic.
+`npm run test:launcher` uses fake children and isolated loopback HTTP, with an owned-process
+shutdown check. Those tests do not establish real tunnel or end-to-end webhook delivery.
+
 ### Key URLs
 
 | URL | What |
