@@ -1,10 +1,7 @@
-<<<<<<< HEAD
 import { createCloudShareSalesEnvironmentModule } from "@/integrations/cloudshare/environment-observation";
-=======
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { createPrismaSalesCancellationStore } from "@/persistence/prisma-sales-session-cancellation";
 import { handleCancelSalesDemoSession, salesCancellationResult } from "@/api/sales-demo-session-cancellation";
->>>>>>> 1c592f1c (Wire retained-history Sales Session cancellation and access gates)
 import { handleRefreshSalesParticipantEligibility } from "@/api/sales-session-participants";
 import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
 import { createCloudShareSalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";

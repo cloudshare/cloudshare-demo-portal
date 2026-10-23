@@ -141,8 +141,8 @@ describe("Sales cancellation API", () => {
     expect(regenerate).not.toHaveBeenCalled(); expect(createClient).not.toHaveBeenCalled();
     expect(createSponsoredLink).not.toHaveBeenCalled();
     expect((await handleRegisterSalesSessionParticipants({ ...f.deps, sessions, participants }, { ...f.request, body: { contactIds: ["contact1"] } })).status).toBe(409);
-    expect((await handleExtendSalesParticipants({ ...f.deps, sessions, commands: createInMemorySalesParticipantExtensionCommandStore() }, { ...f.request, body: { commandId: f.request.body.commandId, selection: { mode: "all" } } })).status).toBe(409);
-    expect(f.environments.extendById).not.toHaveBeenCalled();
+    expect((await handleExtendSalesParticipants({ ...f.deps, sessions, provider: createClient, commands: createInMemorySalesParticipantExtensionCommandStore() }, { ...f.request, body: { commandId: f.request.body.commandId, selection: { mode: "all" } } })).status).toBe(409);
+    expect(f.environments.extendById).not.toHaveBeenCalled(); expect(createClient).not.toHaveBeenCalled();
   });
   it("retries only a durably unattempted peer while an ambiguous archive and End PUT remain fenced", async () => {
     const f = fixture();

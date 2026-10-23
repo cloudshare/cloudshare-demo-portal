@@ -91,7 +91,13 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
   conflict state without making any CloudShare call; missing, archived, and cross-Customer IDs
   remain indistinguishable not-found states.
 
-## Deliberately deferred
+## Cancellation continuation (issue #351, PR #448 unmerged)
+
+Cancellation closes portal access and retains Session, Participant, original schedule, correlation, Activity and Support history. A fresh authoritative provider Start in the future permits the separately fenced DELETE path after destructive confirmation; all other eligible Experiences use archive + End/label. Invalid, unknown or crossed Start does not authorize deletion. No extra historical-use attestation is required, and ambiguous writes are reconciled by exact-ID reads without replay.
+
+Historical live UI evidence verifies Ready-to-Archived plus End/label and a disposable future DELETE 204 followed by GET 404. Mounted End/Verify/Activity human QA was accepted at `1fd5469`. Preparing archive eligibility remains OPEN; none of those results proves Preparing support. See `docs/verification/issue-351-cancellation.md` for dated evidence and the retained earlier End-before-Start PUT 400.
+
+## Deliberately deferred in the original #347 provisioning slice
 
 No participant enrollment, native invitations, sponsored links, extension, cancellation,
 Salesforce/Workato integration, email scheduling, or shared environments are included.

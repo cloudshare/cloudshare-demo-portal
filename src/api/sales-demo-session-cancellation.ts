@@ -5,12 +5,12 @@ import type { SalesParticipantExtensionDependencies, SalesParticipantExtensionRe
 import type { EnvironmentController } from "@/domain/environment";
 import { cloudShareWallClockToInstant, formatCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
 import { projectCloudShareFailureEvidence } from "@/integrations/cloudshare/diagnostic-failure-projection";
-import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales-environment";
+import { SalesEnvironmentResolutionError, type SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
 import { CloudShareRequestError } from "@/integrations/cloudshare/errors";
 import type { SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 export interface SalesCancellationDependencies extends Omit<SalesParticipantExtensionDependencies, "commands" | "provider"> {
   commands: SalesCancellationStore;
-  provider(connection: Parameters<SalesParticipantExtensionDependencies["provider"]>[0]): ReturnType<SalesParticipantExtensionDependencies["provider"]> & { delivery: Pick<SalesDelivery, "deleteSession">; controller: Pick<EnvironmentController, "archiveEnvironment"> };
+  provider(connection: Parameters<SalesParticipantExtensionDependencies["provider"]>[0]): Omit<ReturnType<SalesParticipantExtensionDependencies["provider"]>, "environments"> & { environments: Required<SalesEnvironmentSource>; delivery: Pick<SalesDelivery, "deleteSession">; controller: Pick<EnvironmentController, "archiveEnvironment"> };
 }
 const schema = z.object({ commandId: z.string().uuid(), confirmed: z.literal(true), reconcile: z.boolean().optional(), retrySafe: z.boolean().optional(), deleteFuture: z.boolean().optional() }).strict();
 const denied = (status: number, error: string) => ({ status, body: { error } });
