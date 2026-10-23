@@ -2,6 +2,27 @@
 
 This folder holds durable architecture planning artifacts that are not ADRs.
 
+## Infrastructure deepening status (2026-10-23)
+
+**SHIPPED MAIN:** #453's two implementation slices are merged: environment observations/commands
+#454 in [PR456](https://github.com/cloudshare/cloudshare-demo-portal/pull/456)
+(`94456a6953e5ca0d1a6265554ff115e7b9bff3b3`) and shared resource discovery #455 in
+[PR457](https://github.com/cloudshare/cloudshare-demo-portal/pull/457)
+(`dc8ec6a5c4983c742bf6f92f0b6779c69136b08b`). The sections below describe those shipped seams.
+The original [#453 specification](https://github.com/cloudshare/cloudshare-demo-portal/issues/453)
+remains the historical authorization: behavior-preserving extraction, no v4 transport migration,
+new capability, schema change or universal lifecycle engine. Certification, Sales Enablement
+Session and Sales Trial eligibility, clocks, persistence transitions and dispatch recovery stay
+with their owners. Sales Trial lifecycle extraction requires separate agreement.
+
+**UNMERGED PR448:** Cancellation remains outside shipped main at its retained QA head
+`1fd54696684964cdf72146dce11c8afb7165b93c`. Its Preparing-state gate remains open; it must rebase
+and repeat exact-head review/QA. The compatibility projection described below does not waive that
+gate or authorize changes to retained QA assets.
+
+**PENDING:** #411 (post-provisioning Trial RDP download) is a proposed follow-on capability,
+requiring confirmation before implementation. The refactor completion is not its authorization.
+
 ## Refactor Planning
 
 - [Architecture review: CloudShare Demo Portal deepening opportunities](architecture-review-2026-06-25.html)

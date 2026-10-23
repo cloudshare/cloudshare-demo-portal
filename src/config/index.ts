@@ -30,6 +30,7 @@ const envSchema = z.object({
   CLOUDSHARE_WEBHOOK_SECRET: z.string().optional().default(""),
   // Category 2 — runtime flags
   PORTAL_MODE: z.enum(["live", "fixture"]),
+  PORTAL_BACKGROUND_JOBS: z.enum(["enabled", "disabled"]).optional().default("enabled"),
   PORTAL_TUNNEL_URL: z.string().optional().default(""),
   HEARTBEAT_TIMEOUT_MS: z.coerce.number().int().positive().optional().default(60_000),
   PORTAL_SEED_SOURCE: z.enum(["off", "env", "file"]).optional().default("env"),
@@ -94,6 +95,8 @@ export interface Config {
   };
   readonly runtime: {
     readonly mode: PortalMode;
+    /** Controls only automatic jobs registered during service composition. */
+    readonly backgroundJobs: "enabled" | "disabled";
     readonly tunnelUrl: string;
     /** Milliseconds without a client heartbeat before the server auto-suspends the lab. */
     readonly heartbeatTimeoutMs: number;
@@ -280,6 +283,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
     runtime: {
       mode: e.PORTAL_MODE,
       tunnelUrl: e.PORTAL_TUNNEL_URL,
+      backgroundJobs: e.PORTAL_BACKGROUND_JOBS,
       heartbeatTimeoutMs: e.HEARTBEAT_TIMEOUT_MS,
       seedSource: e.PORTAL_SEED_SOURCE,
     },

@@ -291,17 +291,20 @@ CloudShare resource tuple rather than re-authoring Blueprint, Policy, allowed Re
 Instructor, or Guided Journey settings.
 _Avoid_: scheduled attempt, demo session.
 
-### Future sales delivery
+### Sales delivery
 
 **Sales Workspace**:
-The configuration-selected, Certalis Customer-scoped administration entry point for future sales
-delivery. It is intentionally empty in the initial slice and must not expose Helios CX Exams,
-Candidates, CloudShare Connections, audits, or diagnostics.
+The configuration-selected, Certalis Customer-scoped administration entry point for Sales
+Opportunities, Items, Sales Enablement Sessions and Trial Offerings. It must not expose Helios CX
+Exams, Candidates, CloudShare Connections, audits, or diagnostics.
 
 **Sales Trial**:
-The Certalis participant-facing path for exploring a future published Trial Offering. Its current
-foundation is portal-only self-registration, password sign-in, a Customer-scoped session, and an
-empty participant home; registration does not create or read any CloudShare resource.
+The Certalis participant-facing path for exploring published Trial Offerings, enrolling and
+launching a CloudShare environment, and continuing active enrollments. Registration and password
+sign-in establish a Customer-scoped portal session; registration itself does not create or read
+any CloudShare resource. Certalis Sales Admins publish Offerings, monitor their history and manage
+participant access extensions.
+This lifecycle remains separate from Certification and Sales Enablement Sessions.
 _Avoid_: Certification, Exam, Sales Enablement Session.
 
 **Sales Trial Participant**:
@@ -311,12 +314,14 @@ Opportunity, Sales Session, Support, Helios Candidate, or another Customer's sur
 _Avoid_: Candidate, Sales Admin, Opportunity Contact.
 
 **Trial Offering**:
-A future Sales Trial catalogue entry that a Sales Trial Participant may explore. Publication,
-enrollment, and CloudShare delivery are not built in the current foundation.
+A Customer-scoped Sales Trial catalogue entry backed by a shared CloudShare Sales Experience.
+Certalis Sales Admins publish it from an Item; Sales Trial Participants discover published Offerings and
+enroll through the portal. Offering publication/ending and participant enrollment/access retain
+their own lifecycle rules.
 _Avoid_: Exam, Item, Sales Enablement Session.
 
 **Sales Opportunity**:
-A future commercial engagement with one prospective organisation. It may group multiple related
+A commercial engagement with one prospective organisation. It may group multiple related
 Sales Experiences, including a replacement when a prior time-bounded experience has ended.
 _Avoid_: Customer, Cohort Exam Session.
 

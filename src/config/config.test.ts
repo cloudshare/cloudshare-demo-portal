@@ -24,6 +24,16 @@ const validEnv = {
 };
 
 describe("loadConfig", () => {
+  it("enables automatic background jobs by default and accepts an explicit choice", () => {
+    expect(loadConfig(validEnv).runtime.backgroundJobs).toBe("enabled");
+    expect(loadConfig({ ...validEnv, PORTAL_BACKGROUND_JOBS: "enabled" }).runtime.backgroundJobs).toBe("enabled");
+    expect(loadConfig({ ...validEnv, PORTAL_BACKGROUND_JOBS: "disabled" }).runtime.backgroundJobs).toBe("disabled");
+  });
+
+  it.each(["", "false", "0", "DISABLED", "disable", false])("rejects invalid background-job setting %s clearly", (value) => {
+    expect(() => loadConfig({ ...validEnv, PORTAL_BACKGROUND_JOBS: value })).toThrow("PORTAL_BACKGROUND_JOBS");
+    expect(() => loadConfig({ ...validEnv, PORTAL_BACKGROUND_JOBS: value })).toThrow(ConfigError);
+  });
   it("parses a valid environment into the three config categories", () => {
     const config = loadConfig(validEnv);
 
