@@ -65,6 +65,7 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 |---|---|---|---|
 | `PORTAL_MASTER_KEY` | yes | — | Base64 32-byte key used to encrypt stored CloudShare credentials |
 | `PORTAL_MODE` | yes | `fixture` | `fixture` (simulators) or `live` (real CloudShare API) |
+| `PORTAL_BACKGROUND_JOBS` | no | `enabled` | `enabled` or `disabled`; automatic composition jobs only, requires restart |
 | `DATABASE_URL` | yes | `file:./dev.db` | SQLite path |
 | `PORTAL_SEED_SOURCE` | no | `env` | `off`, `env`, or `file` for the seeded Helios and Certalis demo Customers |
 | `PORTAL_SEED_CONFIG_PATH` | no | `./config/portal-seed.local.json` | Local JSON seed file path when `PORTAL_SEED_SOURCE=file` |
@@ -84,6 +85,54 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 | `CLOUDSHARE_WEBHOOK_SECRET` | legacy | — | Transitional global credential; new webhook handling uses the per-Customer CloudShare Connection secret |
 | `PORTAL_TUNNEL_URL` | live QA only | — | Optional public URL used when manually registering CloudShare webhooks during local QA |
 | `HEARTBEAT_TIMEOUT_MS` | no | `60000` | Auto-suspend timeout in ms |
+
+### Local QA without automatic background jobs
+
+Set `PORTAL_BACKGROUND_JOBS=disabled` **before starting a fresh server process**.
+This prevents registration of both automatic jobs in service composition: heartbeat
+expiry checks (every 10 seconds, normally suspending after `HEARTBEAT_TIMEOUT_MS`)
+and Trial Offering ending reconciliation (every five minutes). Neither job runs
+immediately at startup today; disabled mode registers neither initial nor delayed
+work. A health GET may initialize services, but cannot start these jobs in this mode.
+Only the exact values `enabled` and `disabled` are accepted; omitted means `enabled`.
+
+For disposable QA, run this from an isolated checkout with its own installed dependencies
+and generated Prisma client. The database below must be new/disposable; do not substitute
+the primary database or copy live credentials. This PowerShell child process confines the
+settings to this run and leaves existing `.env` files and the primary SQLite/key pair intact:
+
+```powershell
+pwsh -NoProfile -Command {
+  $env:PORTAL_MODE = "fixture"
+  $env:PORTAL_BACKGROUND_JOBS = "disabled"
+  $env:PORTAL_SEED_SOURCE = "off"
+  $env:PORTAL_MASTER_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  $env:DATABASE_URL = "file:./background-jobs-qa.db"
+  npx prisma migrate deploy
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  npm run dev -- -p 3025
+}
+```
+
+Use `http://localhost:3025/api/health` and `/login` for startup smoke. Health still writes
+its local persistence-check record; this setting is **not a global read-only mode or a
+provider-write firewall**. Deliberate actions (connect/resource sync, publication, launch,
+enter, suspend/resume, ending, extension, cancellation, refresh and webhooks) remain active.
+Browser polling and request-triggered reconciliation also remain active and can contact
+CloudShare, including from nominal GET routes. Use fixture mode and disposable data for
+isolated smoke; disabling jobs alone does not make arbitrary live UI/API navigation safe.
+
+To restore ordinary background behavior, stop the QA process and start a fresh process with
+`PORTAL_BACKGROUND_JOBS=enabled` (or omit it everywhere, including `.env`). Changing an env
+value while a process is running does not dispose existing timers or change cached services.
+Do not start enabled/live services against retained assets without the applicable QA approval.
+
+The regression command is `npx vitest run src/config/config.test.ts src/composition-background-jobs.test.ts`.
+It uses the real health handler/composition, disposable SQLite records, fake scheduler time
+past ten minutes, and a recording CloudShare integration replacement that blocks network
+calls. Default/enabled cases prove both jobs dispatch; disabled cases prove neither starts.
+This is offline fixture evidence, not live CloudShare E2E verification. No provider endpoint,
+lifecycle, schema, authentication, or diagnostics-body contract changes in this control.
 
 ### Seeded admin config
 
