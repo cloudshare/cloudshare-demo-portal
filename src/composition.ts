@@ -578,18 +578,21 @@ export function getServices(): Services {
         examAttemptId,
       ),
   });
-  heartbeatAutoSuspend.start();
-  let salesTrialEndingRunning = false;
-  const salesTrialEndingInterval = setInterval(() => {
-    if (salesTrialEndingRunning) return;
-    salesTrialEndingRunning = true;
-    void reconcileEndingSalesTrialOfferings(services)
-      .catch((error) => logger.warn("sales trial ending reconciliation failed", {
-        error: error instanceof Error ? error.message : String(error),
-      }))
-      .finally(() => { salesTrialEndingRunning = false; });
-  }, 5 * 60_000);
-  salesTrialEndingInterval.unref();
+  let salesTrialEndingInterval: ReturnType<typeof setInterval> | undefined;
+  if (config.runtime.backgroundJobs === "enabled") {
+    heartbeatAutoSuspend.start();
+    let salesTrialEndingRunning = false;
+    salesTrialEndingInterval = setInterval(() => {
+      if (salesTrialEndingRunning) return;
+      salesTrialEndingRunning = true;
+      void reconcileEndingSalesTrialOfferings(services)
+        .catch((error) => logger.warn("sales trial ending reconciliation failed", {
+          error: error instanceof Error ? error.message : String(error),
+        }))
+        .finally(() => { salesTrialEndingRunning = false; });
+    }, 5 * 60_000);
+    salesTrialEndingInterval.unref();
+  }
 
   let portalSeedPromise: Promise<void> | null = null;
 
