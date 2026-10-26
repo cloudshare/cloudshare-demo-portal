@@ -1,8 +1,10 @@
+import { createInMemoryExamClockRepository, transitionExamClock, type ExamClockRepository } from "@/domain/exam-clock";
 import {
   DuplicateCohortExamAttemptError,
   SameExamAttemptAvailabilityConflictError,
   type ExamAttempt,
   type ExamAttemptRepository,
+  type ExamAttemptRuntimeCommand,
 } from "@/domain/exam-attempt";
 
 /**
@@ -10,12 +12,36 @@ import {
  * of the running server (so attempts survive page reloads). A Prisma-backed
  * implementation slots in behind the same interface for a durable deployment.
  */
-export function createInMemoryExamAttemptRepository(): ExamAttemptRepository & {
+export function createInMemoryExamAttemptRepository(clocks: ExamClockRepository = createInMemoryExamClockRepository()): ExamAttemptRepository & {
   reset(): void;
 } {
   const byId = new Map<string, ExamAttempt>();
+  const commands = new Map<string, ExamAttemptRuntimeCommand>();
 
   return {
+    async readRuntimeCommand(customerId, examAttemptId) {
+      const command = commands.get(examAttemptId);
+      return command?.customerId === customerId ? command : null;
+    },
+    async claimRuntimeCommand(command, expectedStatus) {
+      const attempt = byId.get(command.examAttemptId);
+      if (attempt?.customerId !== command.customerId || attempt.status !== expectedStatus || commands.has(command.examAttemptId)) return false;
+      commands.set(command.examAttemptId, command);
+      return true;
+    },
+    async settleRuntimeCommand(command, at) {
+      const clock = await clocks.findByExamAttemptId(command.examAttemptId);
+      const current = commands.get(command.examAttemptId);
+      const attempt = byId.get(command.examAttemptId);
+      if (!current || current.commandId !== command.commandId || current.customerId !== command.customerId || current.action !== command.action || current.environmentId !== command.environmentId || attempt?.customerId !== command.customerId || !["in_progress", "suspended"].includes(attempt.status)) return false;
+      await clocks.save(transitionExamClock(clock, command.examAttemptId, command.action, at));
+      byId.set(attempt.id, { ...attempt, status: command.action === "suspend" ? "suspended" : "in_progress" });
+      commands.delete(command.examAttemptId);
+      return true;
+    },
+    async releaseRuntimeCommand(command) {
+      if (commands.get(command.examAttemptId)?.commandId === command.commandId && commands.get(command.examAttemptId)?.customerId === command.customerId) commands.delete(command.examAttemptId);
+    },
     async save(attempt: ExamAttempt): Promise<void> {
       if (
         attempt.cohortSessionId &&
@@ -60,9 +86,11 @@ export function createInMemoryExamAttemptRepository(): ExamAttemptRepository & {
     },
     async delete(id: string): Promise<void> {
       byId.delete(id);
+      commands.delete(id);
     },
     reset(): void {
       byId.clear();
+      commands.clear();
     },
   };
 }

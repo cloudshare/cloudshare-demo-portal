@@ -22,7 +22,9 @@ write, known-inactive Policy exclusion or Team Member permission-empty behavior 
 see the dated evidence report above for these boundaries.
 
 **RETAINED V3:** Blueprint/default-Snapshot, VMware Regions, Teams, active Project members,
-timezones, ping and Environment suspend/resume/archive/extend commands. #469 migrates all
+timezones, ping and Environment Archive/Extend commands (Extend is tracked by #473). #472 migrates
+suspend/resume to bodyless v4 POST with empty204 acknowledgement and a durable per-Attempt
+no-replay marker; see [contract and acceptance evidence](../discovery/2026-10-26-suspend-resume-v4-migration.md). #469 migrates all
 Environment list/detail observations to v4. Existing v4 Experience/participant/sponsored-link/Guided Journey behavior is unchanged.
 #351 / PR #448 is merged in the baseline; its older unmerged wording is historical.
 

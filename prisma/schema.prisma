@@ -516,6 +516,7 @@ model ExamAttempt {
   exam        Exam       @relation(fields: [examId], references: [id], onDelete: Cascade)
   labLaunch   LabLaunch?
   examClock   ExamClock?
+  runtimeCommand ExamAttemptRuntimeCommand?
 
   @@index([candidateId, createdAt])
   @@index([examId, createdAt])
@@ -663,4 +664,13 @@ model SalesParticipantExtensionTarget {
   @@id([customerId, commandId, salesSessionParticipantId])
   @@unique([customerId, activeParticipantId])
   @@unique([customerId, activeEnvironmentId])
+}
+
+model ExamAttemptRuntimeCommand {
+  examAttemptId String @id
+  customerId String
+  commandId String @unique
+  action String
+  environmentId String
+  attempt ExamAttempt @relation(fields: [examAttemptId], references: [id], onDelete: Cascade)
 }

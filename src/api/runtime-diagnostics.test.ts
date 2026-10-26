@@ -137,19 +137,15 @@ function makeConnections(): CloudShareConnectionRepository {
 function makeSuspendCloudShareFactory(): CloudShareClientFactory {
   return {
     forConnection: () => environmentFixtureClient({
-      readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
-        if (spec.path === "/envs/actions/suspend") return spec.schema.parse({});
-        if (spec.path.startsWith("/environments/")) return spec.schema.parse({ envStatus: "Suspended" });
-        throw new Error(`unexpected v3 path ${spec.path}`);
-      }) as never,
-      requestV3Text: vi.fn().mockResolvedValue(""),
-      requestV3TextDetailed: vi.fn().mockResolvedValue({
+      readEnvironment: vi.fn().mockResolvedValueOnce({ envStatus: "Running" }).mockResolvedValue({ envStatus: "Suspended" }),
+      writeEnvironment: vi.fn().mockResolvedValue(""),
+      writeEnvironmentDetailed: vi.fn().mockResolvedValue({
         data: "",
         host: "use.cloudshare.com",
         integrationSurface: "cloudshare.v3",
         request: {
-          method: "PUT",
-          path: "/api/v3/envs/actions/suspend",
+          method: "POST",
+          path: "/v4/environments/ENVS-env-1/suspend",
         },
         response: {
           status: 200,
@@ -175,19 +171,15 @@ function makeSuspendCloudShareFactory(): CloudShareClientFactory {
 function makeResumeCloudShareFactory(): CloudShareClientFactory {
   return {
     forConnection: () => environmentFixtureClient({
-      readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
-        if (spec.path === "/envs/actions/resume") return spec.schema.parse({});
-        if (spec.path.startsWith("/environments/")) return spec.schema.parse({ envStatus: "Running" });
-        throw new Error(`unexpected v3 path ${spec.path}`);
-      }) as never,
-      requestV3Text: vi.fn().mockResolvedValue(""),
-      requestV3TextDetailed: vi.fn().mockResolvedValue({
+      readEnvironment: vi.fn().mockResolvedValueOnce({ envStatus: "Suspended" }).mockResolvedValue({ envStatus: "Running" }),
+      writeEnvironment: vi.fn().mockResolvedValue(""),
+      writeEnvironmentDetailed: vi.fn().mockResolvedValue({
         data: "",
         host: "use.cloudshare.com",
         integrationSurface: "cloudshare.v3",
         request: {
-          method: "PUT",
-          path: "/api/v3/envs/actions/resume",
+          method: "POST",
+          path: "/v4/environments/ENVS-env-1/resume",
         },
         response: {
           status: 200,
@@ -215,13 +207,13 @@ function makeFailingCloudShareFactory(): CloudShareClientFactory {
     forConnection: () => environmentFixtureClient({
       readEnvironment: vi.fn().mockRejectedValue(
         new CloudShareRequestError("Bad Gateway", 502, {
-          integrationSurface: "cloudshare.v3.env.action.suspend",
-          method: "PUT",
-          path: "/api/v3/envs/actions/suspend",
+          integrationSurface: "cloudshare.v4.environments.suspend",
+          method: "POST",
+          path: "/v4/environments/ENVS-env-1/suspend",
           environmentExternalId: "ENVS-env-1",
         }),
       ) as never,
-      requestV3Text: vi.fn().mockResolvedValue(""),
+      writeEnvironment: vi.fn().mockResolvedValue(""),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -352,13 +344,13 @@ describe("handleSuspendExam diagnostics", () => {
       },
       details: {
         attemptedOperation: "suspend_environment",
-        integrationSurface: "cloudshare.v3.env.action.suspend",
-        method: "PUT",
-        path: "/api/v3/envs/actions/suspend",
+        integrationSurface: "cloudshare.v4.environments.suspend",
+        method: "POST",
+        path: "/v4/environments/ENVS-env-1/suspend",
       },
       request: {
-        method: "PUT",
-        path: "/api/v3/envs/actions/suspend",
+        method: "POST",
+        path: "/v4/environments/ENVS-env-1/suspend",
       },
       response: {
         status: 200,
@@ -460,13 +452,13 @@ describe("handleResumeExam diagnostics", () => {
       },
       details: {
         attemptedOperation: "resume_environment",
-        integrationSurface: "cloudshare.v3.env.action.resume",
-        method: "PUT",
-        path: "/api/v3/envs/actions/resume",
+        integrationSurface: "cloudshare.v4.environments.resume",
+        method: "POST",
+        path: "/v4/environments/ENVS-env-1/resume",
       },
       request: {
-        method: "PUT",
-        path: "/api/v3/envs/actions/resume",
+        method: "POST",
+        path: "/v4/environments/ENVS-env-1/resume",
       },
       response: {
         status: 200,
@@ -479,19 +471,20 @@ describe("handleResumeExam diagnostics", () => {
     const { repository, recorder } = diagnosticsHarness();
     const attempts = makeAttempts({ ...BASE_ATTEMPT, status: "suspended" });
     const launches = makeLaunches();
+    let reads = 0;
     const cloudshare: CloudShareClientFactory = {
       forConnection: () => environmentFixtureClient({
         readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
           if (spec.path.startsWith("/environments/")) {
-            return spec.schema.parse({ envStatus: "Running" });
+            return spec.schema.parse({ envStatus: ++reads <= 2 ? "Suspended" : "Running" });
           }
           throw new Error(`unexpected v3 path ${spec.path}`);
         }) as never,
-        requestV3Text: vi.fn(async () => {
+        writeEnvironment: vi.fn(async () => {
           throw new CloudShareRequestError("already resumed", 409, {
-            integrationSurface: "cloudshare.v3.env.action.resume",
-            method: "PUT",
-            path: "/api/v3/envs/actions/resume",
+            integrationSurface: "cloudshare.v4.environments.resume",
+            method: "POST",
+            path: "/v4/environments/ENVS-env-1/resume",
             environmentExternalId: "ENVS-env-1",
           });
         }) as never,
@@ -561,12 +554,12 @@ describe("handleResumeExam diagnostics", () => {
     const launches = makeLaunches();
     const cloudshare: CloudShareClientFactory = {
       forConnection: () => environmentFixtureClient({
-        readEnvironment: vi.fn() as never,
-        requestV3Text: vi.fn(async () => {
+        readEnvironment: vi.fn().mockResolvedValue({ envStatus: "Suspended" }) as never,
+        writeEnvironment: vi.fn(async () => {
           throw new CloudShareRequestError("Bad Gateway", 502, {
-            integrationSurface: "cloudshare.v3.env.action.resume",
-            method: "PUT",
-            path: "/api/v3/envs/actions/resume",
+            integrationSurface: "cloudshare.v4.environments.resume",
+            method: "POST",
+            path: "/v4/environments/ENVS-env-1/resume",
             environmentExternalId: "ENVS-env-1",
           });
         }) as never,
@@ -631,9 +624,9 @@ describe("handleResumeExam diagnostics", () => {
       }),
     );
     expect(failure?.details).toMatchObject({
-      method: "PUT",
-      path: "/api/v3/envs/actions/resume",
-      integrationSurface: "cloudshare.v3.env.action.resume",
+      method: "POST",
+      path: "/v4/environments/ENVS-env-1/resume",
+      integrationSurface: "cloudshare.v4.environments.resume",
       responseStatus: 502,
       failureMode: "http_status",
     });
@@ -681,13 +674,13 @@ describe("runHeartbeatAutoSuspend diagnostics", () => {
       },
       details: {
         attemptedOperation: "suspend_environment",
-        integrationSurface: "cloudshare.v3.env.action.suspend",
-        method: "PUT",
-        path: "/api/v3/envs/actions/suspend",
+        integrationSurface: "cloudshare.v4.environments.suspend",
+        method: "POST",
+        path: "/v4/environments/ENVS-env-1/suspend",
       },
       request: {
-        method: "PUT",
-        path: "/api/v3/envs/actions/suspend",
+        method: "POST",
+        path: "/v4/environments/ENVS-env-1/suspend",
       },
       response: {
         status: 200,
