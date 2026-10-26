@@ -190,6 +190,8 @@ exam delivery path.
 The top organisational layer within a Subscription. Owns **Policies**, **Teams**, and
 **Project Members**; Experiences are created within a Project, and Blueprints are listed
 per Project for portal authoring (v3 `GET /api/v3/projects/{projectId}/blueprints`).
+Project discovery uses v4 `GET /v4/projects`, traversing its `{count, items}` pages to include
+all visible Projects; exact Project identities are retained across discovery and Experience creation.
 
 **Project Member**:
 A user within a Project, holding one of three roles — **Project Manager** (all permissions),
@@ -202,14 +204,14 @@ A subdivision of a Project for RBAC grouping. Often a Project has just one; a Pr
 belongs to all teams.
 
 **Policy**:
-A Project-scoped setting defining the lifetime of an environment. An Exam selects one Policy from
-the selected Project (v3 `GET /api/v3/projects/{projectId}/policies`). A broader
-`GET /api/v3/policies` surface may return visible policies across Projects for a CloudShare
-Connection, but the portal does not treat that as the primary contract. Policy detail is read
-through the undocumented but live-observed v3 path
-`GET /api/v3/projects/{projectId}/policies/{policyId}` when lease evidence is needed:
-`runtimeLeaseMinutes` feeds the Certalis ExamAttempt timer, while `storageLeaseMinutes` is
-continuous CloudShare retention/TTL evidence.
+A Project-scoped setting defining the lifetime of an environment. An Exam selects one active Policy
+from the selected Project through v4 `GET /v4/projects/{projectId}/policies`. Policy summaries do
+not supply durations; v4 `GET /v4/projects/{projectId}/policies/{policyId}` supplies detail for the
+same Project and Policy identities. The provider's `runtimeMinutes` and `storageMinutes` map to
+the portal's `runtimeLeaseMinutes` and `storageLeaseMinutes`: runtime feeds the Certalis ExamAttempt
+timer, while storage is continuous CloudShare retention/TTL evidence. Under ADR-005, neither
+replaces the manually authored Exam open period that defines Experience End. Sales Item default
+duration remains a separate Sales rule derived from storage.
 
 **Blueprint**:
 A reusable "folder" of environment metadata plus **Snapshots**. Can exist across Projects and

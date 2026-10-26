@@ -136,21 +136,25 @@ first-class deliverable.
   `loginUrl` host = `use.cloudshare.com`. The v4 training resource is `/v4/trainings/{id}` (not
   `/experiences`). Validate via v3 `ping`. These correct current placeholders and are verified
   against the live tenant during build.
-- **Infrastructure reads are v3, experience writes are v4.** Project list and Region list are v3
-  reads; Region is effectively platform-global (`GET /api/v3/regions`) and should be cached as a
-  refreshable reference list. Project-scoped infrastructure must be read through the selected
-  Project: Blueprints via `GET /api/v3/projects/{projectId}/blueprints`, Policies via
-  `GET /api/v3/projects/{projectId}/policies`, later Project Members / Instructor choices through
-  the corresponding Project-scoped surface, and Snapshots via Blueprint detail for the selected
-  Project + Blueprint path. Training creation, add-participant, sponsored-link, list-students, and
-  Guided Journey are v4.
-- Some v3 endpoints expose broader visible data, e.g. `GET /api/v3/policies`, but those are treated
-  as undocumented convenience surfaces, not the portal's primary contract. Endpoint/path/shape
-  assumptions for Projects, Regions, Policies, Blueprints, Snapshots, and Project Members must stay
-  isolated inside `integrations/cloudshare`.
-- CloudShare intends to move more environment-management and infrastructure endpoints to v4 over
-  time. The resource-read surface must remain adapter-based so a future v3-to-v4 migration is
-  localized to `integrations/cloudshare`.
+- **Project and Policy discovery use v4; retained infrastructure reads use v3.**
+  `GET /v4/projects` returns `{count, items}` pages. Request `Count=true`, begin at `Offset=0`,
+  use `Limit=100` (the documented default/cap), and traverse every visible page without accepting
+  an incomplete list. Selected-Project Policies use `GET /v4/projects/{projectId}/policies`:
+  omitted limit returns all active Policies, and lack of Team Member permission may return an
+  empty list. Policy detail uses `GET /v4/projects/{projectId}/policies/{policyId}` with exact
+  Project/Policy identity. These contracts apply to shared Exam/Sales discovery and Sync Resources;
+  there is no v3 fallback.
+- Region remains effectively platform-global (`GET /api/v3/regions`) and is cached as a
+  refreshable reference list. Blueprints remain selected-Project v3 reads through
+  `GET /api/v3/projects/{projectId}/blueprints`, with Snapshots read through the selected
+  Project + Blueprint detail. Teams, Project Members, timezones, ping and existing Environment
+  observations/commands retain their current v3 transport. Training creation, add-participant,
+  sponsored-link, list-students and Guided Journey remain v4.
+- Endpoint/path/shape assumptions for Projects, Regions, Policies, Blueprints, Snapshots and
+  Project Members stay isolated inside `integrations/cloudshare`. Preserve each physical
+  request/page exchange as protected Customer-scoped evidence, separate from normalized resource
+  data. The [dated migration inventory](../discovery/2026-10-26-project-policy-v4-migration.md)
+  distinguishes published contracts, automated coverage and live verification.
 
 ### Exam catalog
 - An **Exam** belongs to a Customer and binds a provisioning tuple — **project, blueprint, snapshot
@@ -166,9 +170,10 @@ first-class deliverable.
   Snapshot detail is informative for Experience-based launches: the portal records the current
   default Snapshot, constrains allowed Regions to that Snapshot's deployed Region set, and does not
   directly select a non-default Blueprint version.
-- Policy detail lease evidence is read through the undocumented but live-observed v3 endpoint
-  `GET /api/v3/projects/{projectId}/policies/{policyId}`. `runtimeLeaseMinutes` remains the
-  Certalis ExamAttempt timer (`Exam.timeLimitMinutes`). `storageLeaseMinutes` is retained as
+- Policy detail lease evidence is read through the documented v4 endpoint
+  `GET /v4/projects/{projectId}/policies/{policyId}`. Its `runtimeMinutes` maps to the portal's
+  `runtimeLeaseMinutes`, the Certalis ExamAttempt timer (`Exam.timeLimitMinutes`), and its
+  `storageMinutes` maps to `storageLeaseMinutes`. Under ADR-005, `storageLeaseMinutes` is retained as
   continuous CloudShare retention/TTL evidence and bounds authoring when present; it does not
   directly define the v4 training End. The manually authored `openPeriodMinutes` defines the
   CloudShare training/Experience End and must satisfy `openPeriodMinutes >= timeLimitMinutes` and,
