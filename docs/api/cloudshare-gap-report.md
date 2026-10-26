@@ -1144,8 +1144,8 @@ environment was not left running.
 
 | Field | Detail |
 |---|---|
-| **Status** | Partially verified — Ready-to-Archived confirmed for one owned Sales Environment; endpoint remains undocumented and other source states remain unverified |
-| **Verified live** | 2026-09-19: issue #351 active cancellation, Ready (2) to Archived (4) |
+| **Status** | Partially verified — Ready-to-Archived and Preparing-to-Archived confirmed on separate owned Sales Environments; endpoint remains undocumented and other source states remain unverified |
+| **Verified live** | 2026-09-19: issue #351 active cancellation, Ready (2) to Archived (4); 2026-10-26: bounded typed-seam probe, Preparing (8) to Archived (4) |
 
 **Observed behaviour**
 
@@ -1177,6 +1177,8 @@ documented product contract. Confirm whether the action is idempotent for alread
 environments and whether any CloudShare role/RBAC permissions differ from suspend/resume.
 
 **Update (2026-09-19, issue #351):** owned Environment `EN0YJ4FccxfRaT4KGQmnoUWw2`, bound to Experience `EX1gJO4tHEshMyVUT-IAe0sQ2` and local Session `2cdb83d1-fc60-4202-bfcf-abf1edf908e9`, was observed with GET 200/status 2 (Ready), rechecked as 2, archived with PUT 204, and confirmed by exact-ID GET 200/status 4 (Archived). Cancellation command/correlation `541646d1-aaf4-493c-bff1-823f56b122e3` is retained at `2026-09-19T14:45:19.613Z`; v4 End/label PUT and confirming GET returned 200. This is one verified Ready-state transition, not proof of idempotency, RBAC equivalence or support for every status. Earlier status-8 Preparing preflight was rejected locally before any command or provider write. A separate proposed Preparing probe later read status 2 and stopped without direct archive dispatch. Preparing support remains OPEN; neither a success mock, a probe observing Ready nor later human acceptance of the mounted UI proves status-8 eligibility. This is historical evidence from unmerged PR #448; scheduled cancellation rejection and later future-Start deletion proof are recorded under GAP-20.
+
+**Preparing update (2026-10-26, issue #351):** after real UI launch and explicit authorization for this exact Preparing target, Customer `cmri9ggzc00033ep83gj0s2ax`, Session `7435c96f-bc8a-4823-9b74-e800ee4c6fa1`, Experience `EXIbmgLxI1LHZdaQhqyvrbDA2`, and Environment `ENAjRVO5SiJ0A3r1bqcsAubw2` were verified by GET getextended 200/status 8 at `2026-10-26T13:30:54.932Z`, exactly one typed `PUT /api/v3/envs/actions/archive` returning 204, and exact-ID GET 200/status 4 at `2026-10-26T13:30:55.993Z`. This supersedes the earlier OPEN Preparing eligibility finding for this observed transition only. The portal subsequently displayed Concluded/Archived with invitation NotSent and no console warnings/errors. This was a typed-seam archive probe after UI launch, **not** full UI cancellation: no Session End change, deletion, cancellation command or replay occurred. All four Sessions and three Participants, including earlier #350/#351 evidence, remain retained. [Probe audit](https://github.com/cloudshare/cloudshare-demo-portal/pull/448#issuecomment-6417295310); protected local evidence and verification limits are recorded in `docs/verification/issue-351-cancellation.md`. The bounded handler repair admits status 8 at both existing eligibility fences while retaining exact identity checks, durable no-replay dispatch and status-4 confirmation. Idempotency, RBAC equivalence and other source states remain unverified.
 
 **Code reference:** `src/integrations/cloudshare/environment-controller.ts`,
 `src/domain/exam-attempt-runtime-lifecycle.ts`,

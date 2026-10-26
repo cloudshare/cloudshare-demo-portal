@@ -46,6 +46,22 @@ function fixture() {
   return { deps, request, environments, delivery, controller, setArchived: () => { archived = true; } };
 }
 describe("Sales cancellation API", () => {
+  it.each([8, 2] as const)("archives Preparing before ending the Experience when initial status is %s, without replay", async initialStatus => {
+    const f = fixture();
+    const observed = { environmentId: "opaque/v3+id", expirationTime: "2026-09-20T10:00:00Z", exchanges: [exchange] };
+    vi.mocked(f.environments.observe)
+      .mockResolvedValueOnce({ ...observed, statusCode: initialStatus })
+      .mockResolvedValueOnce({ ...observed, statusCode: 8 });
+    expect(await handleCancelSalesDemoSession(f.deps, f.request)).toMatchObject({ status: 200, body: { outcome: "cancelled", targets: [{ outcome: "archived" }] } });
+    expect(f.controller.archiveEnvironment).toHaveBeenCalledWith("opaque/v3+id");
+    expect(f.environments.observeById).toHaveBeenCalledWith("opaque/v3+id");
+    expect(vi.mocked(f.controller.archiveEnvironment).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(f.delivery.updateSession).mock.invocationCallOrder[0]!);
+    for (const flags of [{}, { retrySafe: true }, { reconcile: true }]) {
+      expect(await handleCancelSalesDemoSession(f.deps, { ...f.request, body: { ...f.request.body, ...flags } })).toMatchObject({ status: 200 });
+    }
+    expect(f.controller.archiveEnvironment).toHaveBeenCalledTimes(1);
+    expect(f.delivery.updateSession).toHaveBeenCalledTimes(1);
+  });
   it.each(["GET failure", "incomplete GET", "fence failure", "ambiguous PUT"])("fences only the prepared End PUT after %s and retries only undispatched work", async failure => {
     const f = fixture();
     await f.deps.commands.admit({ customerId: "c1", sessionId: "s1", commandId: f.request.body.commandId, experienceId: "experience1", cancelledAt: "2026-09-19T10:00:00Z", actor: f.request.actor, timeZone: "UTC", targetEnd: "2026-09-19T10:00", targets: [] });

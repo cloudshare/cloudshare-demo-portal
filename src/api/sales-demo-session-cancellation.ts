@@ -97,7 +97,7 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
           throw error;
         }
         exchanges.push(...resolved.exchanges);
-        if (!resolved.environmentId || ![2, 3, 4].includes(resolved.statusCode)) throw new Error("environment_unavailable");
+        if (!resolved.environmentId || ![2, 3, 4, 8].includes(resolved.statusCode)) throw new Error("environment_unavailable");
         targets.push({ ...identity, environmentId: resolved.environmentId, state: resolved.statusCode === 4 ? "archived" : "pending" });
       }
       const bound = targets.filter(t => t.environmentId !== null);
@@ -152,7 +152,7 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
           if (!current || current.providerParticipantId !== target.providerParticipantId || current.contactId !== target.contactId || current.email !== target.email || current.projectId !== target.projectId) throw new Error("identity_changed");
           const resolved = await environments.observe({ ownerEmail: target.email, projectId: target.projectId });
           exchanges.push(...resolved.exchanges);
-          if (resolved.environmentId !== target.environmentId || ![2, 3, 4].includes(resolved.statusCode)) throw new Error("environment_identity_changed");
+          if (resolved.environmentId !== target.environmentId || ![2, 3, 4, 8].includes(resolved.statusCode)) throw new Error("environment_identity_changed");
           if (resolved.statusCode === 4) { await saveTarget({ ...target, state: "archived" }); continue; }
           target = { ...target, state: "dispatched" };
           await saveTarget(target); // Durable no-replay reservation before invoking the typed v3 seam.
