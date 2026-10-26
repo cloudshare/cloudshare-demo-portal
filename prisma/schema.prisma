@@ -160,6 +160,8 @@ model SalesTrialOffering {
 }
 
 model SalesTrialEnrollment {
+  v4EnvironmentStatus String?
+  v4EnvironmentObservedAt DateTime?
   id                                 String   @id
   customerId                         String
   salesTrialOfferingId               String
@@ -234,6 +236,8 @@ model SalesDemoSession {
 /// Sales Experience. Invite and monitoring fields are reconciled from
 /// CloudShare; no invitation URL is retained.
 model SalesSessionParticipant {
+  v4EnvironmentStatus String?
+  v4EnvironmentObservedAt DateTime?
   extensionTargets SalesParticipantExtensionTarget[]
   id                          String   @id
   customerId                  String

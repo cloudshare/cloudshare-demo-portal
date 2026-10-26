@@ -583,6 +583,26 @@ describe("Sales Session participant invitation", () => {
     expect(JSON.stringify(result.body)).not.toContain("1234567890123456789");
   });
 
+  it("resolves v4 Environment state with truthful provenance by server-side Contact email and the Customer Item project", async () => {
+    const remote = { ...remoteParticipant("provider-1", "portal-1", contact.id), environmentId: "1234567890123456789", envStatus: null };
+    const observe = vi.fn().mockResolvedValue({ environmentId: "opaque-v4-id", source: "cloudshare_v4_environment", status: "ready", statusCode: 2, exchanges: [{ request: { method: "GET", path: "/v4/environments", query: { ownerEmail: contact.email, brief: "false" } }, response: { status: 200, body: [] } }, { request: { method: "GET", path: "/v4/environments/opaque-v4-id", query: { envId: "opaque-v4-id" } }, response: { status: 200, body: { statusCode: 2 } } }] });
+    const diagnostics = { record: vi.fn() }; const audit = { write: vi.fn() };
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue({ ...session, itemId: "item-1" }) }, items: { findById: vi.fn().mockResolvedValue({ id: "item-1", customerId: "customer-1", project: { id: "project-1", name: "Project" } }) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn(), recordEnvironmentObservation: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remote])) } as never) }, salesEnvironmentFactory: { forConnection: () => ({ observe }) }, diagnostics, audit,
+    }, { customerId: "customer-1", sessionId: session.id, actor });
+    expect(result).toMatchObject({ status: 200, body: { participants: [{ environment: { value: "Ready", source: "cloudshare_v4_environment" } }] } });
+    expect(observe).toHaveBeenCalledWith({ ownerEmail: contact.email, projectId: "project-1" });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ path: "/v4/environments/opaque-v4-id" }), response: expect.objectContaining({ body: { statusCode: 2 } }), details: expect.objectContaining({ resolutionSource: "owner_email_and_item_project" }) }));
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ httpExchanges: expect.arrayContaining([expect.objectContaining({ request: expect.objectContaining({ path: "/v4/environments" }) }), expect.objectContaining({ request: expect.objectContaining({ path: "/v4/environments/opaque-v4-id" }) })]) }) }));
+    const auditEvidence = JSON.stringify(audit.write.mock.calls);
+    expect(auditEvidence).not.toContain("opaque-v4-id");
+    expect(auditEvidence).not.toContain("1234567890123456789");
+    expect(auditEvidence).not.toContain("provider-1");
+    expect(auditEvidence).not.toContain(session.cloudShareSalesExperienceId);
+    expect(JSON.stringify(result.body)).not.toContain("opaque-v4-id");
+    expect(JSON.stringify(result.body)).not.toContain("1234567890123456789");
+  });
+
   it.each([["Deleted", "Deleted"], ["FutureAllocationScheduled", "Future allocation scheduled"]] as const)("uses documented v4 roster Environment state %s without a separate v3 resolution", async (envStatus, expectedValue) => {
     const remote = { ...remoteParticipant("provider-1", "portal-1", contact.id), environmentId: "roster-reference", envStatus };
     const observe = vi.fn().mockRejectedValue(new Error("v3 resolution must not run for a roster state"));
@@ -603,7 +623,7 @@ describe("Sales Session participant invitation", () => {
     const diagnostics = { record: vi.fn() }; const recordEnvironmentObservation = vi.fn();
     const result = await handleListSalesSessionParticipants({ sessions: { findById: vi.fn().mockResolvedValue({ ...session, itemId: "item-1" }) }, items: { findById: vi.fn().mockResolvedValue({ id: "item-1", customerId: "customer-1", project: { id: "project-1", name: "Project" } }) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn(), recordEnvironmentObservation }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remote])) } as never) }, salesEnvironmentFactory: { forConnection: () => ({ observe: vi.fn().mockRejectedValue(new SalesEnvironmentResolutionError(reason, [listExchange])) }) }, diagnostics }, { customerId: "customer-1", sessionId: session.id, actor });
     expect(result).toMatchObject({ status: 200, body: { participants: [{ needsAttention: true, attentionReason: reason, attentionSource: "cloudshare_v3_owner_email_item_project" }] } });
-    expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", { statusCode: null, observedAt: null, attentionReason: reason, attentionSource: "cloudshare_v3_owner_email_item_project" });
+    expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", { statusCode: null, observedAt: null, preserveHistory: true, attentionReason: reason, attentionSource: "cloudshare_v3_owner_email_item_project" });
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure", request: listExchange.request, response: listExchange.response, details: expect.objectContaining({ attentionReason: reason, integrationSurface: "cloudshare.v3.environments" }) }));
   });
 

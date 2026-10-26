@@ -12,7 +12,15 @@ This glossary is the source of truth for the project's language. It is not a spe
 
 ## Language
 
-### Actors & organisations
+#Environment observation uses Infrastructure v4 `GET /v4/environments/{id}` with the exact
+opaque ID. Sales owner resolution traverses all `GET /v4/environments` pages, then verifies
+exact normalized owner email and Project in both list and detail. Numeric Sales roster references
+remain distinct. Listings omit storage-expired Environments and expired Projects; absence is not
+complete historical evidence. `expirationTime` is storage deletion time, separate from runtime
+and Experience End. New observation provenance is v4; historical v3 numeric and roster evidence
+keeps its original source. Environment commands retain their existing transport.
+
+## Actors & organisations
 
 **Certification Provider** (brand: **Certalis**):
 The company that owns and operates the portal. In this codebase the portal **is** the

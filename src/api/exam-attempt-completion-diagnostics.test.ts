@@ -16,7 +16,7 @@ describe("exam attempt completion diagnostics", () => {
         status: "running" as const,
         request: {
           method: "GET",
-          path: `/envs/${environmentExternalId}`,
+          path: `/v4/environments/${environmentExternalId}`,
           headers: {
             authorization: "cs_sha1 userapiid:api-id;timestamp:123;token:[REDACTED];hmac:[REDACTED]",
           },
@@ -91,12 +91,12 @@ describe("exam attempt completion diagnostics", () => {
           details: expect.objectContaining({
             completionReason: "heartbeat_reconciliation",
             attemptedOperation: "get_environment",
-            integrationSurface: "cloudshare.v3.env.get",
+            integrationSurface: "cloudshare.v4.environments.get",
             environmentFound: true,
           }),
           request: {
             method: "GET",
-            path: "/envs/ENN_FkNYEmuHdXixiVS-Kfcw2",
+            path: "/v4/environments/ENN_FkNYEmuHdXixiVS-Kfcw2",
             headers: {
               authorization: "[REDACTED]",
             },

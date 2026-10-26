@@ -136,7 +136,7 @@ export async function refreshCloudShareEnvironmentStatus(
       message: "CloudShare environment status refresh skipped: missing CloudShare Connection",
       externalIds: { environmentExternalId },
       details: {
-        integrationSurface: "cloudshare.v3.env",
+        integrationSurface: "cloudshare.v4.environments.get",
         refreshedBy: "admin_exam_attempt_diagnostics",
         reason: "missing_cloudshare_connection",
       },
@@ -176,14 +176,14 @@ export async function refreshCloudShareEnvironmentStatus(
     },
     request: {
       method: "GET",
-      path: "/api/v3/envs/{envId}",
+      path: "/v4/environments/{environmentId}",
     },
     response: {
       status: snapshot ? 200 : 404,
       body: snapshot ? { status: snapshot.status } : null,
     },
     details: {
-      integrationSurface: "cloudshare.v3.env",
+      integrationSurface: "cloudshare.v4.environments.get",
       refreshedBy: "admin_exam_attempt_diagnostics",
       observedAt: observedAt.toISOString(),
     },

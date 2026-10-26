@@ -1,3 +1,5 @@
+import { completedEnvironmentExchanges } from "@/integrations/cloudshare/environments-v4";
+import { createSalesEnvironmentModule } from "@/integrations/cloudshare/environment-observation";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { SalesCancellationCommand, SalesCancellationStore, SalesCancellationTarget } from "@/domain/sales-session-cancellation";
@@ -39,7 +41,8 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
     if (!command && parsed.data.reconcile) return denied(404, "Cancellation command was not found.");
     const connection = await deps.connections.findByCustomerId(request.customerId);
     if (!connection || connection.customerId !== request.customerId) return denied(409, "Connect CloudShare before cancelling.");
-    const { delivery, environments, controller } = deps.provider(connection);
+    const { delivery, environments: environmentSource, controller } = deps.provider(connection);
+    const environments = createSalesEnvironmentModule(environmentSource) as Required<ReturnType<typeof createSalesEnvironmentModule>>;
     const readProviderSession = async () => {
       surface = "cloudshare.v4";
       const remote = await delivery.readSession(session.cloudShareSalesExperienceId);
@@ -85,7 +88,7 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
       for (const { neverLaunched, ...identity } of identities) {
         // Future provider Start is the agreed rule; no v3 archive eligibility applies.
         if (future) { targets.push({ ...identity, environmentId: null, state: "pending" }); continue; }
-        surface = "cloudshare.v3";
+        surface = "cloudshare.v4.environments";
         let resolved;
         try { resolved = await environments.observe({ ownerEmail: identity.email, projectId: identity.projectId }); }
         catch (error) {
@@ -97,8 +100,8 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
           throw error;
         }
         exchanges.push(...resolved.exchanges);
-        if (!resolved.environmentId || ![2, 3, 4, 8].includes(resolved.statusCode)) throw new Error("environment_unavailable");
-        targets.push({ ...identity, environmentId: resolved.environmentId, state: resolved.statusCode === 4 ? "archived" : "pending" });
+        if (!resolved.environmentId || !["ready", "suspended", "archived", "preparing"].includes(resolved.state)) throw new Error("environment_unavailable");
+        targets.push({ ...identity, environmentId: resolved.environmentId, state: resolved.state === "archived" ? "archived" : "pending" });
       }
       const bound = targets.filter(t => t.environmentId !== null);
       if (new Set(bound.map(t => t.environmentId)).size !== bound.length) throw new Error("environment_ambiguous");
@@ -145,23 +148,24 @@ export async function handleCancelSalesDemoSession(deps: SalesCancellationDepend
       let target = original;
       if (parsed.data.reconcile && target.state !== "dispatched") continue;
       try {
-        surface = "cloudshare.v3";
+        surface = "cloudshare.v4.environments";
         if (target.state === "pending" || target.state === "not_dispatched") {
           const identities = await identify();
           const current = identities.find(t => t.participantId === target.participantId);
           if (!current || current.providerParticipantId !== target.providerParticipantId || current.contactId !== target.contactId || current.email !== target.email || current.projectId !== target.projectId) throw new Error("identity_changed");
           const resolved = await environments.observe({ ownerEmail: target.email, projectId: target.projectId });
           exchanges.push(...resolved.exchanges);
-          if (resolved.environmentId !== target.environmentId || ![2, 3, 4, 8].includes(resolved.statusCode)) throw new Error("environment_identity_changed");
-          if (resolved.statusCode === 4) { await saveTarget({ ...target, state: "archived" }); continue; }
+          if (resolved.environmentId !== target.environmentId || !["ready", "suspended", "archived", "preparing"].includes(resolved.state)) throw new Error("environment_identity_changed");
+          if (resolved.state === "archived") { await saveTarget({ ...target, state: "archived" }); continue; }
           target = { ...target, state: "dispatched" };
           await saveTarget(target); // Durable no-replay reservation before invoking the typed v3 seam.
-          try { const result = await controller.archiveEnvironment(target.environmentId!); exchanges.push({ request: result.request, response: result.response }); }
+          try { surface = "cloudshare.v3.env.action.archive"; const result = await controller.archiveEnvironment(target.environmentId!); exchanges.push({ request: result.request, response: result.response }); }
           catch (error) { await record("failure", "Archive requires read-only reconciliation.", error, target.participantId); }
         }
+        surface = "cloudshare.v4.environments";
         const after = await environments.observeById(target.environmentId!);
         exchanges.push(...after.exchanges);
-        if (after.environmentId === target.environmentId && after.statusCode === 4) target = { ...target, state: "archived" };
+        if (after.environmentId === target.environmentId && after.state === "archived") target = { ...target, state: "archived" };
       } catch (error) {
         if (error instanceof Error && error.message === "command_changed") throw error;
         if (target.state !== "dispatched") target = { ...target, state: "not_dispatched" };

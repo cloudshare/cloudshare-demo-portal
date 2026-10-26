@@ -5,7 +5,7 @@ import type {
 } from "@/domain/sales-participant-workspace";
 import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "@/domain/sales-participant-launch-operation";
-import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
+import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantV4Environment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
 
 import { createPrismaSalesCancellationStore } from "./prisma-sales-session-cancellation";
 import { cancellationIdentity } from "@/domain/sales-session-cancellation";
@@ -68,7 +68,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
             participationStatus: true,
             cloudShareParticipantId: true,
             environmentStatus: true,
-            environmentStatusCode: true,
+            environmentStatusCode: true, v4EnvironmentStatus: true, v4EnvironmentObservedAt: true,
             environmentObservedAt: true,
             environmentAttentionReason: true,
             environmentAttentionSource: true,
@@ -151,7 +151,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
           if (row.environmentStatusCode !== null && row.environmentStatusCode !== undefined && !v3EnvironmentStatusCodes.has(row.environmentStatusCode)) throw new Error("Invalid persisted Participant Environment status code.");
           const hasEnvironmentAttentionReason = row.environmentAttentionReason !== null && row.environmentAttentionReason !== undefined;
           const hasEnvironmentAttentionSource = row.environmentAttentionSource !== null && row.environmentAttentionSource !== undefined;
-          if ((hasEnvironmentAttentionReason && !environmentAttentionReasons.has(row.environmentAttentionReason ?? "")) || hasEnvironmentAttentionReason !== hasEnvironmentAttentionSource || (hasEnvironmentAttentionSource && row.environmentAttentionSource !== "cloudshare_v3_owner_email_item_project")) throw new Error("Invalid persisted Participant Environment attention state.");
+          if ((hasEnvironmentAttentionReason && !environmentAttentionReasons.has(row.environmentAttentionReason ?? "")) || hasEnvironmentAttentionReason !== hasEnvironmentAttentionSource || (hasEnvironmentAttentionSource && !["cloudshare_v3_owner_email_item_project", "cloudshare_v4_owner_email_item_project"].includes(row.environmentAttentionSource ?? ""))) throw new Error("Invalid persisted Participant Environment attention state.");
           const archive = confirmedCancellation?.targets.find(target =>
             target.participantId === row.id && target.providerParticipantId === row.cloudShareParticipantId &&
             target.contactId === row.opportunityContactId && target.email === row.contact.email &&
@@ -159,6 +159,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
             cancellationRow?.targets.some(fence => fence.salesSessionParticipantId === row.id && fence.activeEnvironmentId === target.environmentId));
           const environment = archive && cancellationRow
             ? { dimension: "cloudshare_environment" as const, value: "Archived" as const, source: "confirmed_session_cancellation" as const, confirmedAt: cancellationRow.updatedAt.toISOString() }
+            : row.v4EnvironmentStatus && row.v4EnvironmentObservedAt && (!row.environmentObservedAt || row.v4EnvironmentObservedAt >= row.environmentObservedAt) ? projectSalesParticipantV4Environment(row.v4EnvironmentStatus, row.v4EnvironmentObservedAt)
             : isProjectableSalesParticipantRosterEnvironment(row.environmentStatus) && row.environmentObservedAt
             ? projectSalesParticipantRosterEnvironment(row.environmentStatus, row.environmentObservedAt)
             : projectSalesParticipantEnvironment(row.environmentStatusCode, row.environmentObservedAt ?? undefined);

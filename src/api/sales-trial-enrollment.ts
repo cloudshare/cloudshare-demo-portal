@@ -1,3 +1,5 @@
+import { completedEnvironmentExchanges } from "@/integrations/cloudshare/environments-v4";
+import { projectSalesParticipantV4Environment } from "@/domain/sales-participant-environment";
 import type { SalesEnvironmentModule, SalesEnvironmentReading, SalesEnvironmentState } from "@/domain/environment-observation";
 import { randomUUID } from "node:crypto";
 import type { AuditRepository } from "@/domain/audit-trail";
@@ -158,6 +160,7 @@ export interface SalesTrialMonitoringParticipant {
     readonly dimension: "cloudshare_environment";
     readonly value: string | null;
     readonly source:
+      | "cloudshare_v4_environment"
       | "cloudshare_v4_sales_participant_roster"
       | "certalis_sales_trial_enrollment_reconciliation"
       | "not_observed"
@@ -175,6 +178,7 @@ export interface SalesTrialMonitoringParticipant {
 export interface SalesTrialMonitoringObservation {
   readonly freshness: "live" | "stale";
   readonly source:
+      | "cloudshare_v4_environment"
     | "cloudshare_v4_sales_participant_roster"
     | "certalis_sales_trial_enrollment_reconciliation";
   readonly observedAt?: string;
@@ -1522,9 +1526,10 @@ function buildExtendState(
 function projectRetainedEnvironment(
   enrollment: Pick<
     SalesTrialEnrollment,
-    "cloudShareRosterEnvironmentReference" | "environmentStatus" | "lastReconciledAt"
+    "cloudShareRosterEnvironmentReference" | "environmentStatus" | "lastReconciledAt" | "v4EnvironmentStatus" | "v4EnvironmentObservedAt"
   >,
 ): SalesTrialMonitoringParticipant["environment"] {
+  if (enrollment.v4EnvironmentStatus && enrollment.v4EnvironmentObservedAt) return projectSalesParticipantV4Environment(enrollment.v4EnvironmentStatus, enrollment.v4EnvironmentObservedAt) as SalesTrialMonitoringParticipant["environment"];
   if (
     enrollment.environmentStatus &&
     isProjectableSalesParticipantRosterEnvironment(enrollment.environmentStatus)
@@ -1623,6 +1628,7 @@ function applyEnvironmentObservation(
     environmentStatus:
       observation.persistedStatus ??
       enrollment.environmentStatus,
+    ...(observation.source ? { v4EnvironmentStatus: observation.providerStatus, v4EnvironmentObservedAt: observedAt } : {}),
     observedExpirationTime: observation.expiry.raw,
     lastReconciledAt: observedAt,
     updatedAt: observedAt,
@@ -2178,7 +2184,7 @@ async function extensionFailure(
   );
   const httpExchanges = requestExchange
     ? context
-      ? [...completedExchanges, requestExchange]
+      ? [...completedExchanges, ...completedEnvironmentExchanges(error), requestExchange]
       : completedExchanges
     : completedExchanges;
   const failureMode =
@@ -2218,7 +2224,7 @@ async function extensionFailure(
           }
         : {}),
       details: {
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: salesTrialIntegrationSurfaceForPath(requestExchange?.request?.path),
         attemptedOperation,
         failureMode,
         ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
@@ -2238,7 +2244,7 @@ async function extensionFailure(
       correlationId,
       details: {
         offeringId: request.offeringId,
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: salesTrialIntegrationSurfaceForPath(requestExchange?.request?.path),
         attemptedOperation,
         failureMode,
       },
@@ -2258,6 +2264,7 @@ function salesTrialIntegrationSurfaceForPath(path: unknown): string {
   if (typeof path !== "string") {
     return "portal.sales_trial";
   }
+  if (path.includes("/environments")) return "cloudshare.v4.environments";
   if (path.includes("/envs")) {
     return "cloudshare.v3.environments";
   }
@@ -2280,12 +2287,13 @@ function salesTrialAttemptedOperationForPath(path: unknown): string {
   if (typeof path !== "string") {
     return "portal_guard";
   }
-  if (path === "/api/v3/envs" || path === "/envs") {
+  if (path === "/v4/environments" || path === "/environments" || path === "/api/v3/envs" || path === "/envs") {
     return "resolve_environment_for_project";
   }
   if (path.includes("/envs/actions/extend")) {
     return "extend_environment";
   }
+  if (path.includes("/environments/")) return "observe_environment";
   if (path.includes("/envs/actions/getextended")) {
     return "observe_extended_environment";
   }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { readV4Environment } from "./environments-v4";
 import type {
   CloudShareClient,
   CloudShareRequestDiagnostics,
@@ -13,16 +14,7 @@ import {
 } from "./errors";
 import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
 import { projectCloudShareFailureContext } from "./diagnostic-failure-projection";
-import { mapCloudShareEnvironmentStatus } from "./environment";
-
-const v3EnvironmentSchema = z
-  .object({
-    status: z.string().min(1).optional(),
-    envStatus: z.string().min(1).optional(),
-  })
-  .refine((value) => typeof value.status === "string" || typeof value.envStatus === "string", {
-    message: "Expected CloudShare environment status field",
-  });
+import { mapV4EnvironmentStatus } from "./environment-observation";
 
 const cloudShareDateTimeString = z.string().min(1);
 
@@ -82,29 +74,14 @@ export async function inspectCloudShareEnvironmentLease(
   environmentExternalId: string,
 ): Promise<CloudShareExternalLease> {
   try {
-    const detailed = client.requestV3Detailed
-      ? await client.requestV3Detailed({
-          method: "GET",
-          path: `/envs/${environmentExternalId}`,
-          schema: v3EnvironmentSchema,
-        })
-      : null;
-    const payload = detailed
-      ? detailed.data
-      : await client.requestV3({
-          method: "GET",
-          path: `/envs/${environmentExternalId}`,
-          schema: v3EnvironmentSchema,
-        });
-    const environmentStatus = mapCloudShareEnvironmentStatus(
-      payload.envStatus ?? payload.status ?? "unknown",
-    );
+    const detailed = await readV4Environment(client, environmentExternalId);
+    const environmentStatus = mapV4EnvironmentStatus(detailed.data.status);
     const base = {
       target: "environment" as const,
       attemptedOperation: "get_environment" as const,
-      integrationSurface: detailed?.integrationSurface ?? "cloudshare.v3.env.get",
+      integrationSurface: detailed?.integrationSurface ?? "cloudshare.v4.environments.get",
       method: detailed?.request.method ?? "GET",
-      path: detailed?.request.path ?? `/v3/envs/${environmentExternalId}`,
+      path: detailed?.request.path ?? `/v4/environments/${encodeURIComponent(environmentExternalId)}`,
       host: detailed?.host ?? null,
       request: detailed?.request ?? null,
       response: detailed?.response ?? null,
@@ -121,7 +98,7 @@ export async function inspectCloudShareEnvironmentLease(
     }
 
     return {
-      kind: "active",
+      kind: environmentStatus === "unknown" ? "unknown" : "active",
       ...base,
       responseStatus: detailed?.response.status ?? null,
     };
@@ -129,8 +106,8 @@ export async function inspectCloudShareEnvironmentLease(
     return mapLeaseFailure({
       target: "environment",
       attemptedOperation: "get_environment",
-      integrationSurface: "cloudshare.v3.env.get",
-      fallbackPath: `/v3/envs/${environmentExternalId}`,
+      integrationSurface: "cloudshare.v4.environments.get",
+      fallbackPath: `/v4/environments/${encodeURIComponent(environmentExternalId)}`,
       error,
       notFoundStatus: "deleted",
     });

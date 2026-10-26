@@ -147,8 +147,11 @@ first-class deliverable.
 - Region remains effectively platform-global (`GET /api/v3/regions`) and is cached as a
   refreshable reference list. Blueprints remain selected-Project v3 reads through
   `GET /api/v3/projects/{projectId}/blueprints`, with Snapshots read through the selected
-  Project + Blueprint detail. Teams, Project Members, timezones, ping and existing Environment
-  observations/commands retain their current v3 transport. Training creation, add-participant,
+  Project + Blueprint detail. Teams, Project Members, timezones and ping retain v3 transport. Environment list/detail observations use Infrastructure
+  v4 with complete pagination, exact normalized owner/Project resolution and exact opaque-ID
+  detail binding. Numeric Sales roster references are not Environment identities. Environment
+  commands retain their current transport. New observations carry v4 source/time while historical
+  numeric and roster evidence keeps its provenance. Training creation, add-participant,
   sponsored-link, list-students and Guided Journey remain v4.
 - Endpoint/path/shape assumptions for Projects, Regions, Policies, Blueprints, Snapshots and
   Project Members stay isolated inside `integrations/cloudshare`. Preserve each physical

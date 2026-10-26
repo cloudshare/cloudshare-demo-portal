@@ -106,7 +106,7 @@ export async function recordExamAttemptCompletionEnvironmentDiagnostic(
       details: {
         completionReason: input.completionReason,
         attemptedOperation: "get_environment",
-        integrationSurface: "cloudshare.v3.env.get",
+        integrationSurface: "cloudshare.v4.environments.get",
         environmentFound: Boolean(snapshot),
       },
     });
@@ -120,7 +120,7 @@ export async function recordExamAttemptCompletionEnvironmentDiagnostic(
       details: {
         completionReason: input.completionReason,
         attemptedOperation: "get_environment",
-        integrationSurface: "cloudshare.v3.env.get",
+        integrationSurface: "cloudshare.v4.environments.get",
         error: err instanceof Error ? err.message : String(err),
       },
     });

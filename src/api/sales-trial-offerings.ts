@@ -1029,7 +1029,7 @@ export async function handleEndSalesTrialOffering(
     createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection, observerOptions));
   if (!delivery.updateSession) return configurationFailure("sales_delivery_update_missing", "cloudshare.v4.sales");
   const environments = deps.salesEnvironmentFactory.forConnection(connection, observerOptions);
-  if (!environments.observeById) return configurationFailure("environment_getextended_missing", "cloudshare.v3.envs.getextended");
+  if (!environments.observe) return configurationFailure("environment_observation_missing", "cloudshare.v4.environments.get");
   try {
     await renewLease();
     const [provider, roster] = await Promise.all([
@@ -1055,12 +1055,19 @@ export async function handleEndSalesTrialOffering(
       ]);
       return response(200, { offering: toPortalOffering(ended) });
     }
-    const environmentIds = [...new Set(roster.participants.map((p) => p.environmentId).filter((id): id is string => Boolean(id)))];
+    const item = await deps.items.findById(offering.itemId);
+    if (!item || item.customerId !== request.customerId) throw new Error("Trial Item correlation is unavailable");
     const observations = [];
-    // Deliberately sequential: fail closed on the first incomplete read and do
-    // not burst an unbounded participant roster at the v3 endpoint.
-    for (const environmentId of environmentIds) {
-      observations.push(await environments.observeById!(environmentId));
+    const resolvedIds = new Set<string>();
+    // A roster envId is numeric metadata, never an opaque Environment identity.
+    // Resolve each owner against the Offering's exact Project, sequentially.
+    for (const participant of roster.participants.filter(participant => Boolean(participant.environmentId))) {
+      if (!participant.email?.trim()) throw new Error("Trial participant owner correlation is unavailable");
+      const observation = await environments.observe({ ownerEmail: participant.email, projectId: item.project.id });
+      if (!["ready", "suspended", "archived", "preparing", "deleted", "creation_failed", "taking_snapshot"].includes(observation.state)) throw new Error("Trial Environment state is not actionable");
+      if (resolvedIds.has(observation.environmentId)) throw new Error("Trial Environment identity is ambiguous");
+      resolvedIds.add(observation.environmentId);
+      observations.push(observation);
       await renewLease();
     }
     const calculation = calculateSalesTrialEnding({
@@ -1128,7 +1135,7 @@ export async function handleEndSalesTrialOffering(
       message: attention.attentionReason!,
       externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId },
       request: evidence?.request, response: evidence?.response,
-      details: { integrationSurface: "cloudshare.v3.envs.getextended", status: "ending", needsAttention: true },
+      details: { integrationSurface: "cloudshare.v4.environments.get", status: "ending", needsAttention: true },
     });
     return response(202, { offering: toPortalOffering(attention), needsAttention: true, correlationId });
   }

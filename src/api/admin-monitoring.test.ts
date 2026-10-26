@@ -147,7 +147,7 @@ function makeCloudShareFactory(
       requestV3: vi.fn(),
       requestV3Text: vi.fn(),
       requestV4: vi.fn(),
-      requestV4Detailed: vi.fn(),
+
       ...overrides,
     }),
   };
@@ -430,12 +430,12 @@ describe("handleGetAdminMonitoring", () => {
         launches,
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory({
-          requestV3: vi.fn(async (spec: { path: string }) => {
-            if (spec.path === "/envs/ENVS-expired-1") {
+          requestV4: vi.fn(async (spec: { path: string }) => {
+            if (spec.path === "/environments/ENVS-expired-1") {
               throw new CloudShareRequestError("not found", 404, {
                 method: "GET",
-                path: "/v3/envs/ENVS-expired-1",
-                integrationSurface: "cloudshare.v3.env.get",
+                path: "/v4/environments/ENVS-expired-1",
+                integrationSurface: "cloudshare.v4.environments.get",
               });
             }
             throw new Error(`unexpected path ${spec.path}`);

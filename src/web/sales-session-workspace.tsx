@@ -741,7 +741,7 @@ function humanParticipation(value: string): string {
       : "Pending";
 }
 function humanEnvironmentSource(value: string): string {
-  if (value === "cloudshare_v3_environment")
+  if ((value === "cloudshare_v3_environment" || value === "cloudshare_v4_environment"))
     return "Observed from CloudShare Environment";
   if (value === "cloudshare_v4_sales_participant_roster")
     return "Observed from CloudShare participant roster";

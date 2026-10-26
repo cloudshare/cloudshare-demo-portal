@@ -456,7 +456,7 @@ const launchReasonCopy: Record<"persistence_failure", string> = {
 function humanEnvironmentSource(environment: SalesParticipantWorkspaceRow["environment"]): string {
   if (environment.source === "confirmed_session_cancellation") return `Cancellation confirmation saved ${explicitUtcTime(environment.confirmedAt)}`;
   const value = environment.source;
-  if (value === "cloudshare_v3_environment") return "Observed from CloudShare Environment";
+  if ((value === "cloudshare_v3_environment" || value === "cloudshare_v4_environment")) return "Observed from CloudShare Environment";
   if (value === "cloudshare_v4_sales_participant_roster") return "Observed from CloudShare participant roster";
   if (value === "not_assigned") return "No CloudShare Environment is assigned";
   return "CloudShare Environment state has not been observed";

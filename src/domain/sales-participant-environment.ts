@@ -1,4 +1,5 @@
 export type SalesParticipantEnvironmentObservation =
+  | { readonly dimension: "cloudshare_environment"; readonly value: string | null; readonly source: "cloudshare_v4_environment"; readonly observedAt: string }
   | { readonly dimension: "cloudshare_environment"; readonly value: "Archived"; readonly source: "confirmed_session_cancellation"; /** Saved command confirmation time, not a fresh provider observation. */ readonly confirmedAt: string }
   | { readonly dimension: "cloudshare_environment"; readonly value: "Ready" | "Suspended" | "Archived" | "Deleted" | "Taking a Snapshot" | "Preparing" | "Creation Failed"; readonly source: "cloudshare_v3_environment"; readonly observedAt: string }
   | { readonly dimension: "cloudshare_environment"; readonly value: "Future allocation scheduled" | "Allocation scheduled (not running)" | "Ready" | "Suspended" | "Archived" | "Deleted" | "Publishing" | "Preparing" | "Creation Failed" | "In grace" | "Stopping" | "Editing networks"; readonly source: "cloudshare_v4_sales_participant_roster"; readonly observedAt: string }
@@ -35,4 +36,10 @@ export function projectSalesParticipantEnvironment(statusCode: number | null | u
  * current/listable v3 owner-and-Project observation. */
 export function projectSalesParticipantRosterEnvironment(status: keyof typeof rosterEnvironmentValues, observedAt: Date): SalesParticipantEnvironmentObservation {
   return { dimension: "cloudshare_environment", value: rosterEnvironmentValues[status], source: "cloudshare_v4_sales_participant_roster", observedAt: observedAt.toISOString() };
+}
+
+/** Current Infrastructure observation, independent of the Sales roster and historical v3 codes. */
+export function projectSalesParticipantV4Environment(status: string, observedAt: Date): SalesParticipantEnvironmentObservation {
+  const entry = Object.entries(rosterEnvironmentValues).find(([key]) => key.toLowerCase() === status.toLowerCase());
+  return { dimension: "cloudshare_environment", value: entry?.[1] ?? "Unknown", source: "cloudshare_v4_environment", observedAt: observedAt.toISOString() };
 }
