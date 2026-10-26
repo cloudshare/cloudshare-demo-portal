@@ -71,8 +71,14 @@ describe("v4 resource discovery", () => {
     { count: 2, items: [{ id: "PO-one", projectId: "PR-one", name: "Selected" }] },
     { count: 1, items: [{ id: "PO-one", projectId: "PR-other", name: "Selected" }] },
   ])("rejects incomplete or wrong-Project Policy lists: %j", async (list) => {
-    const { client } = recordingClient([list]);
-    await expect(createCloudShareResourceLister(client).listPolicies()).rejects.toMatchObject({ name: "CloudShareResponseError" });
+    const { client, requests } = recordingClient([{ count: 1, items: [{ id: "PR-one", name: "Project" }] }, list]);
+    await expect(createCloudShareResourceLister(client).listPolicies()).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: { path: "/v4/projects/PR-one/policies", responseBody: list },
+    });
+    expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+      "/v4/projects", "/v4/projects/PR-one/policies",
+    ]);
     const direct = recordingClient([list]);
     await expect(createCloudShareExamAuthoringSource(direct.client).listProjectPolicies("PR-one")).rejects.toMatchObject({ name: "CloudShareResponseError", context: { responseBody: list } });
   });
