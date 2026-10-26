@@ -2053,10 +2053,10 @@ tracks the provider acknowledgement defect.
 
 | Field | Detail |
 |---|---|
-| **Status** | Confirmed and mitigated in issue #370 |
+| **Status** | Confirmed; historical v3 mitigation #370, current v4 observation mitigation #469 |
 | **Verified live** | Yes |
 
-**Observed behaviour**
+**Historical v3 evidence (#370)**
 
 The v4 Sales participant roster returns a 19-character numeric `envId`; it is not the
 opaque identifier accepted by v3 Environment actions. The verified resolution chain is
@@ -2064,14 +2064,25 @@ Customer-credential-scoped `GET /api/v3/envs?ownerEmail=<participant>&brief=fals
 exact server-side match to the Session Item Project, then
 `GET /api/v3/envs/actions/getextended?envId=<opaque-v3-id>`.
 
-**Impact on certification use**
+**Historical containment**
 
 Exactly one same-Project match is required. Zero or multiple matches are persisted and
 projected as an explicit needs-attention reason/source. Actual v3 exchanges and opaque IDs
 remain confined to protected Customer-scoped diagnostics; the roster reference is stored
 under a name that does not claim it is a v3 Environment ID.
 
-**Code reference:** `src/integrations/cloudshare/sales-environment.ts`,
+**Current v4 evidence — 2026-10-26 (#469)**
+
+At `80d88a8e54ff83fb2556a87065be78286a0c8261`, real Sales and Trial UI flows verified
+opaque Environment observation through v4 list/detail, with exact normalized owner and Item
+Project binding. The numeric Sales roster reference remains a separate value and is never sent
+as an opaque Environment ID. Certification's training-correlated opaque ID also read successfully
+through v4. Sales cancellation and Trial extension retained their existing v3 command transports
+and confirmed outcomes through v4 readback. New status/time evidence is explicitly v4; old numeric
+and roster evidence remains historical. See the [consumer evidence](../discovery/2026-10-26-environment-v4-migration.md)
+for command counts, Support isolation, and verification limits.
+
+**Code reference:** `src/integrations/cloudshare/environment-observation.ts`, `src/integrations/cloudshare/environments-v4.ts`,
 `src/api/sales-session-participants.ts`
 
 ---
@@ -2098,10 +2109,21 @@ provider request failure and not proof that the participant never consumed an En
 **Impact on Certalis Sales Sessions**
 
 Certalis can display a roster-associated Environment state with its v4 source, and can perform the
-separately labelled v3 owner-and-Project listable-Environment observation. It cannot claim a
+separately labelled v4 owner-and-Project listable-Environment observation. It cannot claim a
 complete historical Environment list or count for a participant in a Sales Experience. The
 undocumented `environmentsGrid` route is not an integration path and must not be used to fill this
 gap.
+
+**Current v4 evidence — 2026-10-26 (#469)**
+
+Real Sales and Trial flows at `80d88a8e54ff83fb2556a87065be78286a0c8261` confirmed current
+opaque Environment reads, separate source/time persistence and unchanged command readback.
+The v4 contract excludes storage-expired Environments and expired Projects. Its `expirationTime`
+is storage deletion, not runtime remaining or Experience End. Live Trial extension/Ending retained
+the Environment and its history; no deletion/history-completeness experiment was performed.
+The dated v3 absence evidence above remains historical. Neither the current v4 observations nor
+an empty list supplies a complete per-participant history/count or proves never-consumed state.
+GAP-33 therefore remains open; GAP-28's Project-member eligibility contract is unaffected.
 
 **Action required (CloudShare contract clarification)**
 

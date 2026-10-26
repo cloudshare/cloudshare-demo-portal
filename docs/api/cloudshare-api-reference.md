@@ -107,8 +107,13 @@ storage deletion, never runtime remaining or Experience End. All documented stat
 non-actionable unless existing lifecycle rules admit them. Unknown states do not grant an active
 external lease. Archive remains v3, never DELETE; all command dispatch/fences remain unchanged.
 
-Automated contract/handler evidence is distinct from live identity/permission parity. Live browser
-verification is recorded in the #469 report; pending evidence does not close GAP-28/32/33.
+Live UI verification on 2026-10-26 at `80d88a8e54ff83fb2556a87065be78286a0c8261` confirmed
+Certification training-to-opaque-Environment correlation, the separate external-lease consumer,
+Sales exact owner/Project resolution and numeric-roster distinction, and Trial Extend/Ending
+readback. Commands remained on their existing transports. See the
+[consumer evidence and limits](../discovery/2026-10-26-environment-v4-migration.md).
+Synthetic-ID HTTP 400 proves input-rejection diagnostics only; valid-missing 404 remains offline
+coverage. GAP-28 is unchanged and GAP-33 remains a complete-history contract gap.
 
 - Do not use `/api/v3/class/*` endpoints for Accelerate Experience user properties.
 - Do not invent v4 endpoint paths from surrounding naming patterns; verify them in the local export.
