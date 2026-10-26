@@ -10,6 +10,7 @@ export function createSalesCancellationFixture(): (request: HttpRequest) => Prom
     environmentId: `qa351-${kind}-environment`, archived: false, deleted: false, sessionReads: 0, reads: 0, failedRead: false,
     end: "2026-09-20T12:00", labels: ["qa351-synthetic"],
   }));
+  const environment = (target: typeof scenarios[number]) => ({ id: target.environmentId, projectId: "p-demo-1", ownerEmail: target.email, status: target.archived ? "archived" : "ready", startTime: "Sat, 19 Sep 2026 12:00:00 GMT", expirationTime: "Sun, 20 Sep 2026 12:00:00 GMT" });
   const response = (body: unknown, status = 200): HttpResponse => ({ status, body: JSON.stringify(body) });
   return async request => {
     const url = new URL(request.url);
@@ -33,22 +34,22 @@ export function createSalesCancellationFixture(): (request: HttpRequest) => Prom
       }
       if (request.method === "GET") return response({ id: sale.id, name: "Synthetic cancellation QA", status: sale.kind.startsWith("future-delete") ? "notStarted" : sale.labels.includes("certalis:cancelled") ? "ended" : "inProgress", type: "demo", projectId: "p-demo-1", blueprintIds: ["qa351-blueprint"], cloudshareRegionIds: ["qa351-region"], policyId: "qa351-policy", opportunity: "Synthetic QA", mainSalesPro: { email: "qa351-owner@certalis.invalid" }, registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", start: sale.kind.startsWith("future-delete") ? new Date(Date.now() + (sale.kind === "future-delete-crossover" && sale.sessionReads > 1 ? -60_000 : 86_400_000)).toISOString().slice(0, 16) : "2026-09-19T12:00", end: sale.end, timeZone: "UTC", labels: sale.labels });
     }
-    if (request.method === "GET" && url.pathname === "/api/v3/envs") {
-      const target = scenarios.find(s => s.email === url.searchParams.get("ownerEmail"));
+    if (request.method === "GET" && url.pathname === "/v4/environments") {
+      const target = scenarios.find(s => s.email === url.searchParams.get("OwnerEmail"));
       if (!target) return null;
       target.reads++;
       if (target.kind === "retry" && target.reads === 2) return response({ error: "Synthetic pre-dispatch read failure" }, 503);
-      return response(target.kind === "fixture" ? [] : [{ id: target.environmentId, projectId: "p-demo-1" }]);
+      return response({ count: target.kind === "fixture" ? 0 : 1, items: target.kind === "fixture" ? [] : [environment(target)] });
     }
-    const target = scenarios.find(s => s.kind !== "fixture" && s.environmentId === url.searchParams.get("envId"));
+    const target = scenarios.find(s => s.kind !== "fixture" && (s.environmentId === url.searchParams.get("envId") || url.pathname === `/v4/environments/${s.environmentId}`));
     if (!target) return null;
     if (request.method === "PUT" && url.pathname === "/api/v3/envs/actions/archive") {
       target.archived = true;
       return response({}, target.kind === "ambiguous" ? 503 : 200);
     }
-    if (request.method === "GET" && url.pathname === "/api/v3/envs/actions/getextended") {
+    if (request.method === "GET" && url.pathname === `/v4/environments/${target.environmentId}`) {
       if (target.kind === "ambiguous" && target.archived && !target.failedRead) { target.failedRead = true; return response({ error: "Synthetic post-dispatch read failure" }, 503); }
-      return response({ statusCode: target.archived ? 4 : 2, expirationTime: "2026-09-20T12:00:00Z" });
+      return response(environment(target));
     }
     return null;
   };

@@ -1,3 +1,4 @@
+import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getServices } from "@/composition";
@@ -26,7 +27,7 @@ export async function POST(
   const result = await handleEndSalesTrialOffering(
     {
       offerings: createPrismaSalesTrialOfferingRepository(services.prisma),
-      items: { findById: async () => null },
+      items: createPrismaItemRepository(services.prisma),
       connections: services.cloudshareConnections,
       deliveryFactory: {
         forConnection: (connection, options) =>

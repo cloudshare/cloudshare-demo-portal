@@ -1,9 +1,8 @@
 import type { CloudShareClient } from "./client";
 import { createCloudShareSalesEnvironmentModule, type SalesEnvironmentSource } from "./environment-observation";
 
-// Compatibility facade for persisted projections and unmerged cancellation PR448.
-// New lifecycle callers consume the semantic module. Remove this projection only
-// after PR448 rebases and its exact-head tests migrate to the semantic interface.
+// Compatibility facade for historical numeric fixtures and monitoring. New v4
+// observations carry explicit source/status; numeric values are derived only.
 export { SalesEnvironmentResolutionError, cloudShareV3SalesEnvironmentStatusCodeSchema } from "./environment-observation";
 export type { SalesEnvironmentSource, SalesEnvironmentObservation, SalesEnvironmentExtensionResult, CloudShareV3SalesEnvironmentStatusCode } from "./environment-observation";
 

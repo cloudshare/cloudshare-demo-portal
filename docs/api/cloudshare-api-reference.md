@@ -22,8 +22,8 @@ write, known-inactive Policy exclusion or Team Member permission-empty behavior 
 see the dated evidence report above for these boundaries.
 
 **RETAINED V3:** Blueprint/default-Snapshot, VMware Regions, Teams, active Project members,
-timezones, ping and existing Environment observations/commands. Environment migration #469 follows
-#468. Existing v4 Experience/participant/sponsored-link/Guided Journey behavior is unchanged.
+timezones, ping and Environment suspend/resume/archive/extend commands. #469 migrates all
+Environment list/detail observations to v4. Existing v4 Experience/participant/sponsored-link/Guided Journey behavior is unchanged.
 #351 / PR #448 is merged in the baseline; its older unmerged wording is historical.
 
 ## Local Reference Files
@@ -90,14 +90,30 @@ These endpoints are v4 Accelerate endpoints and use the same base URL:
 
 ## Guardrails For Future Changes
 
-## Production v3 Sales Environment Observation
+## Environment observation (#469)
 
-Live verification for Sales monitoring confirmed that the v4 roster `envId` is a numeric roster
-reference, not the opaque identifier accepted by v3 Environment actions. The supported observation
-chain is `GET /envs?ownerEmail=<server-side email>&brief=false`, an exact server-side Project match,
-then `GET /envs/actions/getextended?envId=<opaque v3 id>`. Only one same-Project match is accepted;
-zero or multiple matches are an explicit needs-attention condition. Numeric status codes accepted by
-the portal are `2`, `3`, `4`, `5`, `7`, `8`, and `9`.
+Certification state/lease reads and Sales/Trial observation use `GET /v4/environments/{id}`.
+Sales owner resolution traverses `GET /v4/environments?OwnerEmail=...&Count=true&Offset=...&Limit=100`.
+Owner filtering is a substring search; exact normalized owner and exact Project are checked after
+all pages and again on detail. Zero/multiple matches, inconsistent pages and changed detail identity
+fail closed. Numeric Sales roster `envId` remains distinct from opaque Environment IDs.
+
+Only live/non-storage-expired Environments are listed; expired Projects are excluded. No complete
+participant history/count is inferred. Historical numeric evidence remains v3; new persisted v4
+status/time is separate from roster evidence. Known history survives a missing list match.
+
+RFC1123 UTC `startTime`/`expirationTime` are validated at the integration seam; expiration means
+storage deletion, never runtime remaining or Experience End. All documented statuses remain
+non-actionable unless existing lifecycle rules admit them. Unknown states do not grant an active
+external lease. Archive remains v3, never DELETE; all command dispatch/fences remain unchanged.
+
+Live UI verification on 2026-10-26 at `80d88a8e54ff83fb2556a87065be78286a0c8261` confirmed
+Certification training-to-opaque-Environment correlation, the separate external-lease consumer,
+Sales exact owner/Project resolution and numeric-roster distinction, and Trial Extend/Ending
+readback. Commands remained on their existing transports. See the
+[consumer evidence and limits](../discovery/2026-10-26-environment-v4-migration.md).
+Synthetic-ID HTTP 400 proves input-rejection diagnostics only; valid-missing 404 remains offline
+coverage. GAP-28 is unchanged and GAP-33 remains a complete-history contract gap.
 
 - Do not use `/api/v3/class/*` endpoints for Accelerate Experience user properties.
 - Do not invent v4 endpoint paths from surrounding naming patterns; verify them in the local export.

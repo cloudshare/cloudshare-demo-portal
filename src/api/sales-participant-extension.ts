@@ -1,3 +1,4 @@
+import { completedEnvironmentExchanges } from "@/integrations/cloudshare/environments-v4";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { SalesParticipantExtensionCommand, SalesParticipantExtensionCommandStore, SalesParticipantExtensionIdentity, SalesParticipantExtensionTarget } from "@/domain/sales-participant-extension-command";
@@ -48,7 +49,7 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
   let surface = "portal.sales";
   const record = async (outcome: "success" | "failure", reason: string, error?: unknown) => {
     const failure = projectCloudShareFailureEvidence(error);
-    await deps.diagnostics.record({ source: "sales-participant-extension", operation: "sales.demo_session.participants.extend", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: request.sessionId }, correlationId, outcome, message: reason, request: failure?.request ?? null, response: failure?.response ?? null, details: { integrationSurface: surface, attemptedOperation: "extend_participant_environments_and_access", httpExchanges: exchanges, failureMode: outcome === "failure" ? reason : null } });
+    await deps.diagnostics.record({ source: "sales-participant-extension", operation: "sales.demo_session.participants.extend", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: request.sessionId }, correlationId, outcome, message: reason, request: failure?.request ?? null, response: failure?.response ?? null, details: { integrationSurface: surface, attemptedOperation: "extend_participant_environments_and_access", httpExchanges: [...exchanges, ...completedEnvironmentExchanges(error)], failureMode: outcome === "failure" ? reason : null } });
     await deps.audit.write({ id: randomUUID(), occurredAt: (deps.now ?? (() => new Date()))(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.participants.extend", subjectType: "sales_demo_session", subjectId: request.sessionId, correlationId, outcome, details: { participantCount: command?.targets.length ?? 0 } });
   };
   const persist = async (next: SalesParticipantExtensionCommand) => {
@@ -104,7 +105,7 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
       for (const id of candidates.sort()) {
         const { participant, contact, remote } = await identify(id);
         if (!eligible(remote, participant.participationStatus)) return denied(409, "A selected Participant is no longer eligible. Refresh the roster.");
-        surface = "cloudshare.v3";
+        surface = "cloudshare.v4.environments";
         const before = await environments.observe({ ownerEmail: contact.email, projectId: item.project.id });
         exchanges.push(...before.exchanges);
         if (!["ready", "suspended", "archived"].includes(before.state) || !before.expiry.session) throw new Error("environment_ineligible");
@@ -132,7 +133,7 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
       }
       try {
         const { participant, remote } = await identify(target.participantId, target);
-        surface = "cloudshare.v3";
+        surface = "cloudshare.v4.environments";
         if (target.state === "pending") {
           const resolved = await environments.observe({ ownerEmail: target.email, projectId: target.projectId });
           exchanges.push(...resolved.exchanges);
@@ -141,13 +142,14 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
           if (!eligible(remote, participant.participationStatus) || !["ready", "suspended", "archived"].includes(resolved.state) || resolved.expiry.session?.toISOString() !== target.preExpiry) throw new Error("extension_preflight_changed");
           target = { ...target, state: "dispatched", reason: "readback_required" };
           await targetState(target); // Durable no-replay point, immediately before PUT.
-          try { const extension = await environments.extendById(target.environmentId); exchanges.push(extension.exchange); }
+          try { surface = "cloudshare.v3.env.action.extend"; const extension = await environments.extendById(target.environmentId); exchanges.push(extension.exchange); }
           catch (error) {
             // No v3 failure class alone proves that its PUT was not dispatched.
             await record("failure", "Environment extension requires reconciliation.", error);
           }
         }
         if (target.state === "dispatched") {
+          surface = "cloudshare.v4.environments";
           const after = await environments.observeById(target.environmentId);
           exchanges.push(...after.exchanges);
           const expiry = after.expiry.session;

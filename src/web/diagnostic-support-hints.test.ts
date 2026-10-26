@@ -312,6 +312,32 @@ describe("deriveDiagnosticSupportHints", () => {
   });
 
   it.each([
+    ["environment_not_found_for_project", "zero"],
+    ["environment_ambiguous_for_project", "multiple"],
+  ] as const)("explains the completed v4 Environment lookup when %s matches %s Session Item Project Environments", (attentionReason, matchCount) => {
+    const hints = deriveDiagnosticSupportHints(makeEntry({
+      operation: "sales.demo_session.participant.environment_observed",
+      message: "CloudShare returned no Environment for this participant in the Session Item project.",
+      request: { method: "GET", path: "/v4/environments" },
+      response: { status: 200, body: [] },
+      details: {
+        integrationSurface: "cloudshare.v4.environments",
+        observation: "needs_attention",
+        attentionReason,
+        attentionSource: "cloudshare_v4_owner_email_item_project",
+      },
+    }));
+
+    expect(hints).toEqual([expect.objectContaining({
+      title: "CloudShare Environment correlation needs attention",
+      body: expect.stringContaining("documented CloudShare v4 Environment list completed"),
+    })]);
+    expect(hints[0]?.body).toContain(`${matchCount} Environment`);
+    expect(hints[0]?.body).toContain("Session Item Project");
+    expect(hints[0]?.title).not.toBe("CloudShare request failed");
+  });
+
+  it.each([
     {
       label: "a different correlation source",
       attentionSource: "cloudshare_v3_unscoped_lookup",

@@ -16,7 +16,7 @@ export function createPrismaSalesSessionParticipantRepository(prisma: PrismaClie
       return (await prisma.salesSessionParticipant.findMany({ where: { customerId, salesDemoSessionId }, orderBy: { createdAt: "asc" } })).map((row) => ({ ...row, cloudShareEnvironmentId: row.cloudShareRosterEnvironmentReference })) as SalesSessionParticipant[];
     },
     async recordEnvironmentObservation(customerId, participantId, observation) {
-      const updated = await prisma.salesSessionParticipant.updateMany({ where: { customerId, id: participantId }, data: { environmentStatusCode: observation.statusCode, environmentObservedAt: observation.observedAt, environmentAttentionReason: observation.attentionReason ?? null, environmentAttentionSource: observation.attentionSource ?? null } });
+      const updated = await prisma.salesSessionParticipant.updateMany({ where: { customerId, id: participantId }, data: { ...(observation.preserveHistory ? {} : { environmentStatusCode: observation.statusCode, environmentObservedAt: observation.observedAt }), ...(observation.v4EnvironmentStatus !== undefined ? { v4EnvironmentStatus: observation.v4EnvironmentStatus, v4EnvironmentObservedAt: observation.v4EnvironmentObservedAt } : {}), environmentAttentionReason: observation.attentionReason ?? null, environmentAttentionSource: observation.attentionSource ?? null } });
       if (updated.count !== 1) throw new Error("Sales Session Participant was not found for this Customer");
     },
   };

@@ -1,3 +1,4 @@
+import { environmentFixtureClient } from "@/integrations/cloudshare/environment-test-fixture";
 /**
  * Tests that candidate runtime actions (enter, suspend, resume, heartbeat auto-suspend)
  * emit typed DiagnosticLogEntry writes via the DiagnosticRecorder.
@@ -135,10 +136,10 @@ function makeConnections(): CloudShareConnectionRepository {
 
 function makeSuspendCloudShareFactory(): CloudShareClientFactory {
   return {
-    forConnection: () => ({
-      requestV3: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
+    forConnection: () => environmentFixtureClient({
+      readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
         if (spec.path === "/envs/actions/suspend") return spec.schema.parse({});
-        if (spec.path.startsWith("/envs/")) return spec.schema.parse({ envStatus: "Suspended" });
+        if (spec.path.startsWith("/environments/")) return spec.schema.parse({ envStatus: "Suspended" });
         throw new Error(`unexpected v3 path ${spec.path}`);
       }) as never,
       requestV3Text: vi.fn().mockResolvedValue(""),
@@ -173,10 +174,10 @@ function makeSuspendCloudShareFactory(): CloudShareClientFactory {
 
 function makeResumeCloudShareFactory(): CloudShareClientFactory {
   return {
-    forConnection: () => ({
-      requestV3: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
+    forConnection: () => environmentFixtureClient({
+      readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
         if (spec.path === "/envs/actions/resume") return spec.schema.parse({});
-        if (spec.path.startsWith("/envs/")) return spec.schema.parse({ envStatus: "Running" });
+        if (spec.path.startsWith("/environments/")) return spec.schema.parse({ envStatus: "Running" });
         throw new Error(`unexpected v3 path ${spec.path}`);
       }) as never,
       requestV3Text: vi.fn().mockResolvedValue(""),
@@ -211,8 +212,8 @@ function makeResumeCloudShareFactory(): CloudShareClientFactory {
 
 function makeFailingCloudShareFactory(): CloudShareClientFactory {
   return {
-    forConnection: () => ({
-      requestV3: vi.fn().mockRejectedValue(
+    forConnection: () => environmentFixtureClient({
+      readEnvironment: vi.fn().mockRejectedValue(
         new CloudShareRequestError("Bad Gateway", 502, {
           integrationSurface: "cloudshare.v3.env.action.suspend",
           method: "PUT",
@@ -479,9 +480,9 @@ describe("handleResumeExam diagnostics", () => {
     const attempts = makeAttempts({ ...BASE_ATTEMPT, status: "suspended" });
     const launches = makeLaunches();
     const cloudshare: CloudShareClientFactory = {
-      forConnection: () => ({
-        requestV3: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
-          if (spec.path.startsWith("/envs/")) {
+      forConnection: () => environmentFixtureClient({
+        readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
+          if (spec.path.startsWith("/environments/")) {
             return spec.schema.parse({ envStatus: "Running" });
           }
           throw new Error(`unexpected v3 path ${spec.path}`);
@@ -559,8 +560,8 @@ describe("handleResumeExam diagnostics", () => {
     const attempts = makeAttempts({ ...BASE_ATTEMPT, status: "suspended" });
     const launches = makeLaunches();
     const cloudshare: CloudShareClientFactory = {
-      forConnection: () => ({
-        requestV3: vi.fn() as never,
+      forConnection: () => environmentFixtureClient({
+        readEnvironment: vi.fn() as never,
         requestV3Text: vi.fn(async () => {
           throw new CloudShareRequestError("Bad Gateway", 502, {
             integrationSurface: "cloudshare.v3.env.action.resume",

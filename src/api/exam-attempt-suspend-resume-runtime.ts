@@ -1046,12 +1046,12 @@ function buildExamAttemptRuntimeDiagnostic(
     candidateEmail: anchors?.candidateEmail ?? null,
     operation,
     attemptedOperation: "poll_environment_status",
-    integrationSurface: "cloudshare.v3.env",
+    integrationSurface: "cloudshare.v4.environments.get",
     method: "GET",
     path:
       typeof err.context?.environmentExternalId === "string"
-        ? `/api/v3/envs/${err.context.environmentExternalId}`
-        : "/api/v3/envs/{envId}",
+        ? `/v4/environments/${err.context.environmentExternalId}`
+        : "/v4/environments/{environmentId}",
     failureMode: "confirmation_timeout",
     error: err.message,
     ...(err.context ?? {}),
