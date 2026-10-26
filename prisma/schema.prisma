@@ -670,6 +670,7 @@ model ExamAttemptRuntimeCommand {
   examAttemptId String @id
   customerId String
   commandId String @unique
+  phase String @default("dispatching")
   action String
   environmentId String
   attempt ExamAttempt @relation(fields: [examAttemptId], references: [id], onDelete: Cascade)

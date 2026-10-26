@@ -24,6 +24,11 @@ it("persists one scoped command across adapters and atomically settles exact com
     const pending = (await restarted.readRuntimeCommand!(id, id))!;
     await expect(restarted.readRuntimeCommand!("foreign", id)).resolves.toBeNull();
     await attempts.save(attempt);
+    expect(pending.phase).toBe("dispatching");
+    expect(await restarted.settleRuntimeCommand!(pending, at)).toBe(false);
+    expect(await restarted.finishRuntimeCommandDispatch!({ ...pending, commandId: "stale" })).toBe(false);
+    expect(await restarted.finishRuntimeCommandDispatch!(pending)).toBe(true);
+    expect(await restarted.readRuntimeCommand!(id, id)).toMatchObject({ phase: "observing" });
     expect(await restarted.settleRuntimeCommand!({ ...pending, commandId: "stale" }, at)).toBe(false);
     expect(await restarted.settleRuntimeCommand!(pending, at)).toBe(true);
     expect(await restarted.findById(id)).toMatchObject({ status: "suspended" });
@@ -31,6 +36,7 @@ it("persists one scoped command across adapters and atomically settles exact com
     expect(await restarted.readRuntimeCommand!(id, id)).toBeNull();
     const resume = { ...command, commandId: randomUUID(), action: "resume" as const };
     await restarted.claimRuntimeCommand!(resume, "suspended");
+    await restarted.finishRuntimeCommandDispatch!(resume);
     await restarted.save({ ...attempt, status: "completed" });
     expect(await restarted.settleRuntimeCommand!(resume, at)).toBe(false);
     expect(await clocks.findByExamAttemptId(id)).toMatchObject({ status: "paused", elapsedAtPauseMs: 180000 });

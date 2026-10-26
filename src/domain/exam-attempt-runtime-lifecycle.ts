@@ -4,7 +4,7 @@ import {
   InvalidExamAttemptStatusError,
   LabLaunchNotFoundError,
 } from "./errors";
-import type { ExamAttemptRepository, ExamAttemptRuntimeCommand } from "./exam-attempt";
+import type { ExamAttemptRepository, ExamAttemptRuntimeCommand, PendingExamAttemptRuntimeCommand } from "./exam-attempt";
 import type {
   EnvironmentCommandResult,
   EnvironmentController,
@@ -274,8 +274,8 @@ async function requireAttempt(
 async function runRuntimeTransition(deps: SuspendExamDeps | ResumeExamDeps, input: SuspendExamInput, action: "suspend" | "resume"): Promise<EnvironmentCommandResult> {
   const attempt = await requireAttempt(deps.attempts, input.examAttemptId);
   const customerId = attempt.customerId ?? "";
-  const { readRuntimeCommand, claimRuntimeCommand, settleRuntimeCommand, releaseRuntimeCommand } = deps.attempts;
-  if (!readRuntimeCommand || !claimRuntimeCommand || !settleRuntimeCommand || !releaseRuntimeCommand) throw new ExamAttemptRuntimeError("Runtime command persistence is unavailable.");
+  const { readRuntimeCommand, claimRuntimeCommand, finishRuntimeCommandDispatch, settleRuntimeCommand, releaseRuntimeCommand } = deps.attempts;
+  if (!readRuntimeCommand || !claimRuntimeCommand || !finishRuntimeCommandDispatch || !settleRuntimeCommand || !releaseRuntimeCommand) throw new ExamAttemptRuntimeError("Runtime command persistence is unavailable.");
   let command = await readRuntimeCommand(customerId, attempt.id);
   const expectedStatus = action === "suspend" ? "in_progress" : "suspended";
   if (!command && attempt.status !== expectedStatus) throw new InvalidExamAttemptStatusError({ examAttemptId: attempt.id, operation: action, expectedStatus, currentStatus: attempt.status });
@@ -286,11 +286,12 @@ async function runRuntimeTransition(deps: SuspendExamDeps | ResumeExamDeps, inpu
   if (command && command.environmentId !== environmentId) throw pendingCommand(command);
   let ownsDispatch = false;
   if (!command) {
-    const proposed: ExamAttemptRuntimeCommand = { customerId, examAttemptId: attempt.id, commandId: randomUUID(), action, environmentId };
+    const proposed: PendingExamAttemptRuntimeCommand = { phase: "dispatching", customerId, examAttemptId: attempt.id, commandId: randomUUID(), action, environmentId };
     ownsDispatch = await claimRuntimeCommand(proposed, expectedStatus);
     command = ownsDispatch ? proposed : await readRuntimeCommand(customerId, attempt.id);
     if (!command) throw new ExamAttemptRuntimeError("Runtime command changed; refresh the attempt before retrying.");
   }
+  if (command.environmentId !== environmentId || (!ownsDispatch && command.phase !== "observing")) throw pendingCommand(command);
   const targetStates: EnvironmentStatus[] = command.action === "suspend" ? ["suspended"] : ["running", "created"];
   let result: EnvironmentCommandResult = { attemptedOperation: `${command.action}_environment`, integrationSurface: "portal.environment.reconciliation", externalIds: { environmentId: command.environmentId } };
   let snapshot;
@@ -307,9 +308,17 @@ async function runRuntimeTransition(deps: SuspendExamDeps | ResumeExamDeps, inpu
       result = command.action === "suspend" ? await deps.controller.suspendEnvironment(command.environmentId) : await deps.controller.resumeEnvironment(command.environmentId);
     } catch (error) {
       if (deps.isDefiniteCommandRejection?.(error)) await releaseRuntimeCommand(command);
+      else await finishRuntimeCommandDispatch(command);
       throw error;
     }
+    if (!await finishRuntimeCommandDispatch(command)) throw pendingCommand(command);
+    command = { ...command, phase: "observing" };
     await pollUntilAnyStatus(deps.source, deps.sleep, command.environmentId, targetStates, command.action === "suspend" ? "suspended" : "running", deps.poll ?? DEFAULT_POLL);
+  }
+  // From this point the owner cannot send another POST, including the no-op path.
+  if (ownsDispatch && command.phase === "dispatching") {
+    if (!await finishRuntimeCommandDispatch(command)) throw pendingCommand(command);
+    command = { ...command, phase: "observing" };
   }
   if (!await settleRuntimeCommand(command, (deps.now ?? (() => new Date()))())) throw pendingCommand(command);
   if (command.action !== action) throw new ExamAttemptRuntimeError("Previous runtime command reconciled; refresh before another action.", { failureMode: "runtime_command_reconciled" });

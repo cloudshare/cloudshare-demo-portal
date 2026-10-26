@@ -2358,3 +2358,52 @@ it.each(["heartbeat", "logout"] as const)("%s shares the v4 command and persiste
   expect(requests.filter(r => r.method === "POST").map(r => r.url)).toEqual(["https://provider.test/v4/environments/EN-exact/suspend"]);
   expect(await clock.getTimerState("ea-1")).toMatchObject({ status: "paused", elapsedAtPauseMs: 180000 });
 });
+
+it("cannot retire a command while its owner is awaiting preflight and could still dispatch", async () => {
+  let releaseOwner!: (state: { envStatus: string }) => void;
+  const delayedRead = new Promise<{ envStatus: string }>(resolve => { releaseOwner = resolve; });
+  let ownerEntered!: () => void;
+  const ownerWaiting = new Promise<void>(resolve => { ownerEntered = resolve; });
+  let reads = 0;
+  let providerState = "Running";
+  const writes: string[] = [];
+  const client = makeCloudShareClient({
+    readEnvironment: vi.fn(async () => {
+      if (++reads === 1) { ownerEntered(); return delayedRead; }
+      return { envStatus: providerState };
+    }) as CloudShareClient["requestV4"],
+    writeEnvironment: vi.fn(async spec => {
+      const action = spec.path.endsWith("/suspend") ? "suspend" : "resume";
+      writes.push(action);
+      providerState = action === "suspend" ? "Suspended" : "Running";
+      return undefined;
+    }) as CloudShareClient["requestV4"],
+  });
+  const deps = await makeSuspendDeps({ cloudshare: { forConnection: () => client }, poll: { maxAttempts: 1, intervalMs: 0 } });
+  const owner = suspendExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  await ownerWaiting;
+  providerState = "Suspended";
+  const observer = await suspendExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  const opposite = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  releaseOwner({ envStatus: "Running" });
+  await owner;
+  expect(writes).toEqual(["suspend"]);
+  expect(observer.status).toBe(202);
+  expect(opposite.status).toBe(202);
+  expect(await deps.attempts.findById("ea-1")).toMatchObject({ status: "suspended" });
+  expect(await deps.attempts.readRuntimeCommand!("customer-1", "ea-1")).toBeNull();
+});
+
+it.each([false, true])("a lost dispatch-phase acknowledgement with commit=%s never permits another POST", async committed => {
+  const { deps, requests, clock } = await recordingRuntime("resume", "suspended");
+  const finish = deps.attempts.finishRuntimeCommandDispatch!;
+  const attempts = { ...deps.attempts, finishRuntimeCommandDispatch: async (...args: Parameters<typeof finish>) => {
+    if (committed) await finish(...args);
+    throw new Error("phase acknowledgement lost");
+  } };
+  expect((await resumeExamAttemptRuntime({ ...deps, attempts }, { examAttemptId: "ea-1" })).status).toBe(500);
+  const retried = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  expect(retried.status).toBe(committed ? 200 : 202);
+  expect(requests.filter(request => request.method === "POST")).toHaveLength(1);
+  expect(await clock.getTimerState("ea-1")).toMatchObject({ status: committed ? "running" : "paused", elapsedAtPauseMs: 120000 });
+});

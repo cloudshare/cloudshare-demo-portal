@@ -29,18 +29,23 @@ success is labelled `portal.environment.reconciliation`, not a fabricated comman
 
 Parent approved the narrow missing safeguard required by this issue. A dedicated per-ExamAttempt
 row holds Customer, commandId, action and exact Environment. It is separate from the public
-ExamAttempt projection. Four optional repository operations read/claim/settle/release are fail-closed
+ExamAttempt projection. Five optional repository operations read/claim/finish-dispatch/settle/release are fail-closed
 for runtime callers when absent. The production and in-memory adapters implement them.
 
 Atomic claim checks Customer, expected status and absence of another command. Only the winner
-may POST; lost claim acknowledgement cannot dispatch. Pending same/opposite requests observe only;
+may POST; lost claim acknowledgement cannot dispatch. A persisted `dispatching` phase cannot be
+settled by another caller, even if a target state is observed. Only the owner moves it to `observing`
+after its POST has returned/rejected, or after deciding no POST is needed. It cannot send afterward.
+Pending same/opposite requests cannot retire an in-flight owner; observing requests read only;
 source/unknown/timeout/restart cannot replay. Fresh unknown/transitional state rejects before POST.
 Authoritative target precedes one transaction updating persisted clock and attempt status and
 removing only the matching command. Terminal attempts cannot be resurrected or have their clock
 restarted. Missing-clock behavior and pause/resume arithmetic match the existing clock module.
 Definite HTTP400/401/403/404/429 may release the matching marker; ambiguous transport/5xx,
 confirmation and persistence failure retain it. No TTL, override UI or generic command engine.
-An unresolved ambiguous command deliberately remains blocked until authoritative target evidence.
+An `observing` ambiguous command remains blocked until authoritative target evidence. A crash or
+lost phase acknowledgement that leaves `dispatching` deliberately remains fenced even at a target
+state: absence of a live owner is not inferred, and there is no automatic expiry or replay.
 
 ## Accepted seams and verification
 
@@ -75,3 +80,29 @@ Historical v3 diagnostics remain readable. No Environment DELETE substitution.
 Schema is additive: regenerate Prisma and migrate isolated QA storage before browser verification.
 Primary checkout, DB and port3000 and retained #350/#351 assets are untouched. No live credentials
 or protected evidence is printed or committed. Test reports are retained outside the worktree.
+
+
+## Independent review repair 1
+
+Standards reproduced an in-memory settlement yielding during clock persistence: competing
+settlements both returned true and an ordinary Completed save could be overwritten. Public
+repository RED observed `[true,true]`; one mutation queue now serializes command mutations and
+ordinary saves, with no nested queue calls. Reads wait for preceding mutations. Regression proves
+one settlement winner and terminal save retention.
+
+Spec/security reproduced an owner suspended in preflight while another observer removed its
+marker and an opposite Resume completed. The late owner then sent Suspend without a marker:
+recorded writes were `[resume,suspend]`. Handler RED reproduced that exact interleaving. Persisted
+`dispatching`/`observing` plus exact-command CAS now permits only the original Suspend; observer
+and opposite calls remain202 and cannot clear the owner. Production SQLite also rejects settlement
+before the owner phase transition, preserves it across adapter recreation, and rejects stale IDs.
+Lost phase acknowledgement tests cover both committed and uncommitted transitions without replay.
+
+Additive migration `20261026204600_runtime_command_dispatch_phase` defaults existing markers to
+`dispatching` conservatively. Apply both migrations and regenerate the isolated QA client. No
+provider actions, primary checkout/database changes or broader lifecycle changes in this repair.
+
+Repair1 verification: lint/typecheck pass; launcher14/14; full Vitest2,540 pass and the same four
+independently reproduced CandidateHome baseline failures (2,544 total). Focused runtime56,
+Support16, lifecycle25 and public persistence4 tests pass. External report:
+`codex-home/qa-evidence/issue-472/implementation/repair1-full-tests.json`.
