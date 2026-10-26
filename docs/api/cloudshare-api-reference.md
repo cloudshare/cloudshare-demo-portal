@@ -14,8 +14,12 @@ Exam/Sales authoring, Sales provisioning validation and Sync Resources. Projects
 `{count, items}` pages with `Count=true`, `Offset` and `Limit=100`; Policy lists omit limit to return
 all active rows, and details supply exact-identity runtime/storage minutes. See the
 [migration inventory and evidence](../discovery/2026-10-26-project-policy-v4-migration.md).
-**LIVE VERIFIED:** Awaiting the independent exact-head browser/live QA report; publication and
-fixture tests alone are not live verification.
+**LIVE VERIFIED (2026-10-26, `e11d674`):** Independent browser QA exercised Exam and Sales Item
+selection/save/reopen, Sync Resources through a disposable same-origin form, Support success and
+an authorized OAuth-403 failure/restoration. Console: zero warnings/errors; relevant live checks:
+3/3. Exact v4 Project ids worked with retained v3 Blueprint/member/Team reads. No new Experience
+write, known-inactive Policy exclusion or Team Member permission-empty behavior was live-proven;
+see the dated evidence report above for these boundaries.
 
 **RETAINED V3:** Blueprint/default-Snapshot, VMware Regions, Teams, active Project members,
 timezones, ping and existing Environment observations/commands. Environment migration #469 follows

@@ -444,6 +444,34 @@ link results in a login-denied or access-denied error.
 | **Status** | Confirmed / partially verified — from CloudShare admin and live v3 resource probing |
 | **Verified live** | Partial (resource scoping verified; some response shapes still pending) |
 
+**Current update (2026-10-26, #468 / PR #470):** Project and Policy discovery now use the published
+v4 Infrastructure contract. Independent QA on `e11d67447d691b085165f38eb180f1c155c8c1e2` exercised
+real Exam and Sales authoring controls: selected exact Project/Policy identities, saved disposable
+local catalog records, reopened/refreshed and verified selected-resource validation. Exam runtime
+20160, storage 43200 and manually authored open period 21000 minutes stayed distinct; Sales default
+1440 minutes came from Policy storage. A disposable same-origin form submitted the shipped Sync
+Resources handler (there is no current Resources tab), returning 2 Projects, 3 Regions, 4 Blueprints
+and 4 Policies. Acceptance-tab console contained zero warnings/errors; relevant live checks passed
+3/3. Full details: [migration evidence](../discovery/2026-10-26-project-policy-v4-migration.md).
+
+Protected Support showed a real v4 Policy-detail GET/200 with verbatim timing evidence and masked
+authorization. An authorized invalid-key UI save in the isolated QA Connection produced a real
+OAuth-token prerequisite 403 with `failureMode: http_failure`; ordinary UI stayed generic. QA
+restored valid credentials through UI and confirmed connection testing/Projects recovery. This is
+OAuth failure evidence, not a live Projects-endpoint error-response test.
+
+Exact v4 Project ids were accepted unchanged by retained v3 Blueprint browser reads, Sales
+Project-member preflight and direct Team GET (200, one Team). No Experience was created: write
+compatibility is static code/test mapping only. Live Policy results were consistent with active-only
+listing, but exclusion of a known inactive Policy was not provable with available assets. Team
+Member permission-empty responses remain contract/fixture evidence; no suitable credentials or
+new authorization were used. No provider resource mutation occurred. Region, Blueprint/default-
+Snapshot, Teams, members, timezones, ping and Environment operations retain their existing transports.
+
+**Historical observations and actions (before the 2026-10-26 migration):** The original v3 findings
+below explain the earlier implementation; they do not describe the current Project/Policy transport
+or imply a current Resources tab.
+
 **Observed behaviour**
 
 CloudShare v3 resource endpoints are unevenly scoped:

@@ -78,16 +78,48 @@ of 11): missing current heading, scheduled explanatory text, and initial/refresh
 caused jsdom setup-file resolution errors; using the physical Packages/LocalCache worktree fixes
 those without changing test configuration. Final exact-head results belong in PR #470.
 
-## Live and browser evidence
+## Live and browser evidence (2026-10-26)
 
-Pending the independent QA role on the pushed implementation head. Required evidence is Project
-and Policy selection through Exam and Sales authoring, selected-resource validation, Sync Resources,
-exact provider IDs/durations, protected Support success/safe failure, browser console capture and
-compatibility with retained v3 reads. Active-only/permission semantics are published above and must
-be distinguished from observed tenant behavior. No provider mutation was performed by the
-implementation role. No human-QA gate per the explicit user waiver for #468/#469.
+Independent QA verified exact head `e11d67447d691b085165f38eb180f1c155c8c1e2` using an isolated
+local database/configuration and the Codex-owned server. The requested `gpt-5.6-terra` model was
+unavailable; QA used the recorded equivalent `gpt-5.6-sol` at medium reasoning. Human QA was
+explicitly waived for #468/#469; real automated browser interaction and live checks were retained.
 
-Sync Resources has an authenticated shipped handler but no shipped admin tab (an existing UI test
-asserts its absence). The coordinator approved a disposable same-origin HTML form for an actual
-browser click/submit to that handler, followed by real Support UI inspection. This is labeled
-browser-harness evidence, not a newly shipped product control; no product UI is added.
+- **Exam authoring:** browser selected Helios Exams 2 from live v4 Projects, then retained v3
+  Blueprint, v4 Policy, Snapshot and Region. Saved a disposable local draft and reopened/refreshed
+  with exact selections retained. Authoritative Policy detail supplied runtime **20160** and storage
+  **43200** minutes; manually authored open period **21000** remained distinct in catalog/readback.
+- **Sales Item authoring:** browser selected Certalis Sales from v4 Projects, retained v3 Blueprint,
+  v4 Policy and Region; default duration **1440** minutes came from storage. Saved/reopened/refreshed
+  and reselected successfully. Only disposable local catalog records were changed.
+- **Sync Resources:** no shipped Resources tab exists (an existing UI test asserts its absence).
+  A coordinator-approved disposable same-origin HTML form was clicked/submitted to the shipped,
+  authenticated `POST /api/admin/sync-resources` handler. Result: **2 Projects, 3 Regions,
+  4 Blueprints, 4 Policies**. This is browser-harness evidence, not a newly shipped product control.
+- **Browser console:** clean acceptance tab reported **0 warnings and 0 errors**.
+- **Support success:** real Support UI showed the exact per-request v4 Policy-detail GET, HTTP 200,
+  runtime/storage fields and masked protected authorization header. Ordinary UI exposed no API key
+  or Bearer credential.
+- **Support safe failure:** an authorized invalid-key save through UI in the isolated QA Connection
+  caused real Exam-create bootstrap failure at `cloudshare.v4.oauth.token`. Support retained HTTP
+  **403**, `failureMode: http_failure`; ordinary UI stayed generic and disclosed no credential.
+  Valid credentials were restored through UI, Test connection succeeded and Projects loaded again.
+  This proves the OAuth prerequisite failure path, **not a Projects-endpoint non-2xx response**.
+- **Cross-version reads:** the exact v4 Project id was accepted unchanged by browser v3 Blueprint
+  discovery, live Sales Project-member preflight and an authorized direct v3 Team GET (**200**, one
+  Team). The final relevant exact-head live checks passed **3/3**.
+
+No Experience was created and no provider resource mutation was performed. Compatibility of writes
+is supported by unchanged code/test mapping (`projectId` to v4 training `ProjectId`, resolved v3 Team
+id to `TeamId`), not by a new live Experience write in this slice. Live Policy results were consistent
+with the published active-only contract, but no known inactive Policy existed to prove exclusion.
+Team Member permission-empty behavior remains contract plus fixture evidence: no suitable Team
+Member credentials were available and no new authorization was created. These limitations do not
+imply broader live coverage.
+
+Final offline implementation verification at `cc19b817` passed lint/typecheck and 2462 tests across
+287 passing files; the same four baseline CandidateHome failures remained in the one failing file.
+The test-only repair `d6a69a3` corrected malformed-Policy Sync coverage (RED at the wrong request,
+then 20/20 recording-HTTP tests GREEN with the exact second request and failure body asserted).
+`e11d674` aligned canonical documentation; neither follow-up changed production behavior. Final
+review confirmation and merge metadata are recorded in PR #470.
