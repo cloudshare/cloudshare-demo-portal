@@ -77,25 +77,15 @@ function makeAuthoringSourceWithRealClient(
 }
 
 describe("createCloudShareResourceDiscovery", () => {
-  it("retains detailed evidence and the historical synthetic exchange for fallback clients", async () => {
-    const payload = { id: "provider-id", name: "Provider name", storageLeaseMinutes: 90, token: "protected-body" };
+  it("retains detailed Policy evidence and supports clients without detailed methods", async () => {
+    const payload = { id: "pol-1", projectId: "p-1", name: "Provider name", storageMinutes: 90, token: "protected-body" };
     for (const detailed of [true, false]) {
-      const client = makeClient({ "v3:/projects/p-1/policies/pol-1": payload });
-      if (detailed) {
-        (client.requestV3Detailed as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-          exchangeId: "exchange-1", data: { id: "provider-id", name: "Provider name", storageLeaseMinutes: 90 },
-          request: { method: "GET", path: "/projects/p-1/policies/pol-1", headers: { authorization: "[REDACTED]" }, query: { token: "protected-query" } },
-          response: { status: 200, body: payload },
-        });
-      } else delete (client as { requestV3Detailed?: unknown }).requestV3Detailed;
+      const client = makeClient({ "v4:/projects/p-1/policies/pol-1": payload });
+      if (!detailed) delete (client as { requestV4Detailed?: unknown }).requestV4Detailed;
       const result = await createCloudShareResourceDiscovery(client).readPolicyDetail("p-1", { id: "pol-1", name: "List name" });
       expect(result.policy).toMatchObject({ id: "pol-1", name: "List name", runtimeLeaseMinutes: null, storageLeaseMinutes: 90 });
-      expect(result.read.data).toEqual({ id: "provider-id", name: "Provider name", storageLeaseMinutes: 90 });
-      expect(result.read.response).toEqual({ status: 200, body: detailed ? payload : { id: "provider-id", name: "Provider name", storageLeaseMinutes: 90 } });
-      expect(result.read.exchangeId).toBe(detailed ? "exchange-1" : undefined);
-      expect(result.read.request).toEqual(detailed
-        ? { method: "GET", path: "/projects/p-1/policies/pol-1", headers: { authorization: "[REDACTED]" }, query: { token: "protected-query" } }
-        : { method: "GET", path: "/projects/p-1/policies/pol-1" });
+      expect(result.read.data).toEqual({ id: "pol-1", projectId: "p-1", name: "Provider name", storageMinutes: 90 });
+      expect(result.read.response).toEqual({ status: 200, body: detailed ? payload : result.read.data });
     }
   });
 
@@ -107,8 +97,8 @@ describe("createCloudShareResourceDiscovery", () => {
         { Id: "snap-2", Name: "Two", IsDefault: false, Regions: [] },
         { Id: "snap-1", Name: "One", IsDefault: true, Regions: ["r-1", { Id: "r-2", Name: "Region" }] },
       ] },
-      "v3:/projects/p-1/policies": [{ id: "pol-1", name: "List name" }],
-      "v3:/projects/p-1/policies/pol-1": { id: "different", name: "Detail name" },
+      "v4:/projects/p-1/policies": { count: 1, items: [{ projectId: "p-1", id: "pol-1", name: "List name" }] },
+      "v4:/projects/p-1/policies/pol-1": { projectId: "p-1", id: "pol-1", name: "Detail name" },
     });
     const discovery = createCloudShareResourceDiscovery(client);
     expect((await discovery.readRegions()).data).toEqual([{ id: "r-2", name: "Raw", friendlyName: "Friendly" }]);
@@ -120,34 +110,34 @@ describe("createCloudShareResourceDiscovery", () => {
     const list = await discovery.readProjectPolicies("p-1");
     expect((await discovery.readPolicyDetail("p-1", list.data[0]!)).policy).toMatchObject({
       id: "pol-1", name: "List name", runtimeLeaseMinutes: null, storageLeaseMinutes: null,
-      diagnosticResponse: { status: 200, body: { id: "different", name: "Detail name" } },
+      diagnosticResponse: { status: 200, body: { id: "pol-1", projectId: "p-1", name: "Detail name" } },
     });
-    expect(client.requestV3Detailed).toHaveBeenCalledTimes(5);
+    expect(client.requestV3Detailed).toHaveBeenCalledTimes(3);
+    expect(client.requestV4Detailed).toHaveBeenCalledTimes(2);
   });
 
-  it("reads Projects with their protected exchange for either authoring caller", async () => {
-    const client = makeClient({ "v3:/projects": [{ id: "p-2", name: "Two" }, { id: "p-1", name: "One" }] });
-    await expect(createCloudShareResourceDiscovery(client).readProjects()).resolves.toEqual({
-      data: [{ id: "p-2", name: "Two" }, { id: "p-1", name: "One" }],
-      request: { method: "GET", path: "/projects" },
-      response: { status: 200, body: [{ id: "p-2", name: "Two" }, { id: "p-1", name: "One" }] },
-      integrationSurface: "cloudshare.v3.projects",
+  it("reads Projects with their protected page exchange for either authoring caller", async () => {
+    const body = { count: 2, items: [{ id: "p-2", name: "Two" }, { id: "p-1", name: "One" }] };
+    const client = makeClient({ "v4:/projects": body });
+    await expect(createCloudShareResourceDiscovery(client).readProjects()).resolves.toMatchObject({
+      data: body.items,
+      reads: [{ request: { method: "GET", path: "/projects" }, response: { status: 200, body }, integrationSurface: "cloudshare.v4.projects" }],
     });
-    expect(client.requestV3Detailed).toHaveBeenCalledTimes(1);
+    expect(client.requestV4Detailed).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("createCloudShareResourceLister", () => {
   const mockClient = makeClient({
-    "v3:/projects": [{ id: "p-1", name: "Helios CX" }],
+    "v4:/projects": { count: 1, items: [{ id: "p-1", name: "Helios CX" }] },
     "v3:/regions": [
       { id: "r-1", name: "Miami", friendlyName: "US East (Miami)", cloudName: "AWS" },
     ],
     "v3:/projects/p-1/blueprints": [{ id: "bp-1", name: "Blueprint 1" }],
-    "v3:/projects/p-1/policies": [{ id: "pol-1", name: "Policy 1" }],
+    "v4:/projects/p-1/policies": { count: 1, items: [{ projectId: "p-1", id: "pol-1", name: "Policy 1" }] },
   });
 
-  it("lists projects via v3", async () => {
+  it("lists projects via v4", async () => {
     const lister = createCloudShareResourceLister(mockClient);
     const result = await lister.listProjects();
     expect(result).toEqual([{ id: "p-1", name: "Helios CX" }]);
@@ -155,14 +145,14 @@ describe("createCloudShareResourceLister", () => {
 
   it("forwards the complete detailed exchange to an authoring read observer", async () => {
     const onReadSuccess = vi.fn();
-    const client = makeClient({ "v3:/projects": [{ id: "p-1", name: "Helios CX" }] });
-    (client.requestV3Detailed as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      data: [{ id: "p-1", name: "Helios CX" }],
+    const client = makeClient({ "v4:/projects": { count: 1, items: [{ id: "p-1", name: "Helios CX" }] } });
+    (client.requestV4Detailed as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: { count: 1, items: [{ id: "p-1", name: "Helios CX" }] },
       request: { method: "GET", path: "/projects", query: { include: "all" } },
       response: {
         status: 200,
         headers: { "x-cloudshare-request": "provider-request-1" },
-        body: [{ id: "p-1", name: "Helios CX", providerField: "retained" }],
+        body: { count: 1, items: [{ id: "p-1", name: "Helios CX", providerField: "retained" }] },
       },
     });
 
@@ -174,7 +164,7 @@ describe("createCloudShareResourceLister", () => {
       response: {
         status: 200,
         headers: { "x-cloudshare-request": "provider-request-1" },
-        body: [{ id: "p-1", name: "Helios CX", providerField: "retained" }],
+        body: { count: 1, items: [{ id: "p-1", name: "Helios CX", providerField: "retained" }] },
       },
     }));
   });
@@ -220,14 +210,14 @@ describe("createCloudShareExamAuthoringSource", () => {
   it("lists project-scoped policies for a selected project", async () => {
     const source = createCloudShareExamAuthoringSource(
       makeClient({
-        "v3:/projects/p-1/policies": [{ id: "pol-1", name: "Timed Policy" }],
-        "v3:/projects/p-1/policies/pol-1": {
+        "v4:/projects/p-1/policies": { count: 1, items: [{ projectId: "p-1", id: "pol-1", name: "Timed Policy" }] },
+        "v4:/projects/p-1/policies/pol-1": {
           id: "pol-1",
           name: "Timed Policy",
           projectId: "p-1",
           allowEnvironmentCreation: true,
-          runtimeLeaseMinutes: 240,
-          storageLeaseMinutes: 2880,
+          runtimeMinutes: 240,
+          storageMinutes: 2880,
         },
       }),
     );
@@ -247,8 +237,8 @@ describe("createCloudShareExamAuthoringSource", () => {
           body: {
             id: "pol-1",
             name: "Timed Policy",
-            runtimeLeaseMinutes: 240,
-            storageLeaseMinutes: 2880,
+            runtimeMinutes: 240,
+            storageMinutes: 2880,
           },
         },
       },
@@ -702,15 +692,15 @@ describe("createCloudShareSalesItemResourceSource", () => {
 
   it("Exam awaits the list observer and permits a successful sibling observer after prompt rejection", async () => {
     const client = makeClient({
-      "v3:/projects/p-1/policies": [{ id: "slow", name: "List name" }, { id: "missing", name: "Missing" }],
-      "v3:/projects/p-1/policies/slow": { id: "slow", name: "Detail name", runtimeLeaseMinutes: 20 },
+      "v4:/projects/p-1/policies": { count: 2, items: [{ projectId: "p-1", id: "slow", name: "List name" }, { projectId: "p-1", id: "missing", name: "Missing" }] },
+      "v4:/projects/p-1/policies/slow": { projectId: "p-1", id: "slow", name: "Detail name", runtimeMinutes: 20 },
     });
-    const original = (client.requestV3Detailed as ReturnType<typeof vi.fn>).getMockImplementation()!;
+    const original = (client.requestV4Detailed as ReturnType<typeof vi.fn>).getMockImplementation()!;
     let releaseRead!: () => void;
     const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
     let releaseObserver!: () => void;
     const observerGate = new Promise<void>((resolve) => { releaseObserver = resolve; });
-    (client.requestV3Detailed as ReturnType<typeof vi.fn>).mockImplementation(async (spec: { path: string }) => {
+    (client.requestV4Detailed as ReturnType<typeof vi.fn>).mockImplementation(async (spec: { path: string }) => {
       if (spec.path.endsWith("/slow")) await readGate;
       return original(spec);
     });
@@ -719,15 +709,15 @@ describe("createCloudShareSalesItemResourceSource", () => {
       observed.push(path);
       if (path.endsWith("/policies")) await observerGate;
     } });
-    const rejected = expect(source.listProjectPolicies("p-1")).rejects.toThrow("No mock for v3 /projects/p-1/policies/missing");
+    const rejected = expect(source.listProjectPolicies("p-1")).rejects.toThrow("No mock for v4 /projects/p-1/policies/missing");
     await vi.waitFor(() => expect(observed).toEqual(["/projects/p-1/policies"]));
-    expect(client.requestV3Detailed).toHaveBeenCalledTimes(1);
+    expect(client.requestV4Detailed).toHaveBeenCalledTimes(1);
     releaseObserver();
     await rejected;
     expect(observed).toEqual(["/projects/p-1/policies"]);
     releaseRead();
     await vi.waitFor(() => expect(observed).toEqual(["/projects/p-1/policies", "/projects/p-1/policies/slow"]));
-    expect(client.requestV3Detailed).toHaveBeenCalledTimes(3);
+    expect(client.requestV4Detailed).toHaveBeenCalledTimes(3);
   });
 
   it("keeps Item summaries distinct from Exam descriptions and retains provider ordering", async () => {
@@ -749,16 +739,14 @@ describe("createCloudShareSalesItemResourceSource", () => {
 
   it("Exam rejects promptly while Item waits for sibling policy evidence and selects the first list failure", async () => {
     for (const kind of ["exam", "item"] as const) {
-      const client = makeClient({ "v3:/projects/p-1/policies": [
-        { id: "slow", name: "Slow" }, { id: "fast", name: "Fast" },
-      ] });
-      const original = (client.requestV3Detailed as ReturnType<typeof vi.fn>).getMockImplementation()!;
+      const client = makeClient({ "v4:/projects/p-1/policies": { count: 2, items: [{ projectId: "p-1", id: "slow", name: "Slow" }, { projectId: "p-1", id: "fast", name: "Fast" }] } });
+      const original = (client.requestV4Detailed as ReturnType<typeof vi.fn>).getMockImplementation()!;
       let release!: () => void;
       const delayed = new Promise<void>((resolve) => { release = resolve; });
       const slowError = new Error("first in list");
       const fastError = new Error("first to fail");
       const events: string[] = [];
-      (client.requestV3Detailed as ReturnType<typeof vi.fn>).mockImplementation(async (spec: Parameters<NonNullable<CloudShareClient["requestV3Detailed"]>>[0]) => {
+      (client.requestV4Detailed as ReturnType<typeof vi.fn>).mockImplementation(async (spec: Parameters<NonNullable<CloudShareClient["requestV4Detailed"]>>[0]) => {
         events.push(spec.path);
         if (spec.path.endsWith("/slow")) { await delayed; throw slowError; }
         if (spec.path.endsWith("/fast")) throw fastError;
@@ -777,14 +765,14 @@ describe("createCloudShareSalesItemResourceSource", () => {
       release();
       await pending;
       if (kind === "item") expect(observed).toMatchObject({ cause: slowError, completedReads: [{ request: { path: "/projects/p-1/policies" } }] });
-      expect(client.requestV3Detailed).toHaveBeenCalledTimes(3);
+      expect(client.requestV4Detailed).toHaveBeenCalledTimes(3);
     }
   });
 
   it("preserves completed policy exchanges when a sibling policy detail fails", async () => {
     const source = createCloudShareSalesItemResourceSource(makeClient({
-      "v3:/projects/p-1/policies": [{ id: "pol-1", name: "One" }, { id: "pol-2", name: "Two" }],
-      "v3:/projects/p-1/policies/pol-1": { id: "pol-1", name: "One", storageLeaseMinutes: 60 },
+      "v4:/projects/p-1/policies": { count: 2, items: [{ projectId: "p-1", id: "pol-1", name: "One" }, { projectId: "p-1", id: "pol-2", name: "Two" }] },
+      "v4:/projects/p-1/policies/pol-1": { projectId: "p-1", id: "pol-1", name: "One", storageMinutes: 60 },
     }));
     await expect(source.readProjectPolicies("p-1")).rejects.toMatchObject({
       name: "CloudShareSalesResourceReadError",

@@ -440,7 +440,7 @@ describe("admin exam authoring handlers", () => {
       occurredAt: expect.any(String),
       diagnostic: {
         operation: "cloudshare.resource_sync.policies.read",
-        integrationSurface: "cloudshare.v3.projects.policies",
+        integrationSurface: "cloudshare.v4.projects.policies",
         method: "GET",
         path: "/projects/project-1/policies",
         failureMode: "http_status",
