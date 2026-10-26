@@ -13,6 +13,18 @@ const page = { participants: [participant], total: 1, offset: 0, limit: 25, hasM
 
 describe("SalesParticipantWorkspace", () => {
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); window.history.replaceState({}, "", "/sales"); });
+  it("labels blocked access separately from retained provider participation and saved archive confirmation", async () => {
+    const request = vi.fn(async () => Response.json({ ...page, participants: [{ ...participant, sessionCancelled: true, participationStatus: "inProgress", environment: { dimension: "cloudshare_environment", value: "Archived", source: "confirmed_session_cancellation", confirmedAt: "2026-10-26T14:01:42.575Z" } }] }));
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    const table = await screen.findByRole("table", { name: "Participant roster" });
+    expect(within(table).getByText("Access blocked")).toBeTruthy();
+    expect(within(table).getByText("Archived")).toBeTruthy();
+    expect(within(table).getByText(/Cancellation confirmation saved/).textContent).toContain("2026-10-26");
+    expect(within(table).queryByText("In progress")).toBeNull();
+    expect(within(table).queryByText("Concluded")).toBeNull();
+    await userEvent.setup().click(within(table).getByRole("button", { name: "Inspect" }));
+    expect(screen.getByRole("complementary", { name: "Participant inspector" })).toBeTruthy();
+  });
   it.each([0, 1, 2])( "places the inspector directly after the active %s visible row", async (index) => {
     const rows = [0, 1, 2].map((row) => ({ ...participant, id: `p${row + 1}`, name: `Participant ${row + 1}`, email: `p${row + 1}@example.test` }));
     const request = vi.fn(async () => new Response(JSON.stringify({ participants: rows, total: rows.length, offset: 0, limit: 25, hasMore: false })));
