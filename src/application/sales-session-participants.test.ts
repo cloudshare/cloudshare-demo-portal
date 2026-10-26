@@ -593,13 +593,14 @@ describe("Sales Session participant invitation", () => {
     const environmentRead = { snapshot: null, request: { method: "GET", path: "/v4/environments/environment-1" }, response: { status: 404, body: "" } };
     const result = await handleListSalesSessionParticipants({
       now: () => new Date("2026-07-19T08:00:00.000Z"),
-      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant("portal-1", contact.id, "provider-old"), lastInvitedAt: new Date("2026-07-17T08:00:00.000Z") }]), save, recordEnvironmentObservation }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant("portal-1", contact.id, "provider-old"), lastInvitedAt: new Date("2026-07-17T08:00:00.000Z"), v4EnvironmentStatus: "ready", v4EnvironmentObservedAt: new Date("2026-07-18T08:00:00Z") }]), save, recordEnvironmentObservation }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remote])) }) },
       environmentFactory: { forConnection: () => ({ getEnvironmentState: vi.fn().mockResolvedValue(environmentRead.snapshot), readEnvironmentState: vi.fn().mockResolvedValue(environmentRead) }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor });
 
     expect(result.status).toBe(200);
-    expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", expect.objectContaining({ preserveHistory: true }));
+    expect(result.body).toMatchObject({ participants: [{ environment: { value: null, source: "cloudshare_v4_environment", observedAt: "2026-07-19T08:00:00.000Z" } }] });
+    expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", expect.objectContaining({ preserveHistory: true, v4EnvironmentStatus: null, v4EnvironmentObservedAt: new Date("2026-07-19T08:00:00Z") }));
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ request: environmentRead.request, response: environmentRead.response, details: expect.objectContaining({ integrationSurface: "cloudshare.v4.environments", observation: "not_found" }) }));
     expect(JSON.stringify(result.body)).not.toContain("provider-changed");
     expect(JSON.stringify(result.body)).not.toContain("environment-1");

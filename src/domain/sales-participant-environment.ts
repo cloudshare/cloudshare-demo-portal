@@ -39,7 +39,7 @@ export function projectSalesParticipantRosterEnvironment(status: keyof typeof ro
 }
 
 /** Current Infrastructure observation, independent of the Sales roster and historical v3 codes. */
-export function projectSalesParticipantV4Environment(status: string, observedAt: Date): SalesParticipantEnvironmentObservation {
-  const entry = Object.entries(rosterEnvironmentValues).find(([key]) => key.toLowerCase() === status.toLowerCase());
-  return { dimension: "cloudshare_environment", value: entry?.[1] ?? "Unknown", source: "cloudshare_v4_environment", observedAt: observedAt.toISOString() };
+export function projectSalesParticipantV4Environment(status: string | null | undefined, observedAt: Date): SalesParticipantEnvironmentObservation {
+  const entry = Object.entries(rosterEnvironmentValues).find(([key]) => key.toLowerCase() === status?.toLowerCase());
+  return { dimension: "cloudshare_environment", value: status == null ? null : entry?.[1] ?? "Unknown", source: "cloudshare_v4_environment", observedAt: observedAt.toISOString() };
 }

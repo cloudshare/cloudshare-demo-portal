@@ -159,7 +159,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
             cancellationRow?.targets.some(fence => fence.salesSessionParticipantId === row.id && fence.activeEnvironmentId === target.environmentId));
           const environment = archive && cancellationRow
             ? { dimension: "cloudshare_environment" as const, value: "Archived" as const, source: "confirmed_session_cancellation" as const, confirmedAt: cancellationRow.updatedAt.toISOString() }
-            : row.v4EnvironmentStatus && row.v4EnvironmentObservedAt && (!row.environmentObservedAt || row.v4EnvironmentObservedAt >= row.environmentObservedAt) ? projectSalesParticipantV4Environment(row.v4EnvironmentStatus, row.v4EnvironmentObservedAt)
+            : row.v4EnvironmentObservedAt && (!row.environmentObservedAt || row.v4EnvironmentObservedAt >= row.environmentObservedAt) ? projectSalesParticipantV4Environment(row.v4EnvironmentStatus, row.v4EnvironmentObservedAt)
             : isProjectableSalesParticipantRosterEnvironment(row.environmentStatus) && row.environmentObservedAt
             ? projectSalesParticipantRosterEnvironment(row.environmentStatus, row.environmentObservedAt)
             : projectSalesParticipantEnvironment(row.environmentStatusCode, row.environmentObservedAt ?? undefined);

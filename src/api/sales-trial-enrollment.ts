@@ -1511,7 +1511,9 @@ function buildExtendState(
       reason: EXTEND_ACTIVE_PARTICIPANT_REQUIRED,
     };
   }
-  if (isPersistedEnvironmentIneligibleForExtend(enrollment.environmentStatus)) {
+  if (enrollment.v4EnvironmentObservedAt
+    ? !["ready", "suspended", "archived", "preparing"].includes(enrollment.v4EnvironmentStatus ?? "")
+    : isPersistedEnvironmentIneligibleForExtend(enrollment.environmentStatus)) {
     return {
       enabled: false,
       reason: "CloudShare does not currently report this retained environment as eligible for extension.",
@@ -1529,7 +1531,7 @@ function projectRetainedEnvironment(
     "cloudShareRosterEnvironmentReference" | "environmentStatus" | "lastReconciledAt" | "v4EnvironmentStatus" | "v4EnvironmentObservedAt"
   >,
 ): SalesTrialMonitoringParticipant["environment"] {
-  if (enrollment.v4EnvironmentStatus && enrollment.v4EnvironmentObservedAt) return projectSalesParticipantV4Environment(enrollment.v4EnvironmentStatus, enrollment.v4EnvironmentObservedAt) as SalesTrialMonitoringParticipant["environment"];
+  if (enrollment.v4EnvironmentObservedAt) return projectSalesParticipantV4Environment(enrollment.v4EnvironmentStatus, enrollment.v4EnvironmentObservedAt) as SalesTrialMonitoringParticipant["environment"];
   if (
     enrollment.environmentStatus &&
     isProjectableSalesParticipantRosterEnvironment(enrollment.environmentStatus)
@@ -1630,7 +1632,7 @@ function applyEnvironmentObservation(
       : observation.persistedStatus ?? enrollment.environmentStatus,
     ...(observation.source ? { v4EnvironmentStatus: observation.providerStatus, v4EnvironmentObservedAt: observedAt } : {}),
     observedExpirationTime: observation.expiry.raw,
-    lastReconciledAt: observedAt,
+    lastReconciledAt: observation.source === "cloudshare_v4_environment" ? enrollment.lastReconciledAt : observedAt,
     updatedAt: observedAt,
   };
 }

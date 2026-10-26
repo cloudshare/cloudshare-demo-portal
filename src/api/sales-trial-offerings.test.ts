@@ -2861,6 +2861,38 @@ describe("Sales Trial Offering API", () => {
     expect(persisted).not.toContain("private-token");
   });
 
+  it.each([
+    ["sales", "cloudshare.v4.sales", "read_offering"],
+    ["roster", "cloudshare.v4.sales.participants", "list_participants"],
+    ["item", "portal.sales_trial.item", "resolve_offering_item"],
+    ["environment", "cloudshare.v4.environments.get", "observe_environment"],
+    ["update", "cloudshare.v4.sales", "update_offering_end"],
+  ])("labels Ending %s failures with their actual operation and surface", async (phase, surface, attemptedOperation) => {
+    const repository = createOfferingRepository(); await saveDeferredOffering(repository);
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const paths: Record<string, string> = { sales: "/v4/sales/sales-deferred", roster: "/v4/sales/sales-deferred/participants", environment: "/v4/environments/opaque-env", update: "/v4/sales/sales-deferred" };
+    const failure = new CloudShareRequestError("provider rejected", 503, { method: phase === "update" ? "PUT" : "GET", path: paths[phase], responseStatus: 503, responseBody: { detail: "protected" } });
+    const readSession = vi.fn().mockResolvedValue({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} });
+    const listParticipants = vi.fn().mockResolvedValue({ participants: [{ environmentId: "numeric-1", email: "ada@example.test" }], request: {}, response: {} });
+    const updateSession = vi.fn().mockResolvedValue({ request: {}, response: {} });
+    const observe = vi.fn().mockResolvedValue({ environmentId: "opaque-env", statusCode: 2, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT", exchanges: [] });
+    if (phase === "sales") readSession.mockRejectedValue(failure);
+    if (phase === "roster") listParticipants.mockRejectedValue(failure);
+    if (phase === "environment") observe.mockRejectedValue(failure);
+    if (phase === "update") updateSession.mockRejectedValue(failure);
+    const result = await handleEndSalesTrialOffering(createDeps(repository, {
+      ...(phase === "item" ? { items: { findById: vi.fn().mockResolvedValue(null) } } : {}),
+      deliveryFactory: { forConnection: () => ({ readSession, listParticipants, updateSession }) },
+      salesEnvironmentFactory: { forConnection: () => createSalesEnvironmentModule({ observe }) },
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+    } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+    expect(result.status).toBe(202);
+    const [entry] = await diagnosticRepository.query({ operation: "sales.trial_offering.end", outcome: "failure" });
+    expect(entry?.details).toMatchObject({ integrationSurface: surface, attemptedOperation, failureMode: expect.any(String) });
+    if (phase === "item") expect(entry?.request).toBeNull();
+    else expect(entry?.request?.path).toBe(paths[phase]);
+  });
+
   it("bounds getextended reads to one in flight and fails closed without reading later environments", async () => {
     const repository = createOfferingRepository();
     await saveDeferredOffering(repository);

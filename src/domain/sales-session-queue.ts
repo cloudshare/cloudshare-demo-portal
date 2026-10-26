@@ -41,7 +41,7 @@ export function classifySalesSessionQueueRow(session: SalesSessionQueueCandidate
 }
 
 export function projectQueueParticipantEnvironment(input: { readonly v4EnvironmentStatus?: string | null; readonly v4EnvironmentObservedAt?: Date | null; readonly participantName: string; readonly environmentStatus: string | null; readonly environmentStatusCode: number | null; readonly environmentObservedAt: Date | null; readonly attentionReason: string | null }): SalesSessionQueueParticipantEnvironment {
-  const observation = input.v4EnvironmentStatus && input.v4EnvironmentObservedAt && (!input.environmentObservedAt || input.v4EnvironmentObservedAt >= input.environmentObservedAt) ? projectSalesParticipantV4Environment(input.v4EnvironmentStatus, input.v4EnvironmentObservedAt) : input.environmentStatus && input.environmentObservedAt && isProjectableSalesParticipantRosterEnvironment(input.environmentStatus)
+  const observation = input.v4EnvironmentObservedAt && (!input.environmentObservedAt || input.v4EnvironmentObservedAt >= input.environmentObservedAt) ? projectSalesParticipantV4Environment(input.v4EnvironmentStatus, input.v4EnvironmentObservedAt) : input.environmentStatus && input.environmentObservedAt && isProjectableSalesParticipantRosterEnvironment(input.environmentStatus)
     ? projectSalesParticipantRosterEnvironment(input.environmentStatus, input.environmentObservedAt)
     : projectSalesParticipantEnvironment(input.environmentStatusCode, input.environmentObservedAt ?? undefined);
   return { participantName: input.participantName, observation, attentionReason: input.attentionReason };

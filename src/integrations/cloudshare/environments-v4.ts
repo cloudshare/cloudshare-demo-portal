@@ -3,7 +3,7 @@ import type { CloudShareClient, CloudShareDetailedResult, V4RequestSpec } from "
 import { CloudShareResponseError } from "./errors";
 
 // Wire values stay inside this module; protected exchanges retain the full body.
-const utcDate = z.string().regex(/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/).refine(value => Number.isFinite(Date.parse(value)), "Invalid UTC date");
+const utcDate = z.string().regex(/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/).refine(value => Number.isFinite(Date.parse(value)) && new Date(value).toUTCString() === value, "Invalid UTC date");
 export const v4EnvironmentSchema = z.object({ id: z.string().min(1), projectId: z.string().min(1), ownerEmail: z.string().nullable(), status: z.string().min(1), startTime: utcDate, expirationTime: utcDate });
 export type V4Environment = z.infer<typeof v4EnvironmentSchema>;
 const pageSchema = z.object({ count: z.number().int().nonnegative(), items: z.array(v4EnvironmentSchema) });

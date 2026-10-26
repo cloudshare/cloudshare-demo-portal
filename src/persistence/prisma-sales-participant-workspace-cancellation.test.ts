@@ -71,6 +71,10 @@ it("retains old numeric and roster history while persisting a separate v4 observ
     expect((await read())?.participants[0]?.environment).toEqual({ dimension: "cloudshare_environment", value: "Suspended", source: "cloudshare_v4_environment", observedAt: "2026-10-26T15:00:00.000Z" });
     await repository.recordEnvironmentObservation(id, id, { statusCode: null, observedAt: null, preserveHistory: true, attentionReason: "environment_not_found_for_project", attentionSource: "cloudshare_v4_owner_email_item_project" });
     expect((await read())?.participants[0]?.environment).toMatchObject({ value: "Suspended", source: "cloudshare_v4_environment" });
+    const absentAt = new Date("2026-10-26T16:00:00Z");
+    await repository.recordEnvironmentObservation(id, id, { statusCode: null, observedAt: null, preserveHistory: true, v4EnvironmentStatus: null, v4EnvironmentObservedAt: absentAt });
+    expect((await repository.list(id, id))[0]).toMatchObject({ environmentStatus: "Preparing", environmentStatusCode: 2, environmentObservedAt: now, v4EnvironmentStatus: null, v4EnvironmentObservedAt: absentAt });
+    expect((await read())?.participants[0]?.environment).toMatchObject({ value: null, source: "cloudshare_v4_environment", observedAt: absentAt.toISOString() });
     await expect(repository.recordEnvironmentObservation("other", id, { statusCode: 4, observedAt })).rejects.toThrow();
     expect(await repository.list("other", id)).toEqual([]);
   } finally { await prisma.customer.delete({ where: { id } }); }

@@ -1030,15 +1030,18 @@ export async function handleEndSalesTrialOffering(
   if (!delivery.updateSession) return configurationFailure("sales_delivery_update_missing", "cloudshare.v4.sales");
   const environments = deps.salesEnvironmentFactory.forConnection(connection, observerOptions);
   if (!environments.observe) return configurationFailure("environment_observation_missing", "cloudshare.v4.environments.get");
+  let phase = { integrationSurface: "cloudshare.v4.sales", attemptedOperation: "read_offering_and_participants" };
   try {
     await renewLease();
     const [provider, roster] = await Promise.all([
       delivery.readSession(offering.cloudShareSalesExperienceId),
       delivery.listParticipants(offering.cloudShareSalesExperienceId),
     ]);
+    phase = { integrationSurface: "cloudshare.v4.sales.participants", attemptedOperation: "validate_participant_roster" };
     requireCompleteSalesParticipantRoster(roster);
     if (provider.status === "ended") {
       const ended = { ...ending, status: "ended" as const, endingLastReconciledAt: now, attentionReason: null };
+      phase = { integrationSurface: "portal.sales_trial", attemptedOperation: "persist_ended_offering" };
       await deps.offerings.save(ended);
       await Promise.allSettled([
         deps.diagnostics?.record({
@@ -1055,8 +1058,10 @@ export async function handleEndSalesTrialOffering(
       ]);
       return response(200, { offering: toPortalOffering(ended) });
     }
+    phase = { integrationSurface: "portal.sales_trial.item", attemptedOperation: "resolve_offering_item" };
     const item = await deps.items.findById(offering.itemId);
     if (!item || item.customerId !== request.customerId) throw new Error("Trial Item correlation is unavailable");
+    phase = { integrationSurface: "cloudshare.v4.environments.get", attemptedOperation: "observe_environment" };
     const observations = [];
     const resolvedIds = new Set<string>();
     // A roster envId is numeric metadata, never an opaque Environment identity.
@@ -1070,6 +1075,7 @@ export async function handleEndSalesTrialOffering(
       observations.push(observation);
       await renewLease();
     }
+    phase = { integrationSurface: "portal.sales_trial", attemptedOperation: "calculate_ending_target" };
     const calculation = calculateSalesTrialEnding({
       observations, now, timeZone: offering.timeZone, providerEnd: provider.end,
       persistedTerminalTarget: offering.endingTerminalTarget,
@@ -1082,6 +1088,7 @@ export async function handleEndSalesTrialOffering(
       }
     }
     await renewLease();
+    phase = { integrationSurface: "cloudshare.v4.sales", attemptedOperation: "update_offering_end" };
     const providerUpdate = calculation.shouldUpdate
       ? await delivery.updateSession(offering.cloudShareSalesExperienceId, { end: calculation.calculatedEnd })
       : null;
@@ -1094,6 +1101,7 @@ export async function handleEndSalesTrialOffering(
       endingLastReconciledAt: now,
       attentionReason: null,
     };
+    phase = { integrationSurface: "portal.sales_trial", attemptedOperation: "persist_ending_offering" };
     await deps.offerings.save(reconciled);
     const evidence = providerUpdate ?? provider;
     await Promise.allSettled([
@@ -1128,6 +1136,17 @@ export async function handleEndSalesTrialOffering(
     };
     await deps.offerings.save(attention);
     const evidence = cloudShareEvidence(error);
+    const context = cloudShareErrorContext(error);
+    const path = typeof context?.path === "string" ? context.path : "";
+    if (isCloudShareOAuthTokenFailure(error)) phase = { integrationSurface: "cloudshare.v4.oauth.token", attemptedOperation: "acquire_token" };
+    else if (/\/sales\/[^/]+\/participants$/.test(path)) phase = { integrationSurface: "cloudshare.v4.sales.participants", attemptedOperation: "list_participants" };
+    else if (/\/sales\/[^/]+$/.test(path)) phase = { integrationSurface: "cloudshare.v4.sales", attemptedOperation: context?.method === "PUT" ? "update_offering_end" : "read_offering" };
+    else if (/\/environments(?:\/|$)/.test(path)) phase = { integrationSurface: "cloudshare.v4.environments.get", attemptedOperation: "observe_environment" };
+    const failureMode = typeof context?.failureMode === "string" ? context.failureMode
+      : error instanceof CloudShareTransportError ? "transport_failure"
+      : error instanceof CloudShareResponseError ? "invalid_provider_response"
+      : error instanceof CloudShareRequestError || error instanceof CloudShareAuthError ? "provider_request_failed"
+      : `${phase.attemptedOperation}_failed`;
     await deps.diagnostics?.record({
       source: "sales-trial-offerings", operation: "sales.trial_offering.end", outcome: "failure", level: "warn",
       customerId: request.customerId, actor: request.actor,
@@ -1135,7 +1154,7 @@ export async function handleEndSalesTrialOffering(
       message: attention.attentionReason!,
       externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId },
       request: evidence?.request, response: evidence?.response,
-      details: { integrationSurface: "cloudshare.v4.environments.get", status: "ending", needsAttention: true },
+      details: { ...phase, failureMode, status: "ending", needsAttention: true },
     });
     return response(202, { offering: toPortalOffering(attention), needsAttention: true, correlationId });
   }

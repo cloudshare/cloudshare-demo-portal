@@ -3002,12 +3002,84 @@ describe("Sales Trial participant environment extension", () => {
     });
 
     expect(result.status).toBe(200);
-    expect(persisted).toMatchObject({ environmentStatus: "Suspended", v4EnvironmentStatus: "archived", v4EnvironmentObservedAt: expect.any(Date) });
+    expect(persisted).toMatchObject({ environmentStatus: "Suspended", v4EnvironmentStatus: "archived", v4EnvironmentObservedAt: expect.any(Date), lastReconciledAt: new Date("2026-08-30T10:07:00.000Z") });
     const entries = await diagnosticRepository.query({ source: "sales-trial-enrollment" });
     const reads = entries.filter(entry => String(entry.request?.path).startsWith("/v4/environments"));
     expect(reads.length).toBeGreaterThan(0);
     expect(reads.every(entry => entry.details?.integrationSurface === "cloudshare.v4.environments")).toBe(true);
     expect(success?.details?.integrationSurface).toBe("cloudshare.v3.environments");
+  });
+
+  it.each(["deleted", "creationFailed", "unknown", "publishing", "stopping"])("keeps Extend disabled after a fresh v4 %s observation over old roster history", async status => {
+    const statusCode = 4; const state = "Archived";
+    const { deps, enrollments, diagnosticRepository, audit, observe, extendById, observeById } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      invitationStatus: "sent",
+      participationStatus: "inProgress",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Ready", v4EnvironmentStatus: status, v4EnvironmentObservedAt: new Date("2026-08-30T10:08:00Z"),
+      observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    observe
+      .mockResolvedValueOnce({
+        environmentId: "opaque-v3-env-1",
+        statusCode, source: "cloudshare_v4_environment", status: "archived",
+        expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+        exchanges: [
+          {
+            request: { method: "GET", path: "/v4/environments", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+            response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+          },
+          {
+            request: { method: "GET", path: "/v4/environments/opaque-v3-env-1", query: { envId: "opaque-v3-env-1" } },
+            response: { status: 200, body: { statusCode, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
+          },
+        ],
+      })
+      ;
+    observeById.mockResolvedValueOnce({
+      environmentId: "opaque-v3-env-1",
+      statusCode, source: "cloudshare_v4_environment", status: "archived",
+      expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
+      exchanges: [
+        {
+          request: { method: "GET", path: "/v4/environments/opaque-v3-env-1", query: { envId: "opaque-v3-env-1" } },
+          response: { status: 200, body: { statusCode, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
+        },
+      ],
+    });
+
+    const result = await handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    const persisted = await enrollments.findById?.("customer-1", "enrollment-1");
+    const [success] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "success",
+    });
+
+    expect(result.status).toBe(409);
+    expect(observe).not.toHaveBeenCalled();
+    expect(extendById).not.toHaveBeenCalled();
   });
 
   it("records v4 reconcile-only evidence without replaying an ambiguous command", async () => {

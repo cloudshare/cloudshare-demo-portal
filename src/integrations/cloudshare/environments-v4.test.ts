@@ -55,7 +55,7 @@ it("keeps a 404 distinct from permission and malformed responses", async () => {
   expect(await createCloudShareEnvironmentSource(client).getEnvironmentState(environment.id)).toBeNull();
   expect(await inspectCloudShareEnvironmentLease(client, environment.id)).toMatchObject({ kind: "expired", reason: "not_found" });
 });
-it.each(["not-a-date", "2026-09-02", "2026-09-02T10:00:00Z"])("rejects non-contract v4 UTC dates: %s", async expirationTime => {
+it.each(["not-a-date", "2026-09-02", "2026-09-02T10:00:00Z", "Mon, 31 Feb 2026 10:00:00 GMT", "Tue, 26 Oct 2026 10:00:00 GMT"])("rejects non-contract v4 UTC dates: %s", async expirationTime => {
   const { client } = recordingClient([{ ...environment, expirationTime }]);
   await expect(createCloudShareSalesEnvironmentModule(client).observeById(environment.id)).rejects.toMatchObject({ name: "CloudShareResponseError" });
 });
