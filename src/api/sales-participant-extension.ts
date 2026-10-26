@@ -61,6 +61,7 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
   try {
     const session = await deps.sessions.findById?.(request.customerId, request.sessionId);
     if (!session || session.customerId !== request.customerId) return denied(404, "Sales Session was not found.");
+    if (session.cancellationRequestedAt) return denied(409, "Cancelled Sales Sessions cannot be extended.");
     command = await deps.commands.read(request.customerId, parsed.data.commandId);
     if (command && (command.sessionId !== request.sessionId || command.selectionKey !== selectionKey || command.experienceId !== session.cloudShareSalesExperienceId || command.timeZone !== session.timeZone)) return denied(409, "This command belongs to a different selection or Session.");
     if (command && (!parsed.data.reconcile && !parsed.data.retrySafe)) return salesParticipantExtensionResult(command);

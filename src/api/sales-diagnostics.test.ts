@@ -2,6 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { handleGetSalesDiagnosticLog } from "./sales-diagnostics";
 import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
+import { buildSalesWorkspaceHref } from "@/web/sales-shell-route";
+
+it.each([{}, { source: "sales-session-cancellation" }])("retrieves only owned cancellation evidence from the Support correlation link with filters %j", async filters => {
+  const diagnostics = createInMemoryDiagnosticLogRepository();
+  for (const [customerId, correlationId, message] of [["owned", "cancel-command", "Cancellation confirmed"], ["other", "cancel-command", "Other Customer"], ["owned", "unrelated", "Other command"]]) {
+    await diagnostics.append({ source: "sales-session-cancellation", operation: "sales.demo_session.cancel", outcome: "success", customerId, correlationId, message });
+  }
+  const link = new URL(buildSalesWorkspaceHref({ tab: "support", correlationId: "cancel-command" }), "http://localhost");
+  const result = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "owned", query: { correlationId: link.searchParams.get("correlationId")!, ...filters } });
+  expect(result.status).toBe(200);
+  expect((result.body as { entries: { message: string }[] }).entries.map(entry => entry.message)).toEqual(["Cancellation confirmed"]);
+});
 
 describe("Sales diagnostics handler", () => {
   const enrollmentRepo = (offeringId = "offering-1"): Pick<SalesTrialEnrollmentRepository, "findById"> & { findById: NonNullable<SalesTrialEnrollmentRepository["findById"]> } => ({ findById: vi.fn().mockResolvedValue({ salesTrialOfferingId: offeringId }) });

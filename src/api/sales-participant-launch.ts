@@ -19,6 +19,7 @@ const generic = { status: 404, body: { error: "This Certalis launch link is unav
 
 export async function handleCreateSalesParticipantLaunchLink(deps: Deps, request: AdminRequest): Promise<{ status: number; body: Record<string, string> }> {
   const owned = await ownedParticipant(deps, request); if (!owned) return generic;
+  if (owned.session.cancellationRequestedAt) return adminDenied(deps, request, "sales_session_cancelled", "Instant launch is unavailable because this Sales Session was cancelled.");
   const now = (deps.now ?? (() => new Date()))(); const end = cloudShareWallClockToInstant(owned.session.end, owned.session.timeZone);
   if (!end || end <= now) return adminDenied(deps, request, "sales_session_ended", "Instant launch link creation is unavailable after this Sales Session has ended.");
   if (owned.participant.participationStatus === "concluded") return adminDenied(deps, request, "sales_participant_concluded", "Instant launch links are unavailable for concluded Sales Participants.");
@@ -49,16 +50,22 @@ export async function handleSalesParticipantLaunch(deps: Deps, token: string): P
   catch (error) { return launchDenied(deps, link, correlationId, "persistence_failure", error); }
   const participant = participants.find((value) => value.id === link.salesSessionParticipantId); const now = (deps.now ?? (() => new Date()))();
   const start = session ? cloudShareWallClockToInstant(session.start, session.timeZone) : null; const end = session ? cloudShareWallClockToInstant(session.end, session.timeZone) : null;
-  if (!session || !participant || !start || !end || now < start || now >= end) return launchDenied(deps, link, correlationId, "unavailable");
+  if (!session || session.cancellationRequestedAt || !participant || !start || !end || now < start || now >= end) return launchDenied(deps, link, correlationId, "unavailable");
   let contact: Awaited<ReturnType<SalesRecordRepository["findContact"]>>; let connection: Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>;
   try { contact = await deps.records.findContact(link.customerId, participant.opportunityContactId); connection = await deps.connections.findByCustomerId(link.customerId); }
   catch (error) { return launchDenied(deps, link, correlationId, "persistence_failure", error); }
   if (!contact || !connection) return launchDenied(deps, link, correlationId, "unavailable");
-  try { const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })); const sponsored = await delivery.createSponsoredLink(session.cloudShareSalesExperienceId, contact); await launchEvidence(deps, link, correlationId, "success", sponsored); return { status: 302, redirect: sponsored.loginUrl }; }
+  try { const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare.forConnection(connection, { scope: "customer_default", reason: "unanchored_support_read" })); const sponsored = await delivery.createSponsoredLink(session.cloudShareSalesExperienceId, contact); await launchEvidence(deps, link, correlationId, "success", sponsored);
+    const current = await deps.sessions.findById(link.customerId, link.salesDemoSessionId);
+    const currentStart = current ? cloudShareWallClockToInstant(current.start, current.timeZone) : null;
+    const currentEnd = current ? cloudShareWallClockToInstant(current.end, current.timeZone) : null;
+    const releaseAt = (deps.now ?? (() => new Date()))();
+    if (!current || current.cancellationRequestedAt || !currentStart || !currentEnd || releaseAt < currentStart || releaseAt >= currentEnd) return launchDenied(deps, link, correlationId, "unavailable");
+    return { status: 302, redirect: sponsored.loginUrl }; }
   catch (error) { return launchDenied(deps, link, correlationId, "provider_failure", error); }
 }
 async function ownedParticipant(deps: Deps, request: AdminRequest) { const session = await deps.sessions.findById(request.customerId, request.sessionId); if (!session) return null; const participant = (await deps.participants.list(request.customerId, request.sessionId)).find((value) => value.id === request.participantId); return participant ? { session, participant } : null; }
-async function adminDenied(deps: Deps, request: AdminRequest, code: "sales_session_ended" | "sales_participant_concluded", error: string) { const correlationId = randomUUID(); await deps.diagnostics?.record({ source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.generated", outcome: "failure", customerId: request.customerId, actor: request.actor, subject: { type: "sales_session_participant", id: request.participantId }, message: error, correlationId, details: { sessionId: request.sessionId, failureMode: code } }); await deps.audit?.write({ id: randomUUID(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.participant_launch.generated", subjectType: "sales_session_participant", subjectId: request.participantId, outcome: "failure", correlationId, occurredAt: new Date(), error }); return { status: 409, body: { code, error, correlationId } }; }
+async function adminDenied(deps: Deps, request: AdminRequest, code: "sales_session_ended" | "sales_participant_concluded" | "sales_session_cancelled", error: string) { const correlationId = randomUUID(); await deps.diagnostics?.record({ source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.generated", outcome: "failure", customerId: request.customerId, actor: request.actor, subject: { type: "sales_session_participant", id: request.participantId }, message: error, correlationId, details: { sessionId: request.sessionId, failureMode: code } }); await deps.audit?.write({ id: randomUUID(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.participant_launch.generated", subjectType: "sales_session_participant", subjectId: request.participantId, outcome: "failure", correlationId, occurredAt: new Date(), error }); return { status: 409, body: { code, error, correlationId } }; }
 async function adminEvidence(deps: Deps, request: AdminRequest, correlationId: string, operation: string, outcome: "success") { await deps.diagnostics?.record({ source: "sales-participant-launch", operation, outcome, customerId: request.customerId, actor: request.actor, subject: { type: "sales_session_participant", id: request.participantId }, message: "Sales participant launch capability updated.", correlationId, details: { sessionId: request.sessionId } }); await deps.audit?.write({ id: randomUUID(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: operation, subjectType: "sales_session_participant", subjectId: request.participantId, outcome, correlationId, occurredAt: new Date() }); }
 async function adminPersistenceFailure(deps: Deps, request: AdminRequest, action: "generated" | "revoked", correlationId: string, error: unknown) {
   const operation = `sales.demo_session.participant_launch.${action}`;
@@ -78,16 +85,17 @@ async function launchEvidence(deps: Deps, link: Awaited<ReturnType<SalesParticip
     failureMode: context.failureMode ?? (status === undefined ? "transport_failure" : "http_failure"),
     ...(oauthFailure ? (status === undefined ? {} : { status }) : { cause: context.cause ?? null, network: context.network ?? null, tls: context.tls ?? null }),
   } : undefined;
+  const operation = outcome === "success" ? "sales.demo_session.participant_launch.minted" : "sales.demo_session.participant_launch.opened";
   const customerId = link?.customerId ?? null;
   const subjectId = link?.salesSessionParticipantId ?? null;
   await deps.diagnostics?.record({
-    source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.opened", outcome, customerId,
+    source: "sales-participant-launch", operation, outcome, customerId,
     actor: { type: "anonymous" }, subject: { type: "sales_session_participant", id: subjectId },
-    message: outcome === "success" ? "Sales participant launch redirected." : "Sales participant launch blocked.", correlationId,
+    message: outcome === "success" ? "CloudShare sponsored link minted; final access check is pending." : "Sales participant launch blocked.", correlationId,
     ...(sponsored ? { request: sponsored.request as Record<string, unknown>, response: sponsored.response as Record<string, unknown>, details: { integrationSurface: "cloudshare.v4.sales.sponsored_link" } } : {}),
     ...(protectedFailure && failureEvidence ? { request: failureEvidence.request as Record<string, unknown> | null, response: failureEvidence.response as Record<string, unknown> | null, details: protectedFailure } : {}),
   });
-  await deps.audit?.write({ id: randomUUID(), customerId, action: "sales.demo_session.participant_launch.opened", subjectType: "sales_session_participant", subjectId, outcome: outcome === "success" ? "success" : "failure", correlationId, occurredAt: new Date() });
+  await deps.audit?.write({ id: randomUUID(), customerId, action: operation, subjectType: "sales_session_participant", subjectId, outcome: outcome === "success" ? "success" : "failure", correlationId, occurredAt: new Date() });
 }
 async function launchDenied(deps: Deps, link: Awaited<ReturnType<SalesParticipantLaunchLinkRepository["findByTokenHash"]>>, correlationId: string, _reason: string, failure?: unknown) {
   try { await launchEvidence(deps, link, correlationId, "failure", undefined, failure); } catch { /* Denial evidence must never turn a safe 404 into a 500. */ }

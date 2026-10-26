@@ -3,7 +3,7 @@ import { extensionIdentity, newExtensionCommand, type SalesParticipantExtensionC
 export function createPrismaSalesParticipantExtensionCommandStore(prisma: PrismaClient): SalesParticipantExtensionCommandStore {
   const read: SalesParticipantExtensionCommandStore["read"] = async (customerId, commandId) => {
     const row = await prisma.salesParticipantExtensionCommand.findUnique({ where: { customerId_commandId: { customerId, commandId } } });
-    return row ? { ...JSON.parse(row.state) as SalesParticipantExtensionCommand, revision: row.revision } : null;
+    return row?.operation === "extension" ? { ...JSON.parse(row.state) as SalesParticipantExtensionCommand, revision: row.revision } : null;
   };
   return {
     read,
@@ -34,7 +34,7 @@ export function createPrismaSalesParticipantExtensionCommandStore(prisma: Prisma
     async latest(customerId, sessionId) {
       // Recovery must expose the owned command even for legacy timestamp ties.
       const active = await prisma.salesParticipantExtensionCommand.findUnique({ where: { customerId_activeSessionId: { customerId, activeSessionId: sessionId } } });
-      const row = active ?? await prisma.salesParticipantExtensionCommand.findFirst({ where: { customerId, sessionId }, orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }, { commandId: "desc" }] });
+      const row = active?.operation === "extension" ? active : await prisma.salesParticipantExtensionCommand.findFirst({ where: { customerId, sessionId, operation: "extension" }, orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }, { commandId: "desc" }] });
       return row ? read(customerId, row.commandId) : null;
     },
     async save(command, expectedRevision) {

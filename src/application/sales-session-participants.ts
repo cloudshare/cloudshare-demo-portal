@@ -226,6 +226,7 @@ export function createSalesParticipantWorkspace(deps: InviteDeps & { reader: Sal
         return { status: 503, body: { outcome: "rejected", code: "participant_add_unavailable", error: "Participant add could not be started. Retry the operation." } };
       }
       if (admitted.kind === "mismatch") return { status: 409, body: { outcome: "rejected", code: "command_id_mismatch", error: "Command ID was already used for a different Participant." } };
+      if (admitted.kind === "blocked") return { status: 409, body: { outcome: "rejected", code: "sales_session_cancelled", error: "Participant registration is unavailable because this Session was cancelled." } };
       if (admitted.kind === "existing") { const existing = admitted.result ?? { status: 202, body: { outcome: admitted.state === "needs_attention" ? "needs_attention" as const : "rejected" as const, code: "command_in_progress" } }; return { ...existing, body: { ...existing.body, commandId: admitted.commandId ?? input.commandId } }; }
       const settleBeforeDispatch = async (result: SalesParticipantWorkspaceAddParticipantResult) => {
         await deps.addCommandStore!.settle({ customerId: input.customerId, commandId: input.commandId, state: "settled", result, now: (deps.now ?? (() => new Date()))() });

@@ -1,4 +1,5 @@
 export type SalesParticipantEnvironmentObservation =
+  | { readonly dimension: "cloudshare_environment"; readonly value: "Archived"; readonly source: "confirmed_session_cancellation"; /** Saved command confirmation time, not a fresh provider observation. */ readonly confirmedAt: string }
   | { readonly dimension: "cloudshare_environment"; readonly value: "Ready" | "Suspended" | "Archived" | "Deleted" | "Taking a Snapshot" | "Preparing" | "Creation Failed"; readonly source: "cloudshare_v3_environment"; readonly observedAt: string }
   | { readonly dimension: "cloudshare_environment"; readonly value: "Future allocation scheduled" | "Allocation scheduled (not running)" | "Ready" | "Suspended" | "Archived" | "Deleted" | "Publishing" | "Preparing" | "Creation Failed" | "In grace" | "Stopping" | "Editing networks"; readonly source: "cloudshare_v4_sales_participant_roster"; readonly observedAt: string }
   | { readonly dimension: "cloudshare_environment"; readonly value: null; readonly source: "not_assigned" | "not_observed"; };

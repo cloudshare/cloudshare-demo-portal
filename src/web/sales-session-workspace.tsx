@@ -15,6 +15,7 @@ import { statusBadgeStyle } from "./status-badge";
 import styles from "./sales-session-workspace.module.css";
 import type { SalesSessionWorkspaceResponse } from "@/domain/sales-session-workspace";
 import type { SalesSessionVerifyResponse } from "@/api/sales-session-reconciliation";
+import { SalesSessionCancellation } from "./sales-session-cancellation";
 import { SalesParticipantWorkspace } from "./sales-participant-workspace";
 
 type Area = "participants" | "activity" | "details";
@@ -41,6 +42,7 @@ function SalesSessionWorkspaceState({
   readonly queueHref: string;
 }) {
   const router = useRouter();
+  const [cancelled, setCancelled] = useState(false);
   const [workspace, setWorkspace] =
     useState<SalesSessionWorkspaceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,7 +103,7 @@ function SalesSessionWorkspaceState({
       if (!response.ok || next.summary?.id !== sessionId) throw new Error("summary_unavailable");
       setWorkspace(next);
     } catch {
-      if (lifecycle.current.active && lifecycle.current.token === token) setVerification("Extension access is confirmed, but the Session summary could not be reread. Reopen the Session to read its current End.");
+      if (lifecycle.current.active && lifecycle.current.token === token) setVerification("The Session summary could not be reread. Showing the last known summary; reopen the Session to read its current End.");
     }
   };
   const handleSessionExpired = () => {
@@ -382,6 +384,8 @@ function SalesSessionWorkspaceState({
       setVerification(
         `Verified from CloudShare: ${body.experienceStatus} at ${body.observedAt}. Correlation ${body.correlationId}.`,
       );
+      await rereadConfirmedAccess();
+      if (!lifecycle.current.active || lifecycle.current.token !== token) return;
       router.refresh();
     } catch (cause) {
       if (lifecycle.current.active && lifecycle.current.token === token)
@@ -403,6 +407,7 @@ function SalesSessionWorkspaceState({
   };
   return (
     <section aria-label="Sales Session workspace" className={styles.workspace}>
+      <SalesSessionCancellation key={sessionId} sessionId={sessionId} request={participantRequest} onAdmitted={() => { setCancelled(true); void rereadConfirmedAccess(); }} />
       <header className={styles.summary}>
         <div className={styles.summaryTopline}>
           <div className={styles.contextTrail}>
@@ -530,7 +535,7 @@ function SalesSessionWorkspaceState({
         </div>
       </nav>
       {area === "participants" ? (
-        <SalesParticipantWorkspace sessionId={sessionId} active request={participantRequest} onAccessConfirmed={rereadConfirmedAccess} />
+        <SalesParticipantWorkspace sessionId={sessionId} active cancelled={cancelled} request={participantRequest} onAccessConfirmed={rereadConfirmedAccess} />
       ) : null}
       {area === "activity" ? (
         <section className={styles.panel}>
