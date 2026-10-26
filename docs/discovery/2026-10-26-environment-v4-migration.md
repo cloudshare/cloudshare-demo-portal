@@ -54,11 +54,12 @@ fixtures were updated for v4 state reads while preserving lifecycle assertions a
 commands. Legacy numeric/parser behavior remains tested through the explicit compatibility adapter;
 new wire behavior is tested through the real client with recording HTTP.
 
-Full offline run before the final label correction: 2488 tests, 2483 passed, five failed. One stale
-completion-diagnostic v3 expectation was corrected and its test now passes. The other four are the
-inherited `candidate-home-route-focus.test.tsx` failures. The test and its CandidateHome/state modules
-are byte-identical (normalized line endings) to baseline `1f615591`; isolated reproduction and final
-exact-head checks are recorded on the PR. Lint and typecheck passed.
+Full offline run at `88b2b58b`: 2490 tests, 2486 passed, four inherited
+`candidate-home-route-focus.test.tsx` failures. The test and its CandidateHome/state modules
+are byte-identical (normalized line endings) to baseline `1f615591`; an independent isolated run
+reproduced seven passing and four failing tests. Lint and typecheck passed. A subsequent narrow
+RED/GREEN handler test covers the retained Environment evidence-source injection with a v4
+snapshot, preserving old numeric fixtures. Final exact-head checks are recorded on the PR.
 
 Live browser/Support, live identity compatibility and per-consumer proof are separate pending gates,
 owned by the lifecycle orchestrator/QA role. This document does not claim live parity or close

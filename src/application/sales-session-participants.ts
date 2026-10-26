@@ -733,7 +733,12 @@ export async function handleListSalesSessionParticipants(deps: BaseDeps, request
           let read: Awaited<ReturnType<EnvironmentStateEvidenceSource["readEnvironmentState"]>>;
           try { read = await legacyEnvironmentSource.readEnvironmentState(current.cloudShareEnvironmentId); }
           catch (error) { await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: null }); throw error; }
-          if (read.snapshot?.statusCode) {
+          if (read.snapshot?.source === "cloudshare_v4_environment" && read.snapshot.providerStatus) {
+            observed = { ...current, v4EnvironmentStatus: read.snapshot.providerStatus, v4EnvironmentObservedAt: now };
+            try { await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: now, preserveHistory: true, v4EnvironmentStatus: read.snapshot.providerStatus, v4EnvironmentObservedAt: now }); }
+            catch (error) { throw environmentObservationPersistenceFailed(error, read); }
+            await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participant.environment_observed", "success", "CloudShare Environment state observed", { request: read.request, response: read.response }, { integrationSurface: "cloudshare.v4.environments", observation: "observed", portalParticipantId: current.id }, { environmentId: current.cloudShareEnvironmentId });
+          } else if (read.snapshot?.statusCode) {
             observed = { ...current, environmentStatusCode: read.snapshot.statusCode, environmentObservedAt: now };
             try { await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: read.snapshot.statusCode, observedAt: now }); } catch (error) { throw environmentObservationPersistenceFailed(error, read); }
             await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participant.environment_observed", "success", "CloudShare Environment state observed", { request: read.request, response: read.response }, { integrationSurface: "cloudshare.v3.environments", observation: "observed", portalParticipantId: current.id }, { environmentId: current.cloudShareEnvironmentId });

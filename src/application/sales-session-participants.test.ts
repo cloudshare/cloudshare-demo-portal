@@ -563,6 +563,28 @@ describe("Sales Session participant invitation", () => {
     expect(JSON.stringify(result.body)).not.toContain("environment-1");
   });
 
+  it("supports a v4 snapshot through the retained Environment evidence source", async () => {
+    const remote = { ...remoteParticipant("provider-changed", "portal-1", contact.id), invitationStatus: "sent" as const, participationStatus: "inProgress" as const, environmentId: "environment-1", envStatus: null };
+    const save = vi.fn();
+    const recordEnvironmentObservation = vi.fn();
+    const diagnostics = { record: vi.fn() }; const audit = { write: vi.fn() };
+    const environmentRead = { snapshot: { environmentExternalId: "environment-1", status: "running" as const, source: "cloudshare_v4_environment" as const, providerStatus: "ready" }, request: { method: "GET", path: "/v4/environments/environment-1" }, response: { status: 200, body: { status: "ready" } } };
+    const result = await handleListSalesSessionParticipants({
+      now: () => new Date("2026-07-19T08:00:00.000Z"),
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant("portal-1", contact.id, "provider-old"), lastInvitedAt: new Date("2026-07-17T08:00:00.000Z") }]), save, recordEnvironmentObservation }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remote])) }) },
+      environmentFactory: { forConnection: () => ({ getEnvironmentState: vi.fn().mockResolvedValue(environmentRead.snapshot), readEnvironmentState: vi.fn().mockResolvedValue(environmentRead) }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor });
+
+    expect(result).toMatchObject({ status: 200, body: { session: { accessWindow: { dimension: "certalis_session_access_window", value: "before_window", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [{ id: "portal-1", email: "ada@example.test", invitationStatus: "sent", lastInvitedAt: "2026-07-17T08:00:00.000Z", envStatus: null, environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v4_environment", observedAt: "2026-07-19T08:00:00.000Z" } }] } });
+    expect(JSON.stringify(result.body)).not.toContain("lifecycle");
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ cloudShareParticipantId: "provider-changed", cloudShareEnvironmentId: "environment-1", lastInvitedAt: new Date("2026-07-17T08:00:00.000Z") }));
+    expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", { statusCode: null, observedAt: new Date("2026-07-19T08:00:00.000Z"), preserveHistory: true, v4EnvironmentStatus: "ready", v4EnvironmentObservedAt: new Date("2026-07-19T08:00:00.000Z") });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.participant.environment_observed", outcome: "success", customerId: "customer-1", request: environmentRead.request, response: environmentRead.response, details: expect.objectContaining({ integrationSurface: "cloudshare.v4.environments", observation: "observed" }) }));
+    expect(JSON.stringify(result.body)).not.toContain("provider-changed");
+    expect(JSON.stringify(result.body)).not.toContain("environment-1");
+  });
+
   it("resolves v3 Environment state by server-side Contact email and the Customer Item project", async () => {
     const remote = { ...remoteParticipant("provider-1", "portal-1", contact.id), environmentId: "1234567890123456789", envStatus: null };
     const observe = vi.fn().mockResolvedValue({ environmentId: "opaque-v3-id", statusCode: 2, exchanges: [{ request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: contact.email, brief: "false" } }, response: { status: 200, body: [] } }, { request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-id" } }, response: { status: 200, body: { statusCode: 2 } } }] });
