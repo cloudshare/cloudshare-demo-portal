@@ -723,7 +723,7 @@ export async function handleListSalesSessionParticipants(deps: BaseDeps, request
               const actual = error.exchanges.at(-1)!;
               await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participant.environment_observed", "failure", error.message, actual, { integrationSurface: error.exchanges.some(exchange => exchange.request.path.includes("/environments")) ? "cloudshare.v4.environments" : "cloudshare.v3.environments", observation: "needs_attention", attentionReason: error.reason, attentionSource: error.exchanges.some(exchange => exchange.request.path.includes("/environments")) ? "cloudshare_v4_owner_email_item_project" : "cloudshare_v3_owner_email_item_project", portalParticipantId: current.id }, {}, true, { httpExchanges: error.exchanges });
             } else {
-              try { await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: null }); } catch { /* Preserve the provider/persistence error and its exchange. */ }
+              try { await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: null, preserveHistory: true }); } catch { /* Preserve the provider/persistence error and its exchange. */ }
               throw error;
             }
           }
@@ -732,7 +732,7 @@ export async function handleListSalesSessionParticipants(deps: BaseDeps, request
         } else if (legacyEnvironmentSource) {
           let read: Awaited<ReturnType<EnvironmentStateEvidenceSource["readEnvironmentState"]>>;
           try { read = await legacyEnvironmentSource.readEnvironmentState(current.cloudShareEnvironmentId); }
-          catch (error) { await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: null }); throw error; }
+          catch (error) { await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: null, preserveHistory: true }); throw error; }
           if (read.snapshot?.source === "cloudshare_v4_environment" && read.snapshot.providerStatus) {
             observed = { ...current, v4EnvironmentStatus: read.snapshot.providerStatus, v4EnvironmentObservedAt: now };
             try { await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: now, preserveHistory: true, v4EnvironmentStatus: read.snapshot.providerStatus, v4EnvironmentObservedAt: now }); }
@@ -743,8 +743,10 @@ export async function handleListSalesSessionParticipants(deps: BaseDeps, request
             try { await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: read.snapshot.statusCode, observedAt: now }); } catch (error) { throw environmentObservationPersistenceFailed(error, read); }
             await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participant.environment_observed", "success", "CloudShare Environment state observed", { request: read.request, response: read.response }, { integrationSurface: "cloudshare.v3.environments", observation: "observed", portalParticipantId: current.id }, { environmentId: current.cloudShareEnvironmentId });
           } else if (!read.snapshot) {
-            observed = { ...current, environmentStatusCode: null, environmentObservedAt: null }; await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: null });
-            await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participant.environment_observed", "success", "CloudShare Environment no longer exists", { request: read.request, response: read.response }, { integrationSurface: "cloudshare.v3.environments", observation: "not_found", portalParticipantId: current.id }, { environmentId: current.cloudShareEnvironmentId });
+            const isV4 = typeof read.request.path === "string" && read.request.path.startsWith("/v4/environments/");
+            observed = isV4 ? current : { ...current, environmentStatusCode: null, environmentObservedAt: null };
+            await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: null, ...(isV4 ? { preserveHistory: true } : {}) });
+            await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participant.environment_observed", "success", "CloudShare Environment was not found", { request: read.request, response: read.response }, { integrationSurface: isV4 ? "cloudshare.v4.environments" : "cloudshare.v3.environments", observation: "not_found", portalParticipantId: current.id }, { environmentId: current.cloudShareEnvironmentId });
           } else { observed = { ...current, environmentStatusCode: null, environmentObservedAt: null }; await deps.participants.recordEnvironmentObservation?.(request.customerId, current.id, { statusCode: null, observedAt: null }); throw environmentObservationUnrecognized(read); }
         }
         return { current: observed, participant, contact: await deps.records.findContact(request.customerId, observed.opportunityContactId), requiresCorrelationRepair };

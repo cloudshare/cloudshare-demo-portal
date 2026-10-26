@@ -64,3 +64,9 @@ snapshot, preserving old numeric fixtures. Final exact-head checks are recorded 
 Live browser/Support, live identity compatibility and per-consumer proof are separate pending gates,
 owned by the lifecycle orchestrator/QA role. This document does not claim live parity or close
 GAP-28/32/33 before that evidence. Human QA is explicitly waived for this ticket; other gates remain.
+
+## Review repair loop 1
+
+Independent review identified retained-path provenance and evidence gaps. Trial observations now preserve the old roster status while writing the additive v4 status/time; participant missing/failed reads preserve numeric observation history. Admin refresh and completion diagnostics retain actual full protected read evidence, including 404. Trial read-step and reconcile-only summaries identify v4, while extend commands remain v3. Support correlation hints and table labels recognize current v4 reads. Both HTTP and background Trial Ending compositions now use the existing Prisma Item repository for the Offering Project binding.
+
+Regression checks exercise the public handler/persistence, diagnostic rendering, and real composition seams. No provider command transport or workflow was redesigned. Live/browser validation remains separately owned by the ticket QA role and must use the final reviewed head.

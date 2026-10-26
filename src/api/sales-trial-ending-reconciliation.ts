@@ -1,3 +1,4 @@
+import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
 import type { Services } from "@/composition";
 import { handleEndSalesTrialOffering } from "@/api/sales-trial-offerings";
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
@@ -8,7 +9,7 @@ import { createSalesTrialCloudShareObserver } from "@/api/sales-trial-cloudshare
 export function salesTrialEndingDeps(services: Services) {
   return {
     offerings: createPrismaSalesTrialOfferingRepository(services.prisma),
-    items: { findById: async () => null },
+    items: createPrismaItemRepository(services.prisma),
     connections: services.cloudshareConnections,
     deliveryFactory: { forConnection: (connection: Parameters<typeof services.cloudshareClientFactory.forConnection>[0], options?: Parameters<typeof services.cloudshareClientFactory.forConnection>[1]) =>
       createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection, options)) },

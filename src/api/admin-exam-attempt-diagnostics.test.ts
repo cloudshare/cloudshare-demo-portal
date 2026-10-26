@@ -184,8 +184,8 @@ describe("refreshCloudShareEnvironmentStatus", () => {
           environmentExternalId: "env-external-1",
           environmentStatus: "running",
         },
-        request: { method: "GET", path: "/v4/environments/{environmentId}" },
-        response: { status: 200, body: { status: "running" } },
+        request: { method: "GET", path: "/v4/environments/env-external-1" },
+        response: { status: 200, body: expect.objectContaining({ id: "env-external-1", status: "ready", ownerEmail: "candidate@helioscx.demo", projectId: "p1" }) },
         details: expect.objectContaining({
           integrationSurface: "cloudshare.v4.environments.get",
           refreshedBy: "admin_exam_attempt_diagnostics",

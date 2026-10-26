@@ -183,7 +183,7 @@ export function deriveDiagnosticSupportHints(
     entry.operation === "sales.demo_session.participant.environment_observed" &&
     ["cloudshare.v3.environments", "cloudshare.v4.environments"].includes(readString(entry.details, "integrationSurface") ?? "") &&
     readString(entry.details, "observation") === "needs_attention" &&
-    readString(entry.details, "attentionSource") === "cloudshare_v3_owner_email_item_project" &&
+    ["cloudshare_v3_owner_email_item_project", "cloudshare_v4_owner_email_item_project"].includes(readString(entry.details, "attentionSource") ?? "") &&
     ["/api/v3/envs", "/v4/environments"].includes(readString(entry.request, "path") ?? "") &&
     isSuccessfulResponse(entry)
   ) {
@@ -197,7 +197,7 @@ export function deriveDiagnosticSupportHints(
         {
           title: "CloudShare Environment correlation needs attention",
           body:
-            `The documented CloudShare v3 Environment list completed, but ${matchCount} Environments matched this participant in the Session Item Project. ` +
+            `The documented CloudShare ${readString(entry.details, "attentionSource") === "cloudshare_v4_owner_email_item_project" ? "v4" : "v3"} Environment list completed, but ${matchCount} Environments matched this participant in the Session Item Project. ` +
             "This is a Certalis correlation exception, not a failed CloudShare request. Review the protected list evidence and the Session Item Project before deciding whether participant or Environment data needs correction.",
         },
       ];

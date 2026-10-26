@@ -147,7 +147,8 @@ export async function refreshCloudShareEnvironmentStatus(
   const source = createCloudShareEnvironmentSource(
     services.cloudshareClientFactory.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "admin", id: null }, customerId: context.customerId, subject: { type: "exam_attempt", id: context.attemptId }, correlationId: operationCorrelationId, source: "admin-diagnostics", examId: context.examId ?? undefined, examAttemptId: context.attemptId, candidateEmail: context.candidateEmail ?? undefined, externalIds: { environmentExternalId, lifecycleParent: `admin-diagnostics:${context.attemptId}` } })),
   );
-  const snapshot = await source.getEnvironmentState(environmentExternalId);
+  const read = await source.readEnvironmentState(environmentExternalId);
+  const snapshot = read.snapshot;
   const observedAt = new Date();
   if (snapshot) {
     await services.environments.save({
@@ -174,14 +175,8 @@ export async function refreshCloudShareEnvironmentStatus(
       environmentExternalId,
       ...(snapshot?.status ? { environmentStatus: snapshot.status } : {}),
     },
-    request: {
-      method: "GET",
-      path: "/v4/environments/{environmentId}",
-    },
-    response: {
-      status: snapshot ? 200 : 404,
-      body: snapshot ? { status: snapshot.status } : null,
-    },
+    request: read.request,
+    response: read.response,
     details: {
       integrationSurface: "cloudshare.v4.environments.get",
       refreshedBy: "admin_exam_attempt_diagnostics",

@@ -1625,9 +1625,9 @@ function applyEnvironmentObservation(
 ): SalesTrialEnrollment {
   return {
     ...enrollment,
-    environmentStatus:
-      observation.persistedStatus ??
-      enrollment.environmentStatus,
+    environmentStatus: observation.source === "cloudshare_v4_environment"
+      ? enrollment.environmentStatus
+      : observation.persistedStatus ?? enrollment.environmentStatus,
     ...(observation.source ? { v4EnvironmentStatus: observation.providerStatus, v4EnvironmentObservedAt: observedAt } : {}),
     observedExpirationTime: observation.expiry.raw,
     lastReconciledAt: observedAt,
@@ -1979,6 +1979,12 @@ async function recordExtensionGuardDenied(
   ]);
 }
 
+function environmentExchangeSurface(exchange: { readonly request: unknown } | undefined): string {
+  const path = (exchange?.request as { readonly path?: unknown } | undefined)?.path;
+  return typeof path === "string" && /^\/v4\/environments(?:\/|$)/.test(path)
+    ? "cloudshare.v4.environments" : "cloudshare.v3.environments";
+}
+
 async function recordExtensionSuccess(
   deps: SalesTrialEnrollmentDeps,
   request: SalesTrialParticipantEnvironmentExtendRequest,
@@ -2015,10 +2021,10 @@ async function recordExtensionSuccess(
           ? { environmentId: canonicalEnvironmentId }
           : {}),
       },
-      request: primaryExchange?.request as Record<string, unknown> | undefined,
-      response: primaryExchange?.response as Record<string, unknown> | undefined,
+      request: (primaryExchange ?? httpExchanges.at(-1))?.request as Record<string, unknown> | undefined,
+      response: (primaryExchange ?? httpExchanges.at(-1))?.response as Record<string, unknown> | undefined,
       details: {
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: environmentExchangeSurface(primaryExchange ?? httpExchanges.at(-1)),
         attemptedOperation: primaryExchange ? "extend_environment" : "observe_extended_environment",
         expirationTime,
         ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
@@ -2040,7 +2046,7 @@ async function recordExtensionSuccess(
         offeringId: request.offeringId,
         expirationTime,
         attemptedOperation: primaryExchange ? "extend_environment" : "observe_extended_environment",
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: environmentExchangeSurface(primaryExchange ?? httpExchanges.at(-1)),
       },
     }),
   ]);
@@ -2079,7 +2085,7 @@ async function recordExtensionExchangeSteps(
         parentWorkflow: "sales_trial.offering.environment.extend",
         sequence: index + 1,
         totalSteps: exchanges.length,
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: environmentExchangeSurface(exchange),
         attemptedOperation: salesTrialAttemptedOperationForPath(
           (exchange.request as { readonly path?: unknown }).path,
         ),
@@ -2124,7 +2130,7 @@ async function recordExtensionFailure(
       request: httpExchanges[httpExchanges.length - 1]?.request as Record<string, unknown> | undefined,
       response: httpExchanges[httpExchanges.length - 1]?.response as Record<string, unknown> | undefined,
       details: {
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: environmentExchangeSurface(httpExchanges.at(-1)),
         attemptedOperation: salesTrialAttemptedOperationForPath(lastRequest?.path),
         failureMode: reason,
         ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
@@ -2144,7 +2150,7 @@ async function recordExtensionFailure(
       correlationId,
       details: {
         offeringId: request.offeringId,
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: environmentExchangeSurface(httpExchanges.at(-1)),
         attemptedOperation: salesTrialAttemptedOperationForPath(lastRequest?.path),
         failureMode: reason,
       },

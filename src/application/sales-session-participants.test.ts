@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { CloudShareAuthError, CloudShareResponseError } from "@/integrations/cloudshare/errors";
+import { CloudShareAuthError, CloudShareResponseError, CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare/errors";
 import { handleRefreshSalesParticipantEligibility, handleInviteSalesSessionParticipants as inviteSalesSessionParticipants, handleListSalesSessionParticipants as listSalesSessionParticipants, handleRegisterSalesSessionParticipants as registerSalesSessionParticipants } from "@/api/sales-session-participants";
 import { SalesEnvironmentResolutionError } from "@/integrations/cloudshare/sales-environment";
 import { invitationResult, type InvitationHandle, type InvitationState, type InvitationStore } from "@/domain/sales-participant-invitation-store";
@@ -585,6 +585,26 @@ describe("Sales Session participant invitation", () => {
     expect(JSON.stringify(result.body)).not.toContain("environment-1");
   });
 
+  it("preserves legacy history on a retained v4 Environment 404", async () => {
+    const remote = { ...remoteParticipant("provider-changed", "portal-1", contact.id), invitationStatus: "sent" as const, participationStatus: "inProgress" as const, environmentId: "environment-1", envStatus: null };
+    const save = vi.fn();
+    const recordEnvironmentObservation = vi.fn();
+    const diagnostics = { record: vi.fn() }; const audit = { write: vi.fn() };
+    const environmentRead = { snapshot: null, request: { method: "GET", path: "/v4/environments/environment-1" }, response: { status: 404, body: "" } };
+    const result = await handleListSalesSessionParticipants({
+      now: () => new Date("2026-07-19T08:00:00.000Z"),
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant("portal-1", contact.id, "provider-old"), lastInvitedAt: new Date("2026-07-17T08:00:00.000Z") }]), save, recordEnvironmentObservation }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remote])) }) },
+      environmentFactory: { forConnection: () => ({ getEnvironmentState: vi.fn().mockResolvedValue(environmentRead.snapshot), readEnvironmentState: vi.fn().mockResolvedValue(environmentRead) }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor });
+
+    expect(result.status).toBe(200);
+    expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", expect.objectContaining({ preserveHistory: true }));
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ request: environmentRead.request, response: environmentRead.response, details: expect.objectContaining({ integrationSurface: "cloudshare.v4.environments", observation: "not_found" }) }));
+    expect(JSON.stringify(result.body)).not.toContain("provider-changed");
+    expect(JSON.stringify(result.body)).not.toContain("environment-1");
+  });
+
   it("resolves v3 Environment state by server-side Contact email and the Customer Item project", async () => {
     const remote = { ...remoteParticipant("provider-1", "portal-1", contact.id), environmentId: "1234567890123456789", envStatus: null };
     const observe = vi.fn().mockResolvedValue({ environmentId: "opaque-v3-id", statusCode: 2, exchanges: [{ request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: contact.email, brief: "false" } }, response: { status: 200, body: [] } }, { request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-id" } }, response: { status: 200, body: { statusCode: 2 } } }] });
@@ -603,6 +623,21 @@ describe("Sales Session participant invitation", () => {
     expect(auditEvidence).not.toContain(session.cloudShareSalesExperienceId);
     expect(JSON.stringify(result.body)).not.toContain("opaque-v3-id");
     expect(JSON.stringify(result.body)).not.toContain("1234567890123456789");
+  });
+
+  it.each([
+    new CloudShareTransportError("unavailable", { path: "/v4/environments", method: "GET" }),
+    new CloudShareRequestError("forbidden", 403, { path: "/v4/environments", method: "GET" }),
+    new CloudShareResponseError("malformed", { path: "/v4/environments", method: "GET", responseStatus: 200 }),
+  ])("preserves legacy observation history after v4 read failure %s", async error => {
+    const remote = { ...remoteParticipant("provider-1", "portal-1", contact.id), environmentId: "1234567890123456789", envStatus: null };
+    const observe = vi.fn().mockRejectedValue(error);
+    const recordEnvironmentObservation = vi.fn();
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue({ ...session, itemId: "item-1" }) }, items: { findById: vi.fn().mockResolvedValue({ id: "item-1", customerId: "customer-1", project: { id: "project-1", name: "Project" } }) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant(), environmentStatusCode: 3, environmentObservedAt: new Date("2026-07-18T08:00:00Z") }]), save: vi.fn(), recordEnvironmentObservation }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remote])) } as never) }, salesEnvironmentFactory: { forConnection: () => ({ observe }) }, diagnostics: { record: vi.fn() },
+    }, { customerId: "customer-1", sessionId: session.id, actor });
+    expect(result.status).toBeGreaterThanOrEqual(400);
+    expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", { statusCode: null, observedAt: null, preserveHistory: true });
   });
 
   it("resolves v4 Environment state with truthful provenance by server-side Contact email and the Customer Item project", async () => {
