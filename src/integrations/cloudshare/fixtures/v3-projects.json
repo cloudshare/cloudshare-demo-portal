@@ -1,8 +1,0 @@
-{
-  "method": "GET",
-  "path": "/api/v3/projects",
-  "status": 200,
-  "body": [
-    { "id": "p-demo-1", "name": "Helios CX Project" }
-  ]
-}

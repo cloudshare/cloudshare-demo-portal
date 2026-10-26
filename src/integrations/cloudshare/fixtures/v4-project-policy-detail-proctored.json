@@ -1,0 +1,18 @@
+{
+  "method": "GET",
+  "path": "/v4/projects/p-demo-1/policies/pol-demo-2",
+  "status": 200,
+  "body": {
+    "id": "pol-demo-2",
+    "name": "Proctored Exam Policy",
+    "runtimeMinutes": 180,
+    "projectId": "p-demo-1",
+    "storageMinutes": 2880,
+    "allowEnvironmentCreation": true,
+    "allowSuspend": true,
+    "suspendMinutes": 120,
+    "autoAction": "suspend",
+    "inactivityThresholdMinutes": 30,
+    "usage": 0
+  }
+}

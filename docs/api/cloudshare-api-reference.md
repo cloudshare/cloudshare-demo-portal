@@ -3,23 +3,32 @@
 This project keeps local CloudShare API exports so implementation agents do not infer endpoint
 paths from memory or from earlier slices.
 
-## Source and implementation status (2026-10-23)
+## Source and implementation status (2026-10-26)
 
-**PUBLISHED CONTRACT:** The [current official Infrastructure OpenAPI source](https://cloudshare.stoplight.io/api/v1/projects/cloudshare/AccelerateAPI/nodes/reference/infrastructure-Public-API.openapi.json?branch=main)
-identifies Infrastructure 4.0 and documents v4 Projects, Policies and environment operations.
-The July Experience export listed below has a different scope; its lack of Infrastructure paths
-is not evidence that those v4 contracts are absent. The preserved October 12 Infrastructure export
-and current official source are assessed in the [dated contract-readiness report](../discovery/2026-10-23-cloudshare-v4-contract-readiness.md),
-including pagination, permissions, identity, timing and command limitations.
+**PUBLISHED CONTRACT:** The [current official Infrastructure 4.0 source](https://cloudshare.stoplight.io/api/v1/projects/cloudshare/AccelerateAPI/nodes/reference/infrastructure-Public-API.openapi.json?branch=main)
+was downloaded on 2026-10-26 and preserved in the export listed below. Projects and Project-scoped
+Policy list/detail use this contract. The July Experience export has a different scope.
 
-**SHIPPED MAIN:** At `dc8ec6a5`, #454/#455 share environment and resource-discovery seams but
-retain existing v3 provider traffic. Published replacements are not shipped migrations.
-**LIVE VERIFIED:** This documentation assessment adds no live tenant verification.
-**PENDING:** A Project/Policy read-only migration is conditional on separate scope agreement and
-exact live acceptance; #453 authorizes no transport migration. Unmerged PR448 and its Preparing
-acceptance gate remain independent; see the report for evidence boundaries.
+**IMPLEMENTED IN #468 / PR #470:** All Project and Policy discovery consumers use v4, including
+Exam/Sales authoring, Sales provisioning validation and Sync Resources. Projects traverse the
+`{count, items}` pages with `Count=true`, `Offset` and `Limit=100`; Policy lists omit limit to return
+all active rows, and details supply exact-identity runtime/storage minutes. See the
+[migration inventory and evidence](../discovery/2026-10-26-project-policy-v4-migration.md).
+**LIVE VERIFIED:** Awaiting the independent exact-head browser/live QA report; publication and
+fixture tests alone are not live verification.
+
+**RETAINED V3:** Blueprint/default-Snapshot, VMware Regions, Teams, active Project members,
+timezones, ping and existing Environment observations/commands. Environment migration #469 follows
+#468. Existing v4 Experience/participant/sponsored-link/Guided Journey behavior is unchanged.
+#351 / PR #448 is merged in the baseline; its older unmerged wording is historical.
 
 ## Local Reference Files
+
+- `docs/api/assets/cloudshare-infrastructure-v4-2026-10-26.json`
+  - Current official Infrastructure 4.0 OpenAPI export, retrieved 2026-10-26.
+  - Project/Policy contracts: `/v4/projects`, `/v4/projects/{projectId}/policies`,
+    `/v4/projects/{projectId}/policies/{policyId}`; `PolicyBriefResponse` / `PolicyResponse`.
+  - SHA-256: `58d85edb9f8982c9130138c120dcbd5546d9bf3eb140be4a763a174d11f7c325`.
 
 - `docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
   - Exported CloudShare Accelerate API OpenAPI 3.1 bundle.
