@@ -21,7 +21,7 @@ Real Support UI displayed success and synthetic invalid-ID GET 400 diagnostics; 
 attempt API access returned 404. The synthetic 400 does not establish valid-missing 404 behavior.
 
 Mandatory runtime console evidence remains incomplete after two bounded Chrome connection failures;
-no additional commands were sent. Support/later Resume captures were clean but cannot establish
+no additional commands were sent during those attempts. Support/later Resume captures were clean but cannot establish
 all-zero console behavior. Reported human viewer interaction does not establish causation of the
 provider's later Ready state while the local Attempt remained Suspended/paused. No provider bug is
 inferred. Coordinator option 2 accepts unchanged Archive regression via independently audited
