@@ -164,4 +164,7 @@ Trial launch/Ready evidence exists, but Trial Extend remains zero. Both Sales an
 required guest-data/preserved-work witness, so acceptance remains blocked with no structural-only
 waiver. See the [migration evidence record](../discovery/2026-10-27-default-extension-v4-migration.md)
 for corrected original-click timestamps, console limitations, provenance and preservation state.
-No general v4 state-eligibility or guest-work-preservation guarantee is inferred.
+A second isolated Trial run confirmed identity/role controls, Resume 204/Ready and a fresh
+sponsored link, but the guest remained Connecting with no saved witness. Trial Extend stays zero.
+Its one cleanup Suspend confirmed Suspended; owned servers stopped. Run-specific and cumulative
+counts and frozen manifests are recorded separately. No general v4 state-eligibility or guest-work-preservation guarantee is inferred.

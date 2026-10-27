@@ -2228,7 +2228,10 @@ and displayed completed/confirmed readback. Separate viewer runtime readings inc
 to 1h43m across elapsed time and rounding. This does not prove exact runtime seconds or preserved
 guest data/work. Trial UI launch/binding/Ready evidence exists, but Trial Extend is held at zero
 because no guest-work witness was obtained. Both independent acceptance reviews keep preserved-work
-proof blocking; structural identity continuity is insufficient. Scoped live Support success and
+proof blocking; structural identity continuity is insufficient. A second isolated Trial run
+confirmed Incognito identity/local role controls and resumed the same Environment, but the guest
+remained Connecting and no witness was saved. Correct isolation is not sole-cause proof. Trial
+Extend remains zero; one additional cleanup Suspend confirmed Suspended and owned servers stopped. Scoped live Support success and
 malformed-ID GET 400 evidence passed, alongside audited synthetic HTTP failure/recovery/isolation
 checks. GET 400 is neither valid-missing 404 nor Extend 403 proof. The historical v3 evidence below
 remains historical, not a general v4 eligibility guarantee. See the

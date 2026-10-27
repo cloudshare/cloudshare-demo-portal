@@ -160,7 +160,7 @@ A separate foreign-Customer HTTP login returned 200 and Support returned 200 wit
 Five Grammarly warning/error entries elsewhere were retained and independently attributed narrowly;
 there is no global-zero-console claim.
 
-The live ledger before preservation cleanup is: Experience creation 2; correlation-property POST 2;
+The run 1 live ledger before preservation cleanup was: Experience creation 2; correlation-property POST 2;
 Participant registration 2; sponsored-link POST 2; viewer activations 2; Environment creations 2.
 Sales Extend 1 and its access PUT 1 are spent. Two local portal capabilities were issued: the old
 one is revoked, the new one active. Trial Extend, invitations, Archive and Delete remain zero.
@@ -199,7 +199,7 @@ required after this prose update. Accurate evidence is not completed acceptance.
 and database stay untouched; isolated databases, encryption keys, histories and frozen evidence remain
 preserved outside the worktree. The synthetic server on port 3026 remains stopped.
 
-## Final preservation cleanup (2026-10-27)
+## Run 1 preservation cleanup (2026-10-27)
 
 Both owned viewer tabs were closed before fresh exact-identity/state/fence guards. One typed,
 bodyless v4 Suspend for the owned Sales Environment returned 204, followed by authoritative GET
@@ -214,9 +214,46 @@ The owned server processes (60316/65876) were stopped, jobs remained disabled, a
 untracked files; port 3000, the primary database and retained earlier-ticket assets were untouched
 by this task. The ticket worktree remains preserved because the work is incomplete.
 
-The final external `after-cleanup-frozen-1/manifest.json` SHA256 is
+The run 1 external `after-cleanup-frozen-1/manifest.json` SHA256 is
 `B11DB43CD69FC4FD593748C5ED74FE2ACAA18070079E335FE78673C5709206BA`.
 It preserves the isolated database/key/resource tuple, private cleanup exchanges, Trial credential,
 Support-isolation evidence and server logs. Earlier frozen manifests remain unchanged. QA returned
 no overall merge approval: preserved-work acceptance remains blocked and Trial Extend remains zero.
 PR #476 remains draft/unmerged, issue #473 active, and #474 blocked pending the outstanding gates.
+
+## Isolation run 2 and cleanup (2026-10-27)
+
+A bounded second run reused the owned Trial assets with independently confirmed Incognito Trial
+identity and local portal role controls. Correct isolation was demonstrated; it does not establish
+that identity/context was the sole cause of the earlier guest-connection problem. A third local
+role switch was unused. No guest witness was saved and Trial Extend remained at zero.
+
+This run issued one Resume POST returning 204 at 17:43:13.478 UTC, followed by authoritative Ready
+at 17:43:41.006. One fresh sponsored-link POST returned 200 during 17:44:15.977–17:44:16.195.
+The guest view still showed “Connecting” through 17:47:46. This is evidence of attempted access,
+not evidence of guest data or preserved work. No new Environment or Experience is inferred from
+the fresh sponsored link.
+
+The owned viewer tab ending 354 was closed at 17:49:16.947. Fresh exact-identity/state/fence guards
+then allowed one cleanup Suspend POST returning 204 and GET Suspended at 17:50:04.797. Owned server
+processes 119048/122236 were stopped; ports 3025/3026 were free, and the primary checkout/database
+remained untouched. This API cleanup is preservation housekeeping, not changed-path UI acceptance.
+
+The earlier run 1 ledger and frozen evidence remain unchanged. Run 2 adds exactly one Resume,
+one sponsored-link POST and one cleanup Suspend. Therefore the cumulative recorded sponsored-link
+POST count is three, Resume count one, and cleanup Suspend count three. Sales Extend remains one,
+its coordinated access PUT remains one, and Trial Extend remains zero. The run 1 creation counts
+remain two each for Experiences, Participants and Environments. No additional guest-work proof or
+acceptance is implied by those cumulative counts.
+
+External frozen manifests under the same private QA evidence root are:
+
+- `isolation-run-2-precleanup-frozen/manifest.json` SHA256
+  `541EF09E856341D7FB429D695A04C623D9389186AE4E03623295517FA38EA303`.
+- `isolation-run-2-aftercleanup-frozen/manifest.json` SHA256
+  `D676BC27B8E88B885B99315DE058D4160A3274FB916B9A3117CE67A7F048633E`.
+
+Both hashes were checked before this prose update. Prior evidence was preserved rather than
+rewritten. Runtime code remains `1fc7ee21ecf21af7b6d6ac07eae6abae267e766d`. Acceptance remains
+**blocked**: Sales work preservation has not been demonstrated and Trial Extend was not exercised.
+PR #476 remains draft/unmerged, issue #473 active, and dependent #474 blocked.
