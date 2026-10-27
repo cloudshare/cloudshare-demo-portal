@@ -156,8 +156,12 @@ v4 eligibility proof.
 
 **Verification update (2026-10-27):** independent audit accepted the exact-runtime-head actual HTTP
 simulation: 126 synthetic exchanges, 9 unique bodyless Extend POSTs, no replay, protected evidence
-and Customer isolation. Three live read-only checks passed; real Sales UI creation/registration
-console checks passed. Live Extend count remains zero; clipboard/browser-extension UI blocking
-prevents the remaining browser/live workflows. The responsible extension is unknown. The
-[migration evidence record](../discovery/2026-10-27-default-extension-v4-migration.md) distinguishes
-these results, preserved resources and pending gates; no live v4 extension guarantee is inferred.
+and Customer isolation. Three live read-only checks passed. One real automated Sales Extend UI
+click produced POST 204, authoritative increased storage expiry, separate access PUT 200 and
+completed/confirmed UI evidence. Independent viewer runtime observations are retained separately.
+Live Support success and malformed-ID GET 400 diagnostics passed; this is not Extend 403 evidence.
+Trial launch/Ready evidence exists, but Trial Extend remains zero. Both Sales and Trial lack the
+required guest-data/preserved-work witness, so acceptance remains blocked with no structural-only
+waiver. See the [migration evidence record](../discovery/2026-10-27-default-extension-v4-migration.md)
+for corrected original-click timestamps, console limitations, provenance and preservation state.
+No general v4 state-eligibility or guest-work-preservation guarantee is inferred.

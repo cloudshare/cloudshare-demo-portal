@@ -38,14 +38,14 @@ exact opaque path encoding, empty 204, omitted body/query, protected provider bo
 of provider IDs/body secrets from generic traces. Existing Suspend/Resume and Archive wire tests
 remain regression checks. Fixtures are offline evidence, not live tenant proof.
 
-## Live acceptance status
+## Live acceptance status — blocked
 
-At implementation handoff, this ticket has **no live extension proof yet**. Independent QA must
-exercise both real browser workflows, capture console results, authoritative expiry/state,
-separate runtime evidence where safely available, preserved work and Sales access coordination.
-Live Support success/safe failure remains a QA gate. Audited simulated HTTP rejection,
-ambiguity and partial-result evidence is recorded below; it does not establish live behavior.
-Archived/Preparing provider acceptance is not inferred from old v3 evidence or published schemas.
+Sales default extension has real automated UI, provider/readback, access coordination and runtime
+observation evidence below. Acceptance remains blocked: neither Sales nor Trial has a guest-data
+or preserved-work witness, and Trial Extend was deliberately not dispatched. Both independent
+Standards and Spec acceptance reviews treat preserved-work proof as blocking; structural identity
+continuity does not waive it. Human QA approval remains waived, but required automated/live evidence
+does not. PR #476 stays draft/unmerged, issue #473 remains active, and dependent #474 is blocked.
 No retained #350/#351 assets, primary checkout, port 3000, or primary database were changed.
 
 ## Remaining shipped v3 inventory after D
@@ -118,48 +118,105 @@ remain outside the worktree at
 The owned synthetic server on port 3026 is stopped. This audit closes the simulated HTTP evidence
 gap only; it does not close either real browser/live extension gate.
 
-## Live preparation and current browser blocker (2026-10-27)
+## Live evidence and remaining acceptance gap (2026-10-27)
 
-On runtime head `1fc7ee21ecf21af7b6d6ac07eae6abae267e766d`, the existing read-only live suite
-passed 2 files / 3 tests at 13:21 UTC: `tests/live-cloudshare-ping.e2e.test.ts` and
-`tests/live-certalis-sales-preflight.e2e.test.ts`, run with `vitest.e2e.config.ts --reporter=dot`
-and the existing private seed-file path. These checks cover real v3 ping and active Sales Project
-member preflight; no provider writes or temporary credential file were used. The tool output was
-not saved as a standalone test log. They do not verify Extend.
+Runtime remains `1fc7ee21ecf21af7b6d6ac07eae6abae267e766d`; subsequent commits change evidence
+prose only. The existing read-only live suite passed 2 files / 3 tests at 13:21 UTC:
+`tests/live-cloudshare-ping.e2e.test.ts` and `tests/live-certalis-sales-preflight.e2e.test.ts`,
+using `vitest.e2e.config.ts --reporter=dot` and the existing private seed-file path. These cover
+real v3 ping and active Sales Project members; no writes or temporary credential file were used.
+Tool output was not saved as a standalone test log.
 
-Real Sales UI creation at 13:19:43 UTC and subsequent Participant registration succeeded on the
-owned disposable Session. Its original authored window is 2026-10-27T13:19–2026-10-28T13:19 UTC.
-Exact Customer, Contact, Participant and resource identity guards remain in private QA evidence.
-Unfiltered creation, registration and settled Participants console captures contained zero warnings
-or errors (info/log entries only). An earlier click with no request produced no write; its cause
-remains unproven. Reload, committed selection and one actual submission succeeded without a
-product change.
+Real Sales UI creation and registration succeeded on owned disposable assets, with exact private
+Customer/Contact/Participant/resource guards. The original authored Session window remains
+2026-10-27T13:19–2026-10-28T13:19 UTC. Creation, registration and settled Participants captures
+contained zero console warnings/errors. An earlier no-request click had no write and an unproven
+cause; normal reload/committed selection followed by one submission succeeded without code changes.
 
-The unchanged live ledger is: Sales Experience POST 1; scoped correlation-property POST 1;
-provider Participant registration POST 1; local portal launch-capability issuance 1 (active).
-Sponsored-link POST, viewer activation, Environment creation, Extend, Sales access PUT, Trial
-records/Experience, invitation, Archive and Delete counts are all zero. Thus there is no live
-extension, retained-work, runtime-extension or live Support success/failure proof yet.
+The original CUA trace records the single automated **Extend selected Participants** click at
+14:09:07.186 UTC (tool output 14:09:08.630), correcting the earlier report timestamp of 14:09:28.
+The real bodyless v4 Extend returned 204 at 14:09:28.650; the separate Sales access PUT returned
+200 at 14:09:29.786. Authoritative exact-ID storage readback increased by 24 hours. The original
+14:09:40.674 accessibility-tree diff shows “Extension completed”, confirmed Session access until
+2026-10-29T13:54 UTC, confirmed expiry 2026-10-29T13:53:30.000Z, and matching command correlation
+`294ae15b-4f6b-4163-9f9b-ba017cf1dc84`. The same tool output records one console entry and zero
+warnings/errors. Existing server HTTP 200 evidence is retained independently.
 
-The page reported clipboard-write success and consequently cleared its manual-copy field, but the
-Browser Use virtual clipboard read was empty. One normal paste failed before input with
-`Browser Use virtual clipboard has no data to paste`. The proposed alternate hostname
-`localhost.localdomain` failed DNS before any further capability issuance; no alternate hostname
-or regeneration followed. A subsequent exact human-mentioned Chrome tab attempt returned:
+Separate viewer evidence showed runtime 48m at 14:05:37 and 1h43m at 14:10:17, alongside elapsed
+wall time and display rounding; this is not inferred from storage expiry or an exact-second runtime
+increment measurement. The same ten viewer tab/entity IDs were observed. They are **not** a verified
+seven-provider-VM-ID inventory and do not prove guest bytes or work preservation. No guest-data or
+work witness was obtained. No structural-only waiver was accepted.
 
-> Google Chrome is blocking automation because another extension UI is open on this page.
-> Complete or dismiss that extension UI in Google Chrome, then ask me to continue.
+Trial real UI publication, registration, Open Trial launch, exact binding, Ready state, runtime,
+storage and relevant console evidence were captured. One normal guest view remained “Connecting”.
+No guest-work witness was obtained, so Trial Extend remains held at zero. No additional assets,
+extensions, timing rewrites or workaround operations are authorized by these observations.
 
-The responsible extension is unknown. A human screenshot showing popup permission enabled and a
-site-information panel does not establish the cause. Automation stopped after that bounded attempt;
-the user was asked to press Escape in Chrome and reply READY, which remains pending. No alternate
-automation path or further provider action is claimed. The user's original Example tab was restored.
+Owning-Customer Support UI displayed the actual success evidence and an actual malformed-ID GET
+400 diagnostic with masked authorization and verbatim provider body. Relevant Support captures had
+zero warnings/errors. This proves input rejection, not valid-missing 404 or Extend permission 403.
+A separate foreign-Customer HTTP login returned 200 and Support returned 200 with zero entries.
+Five Grammarly warning/error entries elsewhere were retained and independently attributed narrowly;
+there is no global-zero-console claim.
 
-The isolated live QA server remains ready on port 3025 with jobs disabled solely for human browser
-setup. Its external database, key and history are preserved at
-`C:/Users/swins/AppData/Local/CodexProfiles/cloudshare/qa-issue-473`.
-The main checkout, port 3000, primary database and retained earlier-ticket assets remain untouched.
-Human QA is waived by the issue's accepted work order; this browser setup intervention does not
-waive automated browser/live acceptance. Both extension workflows, separate runtime/work evidence,
-live Support evidence, final exact-head two-axis review and QA evidence-accuracy review remain
-required. No completion, merge, or provider-contract gap closure is claimed.
+The live ledger before preservation cleanup is: Experience creation 2; correlation-property POST 2;
+Participant registration 2; sponsored-link POST 2; viewer activations 2; Environment creations 2.
+Sales Extend 1 and its access PUT 1 are spent. Two local portal capabilities were issued: the old
+one is revoked, the new one active. Trial Extend, invitations, Archive and Delete remain zero.
+No unrelated End rewrite occurred. The Sales access PUT above is the required extension coordination.
+
+Earlier clipboard-copy success cleared the manual field while the virtual clipboard was empty;
+a paste failed before input. A proposed alternate hostname failed DNS before issuance. Chrome then
+reported another extension UI blocking automation; its identity/cause was not established by the
+human screenshot. Human clipboard/context assistance was disclosed and enabled continuation.
+The changed Sales Extend itself was an automated UI click; human setup assistance is not human QA
+approval and does not change the accepted waiver.
+
+## Evidence integrity and preservation
+
+All raw evidence remains external/private under
+`C:/Users/swins/AppData/Local/CodexProfiles/cloudshare/qa-issue-473`:
+
+- `sales-frozen-1/manifest.json` SHA256
+  `A112FA9FE4965F554985A205FDFD28E8DC19AE7613A8D390CDF8C023ECEF9B56`.
+- `trial-support-frozen-1/manifest.json` SHA256
+  `6172D9982332641FA0356624C04B551C7C39845FB431704CDA3CF7C31CD9AB39`.
+- `sales-frozen-1-cua-addendum/manifest.json` SHA256
+  `88C0EB8821082822F2814D8994527A5BCDD844300D0F9D0DA29A3CEE419F2C42`.
+
+The original ad hoc pre-operation JSON was overwritten by a later read. Its original contents are
+not claimed recovered: actual append-only provider pre-exchanges and the durable captured target
+were exported instead. The six original CUA lines were recovered without new UI actions, source-log
+modification or reconstruction; offsets, byte lengths and hashes are preserved. The captured source
+hash `51d23de54d79405f50798160a9337a3769343762d55355b32bdd46369d740610` applies to the
+first 8,654,395 bytes, not the current full append-only log. The later prefix verification and all
+six byte-range hashes matched. This proves a contemporaneous accessibility-tree diff, not a full
+DOM or browser network archive.
+
+Final exact-head Standards, Spec/security, and QA evidence-accuracy/actual-acceptance reviews remain
+required after this prose update. Accurate evidence is not completed acceptance. The primary checkout
+and database stay untouched; isolated databases, encryption keys, histories and frozen evidence remain
+preserved outside the worktree. The synthetic server on port 3026 remains stopped.
+
+## Final preservation cleanup (2026-10-27)
+
+Both owned viewer tabs were closed before fresh exact-identity/state/fence guards. One typed,
+bodyless v4 Suspend for the owned Sales Environment returned 204, followed by authoritative GET
+Suspended at 14:32:53 UTC. The separately guarded Trial Environment received one Suspend 204,
+followed by GET Suspended at 14:33:19 UTC. Exactly two cleanup POSTs occurred, without retry,
+Archive, Delete, unrelated End rewrite, link revocation or new capability. This is housekeeping,
+not UI acceptance evidence or preserved-work proof.
+
+The owned server processes (60316/65876) were stopped, jobs remained disabled, and ports 3025 and
+3026 were free. User-shared portal tabs were left open. Two local capabilities remain preserved
+(one revoked, one active). The main checkout remained on `main` at `1f615591` with its two original
+untracked files; port 3000, the primary database and retained earlier-ticket assets were untouched
+by this task. The ticket worktree remains preserved because the work is incomplete.
+
+The final external `after-cleanup-frozen-1/manifest.json` SHA256 is
+`B11DB43CD69FC4FD593748C5ED74FE2ACAA18070079E335FE78673C5709206BA`.
+It preserves the isolated database/key/resource tuple, private cleanup exchanges, Trial credential,
+Support-isolation evidence and server logs. Earlier frozen manifests remain unchanged. QA returned
+no overall merge approval: preserved-work acceptance remains blocked and Trial Extend remains zero.
+PR #476 remains draft/unmerged, issue #473 active, and #474 blocked pending the outstanding gates.

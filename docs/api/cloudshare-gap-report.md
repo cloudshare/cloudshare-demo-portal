@@ -2222,15 +2222,17 @@ only one worker owns each reconciliation pass.
 ## GAP-35 — Live default extension outcome for a retained Trial Environment
 
 **2026-10-27 migration note (#473):** the current command is bodyless v4 POST
-`/v4/environments/{id}/extend`, followed by authoritative v4 observation. The historical
-v3 evidence below remains historical; it does not prove v4 state eligibility or runtime increments.
-Independent actual-HTTP simulation now passes rejection, ambiguity, partial-result, recovery,
-Customer-isolation and protected-evidence checks. This uses a synthetic provider only; three live
-read-only checks and Sales UI creation/registration are preparation evidence, not Extend proof.
-Both live extension flows and live Support evidence remain blocked pending human Chrome setup;
-the live Extend count is zero. See the
-[migration inventory and acceptance limits](../discovery/2026-10-27-default-extension-v4-migration.md).
-
+`/v4/environments/{id}/extend`, followed by authoritative v4 observation. One actual automated
+Sales UI extension returned 204, increased storage by 24 hours, coordinated a separate access PUT,
+and displayed completed/confirmed readback. Separate viewer runtime readings increased from 48m
+to 1h43m across elapsed time and rounding. This does not prove exact runtime seconds or preserved
+guest data/work. Trial UI launch/binding/Ready evidence exists, but Trial Extend is held at zero
+because no guest-work witness was obtained. Both independent acceptance reviews keep preserved-work
+proof blocking; structural identity continuity is insufficient. Scoped live Support success and
+malformed-ID GET 400 evidence passed, alongside audited synthetic HTTP failure/recovery/isolation
+checks. GET 400 is neither valid-missing 404 nor Extend 403 proof. The historical v3 evidence below
+remains historical, not a general v4 eligibility guarantee. See the
+[migration evidence, provenance and blocked gates](../discovery/2026-10-27-default-extension-v4-migration.md).
 
 | Field | Detail |
 |---|---|
