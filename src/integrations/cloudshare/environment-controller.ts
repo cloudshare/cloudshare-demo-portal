@@ -1,67 +1,37 @@
+import { z } from "zod";
 import { dispatchEnvironmentCommand } from "./environment-command";
 import type { CloudShareClient } from "./client";
 import type { EnvironmentCommandResult, EnvironmentController } from "@/domain/environment";
 
-/**
- * CloudShare implementation of the {@link EnvironmentController} port — issues
- * suspend, resume, and archive commands to a CloudShare environment via the v3
- * env-action endpoints, using the CloudShare `envId` discovered from the
- * training-students list. Archive is intentionally kept behind this typed seam
- * because CloudShare has not documented that action endpoint.
+/** Environment commands retain the exact Customer-correlated opaque ID.
+ * v4 acknowledgement is not completion: lifecycle owners confirm through observation.
+ * Archive deliberately retains its existing v3 action; it is never DELETE.
  */
-
-export function createCloudShareEnvironmentController(
-  client: CloudShareClient,
-): EnvironmentController {
-  async function runCommand(
-    environmentExternalId: string,
-    action: "suspend" | "resume" | "archive",
-  ): Promise<EnvironmentCommandResult> {
-    const path = `/envs/actions/${action}`;
-    const attemptedOperation = `${action}_environment` as const;
-    const integrationSurface = `cloudshare.v3.env.action.${action}`;
-
-    const dispatched = await dispatchEnvironmentCommand(client, environmentExternalId, action);
-    if (dispatched.detailed) {
-      const result = dispatched.detailed;
-      return {
-        attemptedOperation,
-        integrationSurface,
-        method: "PUT",
-        path: `/api/v3${path}`,
-        host: result.host,
-        externalIds: { environmentId: environmentExternalId },
-        request: { ...result.request },
-        response: { ...result.response },
-      };
-    }
-
-    const body = dispatched.text!;
+export function createCloudShareEnvironmentController(client: CloudShareClient): EnvironmentController {
+  async function runV4Command(environmentExternalId: string, action: "suspend" | "resume"): Promise<EnvironmentCommandResult> {
+    const spec = { method: "POST", path: `/environments/${encodeURIComponent(environmentExternalId)}/${action}`, allowEmptyResponse: true, schema: z.void() } as const;
+    const result = client.requestV4Detailed ? await client.requestV4Detailed(spec) : null;
+    if (!result) await client.requestV4(spec);
     return {
-      attemptedOperation,
-      integrationSurface,
-      method: "PUT",
-      path: `/api/v3${path}`,
-      externalIds: { environmentId: environmentExternalId },
-      request: {
-        method: "PUT",
-        path: `/api/v3${path}`,
-      },
-      response: body.length > 0 ? { body } : null,
+      attemptedOperation: `${action}_environment`, integrationSurface: `cloudshare.v4.environments.${action}`,
+      method: "POST", path: `/v4${spec.path}`, externalIds: { environmentId: environmentExternalId },
+      ...(result ? { host: result.host } : {}),
+      request: result ? { ...result.request } : { method: "POST", path: `/v4${spec.path}` },
+      response: result ? { ...result.response } : null,
     };
   }
 
-  return {
-    async suspendEnvironment(environmentExternalId: string): Promise<EnvironmentCommandResult> {
-      return runCommand(environmentExternalId, "suspend");
-    },
-
-    async resumeEnvironment(environmentExternalId: string): Promise<EnvironmentCommandResult> {
-      return runCommand(environmentExternalId, "resume");
-    },
-
-    async archiveEnvironment(environmentExternalId: string): Promise<EnvironmentCommandResult> {
-      return runCommand(environmentExternalId, "archive");
-    },
-  };
+  async function runLegacyCommand(environmentExternalId: string, action: "archive"): Promise<EnvironmentCommandResult> {
+    const path = `/envs/actions/${action}`;
+    const dispatched = await dispatchEnvironmentCommand(client, environmentExternalId, action);
+    const result = dispatched.detailed;
+    return {
+      attemptedOperation: `${action}_environment`, integrationSurface: `cloudshare.v3.env.action.${action}`,
+      method: "PUT", path: `/api/v3${path}`, externalIds: { environmentId: environmentExternalId },
+      ...(result ? { host: result.host } : {}),
+      request: result ? { ...result.request } : { method: "PUT", path: `/api/v3${path}` },
+      response: result ? { ...result.response } : dispatched.text!.length > 0 ? { body: dispatched.text } : null,
+    };
+  }
+  return { suspendEnvironment: id => runV4Command(id, "suspend"), resumeEnvironment: id => runV4Command(id, "resume"), archiveEnvironment: id => runLegacyCommand(id, "archive") };
 }

@@ -3,7 +3,7 @@
 This project keeps local CloudShare API exports so implementation agents do not infer endpoint
 paths from memory or from earlier slices.
 
-## Source and implementation status (2026-10-26)
+## Source and implementation status (2026-10-27)
 
 **PUBLISHED CONTRACT:** The [current official Infrastructure 4.0 source](https://cloudshare.stoplight.io/api/v1/projects/cloudshare/AccelerateAPI/nodes/reference/infrastructure-Public-API.openapi.json?branch=main)
 was downloaded on 2026-10-26 and preserved in the export listed below. Projects and Project-scoped
@@ -22,9 +22,31 @@ write, known-inactive Policy exclusion or Team Member permission-empty behavior 
 see the dated evidence report above for these boundaries.
 
 **RETAINED V3:** Blueprint/default-Snapshot, VMware Regions, Teams, active Project members,
-timezones, ping and Environment suspend/resume/archive/extend commands. #469 migrates all
+timezones, ping and Environment Archive/Extend commands (Extend is tracked by #473). #472 migrates
+suspend/resume to bodyless v4 POST with empty204 acknowledgement and a durable per-Attempt
+no-replay marker; see [contract and acceptance evidence](../discovery/2026-10-26-suspend-resume-v4-migration.md). #469 migrates all
 Environment list/detail observations to v4. Existing v4 Experience/participant/sponsored-link/Guided Journey behavior is unchanged.
 #351 / PR #448 is merged in the baseline; its older unmerged wording is historical.
+
+## Suspend/resume live evidence (#472, 2026-10-27)
+
+Reviewed runtime head `7756114f81f8276362cf547f6b07a356921eae72` is unchanged. An isolated
+replacement real UI flow produced three bodyless v4 Suspend POST 204 writes (explicit, heartbeat,
+logout) and two Resume POST 204 writes, with exact Suspended/Ready readbacks and retained clock.
+Settled explicit Suspend, post-timeout Home and logout console captures each had zero warnings/
+errors and were independently accepted. Stage 0's demonstrated browser-side attribute injection
+and extension-source error have a narrow environmental attribution; not every console was zero.
+Original real Admin Support success/synthetic invalid-ID GET 400 and foreign Customer API 404
+remain separate evidence; no provider valid-missing 404 claim is made.
+
+Original UI S3/R2 plus separately authorized API cleanup S1 remain historical, separate from the
+replacement S3/R2 ledger. Final replacement provider/local state was Suspended, clock paused
+185978 ms, no pending command or session; jobs/server stopped and temporary credential restored.
+Coordinator option 2 accepts unchanged Archive regression through independent audit and 58/58
+existing automated tests. B's live Archive evidence is historical; current-ticket Archive count is
+zero. Archive/Extend transport remains v3, never DELETE. See the
+[acceptance matrix, chronology and preservation limits](../discovery/2026-10-26-suspend-resume-v4-migration.md).
+Final documentation review and lifecycle disposition remain required; no merge is claimed.
 
 ## Local Reference Files
 

@@ -129,3 +129,8 @@ export function createInMemoryExamClockRepository(): ExamClockRepository & {
     },
   };
 }
+
+/** Existing pause/resume arithmetic, shared by atomic runtime settlement. */
+export function transitionExamClock(state: ExamClockState | null, examAttemptId: string, action: "suspend" | "resume", at: Date): ExamClockState {
+  return { examAttemptId, status: action === "suspend" ? "paused" : "running", elapsedAtPauseMs: resolveElapsedMs(state, at), startedAt: action === "suspend" ? null : at, updatedAt: at };
+}

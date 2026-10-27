@@ -6,7 +6,7 @@ import type { CloudShareClient } from "./client";
 export async function dispatchEnvironmentCommand(
   client: CloudShareClient,
   environmentId: string,
-  action: "suspend" | "resume" | "archive" | "extend",
+  action: "archive" | "extend",
 ) {
   const spec = { method: "PUT", path: `/envs/actions/${action}`, query: { envId: environmentId } } as const;
   if (client.requestV3TextDetailed) {

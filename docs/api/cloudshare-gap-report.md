@@ -11,6 +11,41 @@ PR that surfaced the gap.
 
 ---
 
+## Dated observation: #472 suspend/resume QA (2026-10-27)
+
+This is bounded verification evidence, not a new provider-contract discrepancy or closure of any
+existing GAP. At unchanged runtime head `7756114f81f8276362cf547f6b07a356921eae72`, the original
+real UI flow produced Suspend 3 / Resume 2 with 204 and authoritative readbacks. A separate
+coordinator-authorized API preservation Suspend returned 204 then exact GET confirmed Suspended.
+Reported human viewer interaction does not establish causation of the earlier provider Ready/local
+Suspended discrepancy; no provider bug is inferred. No original timing was rewritten.
+
+Two Chrome connection failures sent no additional commands during those attempts; original console
+captures remained incomplete. A later authorized isolated replacement UI flow produced its own
+Suspend 3 / Resume 2, all 204, with clock pauses 62728, 130782 and 185978 ms and Ready resume
+readbacks retaining elapsed time. Explicit Suspend, post-timeout Home and logout settled consoles
+each captured zero warnings/errors, independently completing the three missing gates. Initial
+heartbeat 409 preceded settled admission and later 200. Stage 0's extra `fdprocessedid` attributes
+were absent from HTTP/source and appeared on a neutral script-free form in the same browser;
+only this demonstrated browser-side signature and the independently seen extension-source error
+received environmental attribution. Injector/timing remain unknown; no all-zero-console claim.
+
+Original real Support UI success and synthetic invalid-ID GET 400 diagnostics remain evidence;
+foreign Customer attempt API access returned 404. The synthetic 400 is not valid-missing provider
+404 behavior. Coordinator option 2 accepts unchanged Archive via independent exact-head audit and
+58/58 automated checks; current-ticket live Archive count is zero. Historical B evidence and
+unrelated GAP statuses remain unchanged.
+
+The replacement used 65 migrations and copied existing identities into an isolated DB; the temporary
+same-Candidate credential was restored, original DB/hash unchanged. Final exact provider/local
+state was Suspended, clock paused 185978 ms, pending/session zero; server/jobs stopped and browser
+cleanup recorded. See the [acceptance matrix and preservation record](../discovery/2026-10-26-suspend-resume-v4-migration.md)
+for chronology, evidence hashes and distinct original/replacement expiry. Experience End does not
+prove automatic suspension, nor do retained records guarantee extended retention. Final review and
+lifecycle disposition remain required; no merge or unrelated gap closure is claimed.
+
+---
+
 ## GAP-16 — Sales timezone catalogue and edit semantics require live confirmation
 
 | Field | Detail |
@@ -2241,5 +2276,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-09-01 (added GAP-35 with the bounded live extension-verification result).
+*Last updated: 2026-10-27 (added bounded #472 observations; existing GAP statuses unchanged).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

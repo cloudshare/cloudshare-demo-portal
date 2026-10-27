@@ -190,7 +190,7 @@ function makeCloudShareFactory(overrides: Partial<EnvironmentFixtureClient> = {}
   return {
     forConnection: () => environmentFixtureClient({
       readEnvironment: vi.fn(),
-      requestV3Text: vi.fn().mockResolvedValue(""),
+      writeEnvironment: vi.fn().mockResolvedValue(""),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -287,7 +287,7 @@ function makeResumeCloudShareFactory(): CloudShareClientFactory {
 function makeCloudShareClient(overrides: Partial<EnvironmentFixtureClient> = {}): EnvironmentFixtureClient {
   return environmentFixtureClient({
     readEnvironment: vi.fn(),
-    requestV3Text: vi.fn().mockResolvedValue(""),
+    writeEnvironment: vi.fn().mockResolvedValue(""),
     requestV4: activeParticipantRequestV4(),
     ...overrides,
   });
@@ -420,7 +420,7 @@ describe("suspendExamAttemptRuntime", () => {
 
     const customerClient = makeCloudShareClient({
       readEnvironment: vi.fn(),
-      requestV3Text: vi.fn(),
+      writeEnvironment: vi.fn(),
       requestV4: vi.fn(),
     });
     const cloudshare = {
@@ -450,7 +450,7 @@ describe("suspendExamAttemptRuntime", () => {
     expect(cloudshare.forConnection).not.toHaveBeenCalled();
     expect(customerClient.requestV4).not.toHaveBeenCalled();
     expect(customerClient.readEnvironment).not.toHaveBeenCalled();
-    expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    expect(customerClient.writeEnvironment).not.toHaveBeenCalled();
     expect(diagnostics.record).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
@@ -491,7 +491,7 @@ describe("suspendExamAttemptRuntime", () => {
     const customerClient = makeCloudShareClient({
       readEnvironment: vi
         .fn()
-        .mockResolvedValue({ envStatus: "Suspended" }),
+        .mockResolvedValueOnce({ envStatus: "Running" }).mockResolvedValue({ envStatus: "Suspended" }),
       requestV4: activeParticipantRequestV4(),
     });
     const cloudshare = {
@@ -524,12 +524,10 @@ describe("suspendExamAttemptRuntime", () => {
       expect.objectContaining({ customerId: "customer-1" }),
       expect.objectContaining({ scope: "workflow" }),
     );
-    expect(customerClient.requestV3Text).toHaveBeenNthCalledWith(
+    expect(customerClient.writeEnvironment).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        method: "PUT",
-        path: "/envs/actions/suspend",
-        query: { envId: "ENVd0WBTGirla-omK6Jh3BvA2" },
+        method: "POST", path: "/environments/ENVd0WBTGirla-omK6Jh3BvA2/suspend",
       }),
     );
     expect(customerClient.readEnvironment).toHaveBeenNthCalledWith(
@@ -590,12 +588,7 @@ describe("suspendExamAttemptRuntime", () => {
       createdAt: new Date(),
     });
     const customerClient = makeCloudShareClient({
-      readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/environments/ENVS2n38LTNdcC4sHsqnjRzg2") {
-          return spec.schema.parse({ envStatus: "Suspended" });
-        }
-        throw new Error(`unexpected v3 path ${spec.path}`);
-      }) as unknown as CloudShareClient["requestV4"],
+      readEnvironment: vi.fn().mockResolvedValueOnce({ envStatus: "Running" }).mockResolvedValue({ envStatus: "Suspended" }),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -622,12 +615,10 @@ describe("suspendExamAttemptRuntime", () => {
     );
 
     expect(resp.status).toBe(200);
-    expect(customerClient.requestV3Text).toHaveBeenNthCalledWith(
+    expect(customerClient.writeEnvironment).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        method: "PUT",
-        path: "/envs/actions/suspend",
-        query: { envId: "ENVS2n38LTNdcC4sHsqnjRzg2" },
+        method: "POST", path: "/environments/ENVS2n38LTNdcC4sHsqnjRzg2/suspend",
       }),
     );
     await expect(launches.findByExamAttemptId("ea-1")).resolves.toMatchObject({
@@ -949,14 +940,15 @@ describe("suspendExamAttemptRuntime", () => {
 
   it("returns 502 with supportable diagnostics when CloudShare suspend returns an http status error", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3Text: vi.fn(async () => {
+      readEnvironment: vi.fn().mockResolvedValue({ envStatus: "Running" }),
+      writeEnvironment: vi.fn(async () => {
         throw new CloudShareRequestError("forbidden", 403, {
-          integrationSurface: "cloudshare.v3.env.action.suspend",
-          method: "PUT",
-          path: "/api/v3/envs/actions/suspend",
+          integrationSurface: "cloudshare.v4.environments.suspend",
+          method: "POST",
+          path: "/v4/environments/ENVS-default-live-env-1/suspend",
           responseBody: "{\"error\":\"forbidden\"}",
         });
-      }) as unknown as CloudShareClient["requestV3Text"],
+      }) as unknown as CloudShareClient["requestV4"],
     });
     const deps = await makeSuspendDeps({
       cloudshare: {
@@ -978,7 +970,7 @@ describe("suspendExamAttemptRuntime", () => {
           operation: "exam_suspend",
           outcome: "failure",
           attemptedOperation: "suspend_environment",
-          integrationSurface: "cloudshare.v3.env.action.suspend",
+          integrationSurface: "cloudshare.v4.environments.suspend",
           failureMode: "http_status",
           responseStatus: 403,
         }),
@@ -988,14 +980,15 @@ describe("suspendExamAttemptRuntime", () => {
 
   it("returns 429 with rate-limit diagnostics when CloudShare suspend is throttled", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3Text: vi.fn(async () => {
+      readEnvironment: vi.fn().mockResolvedValue({ envStatus: "Running" }),
+      writeEnvironment: vi.fn(async () => {
         throw new CloudShareRateLimitError("too many requests", 429, "rate_limit", {
-          integrationSurface: "cloudshare.v3.env.action.suspend",
-          method: "PUT",
-          path: "/api/v3/envs/actions/suspend",
+          integrationSurface: "cloudshare.v4.environments.suspend",
+          method: "POST",
+          path: "/v4/environments/ENVS-default-live-env-1/suspend",
           responseHeaders: { "retry-after": "30" },
         });
-      }) as unknown as CloudShareClient["requestV3Text"],
+      }) as unknown as CloudShareClient["requestV4"],
     });
     const deps = await makeSuspendDeps({
       cloudshare: {
@@ -1020,7 +1013,7 @@ describe("suspendExamAttemptRuntime", () => {
           operation: "exam_suspend",
           outcome: "failure",
           attemptedOperation: "suspend_environment",
-          integrationSurface: "cloudshare.v3.env.action.suspend",
+          integrationSurface: "cloudshare.v4.environments.suspend",
           failureMode: "rate_limit",
           responseStatus: 429,
         }),
@@ -1030,9 +1023,10 @@ describe("suspendExamAttemptRuntime", () => {
 
   it("returns 500 on an unexpected error", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3Text: vi.fn(async () => {
+      readEnvironment: vi.fn().mockResolvedValue({ envStatus: "Running" }),
+      writeEnvironment: vi.fn(async () => {
         throw new Error("unexpected");
-      }) as unknown as CloudShareClient["requestV3Text"],
+      }) as unknown as CloudShareClient["requestV4"],
     });
     const resp = await suspendExamAttemptRuntime(
       await makeSuspendDeps({
@@ -1086,7 +1080,7 @@ describe("resumeExamAttemptRuntime", () => {
 
     const customerClient = makeCloudShareClient({
       readEnvironment: vi.fn(),
-      requestV3Text: vi.fn(),
+      writeEnvironment: vi.fn(),
       requestV4: vi.fn(),
     });
     const cloudshare = {
@@ -1116,7 +1110,7 @@ describe("resumeExamAttemptRuntime", () => {
     expect(cloudshare.forConnection).not.toHaveBeenCalled();
     expect(customerClient.requestV4).not.toHaveBeenCalled();
     expect(customerClient.readEnvironment).not.toHaveBeenCalled();
-    expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    expect(customerClient.writeEnvironment).not.toHaveBeenCalled();
     expect(diagnostics.record).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
@@ -1163,7 +1157,7 @@ describe("resumeExamAttemptRuntime", () => {
         }
         throw new Error(`unexpected v3 path ${spec.path}`);
       }) as unknown as CloudShareClient["requestV4"],
-      requestV3Text: vi.fn(),
+      writeEnvironment: vi.fn(),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -1213,7 +1207,7 @@ describe("resumeExamAttemptRuntime", () => {
         path: "/environments/ENVS2n38LTNdcC4sHsqnjRzg2",
       }),
     );
-    expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    expect(customerClient.writeEnvironment).not.toHaveBeenCalled();
     await expect(attempts.findById("ea-1")).resolves.toMatchObject({
       status: "suspended",
     });
@@ -1312,7 +1306,7 @@ describe("resumeExamAttemptRuntime", () => {
         }
         throw new Error(`unexpected v3 path ${spec.path}`);
       }) as unknown as CloudShareClient["requestV4"],
-      requestV3Text: vi.fn(),
+      writeEnvironment: vi.fn(),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -1345,7 +1339,7 @@ describe("resumeExamAttemptRuntime", () => {
       operation: "resume",
       currentStatus: "expired",
     });
-    expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    expect(customerClient.writeEnvironment).not.toHaveBeenCalled();
     await expect(diagnosticRepository.query({ correlationId: "corr-resume" })).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({
         operation: "exam_attempt.resume",
@@ -1399,7 +1393,7 @@ describe("resumeExamAttemptRuntime", () => {
         }
         throw new Error(`unexpected v3 path ${spec.path}`);
       }) as unknown as CloudShareClient["requestV4"],
-      requestV3Text: vi.fn(),
+      writeEnvironment: vi.fn(),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -1432,7 +1426,7 @@ describe("resumeExamAttemptRuntime", () => {
       operation: "resume",
       currentStatus: "expired",
     });
-    expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    expect(customerClient.writeEnvironment).not.toHaveBeenCalled();
     await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
       status: "expired",
     });
@@ -1473,15 +1467,7 @@ describe("resumeExamAttemptRuntime", () => {
 
   it("treats a repeated resume request after a successful resume as idempotent", async () => {
     const customerClient = makeCloudShareClient({
-      readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/envs/actions/resume") {
-          return spec.schema.parse({});
-        }
-        if (spec.path.startsWith("/environments/")) {
-          return spec.schema.parse({ envStatus: "Running" });
-        }
-        throw new Error(`unexpected v3 path ${spec.path}`);
-      }) as unknown as CloudShareClient["requestV4"],
+      readEnvironment: vi.fn().mockResolvedValueOnce({ envStatus: "Suspended" }).mockResolvedValue({ envStatus: "Running" }),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -1515,27 +1501,22 @@ describe("resumeExamAttemptRuntime", () => {
       status: "resumed",
       examAttemptId: "ea-1",
     });
-    expect(timer.resumeTimer).toHaveBeenCalledTimes(1);
-    expect(customerClient.requestV3Text).toHaveBeenCalledTimes(1);
+    expect(timer.resumeTimer).not.toHaveBeenCalled(); // Settlement is atomic in the repository.
+    expect(customerClient.writeEnvironment).toHaveBeenCalledTimes(1);
   });
 
   it("recovers a duplicate fast resume when CloudShare rejects the action but the environment is already active", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3Text: vi.fn(async () => {
+      writeEnvironment: vi.fn(async () => {
         throw new CloudShareRequestError("already resumed", 409, {
-          integrationSurface: "cloudshare.v3.env.action.resume",
-          method: "PUT",
-          path: "/api/v3/envs/actions/resume",
+          integrationSurface: "cloudshare.v4.environments.resume",
+          method: "POST",
+          path: "/v4/environments/ENVS-default-live-env-1/resume",
           environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
           responseBody: "{\"error\":\"already running\"}",
         });
-      }) as unknown as CloudShareClient["requestV3Text"],
-      readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path.startsWith("/environments/")) {
-          return spec.schema.parse({ envStatus: "Running" });
-        }
-        throw new Error(`unexpected v3 path ${spec.path}`);
       }) as unknown as CloudShareClient["requestV4"],
+      readEnvironment: vi.fn().mockResolvedValueOnce({ envStatus: "Suspended" }).mockResolvedValue({ envStatus: "Running" }),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -1567,33 +1548,33 @@ describe("resumeExamAttemptRuntime", () => {
       status: "resumed",
       resumeDisposition: "already_active",
       examAttemptId: "ea-1",
-      environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
     });
-    expect(timer.resumeTimer).toHaveBeenCalledTimes(1);
+    expect(timer.resumeTimer).not.toHaveBeenCalled(); // Atomic repository settlement owns the clock.
     await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
       status: "in_progress",
     });
     expect(deps.eventLog.append).not.toHaveBeenCalled();
   });
 
-  it("keeps a rapid-transition CloudShare 500 recoverable and allows a later resume retry", async () => {
-    const requestV3Text = vi
+  it("keeps a rapid-transition CloudShare 500 recoverable and reconciles a later authoritative resume without replay", async () => {
+    let observedStatus = "Suspended";
+    const writeEnvironment = vi
       .fn()
       .mockImplementationOnce(async () => {
         throw new CloudShareRequestError("CloudShare state still settling", 500, {
-          integrationSurface: "cloudshare.v3.env.action.resume",
-          method: "PUT",
-          path: "/api/v3/envs/actions/resume",
+          integrationSurface: "cloudshare.v4.environments.resume",
+          method: "POST",
+          path: "/v4/environments/ENVS-default-live-env-1/resume",
           environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
           responseBody: "{\"error\":\"state settling\"}",
         });
       })
       .mockResolvedValue("");
     const customerClient = makeCloudShareClient({
-      requestV3Text: requestV3Text as unknown as CloudShareClient["requestV3Text"],
+      writeEnvironment: writeEnvironment as unknown as CloudShareClient["requestV4"],
       readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path.startsWith("/environments/")) {
-          const status = requestV3Text.mock.calls.length > 1 ? "Running" : "Suspended";
+          const status = observedStatus;
           return spec.schema.parse({ envStatus: status });
         }
         throw new Error(`unexpected v3 path ${spec.path}`);
@@ -1640,7 +1621,7 @@ describe("resumeExamAttemptRuntime", () => {
           operation: "exam_resume",
           outcome: "failure",
           attemptedOperation: "resume_environment",
-          integrationSurface: "cloudshare.v3.env.action.resume",
+          integrationSurface: "cloudshare.v4.environments.resume",
           failureMode: "http_status",
           responseStatus: 500,
           externalIds: expect.objectContaining({ examAttemptId: "ea-1" }),
@@ -1648,6 +1629,7 @@ describe("resumeExamAttemptRuntime", () => {
       }),
     );
 
+    observedStatus = "Running";
     const second = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
 
     expect(second.status).toBe(200);
@@ -1655,31 +1637,25 @@ describe("resumeExamAttemptRuntime", () => {
       status: "resumed",
       resumeDisposition: "resumed",
       examAttemptId: "ea-1",
-      environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
     });
     await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
       status: "in_progress",
     });
-    expect(timer.resumeTimer).toHaveBeenCalledTimes(1);
+    expect(timer.resumeTimer).not.toHaveBeenCalled();
   });
 
   it("falls back to the normal CloudShare failure diagnostic when already-active recovery itself fails", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3Text: vi.fn(async () => {
+      writeEnvironment: vi.fn(async () => {
         throw new CloudShareRequestError("already resumed", 409, {
-          integrationSurface: "cloudshare.v3.env.action.resume",
-          method: "PUT",
-          path: "/api/v3/envs/actions/resume",
+          integrationSurface: "cloudshare.v4.environments.resume",
+          method: "POST",
+          path: "/v4/environments/ENVS-default-live-env-1/resume",
           environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
           responseBody: "{\"error\":\"already running\"}",
         });
-      }) as unknown as CloudShareClient["requestV3Text"],
-      readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path.startsWith("/environments/")) {
-          return spec.schema.parse({ envStatus: "Running" });
-        }
-        throw new Error(`unexpected v3 path ${spec.path}`);
       }) as unknown as CloudShareClient["requestV4"],
+      readEnvironment: vi.fn().mockResolvedValueOnce({ envStatus: "Suspended" }).mockResolvedValue({ envStatus: "Running" }),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -1694,6 +1670,7 @@ describe("resumeExamAttemptRuntime", () => {
       }) as unknown as CloudShareClient["requestV4"],
     });
     const deps = await makeResumeDeps({
+      attempts: { ...await makeAttempts("suspended"), settleRuntimeCommand: async () => { throw new Error("persistence failed"); } },
       timer: {
         pauseTimer: vi.fn(),
         resumeTimer: vi.fn().mockRejectedValue(new Error("timer unavailable")),
@@ -1717,7 +1694,7 @@ describe("resumeExamAttemptRuntime", () => {
           operation: "exam_resume",
           outcome: "failure",
           attemptedOperation: "resume_environment",
-          integrationSurface: "cloudshare.v3.env.action.resume",
+          integrationSurface: "cloudshare.v4.environments.resume",
           failureMode: "http_status",
           responseStatus: 409,
         }),
@@ -1824,14 +1801,15 @@ describe("resumeExamAttemptRuntime", () => {
 
   it("returns 502 with transport diagnostics when CloudShare resume transport fails", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3Text: vi.fn(async () => {
+      readEnvironment: vi.fn().mockResolvedValue({ envStatus: "Suspended" }),
+      writeEnvironment: vi.fn(async () => {
         throw new CloudShareTransportError("network down", {
-          integrationSurface: "cloudshare.v3.env.action.resume",
+          integrationSurface: "cloudshare.v4.environments.resume",
           method: "POST",
-          path: "/api/v3/envs/actions/resume",
+          path: "/v4/environments/ENVS-default-live-env-1/resume",
           cause: "ECONNRESET",
         });
-      }) as unknown as CloudShareClient["requestV3Text"],
+      }) as unknown as CloudShareClient["requestV4"],
     });
     const deps = await makeResumeDeps({
       cloudshare: {
@@ -1853,7 +1831,7 @@ describe("resumeExamAttemptRuntime", () => {
           operation: "exam_resume",
           outcome: "failure",
           attemptedOperation: "resume_environment",
-          integrationSurface: "cloudshare.v3.env.action.resume",
+          integrationSurface: "cloudshare.v4.environments.resume",
           failureMode: "transport",
         }),
       }),
@@ -1862,15 +1840,16 @@ describe("resumeExamAttemptRuntime", () => {
 
   it("returns 502 with response-shape diagnostics when CloudShare resume returns an unexpected payload", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3Text: vi.fn(async () => {
+      readEnvironment: vi.fn().mockResolvedValue({ envStatus: "Suspended" }),
+      writeEnvironment: vi.fn(async () => {
         throw new CloudShareResponseError("schema mismatch", {
-          integrationSurface: "cloudshare.v3.env.action.resume",
-          method: "PUT",
-          path: "/api/v3/envs/actions/resume",
+          integrationSurface: "cloudshare.v4.environments.resume",
+          method: "POST",
+          path: "/v4/environments/ENVS-default-live-env-1/resume",
           responseBody: "{\"bad\":true}",
           issues: ["Required"],
         });
-      }) as unknown as CloudShareClient["requestV3Text"],
+      }) as unknown as CloudShareClient["requestV4"],
     });
     const deps = await makeResumeDeps({
       cloudshare: {
@@ -1892,7 +1871,7 @@ describe("resumeExamAttemptRuntime", () => {
           operation: "exam_resume",
           outcome: "failure",
           attemptedOperation: "resume_environment",
-          integrationSurface: "cloudshare.v3.env.action.resume",
+          integrationSurface: "cloudshare.v4.environments.resume",
           failureMode: "unexpected_response",
         }),
       }),
@@ -1901,9 +1880,10 @@ describe("resumeExamAttemptRuntime", () => {
 
   it("returns 500 on an unexpected error", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3Text: vi.fn(async () => {
+      readEnvironment: vi.fn().mockResolvedValue({ envStatus: "Suspended" }),
+      writeEnvironment: vi.fn(async () => {
         throw new Error("boom");
-      }) as unknown as CloudShareClient["requestV3Text"],
+      }) as unknown as CloudShareClient["requestV4"],
     });
     const resp = await resumeExamAttemptRuntime(
       await makeResumeDeps({
@@ -1932,12 +1912,7 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
       createdAt: new Date(),
     });
     const customerClient = makeCloudShareClient({
-      readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/environments/ENVS2n38LTNdcC4sHsqnjRzg2") {
-          return spec.schema.parse({ envStatus: "Suspended" });
-        }
-        throw new Error(`unexpected v3 path ${spec.path}`);
-      }) as unknown as CloudShareClient["requestV4"],
+      readEnvironment: vi.fn().mockResolvedValueOnce({ envStatus: "Running" }).mockResolvedValue({ envStatus: "Suspended" }),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -1960,12 +1935,10 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
     });
 
     await expect(runHeartbeatAutoSuspendRuntime(deps, "ea-1")).resolves.toBeUndefined();
-    expect(customerClient.requestV3Text).toHaveBeenNthCalledWith(
+    expect(customerClient.writeEnvironment).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        method: "PUT",
-        path: "/envs/actions/suspend",
-        query: { envId: "ENVS2n38LTNdcC4sHsqnjRzg2" },
+        method: "POST", path: "/environments/ENVS2n38LTNdcC4sHsqnjRzg2/suspend",
       }),
     );
     await expect(launches.findByExamAttemptId("ea-1")).resolves.toMatchObject({
@@ -2109,16 +2082,16 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
     [
       "CloudShareRequestError",
       new CloudShareRequestError("forbidden", 403, {
-        integrationSurface: "cloudshare.v3.env.action.suspend",
-        method: "PUT",
-        path: "/api/v3/envs/actions/suspend",
+        integrationSurface: "cloudshare.v4.environments.suspend",
+        method: "POST",
+        path: "/v4/environments/ENVS-default-live-env-1/suspend",
         responseBody: "{\"error\":\"forbidden\"}",
       }),
       expect.objectContaining({
         operation: "heartbeat_auto_suspend",
         outcome: "failure",
         attemptedOperation: "suspend_environment",
-        integrationSurface: "cloudshare.v3.env.action.suspend",
+        integrationSurface: "cloudshare.v4.environments.suspend",
         failureMode: "http_status",
         responseStatus: 403,
       }),
@@ -2126,9 +2099,9 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
     [
       "CloudShareResponseError",
       new CloudShareResponseError("schema mismatch", {
-        integrationSurface: "cloudshare.v3.env.action.suspend",
-        method: "PUT",
-        path: "/api/v3/envs/actions/suspend",
+        integrationSurface: "cloudshare.v4.environments.suspend",
+        method: "POST",
+        path: "/v4/environments/ENVS-default-live-env-1/suspend",
         responseBody: "{\"bad\":true}",
         issues: ["Required"],
       }),
@@ -2136,7 +2109,7 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
         operation: "heartbeat_auto_suspend",
         outcome: "failure",
         attemptedOperation: "suspend_environment",
-        integrationSurface: "cloudshare.v3.env.action.suspend",
+        integrationSurface: "cloudshare.v4.environments.suspend",
         failureMode: "unexpected_response",
       }),
     ],
@@ -2144,9 +2117,10 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
     "appends an admin-visible diagnostic and rethrows on %s",
     async (_label, error, expectedPayload) => {
       const customerClient = makeCloudShareClient({
-        requestV3Text: vi.fn(async () => {
+        readEnvironment: vi.fn().mockResolvedValue({ envStatus: "Running" }),
+        writeEnvironment: vi.fn(async () => {
           throw error;
-        }) as unknown as CloudShareClient["requestV3Text"],
+        }) as unknown as CloudShareClient["requestV4"],
       });
       const deps = await makeSuspendDeps({
         cloudshare: {
@@ -2271,3 +2245,165 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
   });
 });
 
+
+
+
+it.each(["suspended", "in_progress"] as const)("keeps provider identity out of resume response and generic success logs from %s", async status => {
+  const deps = await makeResumeDeps({ attempts: await makeAttempts(status) });
+  const result = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  expect(result.status).toBe(200);
+  expect(result.body).not.toHaveProperty("environmentExternalId");
+  expect(JSON.stringify((deps.logger.info as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("environmentExternalId");
+});
+
+
+it("retains an uncertain suspend across new handler instances and never replays while observation stays at the source state", async () => {
+  const writeEnvironment = vi.fn().mockRejectedValue(new CloudShareTransportError("socket closed", { method: "POST", path: "/v4/environments/ENVd0WBTGirla-omK6Jh3BvA2/suspend" }));
+  const client = makeCloudShareClient({ writeEnvironment, readEnvironment: vi.fn().mockResolvedValue({ envStatus: "Running" }) });
+  const deps = await makeSuspendDeps({ cloudshare: { forConnection: () => client }, poll: { maxAttempts: 1, intervalMs: 0 } });
+  await suspendExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  const retried = await suspendExamAttemptRuntime({ ...deps }, { examAttemptId: "ea-1" });
+  expect(writeEnvironment).toHaveBeenCalledTimes(1);
+  expect(retried.status).toBe(202);
+  expect(await deps.attempts.readRuntimeCommand!("customer-1", "ea-1")).toMatchObject({ action: "suspend", environmentId: "ENVd0WBTGirla-omK6Jh3BvA2" });
+});
+
+async function recordingRuntime(action: "suspend" | "resume", initialState: string) {
+  const { createCloudShareClient, createCloudShareNoopRequestObserver } = await import("@/integrations/cloudshare/client");
+  const requests: import("@/integrations/cloudshare/http").HttpRequest[] = [];
+  const state = { value: initialState, afterPost: action === "suspend" ? "suspended" : "ready" };
+  const clockRepository = createInMemoryExamClockRepository();
+  const attempts = createInMemoryExamAttemptRepository(clockRepository);
+  const original = await makeAttempts(action === "suspend" ? "in_progress" : "suspended");
+  await attempts.save((await original.findById("ea-1"))!);
+  const at = new Date("2026-06-15T16:10:00Z");
+  await clockRepository.save({ examAttemptId: "ea-1", status: action === "suspend" ? "running" : "paused", elapsedAtPauseMs: 120000, startedAt: action === "suspend" ? new Date("2026-06-15T16:09:00Z") : null, updatedAt: at });
+  const clock = createExamClock({ clocks: clockRepository, now: () => at });
+  const client = createCloudShareClient({ endpoints: { v4BaseUrl: "https://provider.test/v4", v3BaseUrl: "https://provider.test/api/v3" }, v3: { apiId: "test", apiKey: "test" }, tokenProvider: { getToken: async () => "test-token" }, observer: createCloudShareNoopRequestObserver(), http: { send: async request => {
+    requests.push(request);
+    if (request.method === "POST") { state.value = state.afterPost; return { status: 204, body: "" }; }
+    if (request.url.endsWith("/students")) return { status: 200, body: JSON.stringify([{ email: "candidate@helioscx.demo", environmentId: "EN-exact", environmentStatus: "ready" }]) };
+    return { status: 200, body: JSON.stringify({ id: "EN-exact", status: state.value, projectId: "project-1", ownerEmail: "candidate@helioscx.demo", startTime: "Mon, 15 Jun 2026 09:00:00 GMT", expirationTime: "Tue, 16 Jun 2026 09:00:00 GMT" }) };
+  } } });
+  const deps = await (action === "suspend" ? makeSuspendDeps : makeResumeDeps)({ attempts, timer: clock, clocks: clock, now: () => at, cloudshare: { forConnection: () => client }, poll: { maxAttempts: 1, intervalMs: 0 } });
+  return { deps, state, requests, clock };
+}
+
+it("empty204 does not resume the persisted clock until an authoritative target observation; later reads settle without replay", async () => {
+  const { deps, state, requests, clock } = await recordingRuntime("resume", "suspended");
+  state.afterPost = "stopping";
+  const pending = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  expect(pending.status).toBe(202);
+  expect(await clock.getTimerState("ea-1")).toMatchObject({ status: "paused", elapsedAtPauseMs: 120000 });
+  expect(await deps.attempts.findById("ea-1")).toMatchObject({ status: "suspended" });
+  state.value = "preparing";
+  const ready = await resumeExamAttemptRuntime({ ...deps }, { examAttemptId: "ea-1" });
+  expect(ready.status).toBe(200);
+  expect(await clock.getTimerState("ea-1")).toMatchObject({ status: "running", elapsedAtPauseMs: 120000 });
+  expect(await deps.attempts.findById("ea-1")).toMatchObject({ status: "in_progress" });
+  expect(requests.filter(r => r.method === "POST").map(r => r.url)).toEqual(["https://provider.test/v4/environments/EN-exact/resume"]);
+});
+
+it.each(["suspend", "resume"] as const)("recovers %s settlement failure from authoritative state without another POST", async action => {
+  const { deps, requests, clock } = await recordingRuntime(action, action === "suspend" ? "ready" : "suspended");
+  const settle = deps.attempts.settleRuntimeCommand!;
+  let fail = true;
+  const attempts = { ...deps.attempts, settleRuntimeCommand: async (...args: Parameters<typeof settle>) => { if (fail) throw new Error("database unavailable"); return settle(...args); } };
+  const run = action === "suspend" ? suspendExamAttemptRuntime : resumeExamAttemptRuntime;
+  const first = await run({ ...deps, attempts }, { examAttemptId: "ea-1" });
+  expect(first.status).toBe(500);
+  expect(await attempts.readRuntimeCommand!("customer-1", "ea-1")).toMatchObject({ action, environmentId: "EN-exact" });
+  expect(await clock.getTimerState("ea-1")).toMatchObject({ status: action === "suspend" ? "running" : "paused", elapsedAtPauseMs: 120000 });
+  fail = false;
+  expect((await run({ ...deps, attempts }, { examAttemptId: "ea-1" })).status).toBe(200);
+  expect(await clock.getTimerState("ea-1")).toMatchObject({ status: action === "suspend" ? "paused" : "running", elapsedAtPauseMs: action === "suspend" ? 180000 : 120000 });
+  expect(await attempts.readRuntimeCommand!("customer-1", "ea-1")).toBeNull();
+  expect(requests.filter(r => r.method === "POST")).toHaveLength(1);
+});
+
+it.each([["suspend", "suspended"], ["resume", "ready"], ["resume", "preparing"]] as const)("reconciles %s at %s without a provider write", async (action, status) => {
+  const { deps, requests } = await recordingRuntime(action, status);
+  const run = action === "suspend" ? suspendExamAttemptRuntime : resumeExamAttemptRuntime;
+  expect((await run(deps, { examAttemptId: "ea-1" })).status).toBe(200);
+  expect(requests.every(r => r.method === "GET")).toBe(true);
+});
+
+it.each(["stopping", "unknown", "publishing"])("rejects fresh command eligibility for %s before POST", async status => {
+  const { deps, requests, clock } = await recordingRuntime("resume", status);
+  expect((await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" })).status).toBe(502);
+  expect(requests.every(r => r.method === "GET")).toBe(true);
+  expect(await clock.getTimerState("ea-1")).toMatchObject({ status: "paused", elapsedAtPauseMs: 120000 });
+});
+
+it("a failed claim acknowledgement cannot dispatch, and an opposite request cannot replay pending work", async () => {
+  const { deps, requests } = await recordingRuntime("resume", "suspended");
+  const claim = deps.attempts.claimRuntimeCommand!;
+  const attempts = { ...deps.attempts, claimRuntimeCommand: async (...args: Parameters<typeof claim>) => { await claim(...args); throw new Error("claim acknowledgement lost"); } };
+  expect((await resumeExamAttemptRuntime({ ...deps, attempts }, { examAttemptId: "ea-1" })).status).toBe(500);
+  expect(requests.every(r => r.method === "GET")).toBe(true);
+  const opposite = await suspendExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  expect(opposite.status).toBe(202);
+  expect(requests.every(r => r.method === "GET")).toBe(true);
+  expect(await deps.attempts.readRuntimeCommand!("customer-1", "ea-1")).toMatchObject({ action: "resume" });
+});
+
+it.each(["heartbeat", "logout"] as const)("%s shares the v4 command and persisted clock settlement", async consumer => {
+  const { deps, requests, clock } = await recordingRuntime("suspend", "ready");
+  if (consumer === "heartbeat") await runHeartbeatAutoSuspendRuntime(deps, "ea-1");
+  else {
+    const { suspendCandidateRunningLabsForLogout } = await import("./portal-logout-runtime");
+    const { handleSuspendExam } = await import("./suspend-resume");
+    await suspendCandidateRunningLabsForLogout({ ...deps, suspendExam: handleSuspendExam, heartbeatAutoSuspend: { removeHeartbeat: vi.fn() }, audit: { write: vi.fn() }, newId: () => "audit", now: () => new Date("2026-06-15T16:10:00Z") }, { sessionId: "session", userId: "cand-1", customerId: "customer-1", role: "candidate", email: "candidate@helioscx.demo", firstName: "Pat", lastName: "Lee", issuedAtMs: 1 });
+  }
+  expect(requests.filter(r => r.method === "POST").map(r => r.url)).toEqual(["https://provider.test/v4/environments/EN-exact/suspend"]);
+  expect(await clock.getTimerState("ea-1")).toMatchObject({ status: "paused", elapsedAtPauseMs: 180000 });
+});
+
+it("cannot retire a command while its owner is awaiting preflight and could still dispatch", async () => {
+  let releaseOwner!: (state: { envStatus: string }) => void;
+  const delayedRead = new Promise<{ envStatus: string }>(resolve => { releaseOwner = resolve; });
+  let ownerEntered!: () => void;
+  const ownerWaiting = new Promise<void>(resolve => { ownerEntered = resolve; });
+  let reads = 0;
+  let providerState = "Running";
+  const writes: string[] = [];
+  const client = makeCloudShareClient({
+    readEnvironment: vi.fn(async () => {
+      if (++reads === 1) { ownerEntered(); return delayedRead; }
+      return { envStatus: providerState };
+    }) as CloudShareClient["requestV4"],
+    writeEnvironment: vi.fn(async spec => {
+      const action = spec.path.endsWith("/suspend") ? "suspend" : "resume";
+      writes.push(action);
+      providerState = action === "suspend" ? "Suspended" : "Running";
+      return undefined;
+    }) as CloudShareClient["requestV4"],
+  });
+  const deps = await makeSuspendDeps({ cloudshare: { forConnection: () => client }, poll: { maxAttempts: 1, intervalMs: 0 } });
+  const owner = suspendExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  await ownerWaiting;
+  providerState = "Suspended";
+  const observer = await suspendExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  const opposite = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  releaseOwner({ envStatus: "Running" });
+  await owner;
+  expect(writes).toEqual(["suspend"]);
+  expect(observer.status).toBe(202);
+  expect(opposite.status).toBe(202);
+  expect(await deps.attempts.findById("ea-1")).toMatchObject({ status: "suspended" });
+  expect(await deps.attempts.readRuntimeCommand!("customer-1", "ea-1")).toBeNull();
+});
+
+it.each([false, true])("a lost dispatch-phase acknowledgement with commit=%s never permits another POST", async committed => {
+  const { deps, requests, clock } = await recordingRuntime("resume", "suspended");
+  const finish = deps.attempts.finishRuntimeCommandDispatch!;
+  const attempts = { ...deps.attempts, finishRuntimeCommandDispatch: async (...args: Parameters<typeof finish>) => {
+    if (committed) await finish(...args);
+    throw new Error("phase acknowledgement lost");
+  } };
+  expect((await resumeExamAttemptRuntime({ ...deps, attempts }, { examAttemptId: "ea-1" })).status).toBe(500);
+  const retried = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+  expect(retried.status).toBe(committed ? 200 : 202);
+  expect(requests.filter(request => request.method === "POST")).toHaveLength(1);
+  expect(await clock.getTimerState("ea-1")).toMatchObject({ status: committed ? "running" : "paused", elapsedAtPauseMs: 120000 });
+});
