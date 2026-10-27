@@ -153,3 +153,11 @@ not lifecycle confirmation. Existing authoritative v4 expiry/state readback and 
 coordination remain required. Archive stays v3. See the [consumer and remaining-v3 inventory](../discovery/2026-10-27-default-extension-v4-migration.md)
 for implementation evidence and pending live acceptance; historical v3 extension results are not
 v4 eligibility proof.
+
+**Verification update (2026-10-27):** independent audit accepted the exact-runtime-head actual HTTP
+simulation: 126 synthetic exchanges, 9 unique bodyless Extend POSTs, no replay, protected evidence
+and Customer isolation. Three live read-only checks passed; real Sales UI creation/registration
+console checks passed. Live Extend count remains zero; clipboard/browser-extension UI blocking
+prevents the remaining browser/live workflows. The responsible extension is unknown. The
+[migration evidence record](../discovery/2026-10-27-default-extension-v4-migration.md) distinguishes
+these results, preserved resources and pending gates; no live v4 extension guarantee is inferred.

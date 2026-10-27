@@ -2224,7 +2224,11 @@ only one worker owns each reconciliation pass.
 **2026-10-27 migration note (#473):** the current command is bodyless v4 POST
 `/v4/environments/{id}/extend`, followed by authoritative v4 observation. The historical
 v3 evidence below remains historical; it does not prove v4 state eligibility or runtime increments.
-Independent browser/live verification is pending at implementation handoff. See the
+Independent actual-HTTP simulation now passes rejection, ambiguity, partial-result, recovery,
+Customer-isolation and protected-evidence checks. This uses a synthetic provider only; three live
+read-only checks and Sales UI creation/registration are preparation evidence, not Extend proof.
+Both live extension flows and live Support evidence remain blocked pending human Chrome setup;
+the live Extend count is zero. See the
 [migration inventory and acceptance limits](../discovery/2026-10-27-default-extension-v4-migration.md).
 
 
