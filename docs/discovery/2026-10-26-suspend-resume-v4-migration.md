@@ -120,8 +120,10 @@ Owned port 3025 remains stopped/free and jobs stopped. Recovery records and asse
 coordinator decision; primary checkout/3000 and retained #350/#351/B assets are unchanged. Authored
 Experience End is 2026-10-27T12:06:00Z; recorded storage expiry is 2026-10-29T08:06:41Z. Neither
 proves automatic runtime suspension at Experience End or guarantees extended retention. Recheck
-exact identity, state and time gates before any separately authorized future action; no automatic
-replay, replacement asset or timing change is authorized by this record.
+exact identity, state, access window and Experience End before proposing any future bounded flow.
+Cleanup changed the starting state to Suspended: the historical Ready/no-POST console plan and its
+unused budget are not authority for a Suspended-start retry. A fresh state/window/budget plan needs
+coordinator approval; no replay, replacement asset or timing change is authorized by this record.
 
 Sanitized source, read in full including its superseding cleanup section: external
 `codex-home/qa-evidence/issue-472/consolidated-post-cleanup-7756114f.md`, SHA-256
