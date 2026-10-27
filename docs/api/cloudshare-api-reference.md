@@ -3,7 +3,7 @@
 This project keeps local CloudShare API exports so implementation agents do not infer endpoint
 paths from memory or from earlier slices.
 
-## Source and implementation status (2026-10-26)
+## Source and implementation status (2026-10-27)
 
 **PUBLISHED CONTRACT:** The [current official Infrastructure 4.0 source](https://cloudshare.stoplight.io/api/v1/projects/cloudshare/AccelerateAPI/nodes/reference/infrastructure-Public-API.openapi.json?branch=main)
 was downloaded on 2026-10-26 and preserved in the export listed below. Projects and Project-scoped
@@ -27,6 +27,22 @@ suspend/resume to bodyless v4 POST with empty204 acknowledgement and a durable p
 no-replay marker; see [contract and acceptance evidence](../discovery/2026-10-26-suspend-resume-v4-migration.md). #469 migrates all
 Environment list/detail observations to v4. Existing v4 Experience/participant/sponsored-link/Guided Journey behavior is unchanged.
 #351 / PR #448 is merged in the baseline; its older unmerged wording is historical.
+
+## Suspend/resume partial live evidence (#472, 2026-10-27)
+
+At reviewed runtime head `7756114f81f8276362cf547f6b07a356921eae72`, real Candidate controls,
+logout and heartbeat produced three bodyless v4 Suspend POST 204 writes and two Resume POST 204
+writes, with authoritative Suspended/Ready readbacks and persisted clock/guest-state evidence.
+Real Admin Support showed success and synthetic invalid-ID GET 400 evidence; foreign Customer
+attempt API access returned 404. These are distinct checks, not a provider valid-missing 404 claim.
+Required explicit Suspend/logout/post-timeout heartbeat console capture remains blocked after two
+bounded Chrome connection failures; acceptance is BLOCKED. Support and later Resume pre-navigation
+zero-console captures do not establish all-zero runtime console evidence.
+
+Coordinator option 2 accepts unchanged Archive regression through independent exact-head audit and
+58/58 existing automated tests; B's live Archive evidence is historical, and #472 recorded no Archive
+write. Archive/Extend transport remains v3; no DELETE substitution. See the
+[acceptance matrix and resource-preservation limits](../discovery/2026-10-26-suspend-resume-v4-migration.md).
 
 ## Local Reference Files
 

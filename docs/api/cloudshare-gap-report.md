@@ -11,6 +11,33 @@ PR that surfaced the gap.
 
 ---
 
+## Dated observation: #472 suspend/resume partial QA (2026-10-27)
+
+This is bounded verification evidence, not a new provider-contract discrepancy or closure of any
+existing GAP. At runtime head `7756114f81f8276362cf547f6b07a356921eae72`, three real UI-triggered
+v4 Suspend commands (explicit/logout/heartbeat) and two Resume commands returned 204, followed by
+authoritative Suspended/Ready reads. The persisted clock and same guest working state were observed.
+Real Support UI displayed success and synthetic invalid-ID GET 400 diagnostics; foreign Customer
+attempt API access returned 404. The synthetic 400 does not establish valid-missing 404 behavior.
+
+Mandatory runtime console evidence remains incomplete after two bounded Chrome connection failures;
+no additional commands were sent. Support/later Resume captures were clean but cannot establish
+all-zero console behavior. Reported human viewer interaction does not establish causation of the
+provider's later Ready state while the local Attempt remained Suspended/paused. No provider bug is
+inferred. Coordinator option 2 accepts unchanged Archive regression via independently audited
+58/58 exact-head automated checks; current-ticket live Archive was not performed. Historical B
+observations and unrelated GAP statuses are unchanged.
+
+See the [#472 acceptance matrix and authorized preservation](../discovery/2026-10-26-suspend-resume-v4-migration.md)
+for evidence provenance, console blockers and recorded expiry. A separately authorized single API
+cleanup Suspend returned 204 and exact GET confirmed Suspended; local clock/status stayed paused.
+Assets/history/DB/key and forensics are retained by coordinator decision. This is preservation
+evidence, not missing UI/console proof. Experience
+End does not establish automatic suspension, and retained private recovery records do not guarantee
+extended provider retention. Ticket acceptance remains blocked.
+
+---
+
 ## GAP-16 — Sales timezone catalogue and edit semantics require live confirmation
 
 | Field | Detail |
@@ -2241,5 +2268,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-09-01 (added GAP-35 with the bounded live extension-verification result).
+*Last updated: 2026-10-27 (added bounded #472 observations; existing GAP statuses unchanged).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

@@ -56,7 +56,7 @@ state: absence of a live owner is not inferred, and there is no automatic expiry
 - Public repository seam: scoped concurrent claim, exact marker, clock/status settlement and
   terminal guard, including production disposable SQLite and adapter recreation.
 - Independent automated browser/live QA: minimal owned disposable Certification attempt, actual
-  controls plus logout/lost-liveness; provider before/after, clock/work, server302/Archive,
+  controls plus logout/lost-liveness; provider before/after, clock/work and server302,
   Customer-scoped Support success/failure and browser console. Live proof is separate from mocks.
 
 RED/GREEN: Suspend v3 PUT was observed before v4 POST passed; Resume independently failed then
@@ -66,10 +66,71 @@ provider identity before the projection fix. Recording HTTP handler tests prove2
 the clock; Preparing confirmation, settlement-failure recovery, claim acknowledgement loss,
 opposite pending request, heartbeat and logout all preserve one dispatch and persisted clock.
 
-Final implementation full suite: 2,536 passed / four inherited CandidateHome failures (2,540 total),
-launcher14/14; lint and typecheck pass. Runtime handler53/53, recording controller11/11,
-production SQLite command1/1 and in-memory command2/2 pass.
-The four failures match QA's independent pristine-baseline reproduction. Independent exact-head review and live evidence remain pending. Human QA waived by the issue work order.
+Reviewed runtime head: `7756114f81f8276362cf547f6b07a356921eae72`. Both independent review
+axes accepted the runtime repair. Lint/typecheck pass; launcher 14/14; full Vitest 2,540 pass /
+four inherited CandidateHome failures (2,544 total), independently reproduced at the baseline.
+Focused runtime 56, Support 16, lifecycle 25 and public persistence 4 tests pass. Human QA was
+waived by the issue work order; mandatory automated browser/live evidence was not waived.
+Documentation reconciliation requires exact-head review. Acceptance remains BLOCKED; #473 remains blocked.
+
+## Live acceptance matrix (2026-10-27)
+
+| Criterion | Evidence and disposition |
+| --- | --- |
+| Real Candidate admission | Passed: UI scheduled one owned disposable Attempt; actual child and guest opened; server `/enter` returned 302 without retaining a bearer Location. Exact roster/detail matched Customer-owned Participant, Environment, Project and owner. Live ping/read-only preflight 3/3 passed. |
+| Explicit Suspend, logout and heartbeat | Runtime behavior passed: three physical v4 POST 204 Suspend writes, one per trigger, with authoritative Suspended readbacks. Clock paused at 345437, 517900 and 555891 ms respectively. Mandatory explicit Suspend/logout/post-timeout heartbeat console evidence remains BLOCKED. |
+| Resume and guest state | Two physical v4 POST 204 Resume writes, authoritative Ready reads, prior elapsed time retained. Same Windows Server VM retained the preexisting pfSense WAN page, field values and scroll position; no guest data was edited. Later Resume pre-navigation console captured zero warnings/errors; this does not cover all runtime phases. |
+| Support and isolation | Real Customer Admin Support UI showed Suspend/Resume/heartbeat success paths, 204, source, anchors and correlation. Synthetic invalid-ID GET returned 400 and appeared in real Support UI; protected-record assertions verified body/response headers and request-header masking. Foreign Customer authenticated attempt drilldown returned 404 (API evidence, not foreign UI search). Support console captured zero warnings/errors. |
+| Unchanged Archive regression | Coordinator option 2 replaces the extra live End/Archive test with independent exact-runtime-head audit and six existing offline files, 58/58 passing with DB setup disabled. Both review axes confirmed Archive logic/transport, completion handlers and Extend unchanged. B's earlier live evidence remains historical only; #472 made zero Archive writes and claims no live completion. |
+| Final acceptance | BLOCKED on required console capture and final evidence review. Earlier runtime/logout captures were lost. A pre-login hydration warning has unproven cause/inheritance; no all-zero console or provider-bug claim. |
+
+The coordinator revision removes the extra unchanged End/Archive live regression from this slice's
+plan; it does not waive mandatory changed UI, console or Support verification. Two prior End dialog
+accept attempts timed out in Chrome focus emulation and sent no recorded Archive. Native control
+was stopped by the user's physical Escape; the subsequent Chrome-only preference excludes native
+fallback. No direct API completion substitute was used.
+
+The minimum additional same-asset console repair budget was at most three Suspend/two Resume
+writes. Chrome page creation detached before control/console twice: first Candidate entry redirected
+to an existing Admin session; the final permitted reset/direct-Admin retry also detached. Jobs and
+server were stopped after each. Additional budget used: zero; physical totals remain S3/R2/Archive0.
+No further GUI retry occurred. The separately authorized API preservation cleanup below does not
+consume this UI evidence budget or replace its missing console evidence.
+
+## Resource preservation and genuine blocker
+
+The pre-cleanup exact read at 2026-10-27T11:29:51Z found the owned provider Environment Ready
+while the local Attempt was Suspended, clock paused at 555891 ms, pending commands zero. Human
+external viewer interaction was reported, but causation of that earlier Suspended-to-Ready
+transition is unknown; no provider bug is inferred.
+
+The coordinator subsequently accepted preservation of the owned Experience, Environment, Attempt,
+history, isolated DB/key and forensic evidence, and authorized at most one Customer-scoped cleanup
+Suspend. Fresh preflight verified the exact Customer, Experience, Participant/roster, opaque
+Environment, Project and owner; provider Ready, local Suspended/paused, no pending command or Trial
+Offering. With server/jobs stopped, the production client and typed EnvironmentController used the
+stored encrypted Customer Connection for one v4 Suspend POST 204. One authoritative v4 GET then
+returned 200 Suspended. Local status and paused 555891 ms clock remained unchanged, pending zero.
+The protected cleanup intent, acknowledgement and exchange are retained privately. This is API
+preservation evidence, not UI or console proof: physical totals are UI Suspend 3 / Resume 2 plus
+API cleanup Suspend 1 (aggregate Suspend 4 / Resume 2), Archive 0. No Delete, timing rewrite,
+corrective Resume or retained-asset mutation occurred.
+
+Owned port 3025 remains stopped/free and jobs stopped. Recovery records and assets are retained by
+coordinator decision; primary checkout/3000 and retained #350/#351/B assets are unchanged. Authored
+Experience End is 2026-10-27T12:06:00Z; recorded storage expiry is 2026-10-29T08:06:41Z. Neither
+proves automatic runtime suspension at Experience End or guarantees extended retention. Recheck
+exact identity, state and time gates before any separately authorized future action; no automatic
+replay, replacement asset or timing change is authorized by this record.
+
+Sanitized source, read in full including its superseding cleanup section: external
+`codex-home/qa-evidence/issue-472/consolidated-post-cleanup-7756114f.md`, SHA-256
+`5BB964C28D9F1E9AD047B7AAA28C350F120E2BF806F7554B9319DBD4508429AC`.
+Its final section supersedes the earlier cleanup-open/Ready wording; the coordinator option-2
+revision supersedes mandatory current-ticket live Archive. Exact IDs and credentials remain in
+private evidence. Repeated Chrome connection failure still blocks explicit Suspend, logout and
+post-timeout heartbeat console evidence. Authorized preservation is not ticket acceptance or a
+waiver; reliable Chrome control and final evidence review remain required.
 
 ## Remaining v3 register and operating notes
 
