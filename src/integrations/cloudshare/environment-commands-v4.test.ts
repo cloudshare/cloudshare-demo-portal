@@ -50,7 +50,7 @@ it("does not replay a command whose transport outcome is unknown", async () => {
   expect(requests).toHaveLength(1);
 });
 
-it("keeps Archive and default Extend on their existing v3 PUT/query transports", async () => {
+it("keeps Archive on v3 while default Extend uses bodyless v4 POST for both Policy dimensions", async () => {
   const requests: HttpRequest[] = [];
   const client = createCloudShareClient({
     endpoints: { v4BaseUrl: "https://api.accelerate.cloudshare.com/v4", v3BaseUrl: "https://use.cloudshare.com/api/v3" },
@@ -59,9 +59,37 @@ it("keeps Archive and default Extend on their existing v3 PUT/query transports",
   });
   await createCloudShareEnvironmentController(client).archiveEnvironment("EN-retained");
   const { createCloudShareSalesEnvironmentModule } = await import("./environment-observation");
-  await createCloudShareSalesEnvironmentModule(client).extendById("EN-retained");
+  const extended = await createCloudShareSalesEnvironmentModule(client).extendById!("EN-retained");
+  expect(extended.exchange.response).toEqual({ status: 204, headers: undefined, body: "" });
   expect(requests.map(({ method, url, body }) => ({ method, url, body }))).toEqual([
     { method: "PUT", url: "https://use.cloudshare.com/api/v3/envs/actions/archive?envId=EN-retained", body: undefined },
-    { method: "PUT", url: "https://use.cloudshare.com/api/v3/envs/actions/extend?envId=EN-retained", body: undefined },
+    { method: "POST", url: "https://api.accelerate.cloudshare.com/v4/environments/EN-retained/extend", body: undefined },
   ]);
+});
+
+
+it.each([
+  { status: 400, body: '{"":"State cannot be extended","token":"protected-token"}' },
+  { status: 403, body: '' },
+  { status: 404, body: '' },
+  { status: 429, body: '{"message":"Too many requests"}' },
+  { status: 500, body: '{"message":"Failure"}' },
+  { status: null, body: '' },
+])("default Extend preserves failure evidence and never replays or falls back: $status", async ({ status, body }) => {
+  const requests: HttpRequest[] = [];
+  const traces: unknown[] = [];
+  const client = createCloudShareClient({
+    endpoints: { v4BaseUrl: "https://api.accelerate.cloudshare.com/v4", v3BaseUrl: "https://use.cloudshare.com/api/v3" },
+    v3: { apiId: "test", apiKey: "test" }, tokenProvider: { getToken: async () => "test-token" },
+    observer: createCloudShareNoopRequestObserver(), trace: event => traces.push(event),
+    http: { send: async request => { requests.push(request); if (status === null) throw new Error("socket closed"); return { status, body }; } },
+  });
+  const { createCloudShareSalesEnvironmentModule } = await import("./environment-observation");
+  await expect(createCloudShareSalesEnvironmentModule(client).extendById!("EN-opaque/with space")).rejects.toMatchObject({
+    context: { method: "POST", path: "/v4/environments/EN-opaque%2Fwith%20space/extend", ...(status === null ? {} : { responseBody: body ? JSON.parse(body) : "" }) },
+  });
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toMatchObject({ method: "POST", url: "https://api.accelerate.cloudshare.com/v4/environments/EN-opaque%2Fwith%20space/extend", body: undefined });
+  expect(JSON.stringify(traces)).not.toContain("protected-token");
+  expect(JSON.stringify(traces)).not.toContain("EN-opaque");
 });

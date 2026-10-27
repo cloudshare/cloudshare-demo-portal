@@ -134,6 +134,7 @@ describe("Sales Participant extension HTTP seam", () => {
     const f = fixture();
     f.environments.extendById.mockImplementationOnce(async () => { throw new Error("lost acknowledgement"); });
     expect(await handleExtendSalesParticipants(f.deps, f.request)).toMatchObject({ status: 202, body: { outcome: "needs_attention", targets: [{ outcome: "needs_attention", retryable: false }] } });
+    expect(f.deps.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure", details: expect.objectContaining({ integrationSurface: "cloudshare.v4.environments.extend" }) }));
     const fresh = { ...f.request, body: { ...f.request.body, commandId: "aec409ad-9217-4943-8e1d-e18a0ddbbf54" } };
     expect(await handleExtendSalesParticipants(f.deps, fresh)).toMatchObject({ status: 409 });
     f.setExpiry("2026-09-21T10:00:00Z");

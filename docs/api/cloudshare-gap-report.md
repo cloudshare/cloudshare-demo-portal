@@ -2221,6 +2221,13 @@ only one worker owns each reconciliation pass.
 
 ## GAP-35 — Live default extension outcome for a retained Trial Environment
 
+**2026-10-27 migration note (#473):** the current command is bodyless v4 POST
+`/v4/environments/{id}/extend`, followed by authoritative v4 observation. The historical
+v3 evidence below remains historical; it does not prove v4 state eligibility or runtime increments.
+Independent browser/live verification is pending at implementation handoff. See the
+[migration inventory and acceptance limits](../discovery/2026-10-27-default-extension-v4-migration.md).
+
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed |

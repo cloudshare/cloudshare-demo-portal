@@ -143,3 +143,13 @@ coverage. GAP-28 is unchanged and GAP-33 remains a complete-history contract gap
 - Keep failed CloudShare calls supportable with redacted method/path/status/request/response evidence.
 - When CloudShare docs and live behavior differ, prefer the live-safe adapter behavior and record the
   discrepancy in `docs/api/cloudshare-gap-report.md`.
+
+## Existing default Environment extension (#473)
+
+Selected Sales Participant and retained Trial extension use bodyless
+`POST /v4/environments/{id}/extend` from the Infrastructure export. Omitting the body applies
+both Policy runtime and storage defaults; no custom duration is sent. Empty 204 is acknowledgement,
+not lifecycle confirmation. Existing authoritative v4 expiry/state readback and Sales access-window
+coordination remain required. Archive stays v3. See the [consumer and remaining-v3 inventory](../discovery/2026-10-27-default-extension-v4-migration.md)
+for implementation evidence and pending live acceptance; historical v3 extension results are not
+v4 eligibility proof.

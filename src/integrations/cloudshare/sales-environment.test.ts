@@ -6,25 +6,24 @@ describe("CloudShare Sales Environment observation", () => {
     expect([2, 3, 4, 5, 7, 8, 9].map((value) => cloudShareV3SalesEnvironmentStatusCodeSchema.parse(value))).toEqual([2, 3, 4, 5, 7, 8, 9]);
     expect(() => cloudShareV3SalesEnvironmentStatusCodeSchema.parse(6)).toThrow();
   });
-  it("issues the documented v3 extend action with the canonical envId and no duration override", async () => {
-    const requestV3TextDetailed = vi.fn().mockResolvedValue({
+  it("issues the documented v4 Extend action with the exact opaque ID and no duration override", async () => {
+    const requestV4Detailed = vi.fn().mockResolvedValue({
       data: "",
-      host: "use.cloudshare.com",
-      integrationSurface: "cloudshare.v3",
+      host: "api.accelerate.cloudshare.com",
+      integrationSurface: "cloudshare.v4",
       request: {
-        method: "PUT" as const,
-        path: "/api/v3/envs/actions/extend",
-        query: { envId: "opaque-b" },
+        method: "POST" as const,
+        path: "/v4/environments/opaque-b/extend",
       },
       response: {
-        status: 200,
+        status: 204,
         body: "",
       },
     });
     const source = createCloudShareSalesEnvironmentSource({
       requestV3Detailed: vi.fn(),
       requestV3: vi.fn(),
-      requestV3TextDetailed,
+      requestV4Detailed,
       requestV3Text: vi.fn(),
     } as never);
 
@@ -32,23 +31,23 @@ describe("CloudShare Sales Environment observation", () => {
       environmentId: "opaque-b",
       exchange: {
         request: {
-          method: "PUT",
-          path: "/api/v3/envs/actions/extend",
-          query: { envId: "opaque-b" },
+          method: "POST",
+          path: "/v4/environments/opaque-b/extend",
         },
         response: {
-          status: 200,
+          status: 204,
           body: "",
         },
       },
     });
 
-    expect(requestV3TextDetailed).toHaveBeenCalledWith({
-      method: "PUT",
-      path: "/envs/actions/extend",
-      query: { envId: "opaque-b" },
+    expect(requestV4Detailed).toHaveBeenCalledWith({
+      method: "POST",
+      path: "/environments/opaque-b/extend",
+      allowEmptyResponse: true,
+      schema: expect.anything(),
     });
-    expect(requestV3TextDetailed.mock.calls[0]?.[0]).not.toHaveProperty("body");
-    expect(requestV3TextDetailed.mock.calls[0]?.[0]?.query).not.toHaveProperty("duration");
+    expect(requestV4Detailed.mock.calls[0]?.[0]).not.toHaveProperty("body");
+    expect(requestV4Detailed.mock.calls[0]?.[0]).not.toHaveProperty("query");
   });
 });

@@ -2298,7 +2298,7 @@ function salesTrialAttemptedOperationForPath(path: unknown): string {
   if (path === "/v4/environments" || path === "/environments" || path === "/api/v3/envs" || path === "/envs") {
     return "resolve_environment_for_project";
   }
-  if (path.includes("/envs/actions/extend")) {
+  if (path.includes("/envs/actions/extend") || /^\/(?:v4\/)?environments\/[^/]+\/extend$/.test(path)) {
     return "extend_environment";
   }
   if (path.includes("/environments/")) return "observe_environment";

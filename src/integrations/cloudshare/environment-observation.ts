@@ -62,12 +62,7 @@ function createCloudShareSalesEnvironmentTransport(client: CloudShareClient): Sa
     observeById,
     async extendById(environmentId: string): Promise<SalesEnvironmentExtensionResult> {
       const dispatched = await dispatchEnvironmentCommand(client, environmentId, "extend");
-      // Preserve the historical Sales fallback: status 200 with an undefined
-      // body, unlike Certification's text/null command evidence.
-      const extended = dispatched.detailed ?? {
-        request: { method: "PUT" as const, path: "/api/v3/envs/actions/extend", query: dispatched.spec.query },
-        response: { status: 200, body: undefined },
-      };
+      const extended = dispatched.detailed!;
       return {
         environmentId,
         exchange: {
