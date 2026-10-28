@@ -21,4 +21,21 @@ describe("Sales Session participant invitation HTTP boundary", () => {
     expect(submitInvitation).toHaveBeenCalledTimes(1);
     expect(submitInvitation).toHaveBeenCalledWith({ customerId: "customer-1", sessionId: "session-1", actor, commandId: "00000000-0000-4000-8000-000000000001", targets: [target] });
   });
+
+  it("rejects 101 invitation targets without dispatching or returning submitted evidence", async () => {
+    const submitInvitation = vi.fn();
+    const targets = Array.from({ length: 101 }, (_, index) => ({
+      ...target,
+      participantId: `participant-${index}`,
+      participantRevision: "private-revision-evidence",
+    }));
+    const result = await handleInviteSalesSessionParticipants(
+      { workspace: { submitInvitation } as unknown as SalesParticipantWorkspace },
+      { customerId: "customer-1", sessionId: "session-1", actor, body: {
+        commandId: "00000000-0000-4000-8000-000000000001", targets,
+      } },
+    );
+    expect(result).toEqual({ status: 400, body: { error: "Provide a valid invitation command with ordered participant targets." } });
+    expect(submitInvitation).not.toHaveBeenCalled();
+  });
 });
