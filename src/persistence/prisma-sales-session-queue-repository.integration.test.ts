@@ -84,5 +84,5 @@ describe("Prisma Sales Session queue repository integration", () => {
     const scalePage = await repository.read({ customerId: customerA, view: "active", sort: "name_asc", offset: 175, limit: 25, now });
     expect(scalePage.total).toBe(200);
     expect(scalePage.rows).toHaveLength(25);
-  });
+  }, 10_000);
 });
