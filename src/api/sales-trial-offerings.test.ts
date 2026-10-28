@@ -2763,13 +2763,13 @@ describe("Sales Trial Offering API", () => {
       deliveryFactory: { forConnection: vi.fn().mockReturnValue({
         readSession: vi.fn().mockResolvedValue({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} }),
         listParticipants: vi.fn().mockResolvedValue({ participants: [
-          { environmentId: "env-ready" }, { environmentId: "env-archived" }, { environmentId: "env-deleted" },
+          { environmentId: "12345", email: "env-ready@example.test" }, { environmentId: "67890", email: "env-archived@example.test" }, { environmentId: "99999", email: "env-deleted@example.test" },
         ], request: {}, response: {} }), updateSession,
       }) } as never,
-      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(), observeById: vi.fn(async (id: string) => ({
-        environmentId: id,
-        statusCode: id === "env-archived" ? 4 : id === "env-deleted" ? 5 : 2,
-        expirationTime: id === "env-archived" ? "Tue, 01 Sep 2026 14:30:00 GMT" : "Tue, 01 Sep 2026 13:00:00 GMT",
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(async ({ ownerEmail }: { ownerEmail: string }) => ({
+        environmentId: ownerEmail.split("@")[0],
+        statusCode: ownerEmail === "env-archived@example.test" ? 4 : ownerEmail === "env-deleted@example.test" ? 5 : 2,
+        expirationTime: ownerEmail === "env-archived@example.test" ? "Tue, 01 Sep 2026 14:30:00 GMT" : "Tue, 01 Sep 2026 13:00:00 GMT",
         exchanges: [],
       })) })) },
       diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }), audit,
@@ -2805,8 +2805,8 @@ describe("Sales Trial Offering API", () => {
         deliveryFactory: {} as never, salesEnvironmentFactory: { forConnection: vi.fn() } } },
       { failureMode: "sales_delivery_update_missing", overrides: { deliveryFactory: { forConnection: vi.fn().mockReturnValue({}) },
         salesEnvironmentFactory: { forConnection: vi.fn() } } },
-      { failureMode: "environment_getextended_missing", overrides: { deliveryFactory: { forConnection: vi.fn().mockReturnValue({ updateSession: vi.fn() }) },
-        salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn() })) } } },
+      { failureMode: "environment_observation_missing", overrides: { deliveryFactory: { forConnection: vi.fn().mockReturnValue({ updateSession: vi.fn() }) },
+        salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({} as never) } } },
     ];
     for (const scenario of scenarios) {
       const repository = createOfferingRepository();
@@ -2861,28 +2861,61 @@ describe("Sales Trial Offering API", () => {
     expect(persisted).not.toContain("private-token");
   });
 
+  it.each([
+    ["sales", "cloudshare.v4.sales", "read_offering"],
+    ["roster", "cloudshare.v4.sales.participants", "list_participants"],
+    ["item", "portal.sales_trial.item", "resolve_offering_item"],
+    ["environment", "cloudshare.v4.environments.get", "observe_environment"],
+    ["update", "cloudshare.v4.sales", "update_offering_end"],
+  ])("labels Ending %s failures with their actual operation and surface", async (phase, surface, attemptedOperation) => {
+    const repository = createOfferingRepository(); await saveDeferredOffering(repository);
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const paths: Record<string, string> = { sales: "/v4/sales/sales-deferred", roster: "/v4/sales/sales-deferred/participants", environment: "/v4/environments/opaque-env", update: "/v4/sales/sales-deferred" };
+    const failure = new CloudShareRequestError("provider rejected", 503, { method: phase === "update" ? "PUT" : "GET", path: paths[phase], responseStatus: 503, responseBody: { detail: "protected" } });
+    const readSession = vi.fn().mockResolvedValue({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} });
+    const listParticipants = vi.fn().mockResolvedValue({ participants: [{ environmentId: "numeric-1", email: "ada@example.test" }], request: {}, response: {} });
+    const updateSession = vi.fn().mockResolvedValue({ request: {}, response: {} });
+    const observe = vi.fn().mockResolvedValue({ environmentId: "opaque-env", statusCode: 2, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT", exchanges: [] });
+    if (phase === "sales") readSession.mockRejectedValue(failure);
+    if (phase === "roster") listParticipants.mockRejectedValue(failure);
+    if (phase === "environment") observe.mockRejectedValue(failure);
+    if (phase === "update") updateSession.mockRejectedValue(failure);
+    const result = await handleEndSalesTrialOffering(createDeps(repository, {
+      ...(phase === "item" ? { items: { findById: vi.fn().mockResolvedValue(null) } } : {}),
+      deliveryFactory: { forConnection: () => ({ readSession, listParticipants, updateSession }) },
+      salesEnvironmentFactory: { forConnection: () => createSalesEnvironmentModule({ observe }) },
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+    } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+    expect(result.status).toBe(202);
+    const [entry] = await diagnosticRepository.query({ operation: "sales.trial_offering.end", outcome: "failure" });
+    expect(entry?.details).toMatchObject({ integrationSurface: surface, attemptedOperation, failureMode: expect.any(String) });
+    if (phase === "item") expect(entry?.request).toBeNull();
+    else expect(entry?.request?.path).toBe(paths[phase]);
+  });
+
   it("bounds getextended reads to one in flight and fails closed without reading later environments", async () => {
     const repository = createOfferingRepository();
     await saveDeferredOffering(repository);
     let inFlight = 0;
     let maximum = 0;
-    const observeById = vi.fn(async (id: string) => {
+    const observe = vi.fn(async ({ ownerEmail }: { ownerEmail: string }) => {
+      const id = ownerEmail.split("@")[0];
       inFlight += 1; maximum = Math.max(maximum, inFlight);
       await Promise.resolve();
       inFlight -= 1;
       if (id === "env-2") throw new Error("provider read failed");
-      return { environmentId: id, statusCode: 2 as const, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT", exchanges: [] };
+      return { environmentId: ownerEmail.split("@")[0], statusCode: 2 as const, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT", exchanges: [] };
     });
     const result = await handleEndSalesTrialOffering(createDeps(repository, {
       deliveryFactory: { forConnection: vi.fn().mockReturnValue({
         readSession: vi.fn().mockResolvedValue({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} }),
-        listParticipants: vi.fn().mockResolvedValue({ participants: [1, 2, 3].map((n) => ({ environmentId: `env-${n}` })), request: {}, response: {} }),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [1, 2, 3].map((n) => ({ environmentId: `numeric-${n}`, email: `env-${n}@example.test` })), request: {}, response: {} }),
         updateSession: vi.fn().mockResolvedValue({ id: "sales-deferred", request: {}, response: {} }),
       }) } as never,
-      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(), observeById })) },
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe })) },
     } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
     expect(result).toMatchObject({ status: 202, body: { needsAttention: true, offering: { status: "ending" } } });
-    expect(observeById).toHaveBeenCalledTimes(2);
+    expect(observe).toHaveBeenCalledTimes(2);
     expect(maximum).toBe(1);
   });
 
@@ -2902,10 +2935,10 @@ describe("Sales Trial Offering API", () => {
       now: () => currentNow,
       deliveryFactory: { forConnection: vi.fn().mockReturnValue({
         readSession: vi.fn(async () => ({ id: "sales-deferred", status: "inProgress", end: providerEnd, request: {}, response: {} })),
-        listParticipants: vi.fn().mockResolvedValue({ participants: [{ environmentId: "env-1" }], request: {}, response: {} }),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [{ environmentId: "env-1", email: "env-1@example.test" }], request: {}, response: {} }),
         updateSession,
       }) } as never,
-      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(), observeById: vi.fn(async () => ({
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(async () => ({
         environmentId: "env-1", statusCode, expirationTime: "Tue, 01 Sep 2026 14:00:00 GMT", exchanges: [],
       })) })) },
     } as never);
@@ -2934,14 +2967,24 @@ describe("Sales Trial Offering API", () => {
     const result = await handleEndSalesTrialOffering(createDeps(repository, {
       deliveryFactory: { forConnection: vi.fn().mockReturnValue({
         readSession: vi.fn().mockResolvedValue({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} }),
-        listParticipants: vi.fn().mockResolvedValue({ participants: [{ environmentId: "env-1" }, { environmentId: "env-2" }], request: {}, response: {} }),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [{ environmentId: "env-1", email: "env-1@example.test" }, { environmentId: "env-2", email: "env-2@example.test" }], request: {}, response: {} }),
         updateSession,
       }) } as never,
-      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(), observeById: vi.fn(async (id: string) => ({
-        environmentId: id, statusCode: 2, expirationTime: "Tue, 01 Sep 2026 14:00:00 GMT", exchanges: [],
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue(createSalesEnvironmentModule({ observe: vi.fn(async ({ ownerEmail }: { ownerEmail: string }) => ({
+        environmentId: ownerEmail.split("@")[0], statusCode: 2, expirationTime: "Tue, 01 Sep 2026 14:00:00 GMT", exchanges: [],
       })) })) },
     } as never), { customerId: "customer-1", actor: { type: "system" }, id: "offering-deferred" });
     expect(result).toMatchObject({ status: 202, body: { reconciliationInProgress: true } });
     expect(updateSession).not.toHaveBeenCalled();
   });
+});
+it("does not issue an End update from an unknown v4 Environment state", async () => {
+ const repository = createOfferingRepository(); await saveDeferredOffering(repository);
+ const updateSession = vi.fn();
+ const result = await handleEndSalesTrialOffering(createDeps(repository, {
+   deliveryFactory: { forConnection: () => ({ readSession: async () => ({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} }), listParticipants: async () => ({ participants: [{ environmentId: "123456", email: "owner@example.test" }], request: {}, response: {} }), updateSession }) } as never,
+   salesEnvironmentFactory: { forConnection: () => createSalesEnvironmentModule({ observe: async () => ({ environmentId: "ENVS-opaque", statusCode: 0, expirationTime: "Tue, 01 Sep 2026 14:00:00 GMT", exchanges: [] }) }) },
+ } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+ expect(result).toMatchObject({ status: 202, body: { needsAttention: true } });
+ expect(updateSession).not.toHaveBeenCalled();
 });

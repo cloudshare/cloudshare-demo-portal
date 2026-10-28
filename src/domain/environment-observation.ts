@@ -1,5 +1,5 @@
 /** Sales vocabulary is deliberately distinct from Certification's runtime state. */
-export type SalesEnvironmentState = "ready" | "suspended" | "archived" | "deleted" | "taking_snapshot" | "preparing" | "creation_failed" | "unknown";
+export type SalesEnvironmentState = "ready" | "suspended" | "archived" | "deleted" | "taking_snapshot" | "preparing" | "creation_failed" | "publishing" | "inGrace" | "futureAllocationScheduled" | "allocationScheduledNoRun" | "editingNetworks" | "stopping" | "unknown";
 
 /** Protected exchange evidence; never an ordinary response/browser projection. */
 export interface EnvironmentExchange {
@@ -8,6 +8,8 @@ export interface EnvironmentExchange {
 }
 
 export interface SalesEnvironmentReading {
+  readonly source?: "cloudshare_v4_environment";
+  readonly providerStatus?: string;
   readonly environmentId: string;
   readonly state: SalesEnvironmentState;
   /** Existing persistence projection; Snapshot deliberately has no Trial label. */

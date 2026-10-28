@@ -115,15 +115,15 @@ export function createCloudShareEnvironmentSimulator(opts: {
       return {
         attemptedOperation: "suspend_environment" as const,
         integrationSurface: "cloudshare.simulator.env.action.suspend",
-        method: "PUT" as const,
-        path: "/api/v3/envs/actions/suspend",
+        method: "POST" as const,
+        path: `/v4/environments/${encodeURIComponent(environmentExternalId)}/suspend`,
         externalIds: { environmentId: environmentExternalId },
         request: {
-          method: "PUT",
-          path: "/api/v3/envs/actions/suspend",
+          method: "POST",
+          path: `/v4/environments/${encodeURIComponent(environmentExternalId)}/suspend`,
         },
         response: {
-          status: 200,
+          status: 204,
           body: "",
         },
       };
@@ -134,15 +134,15 @@ export function createCloudShareEnvironmentSimulator(opts: {
       return {
         attemptedOperation: "resume_environment" as const,
         integrationSurface: "cloudshare.simulator.env.action.resume",
-        method: "PUT" as const,
-        path: "/api/v3/envs/actions/resume",
+        method: "POST" as const,
+        path: `/v4/environments/${encodeURIComponent(environmentExternalId)}/resume`,
         externalIds: { environmentId: environmentExternalId },
         request: {
-          method: "PUT",
-          path: "/api/v3/envs/actions/resume",
+          method: "POST",
+          path: `/v4/environments/${encodeURIComponent(environmentExternalId)}/resume`,
         },
         response: {
-          status: 200,
+          status: 204,
           body: "",
         },
       };

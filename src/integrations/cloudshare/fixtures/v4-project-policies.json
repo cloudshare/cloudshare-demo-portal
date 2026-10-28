@@ -1,0 +1,22 @@
+{
+  "method": "GET",
+  "path": "/v4/projects/p-demo-1/policies",
+  "status": 200,
+  "body": {
+    "count": 2,
+    "items": [
+      {
+        "id": "pol-demo-1",
+        "name": "Standard Exam Policy",
+        "projectId": "p-demo-1",
+        "allowEnvironmentCreation": true
+      },
+      {
+        "id": "pol-demo-2",
+        "name": "Proctored Exam Policy",
+        "projectId": "p-demo-1",
+        "allowEnvironmentCreation": true
+      }
+    ]
+  }
+}

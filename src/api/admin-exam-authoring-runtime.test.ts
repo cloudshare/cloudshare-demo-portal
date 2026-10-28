@@ -1,3 +1,4 @@
+import { createCloudShareClient, createCloudShareNoopRequestObserver } from "@/integrations/cloudshare/client";
 import { describe, expect, it, vi } from "vitest";
 import type {
   CloudShareClientFactory,
@@ -117,6 +118,11 @@ describe("admin Exam authoring resource runtime", () => {
         };
       }),
     } as unknown as CloudShareClient;
+    client.requestV4Detailed = vi.fn().mockResolvedValue({
+      data: { count: 1, items: [{ id: "project-1", name: "Helios CX Project" }] },
+      request: { method: "GET", path: "/projects", query: { tenant: "helios" } },
+      response: { status: 200, body: { count: 1, items: [{ id: "project-1", name: "Helios CX Project", providerField: "retained" }] } },
+    });
     const diagnostics = makeDiagnostics();
 
     const result = await getExamAuthoringBootstrapRuntime(
@@ -135,7 +141,7 @@ describe("admin Exam authoring resource runtime", () => {
       expect.objectContaining({
         request: { method: "GET", path: "/projects", query: { tenant: "helios" } },
         response: expect.objectContaining({
-          body: [{ id: "project-1", name: "Helios CX Project", providerField: "retained" }],
+          body: { count: 1, items: [{ id: "project-1", name: "Helios CX Project", providerField: "retained" }] },
         }),
       }),
       expect.objectContaining({
@@ -250,7 +256,7 @@ describe("admin Exam authoring resource runtime", () => {
       occurredAt: "2026-06-25T12:00:00.000Z",
       diagnostic: {
         operation: "cloudshare.resource_sync.policies.read",
-        integrationSurface: "cloudshare.v3.projects.policies",
+        integrationSurface: "cloudshare.v4.projects.policies",
         method: "GET",
         path: "/projects/project-1/policies",
         failureMode: "http_status",
@@ -389,5 +395,48 @@ describe("admin Exam authoring resource runtime", () => {
       },
     });
     expect(JSON.stringify(result.body)).not.toContain("sensitiveShape");
+  });
+});
+
+
+describe("v4 authoring handler evidence", () => {
+  it.each([200, 403])("keeps page evidence Customer-scoped and caches only a complete result (last status %s)", async (lastStatus) => {
+    const first = { count: 2, items: [{ id: "PR-one", name: "One" }], token: "protected-page-one" };
+    const last = lastStatus === 200
+      ? { count: 2, items: [{ id: "PR-two", name: "Two" }], secret: "protected-page-two" }
+      : { "": ["protected-provider-denial"] };
+    const calls: string[] = [];
+    const client = createCloudShareClient({
+      endpoints: { v4BaseUrl: "https://example.test/v4", v3BaseUrl: "https://example.test/api/v3" },
+      v3: { apiId: "api-id", apiKey: "api-key" }, tokenProvider: { getToken: async () => "opaque-test-token" },
+      observer: createCloudShareNoopRequestObserver(),
+      http: { send: async (request) => {
+        calls.push(request.url);
+        const url = new URL(request.url);
+        if (url.pathname.endsWith("/regions")) return { status: 200, body: JSON.stringify([{ id: "region-1", name: "Region" }]) };
+        const firstPage = url.searchParams.get("Offset") === "0";
+        return { status: firstPage ? 200 : lastStatus, body: JSON.stringify(firstPage ? first : last) };
+      } },
+    });
+    const diagnostics = makeDiagnostics();
+    const logger = makeLogger();
+    const deps = { connections: makeConnections(), cloudshare: { forConnection: () => client } as CloudShareClientFactory,
+      diagnostics: diagnostics.recorder, cache: createInMemoryExamAuthoringCacheRepository(), logger };
+    const result = await getExamAuthoringBootstrapRuntime(deps, { customerId: "customer-1", refresh: true });
+    expect(result.status).toBe(lastStatus === 200 ? 200 : 502);
+    const entries = await diagnostics.repository.query({ customerId: "customer-1" });
+    expect(entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ response: expect.objectContaining({ body: first }) }),
+      expect.objectContaining({ response: expect.objectContaining({ body: last, status: lastStatus }) }),
+    ]));
+    expect(await diagnostics.repository.query({ customerId: "other-customer" })).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain("protected-");
+    expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain("protected-");
+    const before = calls.length;
+    const again = await getExamAuthoringBootstrapRuntime(deps, { customerId: "customer-1", refresh: false });
+    expect(again.status).toBe(result.status);
+    expect(calls.length).toBe(lastStatus === 200 ? before : before + 2);
+    const disconnected = await getExamAuthoringBootstrapRuntime({ ...deps, connections: makeConnections(null) }, { customerId: "other-customer", refresh: false });
+    expect(disconnected.status).toBe(404);
   });
 });

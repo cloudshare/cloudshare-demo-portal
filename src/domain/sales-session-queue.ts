@@ -1,6 +1,6 @@
 import { projectSalesSessionStatus, type CloudShareSalesExperienceStatus } from "./sales-session-status";
 import type { SalesDemoSession } from "./sales-demo-session";
-import { projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment, isProjectableSalesParticipantRosterEnvironment, type SalesParticipantEnvironmentObservation } from "./sales-participant-environment";
+import { projectSalesParticipantV4Environment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment, isProjectableSalesParticipantRosterEnvironment, type SalesParticipantEnvironmentObservation } from "./sales-participant-environment";
 
 export type SalesSessionQueueView = "active" | "needs_attention" | "history";
 export type SalesSessionQueueSort = "start_desc" | "start_asc" | "name_asc";
@@ -40,8 +40,8 @@ export function classifySalesSessionQueueRow(session: SalesSessionQueueCandidate
   return { id: session.id, accountId: session.accountId, accountName: session.accountName, opportunityId: session.opportunityId, opportunityName: session.opportunityName, sessionName: session.sessionName ?? "Sales Enablement Session", revision: session.revision ?? 1, start: session.start, end: session.end, timeZone: session.timeZone, operation: status.operation, experience: status.experience, ...(session.participantEnvironment ? { participantEnvironment: session.participantEnvironment } : {}), ...(attention ? { attention } : {}) };
 }
 
-export function projectQueueParticipantEnvironment(input: { readonly participantName: string; readonly environmentStatus: string | null; readonly environmentStatusCode: number | null; readonly environmentObservedAt: Date | null; readonly attentionReason: string | null }): SalesSessionQueueParticipantEnvironment {
-  const observation = input.environmentStatus && input.environmentObservedAt && isProjectableSalesParticipantRosterEnvironment(input.environmentStatus)
+export function projectQueueParticipantEnvironment(input: { readonly v4EnvironmentStatus?: string | null; readonly v4EnvironmentObservedAt?: Date | null; readonly participantName: string; readonly environmentStatus: string | null; readonly environmentStatusCode: number | null; readonly environmentObservedAt: Date | null; readonly attentionReason: string | null }): SalesSessionQueueParticipantEnvironment {
+  const observation = input.v4EnvironmentObservedAt && (!input.environmentObservedAt || input.v4EnvironmentObservedAt >= input.environmentObservedAt) ? projectSalesParticipantV4Environment(input.v4EnvironmentStatus, input.v4EnvironmentObservedAt) : input.environmentStatus && input.environmentObservedAt && isProjectableSalesParticipantRosterEnvironment(input.environmentStatus)
     ? projectSalesParticipantRosterEnvironment(input.environmentStatus, input.environmentObservedAt)
     : projectSalesParticipantEnvironment(input.environmentStatusCode, input.environmentObservedAt ?? undefined);
   return { participantName: input.participantName, observation, attentionReason: input.attentionReason };

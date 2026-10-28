@@ -12,7 +12,17 @@ This glossary is the source of truth for the project's language. It is not a spe
 
 ## Language
 
-### Actors & organisations
+Environment observation uses Infrastructure v4 `GET /v4/environments/{id}` with the exact
+opaque ID. Sales owner resolution traverses all `GET /v4/environments` pages, then verifies
+exact normalized owner email and Project in both list and detail. Numeric Sales roster references
+remain distinct. Listings omit storage-expired Environments and expired Projects; absence is not
+complete historical evidence. `expirationTime` is storage deletion time, separate from runtime
+and Experience End. New observation provenance is v4; historical v3 numeric and roster evidence
+keeps its original source. Suspend/Resume and existing default Extend use bodyless v4 POST;
+Archive retains v3 PUT and is never replaced by Environment DELETE. See the
+[current migration inventory](docs/discovery/2026-10-28-v4-migration-closeout.md).
+
+## Actors & organisations
 
 **Certification Provider** (brand: **Certalis**):
 The company that owns and operates the portal. In this codebase the portal **is** the
@@ -190,6 +200,8 @@ exam delivery path.
 The top organisational layer within a Subscription. Owns **Policies**, **Teams**, and
 **Project Members**; Experiences are created within a Project, and Blueprints are listed
 per Project for portal authoring (v3 `GET /api/v3/projects/{projectId}/blueprints`).
+Project discovery uses v4 `GET /v4/projects`, traversing its `{count, items}` pages to include
+all visible Projects; exact Project identities are retained across discovery and Experience creation.
 
 **Project Member**:
 A user within a Project, holding one of three roles — **Project Manager** (all permissions),
@@ -202,14 +214,14 @@ A subdivision of a Project for RBAC grouping. Often a Project has just one; a Pr
 belongs to all teams.
 
 **Policy**:
-A Project-scoped setting defining the lifetime of an environment. An Exam selects one Policy from
-the selected Project (v3 `GET /api/v3/projects/{projectId}/policies`). A broader
-`GET /api/v3/policies` surface may return visible policies across Projects for a CloudShare
-Connection, but the portal does not treat that as the primary contract. Policy detail is read
-through the undocumented but live-observed v3 path
-`GET /api/v3/projects/{projectId}/policies/{policyId}` when lease evidence is needed:
-`runtimeLeaseMinutes` feeds the Certalis ExamAttempt timer, while `storageLeaseMinutes` is
-continuous CloudShare retention/TTL evidence.
+A Project-scoped setting defining the lifetime of an environment. An Exam selects one active Policy
+from the selected Project through v4 `GET /v4/projects/{projectId}/policies`. Policy summaries do
+not supply durations; v4 `GET /v4/projects/{projectId}/policies/{policyId}` supplies detail for the
+same Project and Policy identities. The provider's `runtimeMinutes` and `storageMinutes` map to
+the portal's `runtimeLeaseMinutes` and `storageLeaseMinutes`: runtime feeds the Certalis ExamAttempt
+timer, while storage is continuous CloudShare retention/TTL evidence. Under ADR-005, neither
+replaces the manually authored Exam open period that defines Experience End. Sales Item default
+duration remains a separate Sales rule derived from storage.
 
 **Blueprint**:
 A reusable "folder" of environment metadata plus **Snapshots**. Can exist across Projects and
@@ -336,6 +348,12 @@ _Avoid_: Exam, Cohort Exam Session, generic session.
 
 **Sales Experience**:
 The CloudShare v4 resource backing a Sales Enablement Session.
+
+**Sales Session Cancellation**:
+Ends access to a Sales Enablement Session while retaining its portal Session, Participants,
+original schedule, correlations, Activity and Support history. An active or previously run Sales
+Experience is retained; an Experience whose current CloudShare Start is in the future is, by
+the agreed business definition, not yet run and may be removed.
 
 **Certification**:
 The whole path/journey a Candidate takes — training plus one or more exams, some potentially

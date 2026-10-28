@@ -107,7 +107,11 @@ function makeCloudShareClient(overrides: {
 
   return {
     requestV3,
-    requestV4: overrides.requestV4 ?? vi.fn(),
+    requestV4: overrides.requestV4 ?? vi.fn().mockImplementation(({ path }: { path: string }) => {
+      if (path === "/projects") return Promise.resolve({ count: 1, items: [{ id: "p-1", name: "Demo Project" }] });
+      if (path === "/projects/p-1/policies") return Promise.resolve({ count: 1, items: [{ id: "pol-1", projectId: "p-1", name: "Policy 1" }] });
+      return Promise.reject(new Error(`unexpected v4 path ${path}`));
+    }),
     requestV3Text: vi.fn(),
   };
 }

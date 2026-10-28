@@ -1231,10 +1231,10 @@ describe("createCloudShareClient — fixture replay (no live calls)", () => {
     const projects = await fixtureClient.requestV4({
       method: "GET",
       path: "/projects",
-      schema: projectsSchema,
+      schema: z.object({ count: z.number(), items: projectsSchema }),
     });
-    expect(projects).toHaveLength(2);
-    expect(projects[0]).toEqual({ id: "p-demo-1", name: "Helios CX Project" });
+    expect(projects.items).toHaveLength(2);
+    expect(projects.items[0]).toEqual({ id: "p-demo-1", name: "Helios CX Project" });
   });
 
   it("replays a recorded v3 response through the same adapter path", async () => {

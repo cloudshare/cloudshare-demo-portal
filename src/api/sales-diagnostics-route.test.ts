@@ -33,11 +33,11 @@ describe("Sales diagnostics HTTP isolation", () => {
     mockHandleGetDiagnosticLog.mockResolvedValue({ status: 200, body: { entries: [], page: { hasMore: false, nextOffset: null } } });
   });
 
-  it("allows the exact extension source while deriving Customer scope from the authenticated admin", async () => {
+  it.each(["sales-participant-extension", "sales-session-cancellation"])("allows the exact %s source while deriving Customer scope from the authenticated admin", async source => {
     mockGetPortalAdminSession.mockResolvedValue({ customerId: "owned", role: "admin", workspace: "sales" });
-    const response = await getSalesDiagnostics(new Request("http://localhost/api/sales/diagnostics?source=sales-participant-extension&correlationId=extension-command&customerId=other"));
+    const response = await getSalesDiagnostics(new Request(`http://localhost/api/sales/diagnostics?source=${source}&correlationId=command&customerId=other`));
     expect(response.status).toBe(200);
-    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ customerId: "owned", query: expect.objectContaining({ source: "sales-participant-extension", correlationId: "extension-command" }) }));
+    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ customerId: "owned", query: expect.objectContaining({ source, correlationId: "command" }) }));
   });
 
   it("keeps the Sales Customer scope while preserving the requested Sales diagnostic source", async () => {

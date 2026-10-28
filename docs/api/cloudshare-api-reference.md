@@ -3,23 +3,63 @@
 This project keeps local CloudShare API exports so implementation agents do not infer endpoint
 paths from memory or from earlier slices.
 
-## Source and implementation status (2026-10-23)
+## Source and implementation status (2026-10-28)
 
-**PUBLISHED CONTRACT:** The [current official Infrastructure OpenAPI source](https://cloudshare.stoplight.io/api/v1/projects/cloudshare/AccelerateAPI/nodes/reference/infrastructure-Public-API.openapi.json?branch=main)
-identifies Infrastructure 4.0 and documents v4 Projects, Policies and environment operations.
-The July Experience export listed below has a different scope; its lack of Infrastructure paths
-is not evidence that those v4 contracts are absent. The preserved October 12 Infrastructure export
-and current official source are assessed in the [dated contract-readiness report](../discovery/2026-10-23-cloudshare-v4-contract-readiness.md),
-including pagination, permissions, identity, timing and command limitations.
+A–D are merged at baseline `3f324b2a`. The [closeout inventory](../discovery/2026-10-28-v4-migration-closeout.md)
+records every production consumer, current official v3/v4 source searches and exact reviewed/merge
+heads. It supersedes pending-merge checkpoints below without rewriting their dated evidence.
 
-**SHIPPED MAIN:** At `dc8ec6a5`, #454/#455 share environment and resource-discovery seams but
-retain existing v3 provider traffic. Published replacements are not shipped migrations.
-**LIVE VERIFIED:** This documentation assessment adds no live tenant verification.
-**PENDING:** A Project/Policy read-only migration is conditional on separate scope agreement and
-exact live acceptance; #453 authorizes no transport migration. Unmerged PR448 and its Preparing
-acceptance gate remain independent; see the report for evidence boundaries.
+**PUBLISHED CONTRACT:** The [current official Infrastructure 4.0 source](https://cloudshare.stoplight.io/api/v1/projects/cloudshare/AccelerateAPI/nodes/reference/infrastructure-Public-API.openapi.json?branch=main)
+was downloaded on 2026-10-26 and preserved in the export listed below. Projects and Project-scoped
+Policy list/detail use this contract. The July Experience export has a different scope.
+
+**IMPLEMENTED IN #468 / PR #470:** All Project and Policy discovery consumers use v4, including
+Exam/Sales authoring, Sales provisioning validation and Sync Resources. Projects traverse the
+`{count, items}` pages with `Count=true`, `Offset` and `Limit=100`; Policy lists omit limit to return
+all active rows, and details supply exact-identity runtime/storage minutes. See the
+[migration inventory and evidence](../discovery/2026-10-26-project-policy-v4-migration.md).
+**LIVE VERIFIED (2026-10-26, `e11d674`):** Independent browser QA exercised Exam and Sales Item
+selection/save/reopen, Sync Resources through a disposable same-origin form, Support success and
+an authorized OAuth-403 failure/restoration. Console: zero warnings/errors; relevant live checks:
+3/3. Exact v4 Project ids worked with retained v3 Blueprint/member/Team reads. No new Experience
+write, known-inactive Policy exclusion or Team Member permission-empty behavior was live-proven;
+see the dated evidence report above for these boundaries.
+
+**RETAINED V3:** Blueprint/default-Snapshot, VMware Regions, Teams, active Project members,
+timezones, ping and Environment Archive. #473 migrated default Extend to bodyless v4 POST. #472 migrated
+suspend/resume to bodyless v4 POST with empty204 acknowledgement and a durable per-Attempt
+no-replay marker; see [contract and acceptance evidence](../discovery/2026-10-26-suspend-resume-v4-migration.md). #469 migrated all
+Environment list/detail observations to v4. Existing v4 Experience/participant/sponsored-link/Guided Journey behavior is unchanged.
+#351 / PR #448 is merged in the baseline; its older unmerged wording is historical.
+
+## Suspend/resume live evidence (#472, 2026-10-27)
+
+Reviewed runtime head `7756114f81f8276362cf547f6b07a356921eae72` is unchanged. An isolated
+replacement real UI flow produced three bodyless v4 Suspend POST 204 writes (explicit, heartbeat,
+logout) and two Resume POST 204 writes, with exact Suspended/Ready readbacks and retained clock.
+Settled explicit Suspend, post-timeout Home and logout console captures each had zero warnings/
+errors and were independently accepted. Stage 0's demonstrated browser-side attribute injection
+and extension-source error have a narrow environmental attribution; not every console was zero.
+Original real Admin Support success/synthetic invalid-ID GET 400 and foreign Customer API 404
+remain separate evidence; no provider valid-missing 404 claim is made.
+
+Original UI S3/R2 plus separately authorized API cleanup S1 remain historical, separate from the
+replacement S3/R2 ledger. Final replacement provider/local state was Suspended, clock paused
+185978 ms, no pending command or session; jobs/server stopped and temporary credential restored.
+Coordinator option 2 accepts unchanged Archive regression through independent audit and 58/58
+existing automated tests. B's live Archive evidence is historical; current-ticket Archive count is
+zero. At that checkpoint Archive/Extend retained v3; #473 subsequently migrated Extend to v4.
+Archive remains v3, never Environment DELETE. See the
+[acceptance matrix, chronology and preservation limits](../discovery/2026-10-26-suspend-resume-v4-migration.md).
+That checkpoint preceded final documentation review; PR #475 has since merged as recorded in the closeout ledger.
 
 ## Local Reference Files
+
+- `docs/api/assets/cloudshare-infrastructure-v4-2026-10-26.json`
+  - Current official Infrastructure 4.0 OpenAPI export, retrieved 2026-10-26.
+  - Project/Policy contracts: `/v4/projects`, `/v4/projects/{projectId}/policies`,
+    `/v4/projects/{projectId}/policies/{policyId}`; `PolicyBriefResponse` / `PolicyResponse`.
+  - SHA-256: `58d85edb9f8982c9130138c120dcbd5546d9bf3eb140be4a763a174d11f7c325`.
 
 - `docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
   - Exported CloudShare Accelerate API OpenAPI 3.1 bundle.
@@ -77,14 +117,30 @@ These endpoints are v4 Accelerate endpoints and use the same base URL:
 
 ## Guardrails For Future Changes
 
-## Production v3 Sales Environment Observation
+## Environment observation (#469)
 
-Live verification for Sales monitoring confirmed that the v4 roster `envId` is a numeric roster
-reference, not the opaque identifier accepted by v3 Environment actions. The supported observation
-chain is `GET /envs?ownerEmail=<server-side email>&brief=false`, an exact server-side Project match,
-then `GET /envs/actions/getextended?envId=<opaque v3 id>`. Only one same-Project match is accepted;
-zero or multiple matches are an explicit needs-attention condition. Numeric status codes accepted by
-the portal are `2`, `3`, `4`, `5`, `7`, `8`, and `9`.
+Certification state/lease reads and Sales/Trial observation use `GET /v4/environments/{id}`.
+Sales owner resolution traverses `GET /v4/environments?OwnerEmail=...&Count=true&Offset=...&Limit=100`.
+Owner filtering is a substring search; exact normalized owner and exact Project are checked after
+all pages and again on detail. Zero/multiple matches, inconsistent pages and changed detail identity
+fail closed. Numeric Sales roster `envId` remains distinct from opaque Environment IDs.
+
+Only live/non-storage-expired Environments are listed; expired Projects are excluded. No complete
+participant history/count is inferred. Historical numeric evidence remains v3; new persisted v4
+status/time is separate from roster evidence. Known history survives a missing list match.
+
+RFC1123 UTC `startTime`/`expirationTime` are validated at the integration seam; expiration means
+storage deletion, never runtime remaining or Experience End. All documented statuses remain
+non-actionable unless existing lifecycle rules admit them. Unknown states do not grant an active
+external lease. Archive remains v3, never DELETE; all command dispatch/fences remain unchanged.
+
+Live UI verification on 2026-10-26 at `80d88a8e54ff83fb2556a87065be78286a0c8261` confirmed
+Certification training-to-opaque-Environment correlation, the separate external-lease consumer,
+Sales exact owner/Project resolution and numeric-roster distinction, and Trial Extend/Ending
+readback. Commands remained on their existing transports. See the
+[consumer evidence and limits](../discovery/2026-10-26-environment-v4-migration.md).
+Synthetic-ID HTTP 400 proves input-rejection diagnostics only; valid-missing 404 remains offline
+coverage. GAP-28 is unchanged and GAP-33 remains a complete-history contract gap.
 
 - Do not use `/api/v3/class/*` endpoints for Accelerate Experience user properties.
 - Do not invent v4 endpoint paths from surrounding naming patterns; verify them in the local export.
@@ -92,3 +148,51 @@ the portal are `2`, `3`, `4`, `5`, `7`, `8`, and `9`.
 - Keep failed CloudShare calls supportable with redacted method/path/status/request/response evidence.
 - When CloudShare docs and live behavior differ, prefer the live-safe adapter behavior and record the
   discrepancy in `docs/api/cloudshare-gap-report.md`.
+
+## Existing default Environment extension (#473)
+
+Selected Sales Participant and retained Trial extension use bodyless
+`POST /v4/environments/{id}/extend` from the Infrastructure export. Omitting the body applies
+both Policy runtime and storage defaults; no custom duration is sent. Empty 204 is acknowledgement,
+not lifecycle confirmation. Existing authoritative v4 expiry/state readback and Sales access-window
+coordination remain required. Archive stays v3. See the [consumer and remaining-v3 inventory](../discovery/2026-10-27-default-extension-v4-migration.md)
+for implementation and accepted live evidence; historical v3 extension results are not
+v4 eligibility proof.
+
+**Verification update (2026-10-27):** independent audit accepted the exact-runtime-head actual HTTP
+simulation: 126 synthetic exchanges, 9 unique bodyless Extend POSTs, no replay, protected evidence
+and Customer isolation. Three live read-only checks passed. One real automated Sales Extend UI
+click produced POST 204, authoritative increased storage expiry, separate access PUT 200 and
+completed/confirmed UI evidence. Independent viewer runtime observations are retained separately.
+Live Support success and malformed-ID GET 400 diagnostics passed; this is not Extend 403 evidence.
+Trial launch/Ready evidence exists, but Trial Extend remains zero. At this earlier checkpoint, both Sales and Trial lacked the
+required guest-data/preserved-work witness, so acceptance remained blocked with no structural-only
+waiver. See the [migration evidence record](../discovery/2026-10-27-default-extension-v4-migration.md)
+for corrected original-click timestamps, console limitations, provenance and preservation state.
+A second isolated Trial run confirmed identity/role controls, Resume 204/Ready and a fresh
+sponsored link, but the guest remained Connecting with no saved witness. Trial Extend stays zero.
+Its one cleanup Suspend confirmed Suspended; owned servers stopped. Run-specific and cumulative
+counts and frozen manifests are recorded separately. No general v4 state-eligibility or guest-work-preservation guarantee is inferred.
+
+
+**Verification update (2026-10-28):** independent QA and Spec accepted a later human-performed
+Sales extension with observed Windows/pfSense application-state continuity and exact-Environment
+diagnostics: bodyless Extend POST 204, Ready GET, separate access PUT 200, and storage expiry
+`2026-10-29T13:53:30Z` to `2026-10-30T13:53:30Z`. This satisfies the Sales continuity criterion
+for observed application state; #473 does not require a saved file, and no arbitrary-byte or saved
+pfSense-configuration guarantee follows. Screenshot artifact times are not click times; earlier
+automated console evidence remains separate. At that Sales checkpoint, Trial Extend/continuity were still pending and overall
+acceptance remained blocked. Port 3025 was up for the human at that checkpoint.
+See the migration record for the four-file frozen manual evidence manifest and exact limits.
+
+
+**Later verification update (2026-10-28):** independent QA and Spec accepted the manual retained
+Trial extension: one bodyless POST 204 between exact-ID Ready GETs, storage expiry increased from
+`2026-10-28T14:19:40Z` to `2026-10-29T14:19:40Z`, and the same Windows 2022 Notepad document/text
+visible before and after. Close/reopen is separately human-reported; no new Trial console capture
+or portal screenshot is claimed. All live criteria pass within these limits, subject to final
+exact-head reviews and merge. After viewer closure, two guarded cleanup Suspend POSTs returned
+204 and exact GETs confirmed both owned Environments Suspended. Owned servers stopped; ports
+3025/3026 are free. The migration record preserves manifests, timestamps and historical ledgers.
+That observation preceded final review. PR #476 subsequently merged as `3f324b2a` after clean
+exact-head reviews at `5eff112c`; issue #473 is closed. See the closeout ledger for complete SHAs.

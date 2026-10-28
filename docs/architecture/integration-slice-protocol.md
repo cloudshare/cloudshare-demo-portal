@@ -46,6 +46,30 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
 4. Add a live E2E check when local credentials can exercise the behavior safely and cheaply.
 5. Record confirmed live-tenant behavior in the gap report while the evidence is fresh.
 
+## Browser persona isolation for CloudShare QA
+
+This is a standing rule for all project QA that logs into CloudShare or relies on an existing
+CloudShare persona. Purely local UI checks do not need to invent a vendor login.
+CloudShare permits one logged-in CloudShare persona per browser session. Cookies are shared
+across tabs and normal windows in the same Chrome profile; two Incognito windows in one profile
+also share their Incognito session. Separate tabs or windows therefore do not isolate personas.
+
+Use a dedicated Chrome profile for each persona, creating additional dedicated profiles when
+needed. A Sales Trial launch into CloudShare must not share a profile/session already holding a
+different CloudShare persona. Preserve unrelated sessions: do not sign them out, reset them or
+repurpose their profiles to make a QA flow fit. Before persona-sensitive actions, verify both the
+portal Customer/role and the actual CloudShare viewer identity. A portal role, profile alias or
+tab title alone does not establish the CloudShare identity.
+
+Reusable operational profile examples, explicitly designated by the human on2026-10-28, are
+**Candidate 1**, **Owner Admin** and **Foreign Admin**. They are not a restriction to #474 or an
+exhaustive persona list. Record the actual profile/session binding alongside the names; keep
+earlier tool metadata and QA labels as dated evidence rather than rewriting their history.
+
+This is a human-provided operating constraint, not an established cause of earlier
+`Runtime.evaluate` or screenshot timeouts. Diagnose such failures from their own evidence. The
+#474 missing Blueprint fixture was a separately established cause of its admission-guard failure.
+
 ## Before review
 
 Run and record:

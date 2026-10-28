@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { CloudShareClient } from "./client";
 
 /** One dispatch, never retries: lifecycle owners hold the durable dispatch fence.
@@ -6,8 +7,16 @@ import type { CloudShareClient } from "./client";
 export async function dispatchEnvironmentCommand(
   client: CloudShareClient,
   environmentId: string,
-  action: "suspend" | "resume" | "archive" | "extend",
+  action: "archive" | "extend",
 ) {
+  if (action === "extend") {
+    const spec = { method: "POST", path: `/environments/${encodeURIComponent(environmentId)}/extend`, allowEmptyResponse: true, schema: z.void() } as const;
+    // Production clients supply physical exchange evidence; legacy injected clients
+    // retain the documented empty acknowledgement without a v3 fallback.
+    const detailed = client.requestV4Detailed ? await client.requestV4Detailed(spec) : null;
+    if (!detailed) await client.requestV4(spec);
+    return { spec, detailed: detailed ?? { data: undefined, host: "", integrationSurface: "cloudshare.v4", request: { method: "POST" as const, path: `/v4${spec.path}` }, response: { status: 204, body: undefined } }, text: null };
+  }
   const spec = { method: "PUT", path: `/envs/actions/${action}`, query: { envId: environmentId } } as const;
   if (client.requestV3TextDetailed) {
     return { spec, detailed: await client.requestV3TextDetailed(spec), text: null };

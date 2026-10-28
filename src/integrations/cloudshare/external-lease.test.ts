@@ -15,7 +15,6 @@ function makeClient(overrides: Partial<CloudShareClient> = {}): CloudShareClient
     requestV3: vi.fn(),
     requestV3Text: vi.fn(),
     requestV4: vi.fn(),
-    requestV3Detailed: vi.fn(),
     requestV4Detailed: vi.fn(),
     requestV3TextDetailed: vi.fn(),
     ...overrides,
@@ -25,12 +24,12 @@ function makeClient(overrides: Partial<CloudShareClient> = {}): CloudShareClient
 describe("external lease inspection", () => {
   it("preserves 404 environment evidence as an expired external lease", async () => {
     const client = makeClient({
-      requestV3Detailed: vi.fn(async () => {
+      requestV4Detailed: vi.fn(async () => {
         throw new CloudShareRequestError("not found", 404, {
           method: "GET",
           host: "use.cloudshare.com",
-          path: "/v3/envs/ENVS-expired-1",
-          integrationSurface: "cloudshare.v3.env.get",
+          path: "/v4/environments/ENVS-expired-1",
+          integrationSurface: "cloudshare.v4.environments.get",
           requestHeaders: { authorization: "[REDACTED]" },
           responseHeaders: { "content-type": "application/json" },
           responseBody: { message: "Environment not found", code: "0x40402" },
@@ -44,15 +43,15 @@ describe("external lease inspection", () => {
       kind: "expired",
       target: "environment",
       attemptedOperation: "get_environment",
-      integrationSurface: "cloudshare.v3.env.get",
+      integrationSurface: "cloudshare.v4.environments.get",
       method: "GET",
-      path: "/v3/envs/ENVS-expired-1",
+      path: "/v4/environments/ENVS-expired-1",
       responseStatus: 404,
       environmentStatus: "deleted",
       reason: "not_found",
       request: {
         method: "GET",
-        path: "/v3/envs/ENVS-expired-1",
+        path: "/v4/environments/ENVS-expired-1",
       },
       response: {
         status: 404,
@@ -177,12 +176,12 @@ describe("external lease inspection", () => {
 
   it("preserves non-404 environment inspection failures as actionable diagnostics evidence", async () => {
     const client = makeClient({
-      requestV3Detailed: vi.fn(async () => {
+      requestV4Detailed: vi.fn(async () => {
         throw new CloudShareRequestError("forbidden", 403, {
           method: "GET",
           host: "use.cloudshare.com",
-          path: "/v3/envs/ENVS-live-1",
-          integrationSurface: "cloudshare.v3.env.get",
+          path: "/v4/environments/ENVS-live-1",
+          integrationSurface: "cloudshare.v4.environments.get",
           requestHeaders: { authorization: "[REDACTED]" },
           responseHeaders: { "content-type": "application/json" },
           responseBody: { message: "Forbidden" },
@@ -196,14 +195,14 @@ describe("external lease inspection", () => {
       kind: "unknown",
       target: "environment",
       attemptedOperation: "get_environment",
-      integrationSurface: "cloudshare.v3.env.get",
+      integrationSurface: "cloudshare.v4.environments.get",
       method: "GET",
-      path: "/v3/envs/ENVS-live-1",
+      path: "/v4/environments/ENVS-live-1",
       failureMode: "http_status",
       responseStatus: 403,
       request: {
         method: "GET",
-        path: "/v3/envs/ENVS-live-1",
+        path: "/v4/environments/ENVS-live-1",
       },
       response: {
         status: 403,
@@ -214,12 +213,12 @@ describe("external lease inspection", () => {
 
   it("preserves cached prior 429 evidence when an environment read is blocked by cooldown", async () => {
     const client = makeClient({
-      requestV3Detailed: vi.fn(async () => {
+      requestV4Detailed: vi.fn(async () => {
         throw new CloudShareRateLimitError("requests are cooling down", 429, "rate_limit", {
           method: "GET",
           host: "use.cloudshare.com",
-          path: "/v3/envs/ENVS-live-1",
-          integrationSurface: "cloudshare.v3.env.get",
+          path: "/v4/environments/ENVS-live-1",
+          integrationSurface: "cloudshare.v4.environments.get",
           cooldownActive: true,
           responseHeaders: { "retry-after": "30" },
           responseBody: { error: "Too many requests" },
@@ -272,7 +271,7 @@ describe("external lease inspection", () => {
 
   it("classifies a rehydrated rate-limit error with its cached prior evidence", async () => {
     const client = makeClient({
-      requestV3Detailed: vi.fn(async () => {
+      requestV4Detailed: vi.fn(async () => {
         throw {
           name: "CloudShareRateLimitError",
           cloudShareErrorDiscriminant: CLOUDSHARE_RATE_LIMIT_ERROR_DISCRIMINANT,
@@ -284,8 +283,8 @@ describe("external lease inspection", () => {
             status: 429,
             method: "GET",
             host: "use.cloudshare.com",
-            path: "/v3/envs/ENVS-live-1",
-            integrationSurface: "cloudshare.v3.env.get",
+            path: "/v4/environments/ENVS-live-1",
+            integrationSurface: "cloudshare.v4.environments.get",
             cooldownActive: true,
             requestHeaders: {
               authorization: "Bearer rehydrated-request-secret",

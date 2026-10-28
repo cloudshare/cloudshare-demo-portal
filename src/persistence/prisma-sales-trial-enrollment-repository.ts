@@ -160,6 +160,7 @@ function serialize(enrollment: SalesTrialEnrollment) {
     participationStatus: enrollment.participationStatus ?? "pending",
     cloudShareRosterEnvironmentReference: enrollment.cloudShareRosterEnvironmentReference,
     environmentStatus: enrollment.environmentStatus,
+    v4EnvironmentStatus: enrollment.v4EnvironmentStatus, v4EnvironmentObservedAt: enrollment.v4EnvironmentObservedAt,
     observedExpirationTime: enrollment.observedExpirationTime ?? null,
     firstJoined: enrollment.firstJoined,
     status: enrollment.status,
@@ -184,6 +185,7 @@ type SalesTrialEnrollmentRow = {
   participationStatus: string;
   cloudShareRosterEnvironmentReference: string | null;
   environmentStatus: string | null;
+  v4EnvironmentStatus?: string | null; v4EnvironmentObservedAt?: Date | null;
   observedExpirationTime: string | null;
   firstJoined: string | null;
   status: string;

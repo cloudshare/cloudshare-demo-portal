@@ -187,12 +187,11 @@ describe("suspendExam", () => {
     const attempts = await makeAttempts("in_progress");
 
     await suspendExam(
-      { controller, source: fixedSource("suspended"), timer, attempts, launches: makeLaunches(), sleep: noSleep },
+      { controller, source: eventualSource("running", "suspended"), timer, attempts, launches: makeLaunches(), sleep: noSleep },
       { examAttemptId: "ea-1" },
     );
 
     expect(controller.suspended).toEqual(["ENVS-test-env-1"]);
-    expect(timer.paused).toEqual(["ea-1"]);
     await expect(attempts.findById("ea-1")).resolves.toMatchObject({ status: "suspended" });
   });
 
@@ -245,7 +244,7 @@ describe("suspendExam", () => {
       { examAttemptId: "ea-1" },
     );
 
-    expect(timer.paused).toEqual(["ea-1"]);
+    await expect(attempts.findById("ea-1")).resolves.toMatchObject({ status: "suspended" });
   });
 
   it("throws ExamAttemptRuntimeError if the environment never reaches suspended within maxAttempts", async () => {
@@ -343,7 +342,7 @@ describe("resumeExam", () => {
     const result = await resumeExam(
       {
         controller,
-        source: fixedSource("running"),
+        source: eventualSource("suspended", "running"),
         timer,
         attempts,
         launches,
@@ -354,7 +353,7 @@ describe("resumeExam", () => {
     );
 
     expect(controller.resumed).toEqual(["ENVS-test-env-1"]);
-    expect(timer.resumed).toEqual(["ea-1"]);
+    await expect(attempts.findById("ea-1")).resolves.toMatchObject({ status: "in_progress" });
     expect(result.environmentExternalId).toBe("ENVS-test-env-1");
     expect(result.suspendedPreservationLimitMs).toBe(SUSPENDED_PRESERVATION_LIMIT_MS);
     expect(labs.createSponsoredLinkCalls).toBe(0);
@@ -381,7 +380,6 @@ describe("resumeExam", () => {
       { examAttemptId: "ea-1" },
     );
 
-    expect(timer.resumed).toEqual(["ea-1"]);
     await expect(attempts.findById("ea-1")).resolves.toMatchObject({ status: "in_progress" });
   });
 

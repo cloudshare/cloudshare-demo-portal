@@ -1,0 +1,45 @@
+import { randomUUID } from "node:crypto";
+import { PrismaClient } from "@prisma/client";
+import { afterAll, expect, it } from "vitest";
+import { createPrismaExamAttemptRepository } from "./prisma-exam-attempt-repository";
+import { createPrismaExamClockRepository } from "./prisma-exam-clock-repository";
+const prisma = new PrismaClient();
+afterAll(() => prisma.$disconnect());
+it("persists one scoped command across adapters and atomically settles exact command, attempt and clock", async () => {
+  const id = randomUUID();
+  const at = new Date("2026-10-26T10:10:00Z");
+  await prisma.customer.create({ data: { id, slug: id, name: "Runtime command test" } });
+  try {
+    await prisma.exam.create({ data: { id, customerId: id, title: "Runtime", description: "", timeLimitMinutes: 60, openPeriodMinutes: 120, scoreRetrievalEnabled: false, status: "published", createdAt: at, updatedAt: at, projectId: "project", projectName: "Project", blueprintId: "bp", blueprintName: "Blueprint", snapshotId: "snapshot", snapshotName: "Snapshot", allowedRegionsJson: "[]", policyId: "policy", policyName: "Policy", instructorId: "instructor", instructorName: "Instructor" } });
+    const attempts = createPrismaExamAttemptRepository(prisma);
+    const clocks = createPrismaExamClockRepository(prisma);
+    const attempt = { id, customerId: id, candidateId: "candidate", examId: id, status: "in_progress" as const, createdAt: at };
+    await attempts.save(attempt);
+    await clocks.save({ examAttemptId: id, status: "running", elapsedAtPauseMs: 120000, startedAt: new Date("2026-10-26T10:09:00Z"), updatedAt: at });
+    const command = { customerId: id, examAttemptId: id, commandId: randomUUID(), action: "suspend" as const, environmentId: "EN-exact" };
+    expect(await attempts.claimRuntimeCommand!({ ...command, customerId: "foreign" }, "in_progress")).toBe(false);
+    const results = await Promise.all([attempts.claimRuntimeCommand!(command, "in_progress"), attempts.claimRuntimeCommand!({ ...command, commandId: randomUUID() }, "in_progress")]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const restarted = createPrismaExamAttemptRepository(prisma);
+    const pending = (await restarted.readRuntimeCommand!(id, id))!;
+    await expect(restarted.readRuntimeCommand!("foreign", id)).resolves.toBeNull();
+    await attempts.save(attempt);
+    expect(pending.phase).toBe("dispatching");
+    expect(await restarted.settleRuntimeCommand!(pending, at)).toBe(false);
+    expect(await restarted.finishRuntimeCommandDispatch!({ ...pending, commandId: "stale" })).toBe(false);
+    expect(await restarted.finishRuntimeCommandDispatch!(pending)).toBe(true);
+    expect(await restarted.readRuntimeCommand!(id, id)).toMatchObject({ phase: "observing" });
+    expect(await restarted.settleRuntimeCommand!({ ...pending, commandId: "stale" }, at)).toBe(false);
+    expect(await restarted.settleRuntimeCommand!(pending, at)).toBe(true);
+    expect(await restarted.findById(id)).toMatchObject({ status: "suspended" });
+    expect(await clocks.findByExamAttemptId(id)).toMatchObject({ status: "paused", elapsedAtPauseMs: 180000, startedAt: null });
+    expect(await restarted.readRuntimeCommand!(id, id)).toBeNull();
+    const resume = { ...command, commandId: randomUUID(), action: "resume" as const };
+    await restarted.claimRuntimeCommand!(resume, "suspended");
+    await restarted.finishRuntimeCommandDispatch!(resume);
+    await restarted.save({ ...attempt, status: "completed" });
+    expect(await restarted.settleRuntimeCommand!(resume, at)).toBe(false);
+    expect(await clocks.findByExamAttemptId(id)).toMatchObject({ status: "paused", elapsedAtPauseMs: 180000 });
+    expect(await restarted.findById(id)).toMatchObject({ status: "completed" });
+  } finally { await prisma.customer.delete({ where: { id } }); }
+});

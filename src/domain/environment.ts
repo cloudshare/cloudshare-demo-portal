@@ -52,6 +52,8 @@ export interface EnvironmentStateSnapshot {
   readonly environmentExternalId: string;
   readonly status: EnvironmentStatus;
   readonly statusCode?: number | null;
+  readonly source?: "cloudshare_v4_environment";
+  readonly providerStatus?: string;
   readonly request?: Readonly<Record<string, unknown>> | null;
   readonly response?: Readonly<Record<string, unknown>> | null;
 }
