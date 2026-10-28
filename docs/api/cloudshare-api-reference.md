@@ -160,11 +160,22 @@ and Customer isolation. Three live read-only checks passed. One real automated S
 click produced POST 204, authoritative increased storage expiry, separate access PUT 200 and
 completed/confirmed UI evidence. Independent viewer runtime observations are retained separately.
 Live Support success and malformed-ID GET 400 diagnostics passed; this is not Extend 403 evidence.
-Trial launch/Ready evidence exists, but Trial Extend remains zero. Both Sales and Trial lack the
-required guest-data/preserved-work witness, so acceptance remains blocked with no structural-only
+Trial launch/Ready evidence exists, but Trial Extend remains zero. At this earlier checkpoint, both Sales and Trial lacked the
+required guest-data/preserved-work witness, so acceptance remained blocked with no structural-only
 waiver. See the [migration evidence record](../discovery/2026-10-27-default-extension-v4-migration.md)
 for corrected original-click timestamps, console limitations, provenance and preservation state.
 A second isolated Trial run confirmed identity/role controls, Resume 204/Ready and a fresh
 sponsored link, but the guest remained Connecting with no saved witness. Trial Extend stays zero.
 Its one cleanup Suspend confirmed Suspended; owned servers stopped. Run-specific and cumulative
 counts and frozen manifests are recorded separately. No general v4 state-eligibility or guest-work-preservation guarantee is inferred.
+
+
+**Verification update (2026-10-28):** independent QA and Spec accepted a later human-performed
+Sales extension with observed Windows/pfSense application-state continuity and exact-Environment
+diagnostics: bodyless Extend POST 204, Ready GET, separate access PUT 200, and storage expiry
+`2026-10-29T13:53:30Z` to `2026-10-30T13:53:30Z`. This satisfies the Sales continuity criterion
+for observed application state; #473 does not require a saved file, and no arbitrary-byte or saved
+pfSense-configuration guarantee follows. Screenshot artifact times are not click times; earlier
+automated console evidence remains separate. Trial Extend/continuity are still pending and overall
+acceptance remains blocked. Port 3025 is currently up for the human; no new cleanup is claimed.
+See the migration record for the four-file frozen manual evidence manifest and exact limits.

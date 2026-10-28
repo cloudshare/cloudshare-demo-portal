@@ -40,12 +40,14 @@ remain regression checks. Fixtures are offline evidence, not live tenant proof.
 
 ## Live acceptance status — blocked
 
-Sales default extension has real automated UI, provider/readback, access coordination and runtime
-observation evidence below. Acceptance remains blocked: neither Sales nor Trial has a guest-data
-or preserved-work witness, and Trial Extend was deliberately not dispatched. Both independent
-Standards and Spec acceptance reviews treat preserved-work proof as blocking; structural identity
-continuity does not waive it. Human QA approval remains waived, but required automated/live evidence
-does not. PR #476 stays draft/unmerged, issue #473 remains active, and dependent #474 is blocked.
+Sales default extension now has accepted observed application-state continuity from the human
+run on 2026-10-28, alongside the earlier automated UI/provider/readback evidence. Independent QA
+and Spec reviews accepted the same Windows/pfSense application state before and after extension
+with exact-Environment diagnostics; #473 does not mandate a saved-file witness. This acceptance is
+limited to observed application continuity, not arbitrary guest bytes or saved pfSense configuration.
+Trial Extend and continuity remain pending, so overall acceptance remains blocked. Human QA approval
+was waived earlier; the latest Sales interaction was nevertheless performed by the human.
+PR #476 stays draft/unmerged, issue #473 remains active, and dependent #474 is blocked.
 No retained #350/#351 assets, primary checkout, port 3000, or primary database were changed.
 
 ## Remaining shipped v3 inventory after D
@@ -146,7 +148,7 @@ Separate viewer evidence showed runtime 48m at 14:05:37 and 1h43m at 14:10:17, a
 wall time and display rounding; this is not inferred from storage expiry or an exact-second runtime
 increment measurement. The same ten viewer tab/entity IDs were observed. They are **not** a verified
 seven-provider-VM-ID inventory and do not prove guest bytes or work preservation. No guest-data or
-work witness was obtained. No structural-only waiver was accepted.
+work witness was obtained in this earlier run. No structural-only waiver was accepted.
 
 Trial real UI publication, registration, Open Trial launch, exact binding, Ready state, runtime,
 storage and relevant console evidence were captured. One normal guest view remained “Connecting”.
@@ -218,7 +220,7 @@ The run 1 external `after-cleanup-frozen-1/manifest.json` SHA256 is
 `B11DB43CD69FC4FD593748C5ED74FE2ACAA18070079E335FE78673C5709206BA`.
 It preserves the isolated database/key/resource tuple, private cleanup exchanges, Trial credential,
 Support-isolation evidence and server logs. Earlier frozen manifests remain unchanged. QA returned
-no overall merge approval: preserved-work acceptance remains blocked and Trial Extend remains zero.
+no overall merge approval: at this run 1 checkpoint, preserved-work acceptance remained blocked and Trial Extend remained zero.
 PR #476 remains draft/unmerged, issue #473 active, and #474 blocked pending the outstanding gates.
 
 ## Isolation run 2 and cleanup (2026-10-27)
@@ -255,5 +257,32 @@ External frozen manifests under the same private QA evidence root are:
 
 Both hashes were checked before this prose update. Prior evidence was preserved rather than
 rewritten. Runtime code remains `1fc7ee21ecf21af7b6d6ac07eae6abae267e766d`. Acceptance remains
-**blocked**: Sales work preservation has not been demonstrated and Trial Extend was not exercised.
+**blocked** at this run 2 checkpoint: Sales work preservation had not been demonstrated and Trial Extend was not exercised. The later Sales evidence below supersedes that Sales-only gap.
 PR #476 remains draft/unmerged, issue #473 active, and dependent #474 blocked.
+
+
+## Manual Sales continuity evidence (2026-10-28)
+
+Independent QA and Spec reviews accepted actual observed work preservation: the same Windows and
+pfSense application state was visible before and after the human-performed Sales extension, with
+exact-Environment diagnostics. Neither review requires a saved file under #473. This satisfies
+the Sales continuity criterion for the observed application state; it does not establish arbitrary
+guest-byte preservation or saved pfSense configuration.
+
+Correlation `9d55f599-136e-4bdb-a884-85be56087dc8` records one bodyless Extend POST 204,
+exact-ID Ready GET, and separate access PUT 200. Storage expiry changed from
+`2026-10-29T13:53:30Z` to `2026-10-30T13:53:30Z`; access became `2026-10-30T13:54Z`.
+Screenshots show runtime `1h17` to `2h12` and storage `1d3h29` to `2d3h25`, subject to elapsed
+time and display rounding. Screenshot artifact times `10:24:31`, `10:29:52`, and `10:30:21` UTC
+are not click times. Earlier automated interaction and console evidence remain separate; no new
+console result is inferred from these screenshots.
+
+The four-file private bundle `manual-sales-evidence-frozen/manifest.json` has SHA256
+`24E95A3559F2B05CA25190BB1168FE3DFC77F26BFA92D2FF46A461A6CB1D8938` under the existing QA evidence
+root. Prior frozen evidence and historical run ledgers remain unchanged. This manual run adds one
+Sales Extend and one access PUT to the earlier totals (two of each cumulatively).
+
+Trial Extend and Trial continuity remain pending; overall acceptance is **blocked**, PR #476 is
+draft/unmerged, and issue #473 remains active. Port 3025 is currently left running for the human;
+the earlier cleanup/server-stop records describe their own checkpoints and are not a current
+shutdown claim. No new cleanup is claimed by this update.

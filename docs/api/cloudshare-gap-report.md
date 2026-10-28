@@ -2227,8 +2227,8 @@ Sales UI extension returned 204, increased storage by 24 hours, coordinated a se
 and displayed completed/confirmed readback. Separate viewer runtime readings increased from 48m
 to 1h43m across elapsed time and rounding. This does not prove exact runtime seconds or preserved
 guest data/work. Trial UI launch/binding/Ready evidence exists, but Trial Extend is held at zero
-because no guest-work witness was obtained. Both independent acceptance reviews keep preserved-work
-proof blocking; structural identity continuity is insufficient. A second isolated Trial run
+because no guest-work witness was obtained. At that earlier checkpoint, independent acceptance reviews kept preserved-work
+proof blocking; structural identity continuity alone was insufficient. A second isolated Trial run
 confirmed Incognito identity/local role controls and resumed the same Environment, but the guest
 remained Connecting and no witness was saved. Correct isolation is not sole-cause proof. Trial
 Extend remains zero; one additional cleanup Suspend confirmed Suspended and owned servers stopped. Scoped live Support success and
@@ -2236,6 +2236,16 @@ malformed-ID GET 400 evidence passed, alongside audited synthetic HTTP failure/r
 checks. GET 400 is neither valid-missing 404 nor Extend 403 proof. The historical v3 evidence below
 remains historical, not a general v4 eligibility guarantee. See the
 [migration evidence, provenance and blocked gates](../discovery/2026-10-27-default-extension-v4-migration.md).
+
+**2026-10-28 manual Sales update:** independent QA and Spec accepted the human-observed same
+Windows/pfSense application state before/after extension with exact-Environment diagnostics.
+No saved file is mandated by #473; the accepted witness proves observed application continuity,
+not arbitrary guest bytes or saved pfSense configuration. One further bodyless Extend POST 204,
+Ready GET and access PUT 200 increased storage expiry from `2026-10-29T13:53:30Z` to
+`2026-10-30T13:53:30Z`. Trial Extend and continuity remain pending, so overall acceptance stays
+blocked and PR #476 stays draft/unmerged. Port 3025 is now left up for the human; prior shutdown
+records remain historical. The linked migration record contains the frozen manifest and timing limits.
+
 
 | Field | Detail |
 |---|---|
