@@ -3548,7 +3548,7 @@ describe("Sales Trial participant environment extension", () => {
     });
   });
 
-  it("retains preflight exchanges and canonical env id when the direct extend PUT rejects", async () => {
+  it("retains preflight exchanges and canonical env id when the v4 Extend POST has an uncertain outcome", async () => {
     const { deps, enrollments, diagnosticRepository, observe, extendById, observeById } = createDeps();
     await enrollments.save({
       id: "enrollment-1",
@@ -3589,10 +3589,9 @@ describe("Sales Trial participant environment extension", () => {
     });
     extendById.mockRejectedValueOnce(
       new CloudShareTransportError("extend timed out", {
-        method: "PUT",
-        path: "/api/v3/envs/actions/extend",
-        requestQuery: { envId: "opaque-v3-env-1" },
-        requestHeaders: { authorization: "cs_sha1 secret", "x-request-id": "req-extend-1" },
+        method: "POST",
+        path: "/v4/environments/opaque-v3-env-1/extend",
+        requestHeaders: { authorization: "Bearer secret", "x-request-id": "req-extend-1" },
         cause: "ETIMEDOUT",
         transport: "tcp",
       }),
@@ -3629,9 +3628,8 @@ describe("Sales Trial participant environment extension", () => {
     expect(failure).toMatchObject({
       correlationId: result.body.correlationId,
       request: expect.objectContaining({
-        method: "PUT",
-        path: "/api/v3/envs/actions/extend",
-        query: { envId: "opaque-v3-env-1" },
+        method: "POST",
+        path: "/v4/environments/opaque-v3-env-1/extend",
         headers: { authorization: "[REDACTED]", "x-request-id": "req-extend-1" },
       }),
       externalIds: expect.objectContaining({
@@ -3639,6 +3637,7 @@ describe("Sales Trial participant environment extension", () => {
       }),
       details: expect.objectContaining({
         attemptedOperation: "extend_environment",
+        integrationSurface: "cloudshare.v4.environments",
         failureMode: "transport_failure",
         httpExchanges: [
           expect.objectContaining({
@@ -3657,9 +3656,8 @@ describe("Sales Trial participant environment extension", () => {
           }),
           expect.objectContaining({
             request: expect.objectContaining({
-              method: "PUT",
-              path: "/api/v3/envs/actions/extend",
-              query: { envId: "opaque-v3-env-1" },
+              method: "POST",
+              path: "/v4/environments/opaque-v3-env-1/extend",
             }),
           }),
         ],

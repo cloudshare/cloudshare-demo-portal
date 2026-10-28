@@ -35,9 +35,9 @@ export interface SalesParticipantExtensionDependencies {
 export type SalesParticipantExtensionRequest = { customerId: string; sessionId: string; actor: DiagnosticActor; body: unknown };
 const denied = (status: number, error: string) => ({ status, body: { error } });
 
-/** A durable command owns all v3 dispatches and the single access-window update.
+/** A durable command owns all Environment dispatches and the single access-window update.
  * Duplicate submissions only return evidence. Explicit reconciliation reads the
- * provider and may perform the still-undispatched access step; never a v3 replay. */
+ * provider and may perform the still-undispatched access step; never an Environment replay. */
 export async function handleExtendSalesParticipants(deps: SalesParticipantExtensionDependencies, request: SalesParticipantExtensionRequest) {
   const parsed = schema.safeParse(request.body);
   if (!parsed.success) return denied(400, "Provide an extension command and Participant selection.");
@@ -141,10 +141,10 @@ export async function handleExtendSalesParticipants(deps: SalesParticipantExtens
           // Projection reads update updatedAt; authority is the exact identity above and current eligibility/expiry.
           if (!eligible(remote, participant.participationStatus) || !["ready", "suspended", "archived"].includes(resolved.state) || resolved.expiry.session?.toISOString() !== target.preExpiry) throw new Error("extension_preflight_changed");
           target = { ...target, state: "dispatched", reason: "readback_required" };
-          await targetState(target); // Durable no-replay point, immediately before PUT.
-          try { surface = "cloudshare.v3.env.action.extend"; const extension = await environments.extendById(target.environmentId); exchanges.push(extension.exchange); }
+          await targetState(target); // Durable no-replay point, immediately before POST.
+          try { surface = "cloudshare.v4.environments.extend"; const extension = await environments.extendById(target.environmentId); exchanges.push(extension.exchange); }
           catch (error) {
-            // No v3 failure class alone proves that its PUT was not dispatched.
+            // No failure class alone proves that its POST was not dispatched.
             await record("failure", "Environment extension requires reconciliation.", error);
           }
         }

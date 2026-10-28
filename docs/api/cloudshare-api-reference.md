@@ -143,3 +143,50 @@ coverage. GAP-28 is unchanged and GAP-33 remains a complete-history contract gap
 - Keep failed CloudShare calls supportable with redacted method/path/status/request/response evidence.
 - When CloudShare docs and live behavior differ, prefer the live-safe adapter behavior and record the
   discrepancy in `docs/api/cloudshare-gap-report.md`.
+
+## Existing default Environment extension (#473)
+
+Selected Sales Participant and retained Trial extension use bodyless
+`POST /v4/environments/{id}/extend` from the Infrastructure export. Omitting the body applies
+both Policy runtime and storage defaults; no custom duration is sent. Empty 204 is acknowledgement,
+not lifecycle confirmation. Existing authoritative v4 expiry/state readback and Sales access-window
+coordination remain required. Archive stays v3. See the [consumer and remaining-v3 inventory](../discovery/2026-10-27-default-extension-v4-migration.md)
+for implementation evidence and pending live acceptance; historical v3 extension results are not
+v4 eligibility proof.
+
+**Verification update (2026-10-27):** independent audit accepted the exact-runtime-head actual HTTP
+simulation: 126 synthetic exchanges, 9 unique bodyless Extend POSTs, no replay, protected evidence
+and Customer isolation. Three live read-only checks passed. One real automated Sales Extend UI
+click produced POST 204, authoritative increased storage expiry, separate access PUT 200 and
+completed/confirmed UI evidence. Independent viewer runtime observations are retained separately.
+Live Support success and malformed-ID GET 400 diagnostics passed; this is not Extend 403 evidence.
+Trial launch/Ready evidence exists, but Trial Extend remains zero. At this earlier checkpoint, both Sales and Trial lacked the
+required guest-data/preserved-work witness, so acceptance remained blocked with no structural-only
+waiver. See the [migration evidence record](../discovery/2026-10-27-default-extension-v4-migration.md)
+for corrected original-click timestamps, console limitations, provenance and preservation state.
+A second isolated Trial run confirmed identity/role controls, Resume 204/Ready and a fresh
+sponsored link, but the guest remained Connecting with no saved witness. Trial Extend stays zero.
+Its one cleanup Suspend confirmed Suspended; owned servers stopped. Run-specific and cumulative
+counts and frozen manifests are recorded separately. No general v4 state-eligibility or guest-work-preservation guarantee is inferred.
+
+
+**Verification update (2026-10-28):** independent QA and Spec accepted a later human-performed
+Sales extension with observed Windows/pfSense application-state continuity and exact-Environment
+diagnostics: bodyless Extend POST 204, Ready GET, separate access PUT 200, and storage expiry
+`2026-10-29T13:53:30Z` to `2026-10-30T13:53:30Z`. This satisfies the Sales continuity criterion
+for observed application state; #473 does not require a saved file, and no arbitrary-byte or saved
+pfSense-configuration guarantee follows. Screenshot artifact times are not click times; earlier
+automated console evidence remains separate. At that Sales checkpoint, Trial Extend/continuity were still pending and overall
+acceptance remained blocked. Port 3025 was up for the human at that checkpoint.
+See the migration record for the four-file frozen manual evidence manifest and exact limits.
+
+
+**Later verification update (2026-10-28):** independent QA and Spec accepted the manual retained
+Trial extension: one bodyless POST 204 between exact-ID Ready GETs, storage expiry increased from
+`2026-10-28T14:19:40Z` to `2026-10-29T14:19:40Z`, and the same Windows 2022 Notepad document/text
+visible before and after. Close/reopen is separately human-reported; no new Trial console capture
+or portal screenshot is claimed. All live criteria pass within these limits, subject to final
+exact-head reviews and merge. After viewer closure, two guarded cleanup Suspend POSTs returned
+204 and exact GETs confirmed both owned Environments Suspended. Owned servers stopped; ports
+3025/3026 are free. The migration record preserves manifests, timestamps and historical ledgers.
+PR #476 remains draft/unmerged and issue #473 active; this is not a merge/completion claim.

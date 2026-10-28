@@ -41,13 +41,13 @@ describe("semantic Sales environment reads", () => {
     await expect(source.observe({ ownerEmail: "owner", projectId: "project" })).resolves.toMatchObject({ state: "unknown", persistedStatus: null, expiry: { session: null, trial: null } });
   });
 
-  it.each(["", "accepted"])("retains Sales text-only extension evidence for %j", async (body) => {
-    const requestV3Text = vi.fn(async () => body);
-    const source = createCloudShareSalesEnvironmentModule({ requestV3Text } as unknown as CloudShareClient);
-    await expect(source.extendById("captured-id")).resolves.toEqual({ environmentId: "captured-id", exchange: {
-      request: { method: "PUT", path: "/api/v3/envs/actions/extend", query: { envId: "captured-id" } },
-      response: { status: 200, body: undefined },
+  it("uses v4 for a legacy injected client without detailed exchange support", async () => {
+    const requestV4 = vi.fn(async () => undefined);
+    const source = createCloudShareSalesEnvironmentModule({ requestV4 } as unknown as CloudShareClient);
+    await expect(source.extendById!("captured-id")).resolves.toEqual({ environmentId: "captured-id", exchange: {
+      request: { method: "POST", path: "/v4/environments/captured-id/extend" },
+      response: { status: 204, body: undefined },
     } });
-    expect(requestV3Text).toHaveBeenCalledWith({ method: "PUT", path: "/envs/actions/extend", query: { envId: "captured-id" } });
+    expect(requestV4).toHaveBeenCalledWith({ method: "POST", path: "/environments/captured-id/extend", allowEmptyResponse: true, schema: expect.anything() });
   });
 });
