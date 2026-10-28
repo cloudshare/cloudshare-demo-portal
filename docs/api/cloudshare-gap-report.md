@@ -2242,9 +2242,20 @@ Windows/pfSense application state before/after extension with exact-Environment 
 No saved file is mandated by #473; the accepted witness proves observed application continuity,
 not arbitrary guest bytes or saved pfSense configuration. One further bodyless Extend POST 204,
 Ready GET and access PUT 200 increased storage expiry from `2026-10-29T13:53:30Z` to
-`2026-10-30T13:53:30Z`. Trial Extend and continuity remain pending, so overall acceptance stays
-blocked and PR #476 stays draft/unmerged. Port 3025 is now left up for the human; prior shutdown
-records remain historical. The linked migration record contains the frozen manifest and timing limits.
+`2026-10-30T13:53:30Z`. At that Sales checkpoint, Trial Extend and continuity remained pending and overall acceptance
+was blocked. Port 3025 was left up for the human at that checkpoint; subsequent Trial acceptance
+and cleanup are recorded below. The linked migration record contains the frozen manifest and timing limits.
+
+**2026-10-28 manual Trial update:** independent QA and Spec accepted the same retained Windows
+2022 Notepad document/text before and after one bodyless Extend POST 204 with Ready GETs and
+expiry `2026-10-28T14:19:40Z` to `2026-10-29T14:19:40Z`. Close/reopen with unchanged contents
+is separately human-reported. No new Trial console capture or portal screenshot was collected.
+Live acceptance criteria now pass within the recorded limits; final exact-head reviews/merge
+remain pending, with PR #476 draft/unmerged and issue #473 active. After confirmed viewer closure,
+one guarded Suspend per owned Environment returned 204 and exact GET confirmed Suspended;
+owned servers stopped and ports 3025/3026 are free. Frozen evidence and precise timestamps are
+in the migration record. Earlier Trial Extend-zero and blocked entries remain historical.
+
 
 
 | Field | Detail |

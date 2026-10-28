@@ -38,16 +38,18 @@ exact opaque path encoding, empty 204, omitted body/query, protected provider bo
 of provider IDs/body secrets from generic traces. Existing Suspend/Resume and Archive wire tests
 remain regression checks. Fixtures are offline evidence, not live tenant proof.
 
-## Live acceptance status — blocked
+## Live acceptance status — verified; final reviews pending
 
 Sales default extension now has accepted observed application-state continuity from the human
 run on 2026-10-28, alongside the earlier automated UI/provider/readback evidence. Independent QA
 and Spec reviews accepted the same Windows/pfSense application state before and after extension
 with exact-Environment diagnostics; #473 does not mandate a saved-file witness. This acceptance is
 limited to observed application continuity, not arbitrary guest bytes or saved pfSense configuration.
-Trial Extend and continuity remain pending, so overall acceptance remains blocked. Human QA approval
-was waived earlier; the latest Sales interaction was nevertheless performed by the human.
-PR #476 stays draft/unmerged, issue #473 remains active, and dependent #474 is blocked.
+The later manual Trial run below also passed independent QA and Spec acceptance, including
+observed Notepad work continuity. Live criteria are now satisfied; final exact-head reviews and
+merge gates remain pending. Human QA approval was waived earlier; the latest Sales and Trial
+interactions were nevertheless performed by the human. PR #476 stays draft/unmerged and issue
+#473 remains active pending those final gates; dependent #474 is not yet released.
 No retained #350/#351 assets, primary checkout, port 3000, or primary database were changed.
 
 ## Remaining shipped v3 inventory after D
@@ -282,7 +284,42 @@ The four-file private bundle `manual-sales-evidence-frozen/manifest.json` has SH
 root. Prior frozen evidence and historical run ledgers remain unchanged. This manual run adds one
 Sales Extend and one access PUT to the earlier totals (two of each cumulatively).
 
-Trial Extend and Trial continuity remain pending; overall acceptance is **blocked**, PR #476 is
-draft/unmerged, and issue #473 remains active. Port 3025 is currently left running for the human;
+At this manual Sales checkpoint, Trial Extend and Trial continuity remained pending and overall
+acceptance was **blocked**. PR #476 remained draft/unmerged and issue #473 active. Port 3025 was left running for the human;
 the earlier cleanup/server-stop records describe their own checkpoints and are not a current
 shutdown claim. No new cleanup is claimed by this update.
+
+
+## Manual Trial continuity evidence and final cleanup (2026-10-28)
+
+Independent QA and Spec reviews accepted the retained Trial extension and observed work continuity.
+The before and after images show the same Windows 2022 Notepad document `qa473-trial` with
+`This is a test file`. The human separately reported closing and reopening it with unchanged
+contents; the still images do not themselves prove that action. Runtime displays increased from
+`34m` to `1h29` and storage from `3h39` to `1d3h34`, subject to elapsed time and rounding.
+The manual navigation was **Open monitoring** before Participants. The human reported the UI
+interaction; provider records independently establish the extension. No new Trial-specific browser
+console capture or portal screenshot was collected, and this is not an automated browser run.
+
+Correlation `f667d031-4ef3-45b2-8d32-1512c0812475` records Ready GET 200 at
+`2026-10-28T10:42:39.921Z`, exactly one bodyless Extend POST 204 at `10:42:40.113Z`, and
+exact-ID Ready GET 200 at `10:42:41.050Z`. Expiry increased from `2026-10-28T14:19:40Z` to
+`2026-10-29T14:19:40Z`. Image artifact times `10:40:44.436` and `10:45:29.345` UTC are not
+click times. The private `manual-trial-evidence-frozen/manifest.json` (two PNGs and database) has
+SHA256 `126596C0D2CED5D696368707A078AB965D9B79440D2C7E5414294D9A73453210`.
+Earlier Trial Extend-zero entries describe earlier checkpoints; this run adds one Trial Extend.
+
+After the human confirmed both viewers were closed and Spec acceptance passed, fresh guards
+preceded one bodyless Suspend POST 204 per owned Environment. Exact GET confirmed Sales Suspended
+at `2026-10-28T10:49:44.853Z` and Trial Suspended at `10:50:08.409Z`. There were no retries or
+other writes during this cleanup. These two cleanup Suspends bring the recorded cumulative cleanup
+Suspend count to five; they are housekeeping, not extension acceptance evidence.
+Owned server processes 69476/80808 were stopped and ports 3025/3026 are free. The primary checkout
+remains on `main` at `1f615591` with the same two original untracked files, untouched by this task.
+
+Private `manual-aftercleanup-frozen/manifest.json` has SHA256
+`59082876BC0EF23DC74A26D755C5D36D9AC9E9F2B9E23B70809D80FC1FABA0A0`, preserving the database,
+key, resource tuple, receipts and server logs. Previous manual Sales, Trial and run 2 manifests
+remain unchanged. All live acceptance criteria now have independent QA/Spec acceptance within
+the stated evidence limits. Final exact-head reviews and merge remain pending; PR #476 remains
+draft/unmerged and issue #473 active. No merge or issue completion is claimed.

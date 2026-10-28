@@ -176,6 +176,17 @@ diagnostics: bodyless Extend POST 204, Ready GET, separate access PUT 200, and s
 `2026-10-29T13:53:30Z` to `2026-10-30T13:53:30Z`. This satisfies the Sales continuity criterion
 for observed application state; #473 does not require a saved file, and no arbitrary-byte or saved
 pfSense-configuration guarantee follows. Screenshot artifact times are not click times; earlier
-automated console evidence remains separate. Trial Extend/continuity are still pending and overall
-acceptance remains blocked. Port 3025 is currently up for the human; no new cleanup is claimed.
+automated console evidence remains separate. At that Sales checkpoint, Trial Extend/continuity were still pending and overall
+acceptance remained blocked. Port 3025 was up for the human at that checkpoint.
 See the migration record for the four-file frozen manual evidence manifest and exact limits.
+
+
+**Later verification update (2026-10-28):** independent QA and Spec accepted the manual retained
+Trial extension: one bodyless POST 204 between exact-ID Ready GETs, storage expiry increased from
+`2026-10-28T14:19:40Z` to `2026-10-29T14:19:40Z`, and the same Windows 2022 Notepad document/text
+visible before and after. Close/reopen is separately human-reported; no new Trial console capture
+or portal screenshot is claimed. All live criteria pass within these limits, subject to final
+exact-head reviews and merge. After viewer closure, two guarded cleanup Suspend POSTs returned
+204 and exact GETs confirmed both owned Environments Suspended. Owned servers stopped; ports
+3025/3026 are free. The migration record preserves manifests, timestamps and historical ledgers.
+PR #476 remains draft/unmerged and issue #473 active; this is not a merge/completion claim.
