@@ -3,7 +3,11 @@
 This project keeps local CloudShare API exports so implementation agents do not infer endpoint
 paths from memory or from earlier slices.
 
-## Source and implementation status (2026-10-27)
+## Source and implementation status (2026-10-28)
+
+A–D are merged at baseline `3f324b2a`. The [closeout inventory](../discovery/2026-10-28-v4-migration-closeout.md)
+records every production consumer, current official v3/v4 source searches and exact reviewed/merge
+heads. It supersedes pending-merge checkpoints below without rewriting their dated evidence.
 
 **PUBLISHED CONTRACT:** The [current official Infrastructure 4.0 source](https://cloudshare.stoplight.io/api/v1/projects/cloudshare/AccelerateAPI/nodes/reference/infrastructure-Public-API.openapi.json?branch=main)
 was downloaded on 2026-10-26 and preserved in the export listed below. Projects and Project-scoped
@@ -22,9 +26,9 @@ write, known-inactive Policy exclusion or Team Member permission-empty behavior 
 see the dated evidence report above for these boundaries.
 
 **RETAINED V3:** Blueprint/default-Snapshot, VMware Regions, Teams, active Project members,
-timezones, ping and Environment Archive/Extend commands (Extend is tracked by #473). #472 migrates
+timezones, ping and Environment Archive. #473 migrated default Extend to bodyless v4 POST. #472 migrated
 suspend/resume to bodyless v4 POST with empty204 acknowledgement and a durable per-Attempt
-no-replay marker; see [contract and acceptance evidence](../discovery/2026-10-26-suspend-resume-v4-migration.md). #469 migrates all
+no-replay marker; see [contract and acceptance evidence](../discovery/2026-10-26-suspend-resume-v4-migration.md). #469 migrated all
 Environment list/detail observations to v4. Existing v4 Experience/participant/sponsored-link/Guided Journey behavior is unchanged.
 #351 / PR #448 is merged in the baseline; its older unmerged wording is historical.
 
@@ -44,9 +48,10 @@ replacement S3/R2 ledger. Final replacement provider/local state was Suspended, 
 185978 ms, no pending command or session; jobs/server stopped and temporary credential restored.
 Coordinator option 2 accepts unchanged Archive regression through independent audit and 58/58
 existing automated tests. B's live Archive evidence is historical; current-ticket Archive count is
-zero. Archive/Extend transport remains v3, never DELETE. See the
+zero. At that checkpoint Archive/Extend retained v3; #473 subsequently migrated Extend to v4.
+Archive remains v3, never Environment DELETE. See the
 [acceptance matrix, chronology and preservation limits](../discovery/2026-10-26-suspend-resume-v4-migration.md).
-Final documentation review and lifecycle disposition remain required; no merge is claimed.
+That checkpoint preceded final documentation review; PR #475 has since merged as recorded in the closeout ledger.
 
 ## Local Reference Files
 
@@ -151,7 +156,7 @@ Selected Sales Participant and retained Trial extension use bodyless
 both Policy runtime and storage defaults; no custom duration is sent. Empty 204 is acknowledgement,
 not lifecycle confirmation. Existing authoritative v4 expiry/state readback and Sales access-window
 coordination remain required. Archive stays v3. See the [consumer and remaining-v3 inventory](../discovery/2026-10-27-default-extension-v4-migration.md)
-for implementation evidence and pending live acceptance; historical v3 extension results are not
+for implementation and accepted live evidence; historical v3 extension results are not
 v4 eligibility proof.
 
 **Verification update (2026-10-27):** independent audit accepted the exact-runtime-head actual HTTP
@@ -189,4 +194,5 @@ or portal screenshot is claimed. All live criteria pass within these limits, sub
 exact-head reviews and merge. After viewer closure, two guarded cleanup Suspend POSTs returned
 204 and exact GETs confirmed both owned Environments Suspended. Owned servers stopped; ports
 3025/3026 are free. The migration record preserves manifests, timestamps and historical ledgers.
-PR #476 remains draft/unmerged and issue #473 active; this is not a merge/completion claim.
+That observation preceded final review. PR #476 subsequently merged as `3f324b2a` after clean
+exact-head reviews at `5eff112c`; issue #473 is closed. See the closeout ledger for complete SHAs.

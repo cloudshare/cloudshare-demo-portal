@@ -12,13 +12,15 @@ This glossary is the source of truth for the project's language. It is not a spe
 
 ## Language
 
-#Environment observation uses Infrastructure v4 `GET /v4/environments/{id}` with the exact
+Environment observation uses Infrastructure v4 `GET /v4/environments/{id}` with the exact
 opaque ID. Sales owner resolution traverses all `GET /v4/environments` pages, then verifies
 exact normalized owner email and Project in both list and detail. Numeric Sales roster references
 remain distinct. Listings omit storage-expired Environments and expired Projects; absence is not
 complete historical evidence. `expirationTime` is storage deletion time, separate from runtime
 and Experience End. New observation provenance is v4; historical v3 numeric and roster evidence
-keeps its original source. Environment commands retain their existing transport.
+keeps its original source. Suspend/Resume and existing default Extend use bodyless v4 POST;
+Archive retains v3 PUT and is never replaced by Environment DELETE. See the
+[current migration inventory](docs/discovery/2026-10-28-v4-migration-closeout.md).
 
 ## Actors & organisations
 

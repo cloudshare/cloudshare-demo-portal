@@ -150,7 +150,8 @@ first-class deliverable.
   Project + Blueprint detail. Teams, Project Members, timezones and ping retain v3 transport. Environment list/detail observations use Infrastructure
   v4 with complete pagination, exact normalized owner/Project resolution and exact opaque-ID
   detail binding. Numeric Sales roster references are not Environment identities. Environment
-  commands retain their current transport. New observations carry v4 source/time while historical
+  Suspend/Resume and default Extend commands use bodyless v4 POST; Archive retains v3 PUT,
+  never Environment DELETE. New observations carry v4 source/time while historical
   numeric and roster evidence keeps its provenance. Training creation, add-participant,
   sponsored-link, list-students and Guided Journey remain v4.
 - Endpoint/path/shape assumptions for Projects, Regions, Policies, Blueprints, Snapshots and
