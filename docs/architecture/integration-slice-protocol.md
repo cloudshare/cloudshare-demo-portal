@@ -48,6 +48,8 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
 
 ## Browser persona isolation for CloudShare QA
 
+This is a standing rule for all project QA that logs into CloudShare or relies on an existing
+CloudShare persona. Purely local UI checks do not need to invent a vendor login.
 CloudShare permits one logged-in CloudShare persona per browser session. Cookies are shared
 across tabs and normal windows in the same Chrome profile; two Incognito windows in one profile
 also share their Incognito session. Separate tabs or windows therefore do not isolate personas.
@@ -59,9 +61,10 @@ repurpose their profiles to make a QA flow fit. Before persona-sensitive actions
 portal Customer/role and the actual CloudShare viewer identity. A portal role, profile alias or
 tab title alone does not establish the CloudShare identity.
 
-For #474 the human-designated profile names are exactly **Candidate 1**, **Owner Admin** and
-**Foreign Admin**. Record the actual profile/session binding alongside these names; keep earlier
-tool metadata and QA labels as dated evidence rather than rewriting their history.
+Reusable operational profile examples, explicitly designated by the human on2026-10-28, are
+**Candidate 1**, **Owner Admin** and **Foreign Admin**. They are not a restriction to #474 or an
+exhaustive persona list. Record the actual profile/session binding alongside the names; keep
+earlier tool metadata and QA labels as dated evidence rather than rewriting their history.
 
 This is a human-provided operating constraint, not an established cause of earlier
 `Runtime.evaluate` or screenshot timeouts. Diagnose such failures from their own evidence. The

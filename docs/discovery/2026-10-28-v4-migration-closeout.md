@@ -250,7 +250,9 @@ limit, not a new requirement or waiver. This amendment changes documentation onl
 ### Human-designated browser personas (2026-10-28)
 
 The human subsequently specified **Candidate 1**, **Owner Admin** and **Foreign Admin** as the
-current profile names. Follow the durable [CloudShare browser-persona isolation protocol](../architecture/integration-slice-protocol.md#browser-persona-isolation-for-cloudshare-qa):
+current reusable profile examples. The requirement is standing project-wide QA guidance, not
+limited to #474; purely local UI checks need not invent a vendor login. Follow the durable
+[CloudShare browser-persona isolation protocol](../architecture/integration-slice-protocol.md#browser-persona-isolation-for-cloudshare-qa):
 one logged-in CloudShare persona per browser session, dedicated profiles, and verification of both
 portal Customer/role and actual CloudShare viewer identity. Different tabs or normal windows in
 one profile, or two Incognito windows in one profile, are not separate sessions. Earlier tool
