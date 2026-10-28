@@ -1,9 +1,11 @@
+import { transitionExamClock, type ExamClockState } from "@/domain/exam-clock";
 import type { PrismaClient } from "@prisma/client";
 import {
   DuplicateCohortExamAttemptError,
   SameExamAttemptAvailabilityConflictError,
   type ExamAttempt,
   type ExamAttemptRepository,
+  type PendingExamAttemptRuntimeCommand,
 } from "@/domain/exam-attempt";
 
 const ADMISSION_LOCK_RETRY_LIMIT = 10;
@@ -11,6 +13,37 @@ const ADMISSION_LOCK_RETRY_DELAY_MS = 25;
 
 export function createPrismaExamAttemptRepository(prisma: PrismaClient): ExamAttemptRepository {
   return {
+    async readRuntimeCommand(customerId, examAttemptId) {
+      const row = await prisma.examAttemptRuntimeCommand.findFirst({ where: { customerId, examAttemptId } });
+      return row as PendingExamAttemptRuntimeCommand | null;
+    },
+    async claimRuntimeCommand(command, expectedStatus) {
+      const changed = await prisma.$executeRaw`INSERT INTO "ExamAttemptRuntimeCommand" ("examAttemptId", "customerId", "commandId", "action", "environmentId")
+        SELECT "id", "customerId", ${command.commandId}, ${command.action}, ${command.environmentId}
+        FROM "ExamAttempt" WHERE "id" = ${command.examAttemptId} AND "customerId" = ${command.customerId} AND "status" = ${expectedStatus}
+        ON CONFLICT DO NOTHING`;
+      return changed === 1;
+    },
+    async finishRuntimeCommandDispatch(command) {
+      const changed = await prisma.examAttemptRuntimeCommand.updateMany({ where: { ...command, phase: "dispatching" }, data: { phase: "observing" } });
+      return changed.count === 1;
+    },
+    async settleRuntimeCommand(command, at) {
+      return prisma.$transaction(async tx => {
+        const marker = await tx.examAttemptRuntimeCommand.findFirst({ where: { ...command, phase: "observing" } });
+        if (!marker) return false;
+        const changed = await tx.examAttempt.updateMany({ where: { id: command.examAttemptId, customerId: command.customerId, status: { in: ["in_progress", "suspended"] } }, data: { status: command.action === "suspend" ? "suspended" : "in_progress" } });
+        if (changed.count !== 1) return false;
+        const prior = await tx.examClock.findUnique({ where: { examAttemptId: command.examAttemptId } });
+        const next = transitionExamClock(prior as ExamClockState | null, command.examAttemptId, command.action, at);
+        await tx.examClock.upsert({ where: { examAttemptId: command.examAttemptId }, create: next, update: next });
+        await tx.examAttemptRuntimeCommand.deleteMany({ where: { ...command, phase: "observing" } });
+        return true;
+      });
+    },
+    async releaseRuntimeCommand(command) {
+      await prisma.examAttemptRuntimeCommand.deleteMany({ where: { ...command, phase: "dispatching" } });
+    },
     async save(attempt: ExamAttempt): Promise<void> {
       await saveAttempt(prisma, attempt);
     },

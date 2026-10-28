@@ -1,3 +1,4 @@
+import { salesCancellationFixture } from "./sales-cancellation-fixture";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -32,6 +33,8 @@ function keyFor(method: string, pathname: string): string {
 export function createFixtureHttpClient(fixtures: FixtureMap): HttpClient {
   return {
     async send(request): Promise<HttpResponse> {
+      const synthetic = await salesCancellationFixture(request);
+      if (synthetic) return synthetic;
       const { pathname } = new URL(request.url);
       const key = keyFor(request.method, pathname);
       const fixture = fixtures[key];

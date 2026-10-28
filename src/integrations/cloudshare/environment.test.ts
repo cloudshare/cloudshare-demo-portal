@@ -31,70 +31,21 @@ describe("mapCloudShareEnvironmentStatus", () => {
 });
 
 describe("createCloudShareEnvironmentSource", () => {
-  it("polls the documented v3 env-by-id endpoint and maps envStatus", async () => {
-    const requestV3 = vi.fn().mockResolvedValue({ envStatus: "Ready" });
-    const requestV3Detailed = vi.fn().mockResolvedValue({
-      data: { envStatus: "Ready" },
-      host: "use.cloudshare.com",
-      integrationSurface: "cloudshare.v3",
-      request: {
-        method: "GET",
-        path: "/api/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
-        headers: {
-          authorization: "cs_sha1 userapiid:api-id;timestamp:123;token:[REDACTED];hmac:[REDACTED]",
-        },
-      },
-      response: {
-        status: 200,
-        headers: { "content-type": "application/json" },
-        body: { envStatus: "Ready" },
-      },
-    });
-    const source = createCloudShareEnvironmentSource(client({ requestV3, requestV3Detailed }));
-
-    const snapshot = await source.getEnvironmentState("ENVS2n38LTNdcC4sHsqnjRzg2");
-
-    expect(snapshot).toEqual({
-      environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
-      status: "running",
-      request: {
-        method: "GET",
-        path: "/api/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
-        headers: {
-          authorization: "cs_sha1 userapiid:api-id;timestamp:123;token:[REDACTED];hmac:[REDACTED]",
-        },
-      },
-      response: {
-        status: 200,
-        headers: { "content-type": "application/json" },
-        body: { envStatus: "Ready" },
-      },
-    });
-    expect(requestV3Detailed).toHaveBeenCalledWith(
-      expect.objectContaining({
-        method: "GET",
-        path: "/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
-      }),
-    );
-    expect(requestV3).not.toHaveBeenCalled();
-    await expect(source.readEnvironmentState("ENVS2n38LTNdcC4sHsqnjRzg2")).resolves.toMatchObject({ snapshot: { status: "running" }, request: { method: "GET", path: "/api/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2" }, response: { status: 200, body: { envStatus: "Ready" } } });
-  });
-
   it("returns null when CloudShare reports the environment does not exist (404)", async () => {
-    const requestV3 = vi.fn().mockRejectedValue(
-      new CloudShareRequestError("not found", 404, { method: "GET", path: "/envs/ghost", responseStatus: 404, responseBody: { message: "not found" } }),
+    const requestV4 = vi.fn().mockRejectedValue(
+      new CloudShareRequestError("not found", 404, { method: "GET", path: "/v4/environments/ghost", responseStatus: 404, responseBody: { message: "not found" } }),
     );
-    const source = createCloudShareEnvironmentSource(client({ requestV3 }));
+    const source = createCloudShareEnvironmentSource(client({ requestV4 }));
 
     expect(await source.getEnvironmentState("ghost")).toBeNull();
-    await expect(source.readEnvironmentState("ghost")).resolves.toMatchObject({ snapshot: null, request: { method: "GET", path: "/envs/ghost" }, response: { status: 404, body: { message: "not found" } } });
+    await expect(source.readEnvironmentState("ghost")).resolves.toMatchObject({ snapshot: null, request: { method: "GET", path: "/v4/environments/ghost" }, response: { status: 404, body: { message: "not found" } } });
   });
 
   it("propagates non-404 CloudShare errors (they are not 'no such environment')", async () => {
-    const requestV3 = vi.fn().mockRejectedValue(
+    const requestV4 = vi.fn().mockRejectedValue(
       new CloudShareRequestError("server error", 500, {}),
     );
-    const source = createCloudShareEnvironmentSource(client({ requestV3 }));
+    const source = createCloudShareEnvironmentSource(client({ requestV4 }));
 
     await expect(source.getEnvironmentState("env-1")).rejects.toBeInstanceOf(
       CloudShareRequestError,

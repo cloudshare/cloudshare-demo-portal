@@ -7,7 +7,7 @@ export type InvitationOutcome = typeof invitationOutcomes[number];
 export type InvitationSafeReason = "not_dispatched" | "provider_rejected" | "ambiguous_after_dispatch" | "confirmation_required" | "failed_retryable" | "stale_revision" | "blocked_by_fence";
 
 export type SalesParticipantAction = "invite" | "resend" | "generate_launch" | "revoke_launch" | "open_diagnostics";
-export type SalesParticipantActionReason = "participant_concluded" | "session_ended" | "invitation_already_sent" | "invitation_not_sent" | "invitation_command_pending" | "participant_correlation_unavailable" | "native_invitations_unavailable" | "no_active_launch" | "available_to_attempt" | "unavailable_for_state";
+export type SalesParticipantActionReason = "participant_concluded" | "session_ended" | "session_cancelled" | "invitation_already_sent" | "invitation_not_sent" | "invitation_command_pending" | "participant_correlation_unavailable" | "native_invitations_unavailable" | "no_active_launch" | "available_to_attempt" | "unavailable_for_state";
 export type SalesParticipantActionAvailability = Readonly<Record<SalesParticipantAction, { readonly available: boolean; readonly reason: SalesParticipantActionReason }>>;
 
 export interface SalesParticipantWorkspaceRow {
@@ -18,6 +18,7 @@ export interface SalesParticipantWorkspaceRow {
   readonly invitationStatus: "sent" | "notSent";
   readonly participationStatus: "pending" | "inProgress" | "concluded";
   readonly sessionEndsAt: string;
+  readonly sessionCancelled?: boolean;
   readonly nativeInvitationsEnabled: boolean;
   readonly providerCorrelation: boolean;
   readonly activeLaunchCapability: boolean;
@@ -99,7 +100,7 @@ export interface SalesParticipantWorkspace {
 }
 
 export function eligibleParticipantActions(row: SalesParticipantWorkspaceRow, now: Date): Readonly<Record<SalesParticipantAction, boolean>> {
-  const open = new Date(row.sessionEndsAt).getTime() > now.getTime();
+  const open = !row.sessionCancelled && new Date(row.sessionEndsAt).getTime() > now.getTime();
   const base = open && row.participationStatus !== "concluded" && row.nativeInvitationsEnabled && row.providerCorrelation && row.currentCommandId === null;
   return {
     invite: base && row.invitationStatus === "notSent",
@@ -117,6 +118,7 @@ export function primaryParticipantAction(row: SalesParticipantWorkspaceRow, now:
 
 export function participantActionReason(row: SalesParticipantWorkspaceRow, action: SalesParticipantAction, now: Date): string | null {
   if (eligibleParticipantActions(row, now)[action]) return null;
+  if (row.sessionCancelled) return "Session cancelled.";
   if (row.participationStatus === "concluded") return "Participant has concluded.";
   if (new Date(row.sessionEndsAt).getTime() <= now.getTime()) return "Session access window has ended.";
   if (action === "invite" && row.invitationStatus === "sent") return "Invitation already sent; choose resend.";
@@ -130,6 +132,7 @@ export function projectParticipantActionAvailability(row: Omit<SalesParticipantW
   const available = eligibleParticipantActions(row as SalesParticipantWorkspaceRow, now);
   const reason = (action: SalesParticipantAction): SalesParticipantActionReason => {
     if (available[action]) return "available_to_attempt";
+    if (row.sessionCancelled) return "session_cancelled";
     if (row.participationStatus === "concluded") return "participant_concluded";
     if (new Date(row.sessionEndsAt).getTime() <= now.getTime()) return "session_ended";
     if (action === "invite" && row.invitationStatus === "sent") return "invitation_already_sent";

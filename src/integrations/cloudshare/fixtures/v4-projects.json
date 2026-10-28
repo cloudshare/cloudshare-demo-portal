@@ -2,8 +2,17 @@
   "method": "GET",
   "path": "/v4/projects",
   "status": 200,
-  "body": [
-    { "id": "p-demo-1", "name": "Helios CX Project" },
-    { "id": "p-demo-2", "name": "Helios Sandbox" }
-  ]
+  "body": {
+    "count": 2,
+    "items": [
+      {
+        "id": "p-demo-1",
+        "name": "Helios CX Project"
+      },
+      {
+        "id": "p-demo-2",
+        "name": "Helios Sandbox"
+      }
+    ]
+  }
 }

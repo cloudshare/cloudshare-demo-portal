@@ -2,27 +2,16 @@ import type { SalesEnvironmentModule, SalesEnvironmentReading, SalesEnvironmentS
 import type { EnvironmentStatus } from "@/domain/environment";
 import { dispatchEnvironmentCommand } from "./environment-command";
 import { z } from "zod";
+import { readV4Environment, listV4Environments, invalid, withEnvironmentExchanges } from "./environments-v4";
 import type { CloudShareClient, CloudShareRequestDiagnostics, CloudShareResponseDiagnostics } from "./client";
 
-const environmentSchema = z.object({
-  id: z.string().min(1),
-  projectId: z.string().min(1).optional(),
-  project: z.object({ id: z.string().min(1) }).optional(),
-}).passthrough();
-const environmentListSchema = z.union([
-  z.array(environmentSchema),
-  z.object({ items: z.array(environmentSchema) }).transform(({ items }) => items),
-]);
 export const cloudShareV3SalesEnvironmentStatusCodeSchema = z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(7), z.literal(8), z.literal(9)]);
 export type CloudShareV3SalesEnvironmentStatusCode = z.infer<typeof cloudShareV3SalesEnvironmentStatusCodeSchema>;
-const extendedSchema = z.object({
-  statusCode: cloudShareV3SalesEnvironmentStatusCodeSchema,
-  expirationTime: z.string().min(1),
-}).passthrough();
-
 export interface SalesEnvironmentObservation {
   readonly environmentId: string;
-  readonly statusCode: CloudShareV3SalesEnvironmentStatusCode;
+  readonly statusCode: number;
+  readonly status?: string;
+  readonly source?: "cloudshare_v4_environment";
   readonly expirationTime: string;
   readonly exchanges: readonly { readonly request: CloudShareRequestDiagnostics; readonly response: CloudShareResponseDiagnostics }[];
 }
@@ -55,36 +44,25 @@ export interface SalesEnvironmentSource {
 
 function createCloudShareSalesEnvironmentTransport(client: CloudShareClient): SalesEnvironmentSource {
   async function observeById(environmentId: string): Promise<SalesEnvironmentObservation> {
-    const extendedSpec = { method: "GET", path: "/envs/actions/getextended", query: { envId: environmentId }, schema: extendedSchema } as const;
-    const extended = client.requestV3Detailed
-      ? await client.requestV3Detailed(extendedSpec)
-      : { data: await client.requestV3(extendedSpec), request: { method: "GET" as const, path: extendedSpec.path, query: extendedSpec.query }, response: { status: 200, body: undefined }, host: "", integrationSurface: "cloudshare.v3" };
-    return { environmentId, statusCode: extended.data.statusCode, expirationTime: extended.data.expirationTime, exchanges: [{ request: extended.request, response: extended.response }] };
+    const result = await readV4Environment(client, environmentId);
+    return { environmentId, statusCode: v4CompatibilityCode(result.data.status), status: result.data.status, source: "cloudshare_v4_environment", expirationTime: result.data.expirationTime, exchanges: [{ request: result.request, response: result.response }] };
   }
   return {
     async observe({ ownerEmail, projectId }) {
-      const listSpec = { method: "GET", path: "/envs", query: { ownerEmail, brief: "false" }, schema: environmentListSchema } as const;
-      const listed = client.requestV3Detailed
-        ? await client.requestV3Detailed(listSpec)
-        : { data: await client.requestV3(listSpec), request: { method: "GET" as const, path: "/envs", query: listSpec.query }, response: { status: 200, body: undefined }, host: "", integrationSurface: "cloudshare.v3" };
-      const exchanges: SalesEnvironmentObservation["exchanges"] = [{ request: listed.request, response: listed.response }];
-      const matches = listed.data.filter((environment) => (environment.projectId ?? environment.project?.id) === projectId);
-      if (matches.length !== 1) {
-        throw new SalesEnvironmentResolutionError(matches.length === 0 ? "environment_not_found_for_project" : "environment_ambiguous_for_project", exchanges);
-      }
-      const environmentId = matches[0]!.id;
-      const observation = await observeById(environmentId);
-      return { ...observation, exchanges: [...exchanges, ...observation.exchanges] };
+      const listed = await listV4Environments(client, ownerEmail);
+      const exchanges = listed.reads.map(({ request, response }) => ({ request, response }));
+      const matches = listed.items.filter(environment => environment.projectId === projectId && environment.ownerEmail?.trim().toLowerCase() === ownerEmail.trim().toLowerCase());
+      if (matches.length !== 1) throw new SalesEnvironmentResolutionError(matches.length === 0 ? "environment_not_found_for_project" : "environment_ambiguous_for_project", exchanges);
+      try {
+      const result = await readV4Environment(client, matches[0]!.id);
+      if (result.data.projectId !== projectId || result.data.ownerEmail?.trim().toLowerCase() !== ownerEmail.trim().toLowerCase()) throw invalid(result, "Environment owner or Project changed");
+      return { environmentId: result.data.id, statusCode: v4CompatibilityCode(result.data.status), status: result.data.status, source: "cloudshare_v4_environment" as const, expirationTime: result.data.expirationTime, exchanges: [...exchanges, { request: result.request, response: result.response }] };
+      } catch (error) { throw withEnvironmentExchanges(error, exchanges); }
     },
     observeById,
     async extendById(environmentId: string): Promise<SalesEnvironmentExtensionResult> {
       const dispatched = await dispatchEnvironmentCommand(client, environmentId, "extend");
-      // Preserve the historical Sales fallback: status 200 with an undefined
-      // body, unlike Certification's text/null command evidence.
-      const extended = dispatched.detailed ?? {
-        request: { method: "PUT" as const, path: "/api/v3/envs/actions/extend", query: dispatched.spec.query },
-        response: { status: 200, body: undefined },
-      };
+      const extended = dispatched.detailed!;
       return {
         environmentId,
         exchange: {
@@ -100,6 +78,8 @@ function createCloudShareSalesEnvironmentTransport(client: CloudShareClient): Sa
 interface LegacyReading {
   readonly environmentId: string;
   readonly statusCode: number;
+  readonly status?: string;
+  readonly source?: "cloudshare_v4_environment";
   readonly expirationTime: string;
   readonly exchanges: readonly EnvironmentExchange[];
 }
@@ -122,10 +102,10 @@ export function parseSessionEnvironmentExpiry(value: string): Date | null {
 }
 
 function reading<T extends LegacyReading>(observation: T): SalesEnvironmentReading & { readonly compatibility: T } {
-  const state = states[observation.statusCode] ?? "unknown";
+  const state = observation.source === "cloudshare_v4_environment" ? v4SalesState(observation.status ?? "unknown") : states[observation.statusCode] ?? "unknown";
   const trial = new Date(observation.expirationTime);
   return {
-    compatibility: observation, environmentId: observation.environmentId, state, persistedStatus: persistedStatuses[state] ?? null,
+    compatibility: observation, ...(observation.source ? { source: observation.source, providerStatus: observation.status } : {}), environmentId: observation.environmentId, state, persistedStatus: persistedStatuses[state] ?? null,
     expiry: { raw: observation.expirationTime, session: parseSessionEnvironmentExpiry(observation.expirationTime), trial: Number.isNaN(trial.getTime()) ? null : trial },
     exchanges: observation.exchanges,
   };
@@ -184,3 +164,27 @@ export function cloudShareV3EnvironmentStatusCode(value: unknown): number | null
   return typeof value === "number" && states[value] !== undefined ? value : null;
 }
 
+
+function v4SalesState(status: string): SalesEnvironmentState {
+  switch (status) {
+    case "ready": case "suspended": case "archived": case "deleted": case "preparing": return status;
+    case "creationFailed": return "creation_failed";
+    case "publishing": case "inGrace": case "futureAllocationScheduled": case "allocationScheduledNoRun": case "editingNetworks": case "stopping": return status;
+    default: return "unknown";
+  }
+}
+// Derived compatibility only; never present these numbers as fresh v3 evidence.
+function v4CompatibilityCode(status: string): number {
+  return ({ ready: 2, suspended: 3, archived: 4, deleted: 5, publishing: 7, preparing: 8, creationFailed: 9 } as Record<string, number>)[status] ?? 0;
+}
+
+export function mapV4EnvironmentStatus(status: string): EnvironmentStatus {
+  switch (status) {
+    case "ready": return "running";
+    case "suspended": return "suspended";
+    case "preparing": return "created";
+    case "archived": return "archived";
+    case "deleted": return "deleted";
+    default: return "unknown";
+  }
+}

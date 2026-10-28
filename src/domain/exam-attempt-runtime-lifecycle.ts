@@ -1,16 +1,17 @@
+import { randomUUID } from "node:crypto";
 import {
   ExamAttemptRuntimeError,
   InvalidExamAttemptStatusError,
   LabLaunchNotFoundError,
 } from "./errors";
-import type { ExamAttemptRepository } from "./exam-attempt";
+import type { ExamAttemptRepository, ExamAttemptRuntimeCommand, PendingExamAttemptRuntimeCommand } from "./exam-attempt";
 import type {
   EnvironmentCommandResult,
   EnvironmentController,
   EnvironmentStateSource,
   EnvironmentStatus,
 } from "./environment";
-import type { ActiveExamAttemptStatus, ExamAttemptStatus } from "./exam-attempt";
+import type { ExamAttemptStatus } from "./exam-attempt";
 import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
 
 /**
@@ -19,11 +20,11 @@ import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
  * Flow for suspend:
  *   0. Confirm the ExamAttempt is currently `in_progress`.
  *   1. Look up the LabLaunch to get `environmentExternalId`.
- *   2. Issue the suspend command to CloudShare.
+ *   2. Atomically claim a persisted runtime command, observe state, and let only the owner dispatch.
  *   3. Poll `EnvironmentStateSource` until status is `suspended` (webhook hints
  *      from Slice 6 may also trigger reconcile in parallel; this poll is the
  *      authoritative confirmation gate).
- *   4. Pause the portal-owned ExamClock once confirmed.
+ *   4. Atomically settle the portal-owned ExamClock, status and exact pending command once confirmed.
  *
  * Flow for resume is the mirror: confirm `suspended` → resume → poll until
  * CloudShare leaves the suspended state (`running` or `created`/preparing) →
@@ -96,6 +97,8 @@ export interface SuspendExamDeps {
   readonly launches: LabLaunchRepository;
   readonly sleep: (ms: number) => Promise<void>;
   readonly poll?: PollOptions;
+  readonly now?: () => Date;
+  readonly isDefiniteCommandRejection?: (error: unknown) => boolean;
 }
 
 export interface SuspendExamInput {
@@ -107,28 +110,7 @@ export async function suspendExam(
   deps: SuspendExamDeps,
   input: SuspendExamInput,
 ): Promise<EnvironmentCommandResult> {
-  await requireAttemptStatus(deps.attempts, input.examAttemptId, "in_progress", "suspend");
-  const launch = await deps.launches.findByExamAttemptId(input.examAttemptId);
-  if (!launch) {
-    throw new LabLaunchNotFoundError({ examAttemptId: input.examAttemptId });
-  }
-  const environmentExternalId = requireEnvironmentExternalId(
-    launch,
-    input.examAttemptId,
-    input.verifiedEnvironmentExternalId,
-  );
-
-  const commandResult = await deps.controller.suspendEnvironment(environmentExternalId);
-  await pollUntilStatus(
-    deps.source,
-    deps.sleep,
-    environmentExternalId,
-    "suspended",
-    deps.poll ?? DEFAULT_POLL,
-  );
-  await deps.timer.pauseTimer(input.examAttemptId);
-  await persistAttemptStatus(deps.attempts, input.examAttemptId, "suspended");
-  return commandResult;
+  return runRuntimeTransition(deps, input, "suspend");
 }
 
 // --- resumeExam ---
@@ -143,6 +125,8 @@ export interface ResumeExamDeps {
   readonly labs?: LabProvisioner;
   readonly sleep: (ms: number) => Promise<void>;
   readonly poll?: PollOptions;
+  readonly now?: () => Date;
+  readonly isDefiniteCommandRejection?: (error: unknown) => boolean;
 }
 
 export interface ResumeExamInput {
@@ -161,35 +145,8 @@ export async function resumeExam(
   deps: ResumeExamDeps,
   input: ResumeExamInput,
 ): Promise<ResumeExamResult> {
-  await requireAttemptStatus(deps.attempts, input.examAttemptId, "suspended", "resume");
-  const launch = await deps.launches.findByExamAttemptId(input.examAttemptId);
-  if (!launch) {
-    throw new LabLaunchNotFoundError({ examAttemptId: input.examAttemptId });
-  }
-  const environmentExternalId = requireEnvironmentExternalId(
-    launch,
-    input.examAttemptId,
-    input.verifiedEnvironmentExternalId,
-  );
-
-  const commandResult = await deps.controller.resumeEnvironment(environmentExternalId);
-  await pollUntilAnyStatus(
-    deps.source,
-    deps.sleep,
-    environmentExternalId,
-    ["running", "created"],
-    "running",
-    deps.poll ?? DEFAULT_POLL,
-  );
-
-  await deps.timer.resumeTimer(input.examAttemptId);
-  await persistAttemptStatus(deps.attempts, input.examAttemptId, "in_progress");
-
-  return {
-    environmentExternalId,
-    suspendedPreservationLimitMs: SUSPENDED_PRESERVATION_LIMIT_MS,
-    commandResult,
-  };
+  const commandResult = await runRuntimeTransition(deps, input, "resume");
+  return { environmentExternalId: commandResult.externalIds.environmentId, suspendedPreservationLimitMs: SUSPENDED_PRESERVATION_LIMIT_MS, commandResult };
 }
 
 // --- archiveExam ---
@@ -202,6 +159,8 @@ export interface ArchiveExamDeps {
   readonly launches: LabLaunchRepository;
   readonly sleep: (ms: number) => Promise<void>;
   readonly poll?: PollOptions;
+  readonly now?: () => Date;
+  readonly isDefiniteCommandRejection?: (error: unknown) => boolean;
 }
 
 export interface ArchiveExamInput {
@@ -299,18 +258,6 @@ function requireEnvironmentExternalId(
   return correlatedEnvironmentId;
 }
 
-async function persistAttemptStatus(
-  attempts: ExamAttemptRepository,
-  examAttemptId: string,
-  status: "in_progress" | "suspended",
-): Promise<void> {
-  const attempt = await requireAttempt(attempts, examAttemptId);
-  await attempts.save({
-    ...attempt,
-    status,
-  });
-}
-
 async function requireAttempt(
   attempts: ExamAttemptRepository,
   examAttemptId: string,
@@ -322,19 +269,62 @@ async function requireAttempt(
   return attempt;
 }
 
-async function requireAttemptStatus(
-  attempts: ExamAttemptRepository,
-  examAttemptId: string,
-  expectedStatus: Extract<ActiveExamAttemptStatus, "in_progress" | "suspended">,
-  operation: "suspend" | "resume",
-): Promise<void> {
-  const attempt = await requireAttempt(attempts, examAttemptId);
-  if (attempt.status !== expectedStatus) {
-    throw new InvalidExamAttemptStatusError({
-      examAttemptId,
-      operation,
-      expectedStatus,
-      currentStatus: attempt.status as ExamAttemptStatus,
-    });
+
+/** One durable owner dispatches. Every later call observes; it never blindly retries. */
+async function runRuntimeTransition(deps: SuspendExamDeps | ResumeExamDeps, input: SuspendExamInput, action: "suspend" | "resume"): Promise<EnvironmentCommandResult> {
+  const attempt = await requireAttempt(deps.attempts, input.examAttemptId);
+  const customerId = attempt.customerId ?? "";
+  const { readRuntimeCommand, claimRuntimeCommand, finishRuntimeCommandDispatch, settleRuntimeCommand, releaseRuntimeCommand } = deps.attempts;
+  if (!readRuntimeCommand || !claimRuntimeCommand || !finishRuntimeCommandDispatch || !settleRuntimeCommand || !releaseRuntimeCommand) throw new ExamAttemptRuntimeError("Runtime command persistence is unavailable.");
+  let command = await readRuntimeCommand(customerId, attempt.id);
+  const expectedStatus = action === "suspend" ? "in_progress" : "suspended";
+  if (!command && attempt.status !== expectedStatus) throw new InvalidExamAttemptStatusError({ examAttemptId: attempt.id, operation: action, expectedStatus, currentStatus: attempt.status });
+  if (!["in_progress", "suspended"].includes(attempt.status)) throw new InvalidExamAttemptStatusError({ examAttemptId: attempt.id, operation: action, expectedStatus, currentStatus: attempt.status });
+  const launch = await deps.launches.findByExamAttemptId(attempt.id);
+  if (!launch) throw new LabLaunchNotFoundError({ examAttemptId: attempt.id });
+  const environmentId = requireEnvironmentExternalId(launch, attempt.id, input.verifiedEnvironmentExternalId);
+  if (command && command.environmentId !== environmentId) throw pendingCommand(command);
+  let ownsDispatch = false;
+  if (!command) {
+    const proposed: PendingExamAttemptRuntimeCommand = { phase: "dispatching", customerId, examAttemptId: attempt.id, commandId: randomUUID(), action, environmentId };
+    ownsDispatch = await claimRuntimeCommand(proposed, expectedStatus);
+    command = ownsDispatch ? proposed : await readRuntimeCommand(customerId, attempt.id);
+    if (!command) throw new ExamAttemptRuntimeError("Runtime command changed; refresh the attempt before retrying.");
   }
+  if (command.environmentId !== environmentId || (!ownsDispatch && command.phase !== "observing")) throw pendingCommand(command);
+  const targetStates: EnvironmentStatus[] = command.action === "suspend" ? ["suspended"] : ["running", "created"];
+  let result: EnvironmentCommandResult = { attemptedOperation: `${command.action}_environment`, integrationSurface: "portal.environment.reconciliation", externalIds: { environmentId: command.environmentId } };
+  let snapshot;
+  try { snapshot = await deps.source.getEnvironmentState(command.environmentId); }
+  catch (error) { if (ownsDispatch) await releaseRuntimeCommand(command); throw error; }
+  if (!snapshot || !targetStates.includes(snapshot.status)) {
+    if (!ownsDispatch) throw pendingCommand(command);
+    const eligible = command.action === "suspend" ? snapshot?.status === "running" : snapshot?.status === "suspended";
+    if (!eligible) {
+      await releaseRuntimeCommand(command);
+      throw new ExamAttemptRuntimeError("Environment state does not permit this runtime command.", { failureMode: "environment_state_unavailable", environmentExternalId: command.environmentId });
+    }
+    try {
+      result = command.action === "suspend" ? await deps.controller.suspendEnvironment(command.environmentId) : await deps.controller.resumeEnvironment(command.environmentId);
+    } catch (error) {
+      if (deps.isDefiniteCommandRejection?.(error)) await releaseRuntimeCommand(command);
+      else await finishRuntimeCommandDispatch(command);
+      throw error;
+    }
+    if (!await finishRuntimeCommandDispatch(command)) throw pendingCommand(command);
+    command = { ...command, phase: "observing" };
+    await pollUntilAnyStatus(deps.source, deps.sleep, command.environmentId, targetStates, command.action === "suspend" ? "suspended" : "running", deps.poll ?? DEFAULT_POLL);
+  }
+  // From this point the owner cannot send another POST, including the no-op path.
+  if (ownsDispatch && command.phase === "dispatching") {
+    if (!await finishRuntimeCommandDispatch(command)) throw pendingCommand(command);
+    command = { ...command, phase: "observing" };
+  }
+  if (!await settleRuntimeCommand(command, (deps.now ?? (() => new Date()))())) throw pendingCommand(command);
+  if (command.action !== action) throw new ExamAttemptRuntimeError("Previous runtime command reconciled; refresh before another action.", { failureMode: "runtime_command_reconciled" });
+  return result;
+}
+
+function pendingCommand(command: ExamAttemptRuntimeCommand): ExamAttemptRuntimeError {
+  return new ExamAttemptRuntimeError("Runtime command awaits authoritative confirmation; no command was replayed.", { failureMode: "runtime_command_pending", environmentExternalId: command.environmentId, target: command.action === "suspend" ? "suspended" : "running" });
 }

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { createCloudShareResourceDiscovery } from "@/integrations/cloudshare/resources";
 import { createCloudShareIntegrationForConnection, createCloudShareNoopObservationPort } from "@/integrations/cloudshare";
 import { createCloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 
@@ -22,7 +22,7 @@ describe("live Certalis Sales-Pro preflight probe", () => {
       connection: connection!,
       observer: createCloudShareNoopObservationPort(),
     });
-    const projects = await client.requestV3Detailed!({ method: "GET", path: "/projects", schema: z.array(z.object({ id: z.string().min(1), name: z.string().min(1) })) });
+    const projects = await createCloudShareResourceDiscovery(client).readProjects();
     const project = projects.data[0];
     expect(project).toBeDefined();
     const read = await createCloudShareProjectMemberSource(client).listActiveProjectMembers(project!.id);

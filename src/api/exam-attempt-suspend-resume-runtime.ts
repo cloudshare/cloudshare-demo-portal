@@ -163,7 +163,7 @@ export async function suspendExamAttemptRuntime(
     }
     const reconciledAttempt = settlement.attempt;
     anchors = { ...anchorsForAttempt(reconciledAttempt, deps.candidateEmail), correlationId: operationCorrelationId };
-    if (reconciledAttempt.status !== "in_progress") {
+    if (reconciledAttempt.status !== "in_progress" && !await deps.attempts.readRuntimeCommand?.(reconciledAttempt.customerId ?? "", examAttemptId)) {
       await deps.diagnostics?.record({
         ...anchors,
         level: "warn",
@@ -296,14 +296,14 @@ export async function resumeExamAttemptRuntime(
     const resumeOpenPeriodEnd = await getResumeOpenPeriodEnd(deps, reconciledAttempt);
     const now = (deps.now ?? (() => new Date()))();
     const authoredOpenPeriodClosed = !!resumeOpenPeriodEnd && now.getTime() >= resumeOpenPeriodEnd.getTime();
-    if (reconciledAttempt.status === "in_progress") {
+    if (reconciledAttempt.status === "in_progress" && !await deps.attempts.readRuntimeCommand?.(reconciledAttempt.customerId ?? "", examAttemptId)) {
       const launch = await deps.launches.findByExamAttemptId(examAttemptId);
       return buildAlreadyActiveResumeResponse(deps, examAttemptId, anchors, launch, {
         currentStatus: reconciledAttempt.status,
         recoveryReason: "attempt_already_in_progress",
       });
     }
-    if (reconciledAttempt.status !== "suspended") {
+    if (reconciledAttempt.status !== "suspended" && !await deps.attempts.readRuntimeCommand?.(reconciledAttempt.customerId ?? "", examAttemptId)) {
       await deps.diagnostics?.record({
         ...anchors,
         level: "warn",
@@ -469,7 +469,6 @@ export async function resumeExamAttemptRuntime(
       customerId: anchors.customerId,
       examId: anchors.examId,
       candidateEmail: anchors.candidateEmail,
-      environmentExternalId: result.environmentExternalId,
     });
     return {
       status: 200,
@@ -477,7 +476,6 @@ export async function resumeExamAttemptRuntime(
         status: "resumed",
         resumeDisposition: "resumed" satisfies ResumeDisposition,
         examAttemptId,
-        environmentExternalId: result.environmentExternalId,
         suspendedPreservationLimitMs: result.suspendedPreservationLimitMs,
       },
     };
@@ -632,7 +630,7 @@ async function resolveCustomerEnvironmentAccess(
   examAttemptId: string,
   correlationId: string,
   sequenceAllocator: CloudShareWorkflowSequenceAllocator,
-): Promise<Pick<SuspendExamDeps, "controller" | "source">> {
+): Promise<Pick<SuspendExamDeps, "controller" | "source" | "isDefiniteCommandRejection">> {
   const attempt = await deps.attempts.findById(examAttemptId);
   if (!attempt?.customerId) {
     throw new CustomerEnvironmentAccessError(
@@ -655,6 +653,7 @@ async function resolveCustomerEnvironmentAccess(
   const client = deps.cloudshare.forConnection(connection, certificationCloudShareWorkflow({ actor: { type: "system", id: "exam-runtime" }, customerId: attempt.customerId, subject: { type: "exam_attempt", id: examAttemptId }, correlationId, source: "runtime", examId: attempt.examId ?? undefined, examAttemptId, sequenceAllocator, externalIds: { lifecycleParent: `exam-runtime:${examAttemptId}` } }));
   return {
     controller: createCloudShareEnvironmentController(client),
+    isDefiniteCommandRejection: error => error instanceof CloudShareRequestError && [400, 401, 403, 404, 429].includes(error.status),
     source: createCloudShareEnvironmentSource(client),
   };
 }
@@ -718,14 +717,10 @@ async function tryRecoverAlreadyActiveResume(
       return null;
     }
 
-    await deps.timer.resumeTimer(examAttemptId);
     const attempt = await deps.attempts.findById(examAttemptId);
-    if (attempt) {
-      await deps.attempts.save({
-        ...attempt,
-        status: "in_progress",
-      });
-    }
+    const pending = await deps.attempts.readRuntimeCommand?.(attempt?.customerId ?? "", examAttemptId);
+    if (!pending || pending.action !== "resume" || pending.environmentId !== environmentExternalId) return null;
+    if (!await deps.attempts.settleRuntimeCommand?.(pending, (deps.now ?? (() => new Date()))())) return null;
 
     return buildAlreadyActiveResumeResponse(deps, examAttemptId, anchors, launch, {
       currentStatus: attempt?.status ?? "suspended",
@@ -784,7 +779,6 @@ async function buildAlreadyActiveResumeResponse(
     customerId: anchors.customerId,
     examId: anchors.examId,
     candidateEmail: anchors.candidateEmail,
-    environmentExternalId,
     recoveryReason: input.recoveryReason,
   });
   return {
@@ -793,7 +787,6 @@ async function buildAlreadyActiveResumeResponse(
       status: "resumed",
       resumeDisposition: "already_active" satisfies ResumeDisposition,
       examAttemptId,
-      environmentExternalId,
       suspendedPreservationLimitMs: SUSPENDED_PRESERVATION_LIMIT_MS,
     },
   };
@@ -988,7 +981,7 @@ function buildPendingTransitionResponse(
       : /^Timed out waiting for environment to become /i.test(err.message)
         ? "confirmation_timeout"
         : null;
-  if (failureMode !== "confirmation_timeout" && failureMode !== "not_correlated_yet") {
+  if (failureMode !== "confirmation_timeout" && failureMode !== "not_correlated_yet" && failureMode !== "runtime_command_pending") {
     return null;
   }
 
@@ -1046,12 +1039,12 @@ function buildExamAttemptRuntimeDiagnostic(
     candidateEmail: anchors?.candidateEmail ?? null,
     operation,
     attemptedOperation: "poll_environment_status",
-    integrationSurface: "cloudshare.v3.env",
+    integrationSurface: "cloudshare.v4.environments.get",
     method: "GET",
     path:
       typeof err.context?.environmentExternalId === "string"
-        ? `/api/v3/envs/${err.context.environmentExternalId}`
-        : "/api/v3/envs/{envId}",
+        ? `/v4/environments/${err.context.environmentExternalId}`
+        : "/v4/environments/{environmentId}",
     failureMode: "confirmation_timeout",
     error: err.message,
     ...(err.context ?? {}),
@@ -1070,21 +1063,21 @@ function buildCloudShareDiagnostic(
     action === "suspend"
       ? {
           attemptedOperation: "suspend_environment",
-          integrationSurface: "cloudshare.v3.env.action.suspend",
-          method: "PUT",
+          integrationSurface: "cloudshare.v4.environments.suspend",
+          method: "POST",
           path:
             typeof err.context?.environmentExternalId === "string"
-              ? `/api/v3/envs/actions/suspend?envId=${err.context.environmentExternalId}`
-              : "/api/v3/envs/actions/suspend?envId={envId}",
+              ? `/v4/environments/${encodeURIComponent(err.context.environmentExternalId)}/suspend`
+              : "/v4/environments/{environmentId}/suspend",
         }
       : {
           attemptedOperation: "resume_environment",
-          integrationSurface: "cloudshare.v3.env.action.resume",
-          method: "PUT",
+          integrationSurface: "cloudshare.v4.environments.resume",
+          method: "POST",
           path:
             typeof err.context?.environmentExternalId === "string"
-              ? `/api/v3/envs/actions/resume?envId=${err.context.environmentExternalId}`
-              : "/api/v3/envs/actions/resume?envId={envId}",
+              ? `/v4/environments/${encodeURIComponent(err.context.environmentExternalId)}/resume`
+              : "/v4/environments/{environmentId}/resume",
         };
 
   const base = {

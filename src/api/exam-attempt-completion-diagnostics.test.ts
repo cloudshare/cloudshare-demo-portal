@@ -16,7 +16,7 @@ describe("exam attempt completion diagnostics", () => {
         status: "running" as const,
         request: {
           method: "GET",
-          path: `/envs/${environmentExternalId}`,
+          path: `/v4/environments/${environmentExternalId}`,
           headers: {
             authorization: "cs_sha1 userapiid:api-id;timestamp:123;token:[REDACTED];hmac:[REDACTED]",
           },
@@ -91,12 +91,12 @@ describe("exam attempt completion diagnostics", () => {
           details: expect.objectContaining({
             completionReason: "heartbeat_reconciliation",
             attemptedOperation: "get_environment",
-            integrationSurface: "cloudshare.v3.env.get",
+            integrationSurface: "cloudshare.v4.environments.get",
             environmentFound: true,
           }),
           request: {
             method: "GET",
-            path: "/envs/ENN_FkNYEmuHdXixiVS-Kfcw2",
+            path: "/v4/environments/ENN_FkNYEmuHdXixiVS-Kfcw2",
             headers: {
               authorization: "[REDACTED]",
             },
@@ -115,4 +115,54 @@ describe("exam attempt completion diagnostics", () => {
       ]),
     );
   });
+  it("retains the full absent Environment exchange after completion", async () => {
+    const repository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository });
+    const source = {
+      getEnvironmentState: vi.fn().mockResolvedValue(null),
+      readEnvironmentState: vi.fn().mockResolvedValue({ snapshot: null, request: { method: "GET", path: "/v4/environments/ENN_FkNYEmuHdXixiVS-Kfcw2" }, response: { status: 404, headers: { "x-request-id": "missing-proof" }, body: "" } }),
+    };
+
+    const attempt = {
+      id: "attempt-1",
+      customerId: "customer-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "completed" as const,
+      scheduledFor: new Date("2026-06-24T19:17:00.000Z"),
+      createdAt: new Date("2026-06-24T19:16:44.432Z"),
+    };
+
+    await recordExamAttemptCompletionDiagnostic(
+      diagnostics,
+      attempt,
+      "candidate4@myplace.demo",
+    );
+    await recordExamAttemptCompletionEnvironmentDiagnostic(
+      { diagnostics, source },
+      {
+        attempt,
+        candidateEmail: "candidate4@myplace.demo",
+        completionReason: "heartbeat_reconciliation",
+        launch: {
+          id: "launch-1",
+          examAttemptId: "attempt-1",
+          candidateId: "candidate-1",
+          participantEmail: "candidate4@myplace.demo",
+          trainingId: "training-1",
+          experienceId: "training-1",
+          environmentExternalId: "ENN_FkNYEmuHdXixiVS-Kfcw2",
+          environmentId: "ENN_FkNYEmuHdXixiVS-Kfcw2",
+          loginUrl: "https://use.cloudshare.test/sponsored",
+          status: "launched",
+          createdAt: new Date("2026-06-24T19:16:47.084Z"),
+        },
+      },
+    );
+
+    expect(source.readEnvironmentState).toHaveBeenCalled();
+    expect(source.getEnvironmentState).not.toHaveBeenCalled();
+    expect(await repository.query({ examAttemptId: "attempt-1" })).toEqual(expect.arrayContaining([expect.objectContaining({ response: { status: 404, headers: { "x-request-id": "missing-proof" }, body: "" } })]));
+  });
+
 });

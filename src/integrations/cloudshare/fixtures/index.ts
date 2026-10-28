@@ -2,16 +2,14 @@ import { buildFixtureMap, type FixtureMap } from "../fixtures";
 import v4OauthToken from "./v4-oauth-token.json";
 import v4Projects from "./v4-projects.json";
 import v3Regions from "./v3-regions.json";
-import v3Projects from "./v3-projects.json";
 import v4CreateExperience from "./v4-create-experience.json";
 import v4AddStudent from "./v4-add-student.json";
 import v4SponsoredLink from "./v4-sponsored-link.json";
 import v4GetParticipantProgress from "./v4-get-participant-progress.json";
 import v3Blueprints from "./v3-blueprints.json";
-import v3Policies from "./v3-policies.json";
-import v3ProjectPolicies from "./v3-project-policies.json";
-import v3ProjectPolicyDetailStandard from "./v3-project-policy-detail-standard.json";
-import v3ProjectPolicyDetailProctored from "./v3-project-policy-detail-proctored.json";
+import v4ProjectPolicies from "./v4-project-policies.json";
+import v4ProjectPolicyDetailStandard from "./v4-project-policy-detail-standard.json";
+import v4ProjectPolicyDetailProctored from "./v4-project-policy-detail-proctored.json";
 import v3BlueprintDetail from "./v3-blueprint-detail.json";
 import v3Ping from "./v3-ping.json";
 
@@ -29,16 +27,14 @@ export const bundledFixtures: FixtureMap = buildFixtureMap([
   { raw: v4OauthToken, label: "v4-oauth-token.json" },
   { raw: v4Projects, label: "v4-projects.json" },
   { raw: v3Regions, label: "v3-regions.json" },
-  { raw: v3Projects, label: "v3-projects.json" },
   { raw: v4CreateExperience, label: "v4-create-experience.json" },
   { raw: v4AddStudent, label: "v4-add-student.json" },
   { raw: v4SponsoredLink, label: "v4-sponsored-link.json" },
   { raw: v4GetParticipantProgress, label: "v4-get-participant-progress.json" },
   { raw: v3Blueprints, label: "v3-blueprints.json" },
-  { raw: v3Policies, label: "v3-policies.json" },
-  { raw: v3ProjectPolicies, label: "v3-project-policies.json" },
-  { raw: v3ProjectPolicyDetailStandard, label: "v3-project-policy-detail-standard.json" },
-  { raw: v3ProjectPolicyDetailProctored, label: "v3-project-policy-detail-proctored.json" },
+  { raw: v4ProjectPolicies, label: "v4-project-policies.json" },
+  { raw: v4ProjectPolicyDetailStandard, label: "v4-project-policy-detail-standard.json" },
+  { raw: v4ProjectPolicyDetailProctored, label: "v4-project-policy-detail-proctored.json" },
   { raw: v3BlueprintDetail, label: "v3-blueprint-detail.json" },
   { raw: v3Ping, label: "v3-ping.json" },
 ]);

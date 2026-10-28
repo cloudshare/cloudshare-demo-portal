@@ -57,7 +57,11 @@ function makeCloudShareClient(): CloudShareClient {
       }
       return Promise.reject(new Error(`unexpected path ${path}`));
     }),
-    requestV4: vi.fn(),
+    requestV4: vi.fn().mockImplementation(({ path }: { path: string }) => {
+      if (path === "/projects") return Promise.resolve({ count: 1, items: [{ id: "project-1", name: "Helios Project" }] });
+      if (path === "/projects/project-1/policies") return Promise.resolve({ count: 1, items: [{ id: "policy-1", projectId: "project-1", name: "Timed Policy" }] });
+      return Promise.reject(new Error(`unexpected v4 path ${path}`));
+    }),
     requestV3Text: vi.fn(),
   };
 }
@@ -124,9 +128,9 @@ describe("admin sync resources route", () => {
       request: { method: "GET", path: "/projects" },
       response: {
         status: 200,
-        body: [{ id: "project-1", name: "Helios Project" }],
+        body: { count: 1, items: [{ id: "project-1", name: "Helios Project" }] },
       },
-      details: { integrationSurface: "cloudshare.v3.projects" },
+      details: { integrationSurface: "cloudshare.v4.projects" },
       externalIds: { resourceType: "project" },
     });
     expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.regions.read")).toMatchObject({
@@ -163,9 +167,9 @@ describe("admin sync resources route", () => {
       request: { method: "GET", path: "/projects/project-1/policies" },
       response: {
         status: 200,
-        body: [{ id: "policy-1", name: "Timed Policy" }],
+        body: { count: 1, items: [{ id: "policy-1", projectId: "project-1", name: "Timed Policy" }] },
       },
-      details: { integrationSurface: "cloudshare.v3.projects.policies" },
+      details: { integrationSurface: "cloudshare.v4.projects.policies" },
       externalIds: { resourceType: "policy", projectId: "project-1" },
     });
 

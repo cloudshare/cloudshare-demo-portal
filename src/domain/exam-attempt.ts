@@ -57,8 +57,27 @@ export function isSameExamAttemptAvailabilityConflictError(
   return value instanceof SameExamAttemptAvailabilityConflictError;
 }
 
+export interface ExamAttemptRuntimeCommand {
+  readonly customerId: string;
+  readonly examAttemptId: string;
+  readonly commandId: string;
+  readonly action: "suspend" | "resume";
+  readonly environmentId: string;
+}
+
+export interface PendingExamAttemptRuntimeCommand extends ExamAttemptRuntimeCommand {
+  /** Only the owner can finish dispatching; observers may settle only observing. */
+  readonly phase: "dispatching" | "observing";
+}
+
 /** Persistence port for ExamAttempts. Implemented in the persistence layer. */
 export interface ExamAttemptRepository {
+  /** Runtime callers fail closed when an older adapter lacks these atomic operations. */
+  readRuntimeCommand?(customerId: string, examAttemptId: string): Promise<PendingExamAttemptRuntimeCommand | null>;
+  claimRuntimeCommand?(command: ExamAttemptRuntimeCommand, expectedStatus: "in_progress" | "suspended"): Promise<boolean>;
+  finishRuntimeCommandDispatch?(command: ExamAttemptRuntimeCommand): Promise<boolean>;
+  settleRuntimeCommand?(command: ExamAttemptRuntimeCommand, at: Date): Promise<boolean>;
+  releaseRuntimeCommand?(command: ExamAttemptRuntimeCommand): Promise<void>;
   save(attempt: ExamAttempt): Promise<void>;
   saveWithSameExamAvailabilityGuard?(
     attempt: ExamAttempt,

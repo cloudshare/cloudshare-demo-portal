@@ -91,7 +91,7 @@ function makeCloudShareFactory(
       requestV3: vi.fn(),
       requestV3Text: vi.fn(),
       requestV4,
-      requestV4Detailed: vi.fn(),
+
       ...overrides,
     }),
   };
@@ -607,7 +607,7 @@ describe("getExamAttemptDashboardRuntime", () => {
       requestV3: vi.fn(),
       requestV3Text: vi.fn(),
       requestV4: vi.fn().mockResolvedValue({ count: 0, items: [] }),
-      requestV4Detailed: vi.fn(),
+
     } as unknown as ReturnType<CloudShareClientFactory["forConnection"]>;
     const cloudshare = { forConnection: vi.fn().mockReturnValue(client) } satisfies CloudShareClientFactory;
 
@@ -803,12 +803,12 @@ describe("getExamAttemptDashboardRuntime", () => {
         launches,
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory({
-          requestV3: vi.fn(async (spec: { path: string }) => {
-            if (spec.path === "/envs/ENVS-expired-1") {
+          requestV4: vi.fn(async (spec: { path: string }) => {
+            if (spec.path === "/environments/ENVS-expired-1") {
               throw new CloudShareRequestError("not found", 404, {
                 method: "GET",
-                path: "/v3/envs/ENVS-expired-1",
-                integrationSurface: "cloudshare.v3.env.get",
+                path: "/v4/environments/ENVS-expired-1",
+                integrationSurface: "cloudshare.v4.environments.get",
               });
             }
             throw new Error(`unexpected path ${spec.path}`);
@@ -841,14 +841,14 @@ describe("getExamAttemptDashboardRuntime", () => {
           outcome: "success",
           details: expect.objectContaining({
             attemptedOperation: "get_environment",
-            integrationSurface: "cloudshare.v3.env.get",
+            integrationSurface: "cloudshare.v4.environments.get",
             failureMode: "external_lease_expired",
             reason: "not_found",
             responseStatus: 404,
           }),
           request: expect.objectContaining({
             method: "GET",
-            path: "/v3/envs/ENVS-expired-1",
+            path: "/v4/environments/ENVS-expired-1",
           }),
           response: expect.objectContaining({
             status: 404,
@@ -1010,12 +1010,12 @@ describe("getExamAttemptDashboardRuntime", () => {
         launches,
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory({
-          requestV3: vi.fn(async (spec: { path: string }) => {
-            if (spec.path === "/envs/ENVS-live-1") {
+          requestV4: vi.fn(async (spec: { path: string }) => {
+            if (spec.path === "/environments/ENVS-live-1") {
               throw new CloudShareRequestError("forbidden", 403, {
                 method: "GET",
-                path: "/v3/envs/ENVS-live-1",
-                integrationSurface: "cloudshare.v3.env.get",
+                path: "/v4/environments/ENVS-live-1",
+                integrationSurface: "cloudshare.v4.environments.get",
                 responseHeaders: { "content-type": "application/json" },
                 responseBody: { message: "Forbidden" },
               });
@@ -1050,7 +1050,7 @@ describe("getExamAttemptDashboardRuntime", () => {
           outcome: "failure",
           request: {
             method: "GET",
-            path: "/v3/envs/ENVS-live-1",
+            path: "/v4/environments/ENVS-live-1",
           },
           response: {
             status: 403,
@@ -1059,7 +1059,7 @@ describe("getExamAttemptDashboardRuntime", () => {
           },
           details: expect.objectContaining({
             attemptedOperation: "get_environment",
-            integrationSurface: "cloudshare.v3.env.get",
+            integrationSurface: "cloudshare.v4.environments.get",
             failureMode: "http_status",
             responseStatus: 403,
           }),

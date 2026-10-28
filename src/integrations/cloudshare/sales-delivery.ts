@@ -45,7 +45,8 @@ export interface SalesDelivery {
   listSessions(input: { readonly field?: string; readonly offset: number; readonly limit: number }): Promise<{ readonly sessions: readonly { readonly id: string; readonly status: CloudShareSalesExperienceStatus }[]; readonly total: number } & SalesDeliveryEvidence>;
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
   /** Documented v4 read used only for reconciliation; the provider ID remains server-side. */
-  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus; readonly end?: string | null } & SalesDeliveryEvidence>;
+  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus; readonly start?: string; readonly timeZone?: string; readonly end?: string | null; readonly labels?: readonly string[] | null } & SalesDeliveryEvidence>;
+  deleteSession?(salesExperienceId: string): Promise<SalesDeliveryEvidence>;
   /** Maps CloudShare's versioned invitation-setting wire values to the one fact
    * invite callers need, and preserves the original value for diagnostics. */
   readParticipantInvitationCapability(salesExperienceId: string): Promise<{ readonly participantInvitationsEnabled: boolean; readonly sendInvitations: "salesProsOnly" | "salesParticipantsOnly" | "participantsOnly" | "dontSend" | "salesProsAndParticipants" | "unknown" } & SalesDeliveryEvidence>;
@@ -55,7 +56,9 @@ export interface SalesDelivery {
    * lifecycle policy before they can be exposed. */
   updateSession?(
     salesExperienceId: string,
-    changes: { readonly name?: string; readonly end?: string | null },
+    changes: { readonly name?: string; readonly end?: string | null; readonly cancelled?: true },
+    /** Awaited after GET/body validation, immediately before PUT; rejection prevents dispatch. */
+    beforeDispatch?: () => Promise<void>,
   ): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
   /** Ensures the documented Sales user-property definitions used for durable
    * Certalis-to-CloudShare participant correlation. */
@@ -214,7 +217,7 @@ const optionalMutableSalesExperienceFields = ["teamId", "allowParticipantsSwitch
  * wire keys, or response parsing; they only validate an owner and create a
  * time-bounded registered-only delivery. */
 export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDelivery {
-  async function detailed<T>(spec: { method: "GET" | "POST" | "PUT"; path: string; query?: Record<string, string>; body?: unknown; allowEmptyResponse?: boolean; timeoutMs?: number; schema: z.ZodType<T, z.ZodTypeDef, unknown> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
+  async function detailed<T>(spec: { method: "GET" | "POST" | "PUT" | "DELETE"; path: string; query?: Record<string, string>; body?: unknown; allowEmptyResponse?: boolean; timeoutMs?: number; schema: z.ZodType<T, z.ZodTypeDef, unknown> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
     const result = client.requestV4Detailed
       ? await client.requestV4Detailed(spec)
       : await client.requestV4(spec).then((data) => ({ data, request: { method: spec.method, path: spec.path, ...(spec.body === undefined ? {} : { body: spec.body }) }, response: { status: 200, body: data } } as CloudShareDetailedResult<T>));
@@ -233,7 +236,11 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async readSession(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, timeoutMs: 10000, schema: salesExperienceReadSchema });
-      return { id: data.id, status: data.status, end: data.end ?? null, ...evidence };
+      return { id: data.id, status: data.status, start: data.start, timeZone: data.timeZone, end: data.end ?? null, labels: data.labels?.every(label => typeof label === "string") ? data.labels as string[] : null, ...evidence };
+    },
+    async deleteSession(salesExperienceId) {
+      const { evidence } = await detailed({ method: "DELETE", path: `/sales/${encodeURIComponent(salesExperienceId)}`, allowEmptyResponse: true, schema: z.unknown() });
+      return evidence;
     },
     async readParticipantInvitationCapability(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
@@ -256,7 +263,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       }
       throw new Error("CloudShare Sales Pro pagination exceeded the bounded page limit.");
     },
-    async updateSession(salesExperienceId, changes) {
+    async updateSession(salesExperienceId, changes, beforeDispatch) {
       const { data: current, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
       const missingRequiredFields = getMissingRequiredMutableSalesExperienceFields(current);
       if (missingRequiredFields.length > 0) {
@@ -300,6 +307,11 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
           body[field] = current[field];
         }
       }
+      if (changes.cancelled) {
+        const labels = z.array(z.string()).parse(current.labels ?? []);
+        body.labels = [...new Set([...labels, "certalis:cancelled"])];
+      }
+      await beforeDispatch?.();
       const { data, evidence: updateEvidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
       return { id: data.id, ...updateEvidence };
     },

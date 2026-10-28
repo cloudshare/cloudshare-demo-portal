@@ -12,8 +12,11 @@ export function createPrismaSalesParticipantAddCommandStore(prisma: PrismaClient
       return { state: row.state as AddCommandState, targetKey: row.targetKey, result: result(row.resultJson) };
     },
     async admit(input) {
-      const existing = await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } });
-      const target = input.targetKey ? await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_sessionId_targetKey: { customerId: input.customerId, sessionId: input.sessionId, targetKey: input.targetKey } } }) : null;
+      return prisma.$transaction(async tx => {
+        const session = await tx.salesDemoSession.findUnique({ where: { customerId_id: { customerId: input.customerId, id: input.sessionId } }, select: { cancellationRequestedAt: true } });
+        if (!session || session.cancellationRequestedAt) return { kind: "blocked" };
+      const existing = await tx.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } });
+      const target = input.targetKey ? await tx.salesParticipantAddCommand.findUnique({ where: { customerId_sessionId_targetKey: { customerId: input.customerId, sessionId: input.sessionId, targetKey: input.targetKey } } }) : null;
       if (existing) {
         if (existing.payloadHash !== hash(input.payloadHash)) return { kind: "mismatch" };
         if (existing.state === "admitted" && !existing.resultJson) return { kind: "new" };
@@ -21,7 +24,7 @@ export function createPrismaSalesParticipantAddCommandStore(prisma: PrismaClient
         // ambiguous provider write: persist attention and never return 202.
         if (existing.state === "dispatched" && !existing.resultJson) {
           const attention: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add requires attention." } };
-          await prisma.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, state: "dispatched", resultJson: null }, data: { state: "needs_attention", status: 409, resultJson: JSON.stringify(attention), updatedAt: input.now } });
+          await tx.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, state: "dispatched", resultJson: null }, data: { state: "needs_attention", status: 409, resultJson: JSON.stringify(attention), updatedAt: input.now } });
           return { kind: "existing", commandId: existing.commandId, state: "needs_attention", result: attention };
         }
         return { kind: "existing", commandId: existing.commandId, state: existing.state as AddCommandState, result: result(existing.resultJson) };
@@ -29,17 +32,27 @@ export function createPrismaSalesParticipantAddCommandStore(prisma: PrismaClient
       if (target && target.commandId !== input.commandId) {
         if (target.state === "dispatched" && !target.resultJson) {
           const attention: SalesParticipantWorkspaceAddParticipantResult = { status: 409, body: { outcome: "needs_attention", code: "participant_add_no_replay", error: "Participant add requires attention." } };
-          await prisma.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: target.commandId, state: "dispatched", resultJson: null }, data: { state: "needs_attention", status: 409, resultJson: JSON.stringify(attention), updatedAt: input.now } });
+          await tx.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: target.commandId, state: "dispatched", resultJson: null }, data: { state: "needs_attention", status: 409, resultJson: JSON.stringify(attention), updatedAt: input.now } });
           return { kind: "existing", commandId: target.commandId, state: "needs_attention", result: attention };
         }
         const targetResult = result(target.resultJson);
         if (targetResult?.body.outcome === "registered") return { kind: "existing", commandId: target.commandId, state: target.state as AddCommandState, result: { status: 200, body: { ...targetResult.body, outcome: "already_registered", code: "already_registered" } } };
         return { kind: "existing", commandId: target.commandId, state: target.state as AddCommandState, result: targetResult };
       }
-      try { await prisma.salesParticipantAddCommand.create({ data: { customerId: input.customerId, commandId: input.commandId, sessionId: input.sessionId, targetKey: input.targetKey ?? `command:${input.commandId}`, payloadHash: hash(input.payloadHash), state: "admitted", createdAt: input.now, updatedAt: input.now } }); return { kind: "new" }; }
-      catch { const row = await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } }); const winner = row ?? (input.targetKey ? await prisma.salesParticipantAddCommand.findUniqueOrThrow({ where: { customerId_sessionId_targetKey: { customerId: input.customerId, sessionId: input.sessionId, targetKey: input.targetKey } } }) : null); if (!winner) throw new Error("Participant add admission failed"); return row && row.payloadHash !== hash(input.payloadHash) ? { kind: "mismatch" } : { kind: "existing", commandId: winner.commandId, state: winner.state as AddCommandState, result: result(winner.resultJson) }; }
+      try { await tx.salesParticipantAddCommand.create({ data: { customerId: input.customerId, commandId: input.commandId, sessionId: input.sessionId, targetKey: input.targetKey ?? `command:${input.commandId}`, payloadHash: hash(input.payloadHash), state: "admitted", createdAt: input.now, updatedAt: input.now } }); return { kind: "new" }; }
+      catch { const row = await tx.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } }); const winner = row ?? (input.targetKey ? await tx.salesParticipantAddCommand.findUniqueOrThrow({ where: { customerId_sessionId_targetKey: { customerId: input.customerId, sessionId: input.sessionId, targetKey: input.targetKey } } }) : null); if (!winner) throw new Error("Participant add admission failed"); return row && row.payloadHash !== hash(input.payloadHash) ? { kind: "mismatch" } : { kind: "existing", commandId: winner.commandId, state: winner.state as AddCommandState, result: result(winner.resultJson) }; }
+      });
     },
-    async markDispatched(input) { const changed = await prisma.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, state: "admitted" }, data: { state: "dispatched", updatedAt: input.now } }); return changed.count === 1; },
+    async markDispatched(input) {
+      return prisma.$transaction(async tx => {
+        const command = await tx.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } } });
+        if (!command) return false;
+        const session = await tx.salesDemoSession.findUnique({ where: { customerId_id: { customerId: input.customerId, id: command.sessionId } }, select: { cancellationRequestedAt: true } });
+        if (!session || session.cancellationRequestedAt) return false;
+        const changed = await tx.salesParticipantAddCommand.updateMany({ where: { customerId: input.customerId, commandId: input.commandId, state: "admitted" }, data: { state: "dispatched", updatedAt: input.now } });
+        return changed.count === 1;
+      });
+    },
     async settle(input) {
       const current = await prisma.salesParticipantAddCommand.findUnique({ where: { customerId_commandId: { customerId: input.customerId, commandId: input.commandId } }, select: { state: true, targetKey: true } });
       if (!current) throw new Error("Participant add command not found");

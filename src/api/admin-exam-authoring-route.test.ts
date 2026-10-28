@@ -302,7 +302,7 @@ describe("admin exam authoring routes", () => {
         body: { error: "forbidden" },
       },
       details: {
-        integrationSurface: "cloudshare.v3.projects.policy_detail",
+        integrationSurface: "cloudshare.v4.projects.policy_detail",
         failureMode: "http_status",
       },
       externalIds: {

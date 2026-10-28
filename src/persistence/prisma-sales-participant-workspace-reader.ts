@@ -5,7 +5,10 @@ import type {
 } from "@/domain/sales-participant-workspace";
 import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "@/domain/sales-participant-launch-operation";
-import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
+import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantV4Environment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
+
+import { createPrismaSalesCancellationStore } from "./prisma-sales-session-cancellation";
+import { cancellationIdentity } from "@/domain/sales-session-cancellation";
 
 const launchOperations = new Set<SalesParticipantLaunchOperationKind>(["generate", "revoke"]);
 const launchOutcomes = new Set<SalesParticipantLaunchOutcome>(["success", "failure"]);
@@ -24,7 +27,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
     async readPage(input) {
       const session = await prisma.salesDemoSession.findFirst({
         where: { id: input.sessionId, customerId: input.customerId, opportunity: { archivedAt: null, account: { archivedAt: null } } },
-        select: { id: true, opportunityId: true, end: true, timeZone: true, sendInvitations: true },
+        select: { id: true, opportunityId: true, end: true, timeZone: true, sendInvitations: true, cancellationRequestedAt: true, cloudShareSalesExperienceId: true, item: { select: { projectId: true } } },
       });
       if (!session) return null;
       const sessionEnd = cloudShareWallClockToInstant(session.end, session.timeZone);
@@ -59,12 +62,13 @@ export function createPrismaSalesParticipantWorkspaceReader(
           take: input.limit,
           select: {
             id: true,
+            opportunityContactId: true,
             updatedAt: true,
             invitationStatus: true,
             participationStatus: true,
             cloudShareParticipantId: true,
             environmentStatus: true,
-            environmentStatusCode: true,
+            environmentStatusCode: true, v4EnvironmentStatus: true, v4EnvironmentObservedAt: true,
             environmentObservedAt: true,
             environmentAttentionReason: true,
             environmentAttentionSource: true,
@@ -84,6 +88,26 @@ export function createPrismaSalesParticipantWorkspaceReader(
           select: { id: true, firstName: true, lastName: true, email: true },
         }),
       ]);
+      // Terminal cancellation retains an exact Environment confirmation independently
+      // of the older provider roster. Read that evidence without rewriting history.
+      const cancellationRow = session.cancellationRequestedAt
+        ? await prisma.salesParticipantExtensionCommand.findFirst({
+            where: { customerId: input.customerId, sessionId: input.sessionId, activeSessionId: input.sessionId, operation: "cancellation" },
+            select: { commandId: true, identity: true, revision: true, updatedAt: true, targets: { select: { salesSessionParticipantId: true, activeEnvironmentId: true } } },
+          })
+        : null;
+      const cancellation = cancellationRow
+        ? await createPrismaSalesCancellationStore(prisma).read(input.customerId, cancellationRow.commandId)
+        : null;
+      const confirmedCancellation = cancellation && cancellationRow &&
+        cancellation.revision === cancellationRow.revision &&
+        cancellationIdentity(cancellation) === cancellationRow.identity &&
+        cancellation.customerId === input.customerId && cancellation.sessionId === input.sessionId &&
+        cancellation.experienceId === session.cloudShareSalesExperienceId &&
+        cancellation.cancelledAt === session.cancellationRequestedAt?.toISOString() &&
+        cancellation.targetEnd === session.end && cancellation.timeZone === session.timeZone &&
+        cancellation.finished && cancellation.accessState === "confirmed"
+          ? cancellation : null;
       const participantIds = rows.map((row) => row.id);
       // Query one row per bounded page participant. Prisma distinct may be
       // applied in memory, which can read an unbounded operation history.
@@ -127,8 +151,16 @@ export function createPrismaSalesParticipantWorkspaceReader(
           if (row.environmentStatusCode !== null && row.environmentStatusCode !== undefined && !v3EnvironmentStatusCodes.has(row.environmentStatusCode)) throw new Error("Invalid persisted Participant Environment status code.");
           const hasEnvironmentAttentionReason = row.environmentAttentionReason !== null && row.environmentAttentionReason !== undefined;
           const hasEnvironmentAttentionSource = row.environmentAttentionSource !== null && row.environmentAttentionSource !== undefined;
-          if ((hasEnvironmentAttentionReason && !environmentAttentionReasons.has(row.environmentAttentionReason ?? "")) || hasEnvironmentAttentionReason !== hasEnvironmentAttentionSource || (hasEnvironmentAttentionSource && row.environmentAttentionSource !== "cloudshare_v3_owner_email_item_project")) throw new Error("Invalid persisted Participant Environment attention state.");
-          const environment = isProjectableSalesParticipantRosterEnvironment(row.environmentStatus) && row.environmentObservedAt
+          if ((hasEnvironmentAttentionReason && !environmentAttentionReasons.has(row.environmentAttentionReason ?? "")) || hasEnvironmentAttentionReason !== hasEnvironmentAttentionSource || (hasEnvironmentAttentionSource && !["cloudshare_v3_owner_email_item_project", "cloudshare_v4_owner_email_item_project"].includes(row.environmentAttentionSource ?? ""))) throw new Error("Invalid persisted Participant Environment attention state.");
+          const archive = confirmedCancellation?.targets.find(target =>
+            target.participantId === row.id && target.providerParticipantId === row.cloudShareParticipantId &&
+            target.contactId === row.opportunityContactId && target.email === row.contact.email &&
+            target.projectId === session.item.projectId && target.state === "archived" && target.environmentId &&
+            cancellationRow?.targets.some(fence => fence.salesSessionParticipantId === row.id && fence.activeEnvironmentId === target.environmentId));
+          const environment = archive && cancellationRow
+            ? { dimension: "cloudshare_environment" as const, value: "Archived" as const, source: "confirmed_session_cancellation" as const, confirmedAt: cancellationRow.updatedAt.toISOString() }
+            : row.v4EnvironmentObservedAt && (!row.environmentObservedAt || row.v4EnvironmentObservedAt >= row.environmentObservedAt) ? projectSalesParticipantV4Environment(row.v4EnvironmentStatus, row.v4EnvironmentObservedAt)
+            : isProjectableSalesParticipantRosterEnvironment(row.environmentStatus) && row.environmentObservedAt
             ? projectSalesParticipantRosterEnvironment(row.environmentStatus, row.environmentObservedAt)
             : projectSalesParticipantEnvironment(row.environmentStatusCode, row.environmentObservedAt ?? undefined);
           return {
@@ -139,6 +171,7 @@ export function createPrismaSalesParticipantWorkspaceReader(
             invitationStatus: row.invitationStatus === "sent" ? "sent" : "notSent",
             participationStatus: row.participationStatus as "pending" | "inProgress" | "concluded",
             sessionEndsAt: sessionEnd.toISOString(),
+            sessionCancelled: Boolean(session.cancellationRequestedAt),
             nativeInvitationsEnabled:
               session.sendInvitations === "salesProsAndParticipants",
             providerCorrelation: Boolean(row.cloudShareParticipantId),

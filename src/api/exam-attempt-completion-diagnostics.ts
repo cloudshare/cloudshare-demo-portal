@@ -1,6 +1,6 @@
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ExamAttempt } from "@/domain/exam-attempt";
-import type { EnvironmentStateSource } from "@/domain/environment";
+import type { EnvironmentStateSource, EnvironmentStateEvidenceSource } from "@/domain/environment";
 import type { LabLaunch } from "@/domain/lab-launch";
 
 export async function recordExamAttemptCompletionDiagnostic(
@@ -89,7 +89,12 @@ export async function recordExamAttemptCompletionEnvironmentDiagnostic(
   }
 
   try {
-    const snapshot = await deps.source.getEnvironmentState(environmentExternalId);
+    // Simulator/legacy fixtures may expose snapshots only; production retains the full read, including 404.
+    const evidenceSource = deps.source as Partial<EnvironmentStateEvidenceSource>;
+    const read = evidenceSource.readEnvironmentState
+      ? await evidenceSource.readEnvironmentState(environmentExternalId)
+      : null;
+    const snapshot = read ? read.snapshot : await deps.source.getEnvironmentState(environmentExternalId);
     await deps.diagnostics.record({
       ...base,
       operation: "cloudshare.environment.completion_reconcile",
@@ -101,12 +106,12 @@ export async function recordExamAttemptCompletionEnvironmentDiagnostic(
         ...base.externalIds,
         ...(snapshot?.status ? { environmentStatus: snapshot.status } : {}),
       },
-      request: snapshot?.request ?? null,
-      response: snapshot?.response ?? null,
+      request: read?.request ?? snapshot?.request ?? null,
+      response: read?.response ?? snapshot?.response ?? null,
       details: {
         completionReason: input.completionReason,
         attemptedOperation: "get_environment",
-        integrationSurface: "cloudshare.v3.env.get",
+        integrationSurface: "cloudshare.v4.environments.get",
         environmentFound: Boolean(snapshot),
       },
     });
@@ -120,7 +125,7 @@ export async function recordExamAttemptCompletionEnvironmentDiagnostic(
       details: {
         completionReason: input.completionReason,
         attemptedOperation: "get_environment",
-        integrationSurface: "cloudshare.v3.env.get",
+        integrationSurface: "cloudshare.v4.environments.get",
         error: err instanceof Error ? err.message : String(err),
       },
     });

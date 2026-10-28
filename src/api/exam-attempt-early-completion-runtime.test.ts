@@ -1,3 +1,4 @@
+import { environmentFixtureClient } from "@/integrations/cloudshare/environment-test-fixture";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
@@ -73,15 +74,15 @@ function makeConnections(): CloudShareConnectionRepository {
 
 function makeCloudShareClient(): CloudShareClient {
   let environmentPolls = 0;
-  return {
+  return environmentFixtureClient({
     requestV3Text: vi.fn(async (spec: { path: string }) => {
       if (spec.path === "/envs/actions/archive") {
         return "";
       }
       throw new Error(`unexpected v3 text path ${spec.path}`);
     }) as CloudShareClient["requestV3Text"],
-    requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-      if (spec.path === "/envs/ENV-live-1") {
+    readEnvironment: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+      if (spec.path === "/environments/ENV-live-1") {
         environmentPolls += 1;
         return spec.schema.parse({ envStatus: environmentPolls === 1 ? "Ready" : "Archived" });
       }
@@ -100,7 +101,7 @@ function makeCloudShareClient(): CloudShareClient {
       }
       throw new Error(`unexpected v4 path ${spec.path}`);
     }) as CloudShareClient["requestV4"],
-  } as CloudShareClient;
+  });
 }
 
 async function makeDeps(

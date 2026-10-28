@@ -198,6 +198,6 @@ function participantEnvironmentPresentation(environment: NonNullable<QueueRow["p
   const { observation, participantName } = environment;
   if (observation.source === "not_assigned") return { value: `${participantName}: Not assigned`, detail: "No CloudShare Environment is assigned." };
   if (observation.source === "not_observed") return { value: `${participantName}: Not observed`, detail: "CloudShare Environment state has not been observed." };
-  const surface = observation.source === "cloudshare_v3_environment" ? "CloudShare Environment" : "CloudShare participant roster";
+  const surface = (observation.source === "cloudshare_v3_environment" || observation.source === "cloudshare_v4_environment") ? "CloudShare Environment" : "CloudShare participant roster";
   return { value: `${participantName}: ${observation.value ?? "Not observed"}`, detail: `Observed from ${surface}${observation.observedAt ? ` · ${observation.observedAt}` : ""}` };
 }

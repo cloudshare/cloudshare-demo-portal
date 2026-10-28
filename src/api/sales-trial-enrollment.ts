@@ -1,3 +1,5 @@
+import { completedEnvironmentExchanges } from "@/integrations/cloudshare/environments-v4";
+import { projectSalesParticipantV4Environment } from "@/domain/sales-participant-environment";
 import type { SalesEnvironmentModule, SalesEnvironmentReading, SalesEnvironmentState } from "@/domain/environment-observation";
 import { randomUUID } from "node:crypto";
 import type { AuditRepository } from "@/domain/audit-trail";
@@ -158,6 +160,7 @@ export interface SalesTrialMonitoringParticipant {
     readonly dimension: "cloudshare_environment";
     readonly value: string | null;
     readonly source:
+      | "cloudshare_v4_environment"
       | "cloudshare_v4_sales_participant_roster"
       | "certalis_sales_trial_enrollment_reconciliation"
       | "not_observed"
@@ -175,6 +178,7 @@ export interface SalesTrialMonitoringParticipant {
 export interface SalesTrialMonitoringObservation {
   readonly freshness: "live" | "stale";
   readonly source:
+      | "cloudshare_v4_environment"
     | "cloudshare_v4_sales_participant_roster"
     | "certalis_sales_trial_enrollment_reconciliation";
   readonly observedAt?: string;
@@ -1507,7 +1511,9 @@ function buildExtendState(
       reason: EXTEND_ACTIVE_PARTICIPANT_REQUIRED,
     };
   }
-  if (isPersistedEnvironmentIneligibleForExtend(enrollment.environmentStatus)) {
+  if (enrollment.v4EnvironmentObservedAt
+    ? !["ready", "suspended", "archived", "preparing"].includes(enrollment.v4EnvironmentStatus ?? "")
+    : isPersistedEnvironmentIneligibleForExtend(enrollment.environmentStatus)) {
     return {
       enabled: false,
       reason: "CloudShare does not currently report this retained environment as eligible for extension.",
@@ -1522,9 +1528,10 @@ function buildExtendState(
 function projectRetainedEnvironment(
   enrollment: Pick<
     SalesTrialEnrollment,
-    "cloudShareRosterEnvironmentReference" | "environmentStatus" | "lastReconciledAt"
+    "cloudShareRosterEnvironmentReference" | "environmentStatus" | "lastReconciledAt" | "v4EnvironmentStatus" | "v4EnvironmentObservedAt"
   >,
 ): SalesTrialMonitoringParticipant["environment"] {
+  if (enrollment.v4EnvironmentObservedAt) return projectSalesParticipantV4Environment(enrollment.v4EnvironmentStatus, enrollment.v4EnvironmentObservedAt) as SalesTrialMonitoringParticipant["environment"];
   if (
     enrollment.environmentStatus &&
     isProjectableSalesParticipantRosterEnvironment(enrollment.environmentStatus)
@@ -1620,11 +1627,12 @@ function applyEnvironmentObservation(
 ): SalesTrialEnrollment {
   return {
     ...enrollment,
-    environmentStatus:
-      observation.persistedStatus ??
-      enrollment.environmentStatus,
+    environmentStatus: observation.source === "cloudshare_v4_environment"
+      ? enrollment.environmentStatus
+      : observation.persistedStatus ?? enrollment.environmentStatus,
+    ...(observation.source ? { v4EnvironmentStatus: observation.providerStatus, v4EnvironmentObservedAt: observedAt } : {}),
     observedExpirationTime: observation.expiry.raw,
-    lastReconciledAt: observedAt,
+    lastReconciledAt: observation.source === "cloudshare_v4_environment" ? enrollment.lastReconciledAt : observedAt,
     updatedAt: observedAt,
   };
 }
@@ -1973,6 +1981,12 @@ async function recordExtensionGuardDenied(
   ]);
 }
 
+function environmentExchangeSurface(exchange: { readonly request: unknown } | undefined): string {
+  const path = (exchange?.request as { readonly path?: unknown } | undefined)?.path;
+  return typeof path === "string" && /^\/v4\/environments(?:\/|$)/.test(path)
+    ? "cloudshare.v4.environments" : "cloudshare.v3.environments";
+}
+
 async function recordExtensionSuccess(
   deps: SalesTrialEnrollmentDeps,
   request: SalesTrialParticipantEnvironmentExtendRequest,
@@ -2009,10 +2023,10 @@ async function recordExtensionSuccess(
           ? { environmentId: canonicalEnvironmentId }
           : {}),
       },
-      request: primaryExchange?.request as Record<string, unknown> | undefined,
-      response: primaryExchange?.response as Record<string, unknown> | undefined,
+      request: (primaryExchange ?? httpExchanges.at(-1))?.request as Record<string, unknown> | undefined,
+      response: (primaryExchange ?? httpExchanges.at(-1))?.response as Record<string, unknown> | undefined,
       details: {
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: environmentExchangeSurface(primaryExchange ?? httpExchanges.at(-1)),
         attemptedOperation: primaryExchange ? "extend_environment" : "observe_extended_environment",
         expirationTime,
         ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
@@ -2034,7 +2048,7 @@ async function recordExtensionSuccess(
         offeringId: request.offeringId,
         expirationTime,
         attemptedOperation: primaryExchange ? "extend_environment" : "observe_extended_environment",
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: environmentExchangeSurface(primaryExchange ?? httpExchanges.at(-1)),
       },
     }),
   ]);
@@ -2073,7 +2087,7 @@ async function recordExtensionExchangeSteps(
         parentWorkflow: "sales_trial.offering.environment.extend",
         sequence: index + 1,
         totalSteps: exchanges.length,
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: environmentExchangeSurface(exchange),
         attemptedOperation: salesTrialAttemptedOperationForPath(
           (exchange.request as { readonly path?: unknown }).path,
         ),
@@ -2118,7 +2132,7 @@ async function recordExtensionFailure(
       request: httpExchanges[httpExchanges.length - 1]?.request as Record<string, unknown> | undefined,
       response: httpExchanges[httpExchanges.length - 1]?.response as Record<string, unknown> | undefined,
       details: {
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: environmentExchangeSurface(httpExchanges.at(-1)),
         attemptedOperation: salesTrialAttemptedOperationForPath(lastRequest?.path),
         failureMode: reason,
         ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
@@ -2138,7 +2152,7 @@ async function recordExtensionFailure(
       correlationId,
       details: {
         offeringId: request.offeringId,
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: environmentExchangeSurface(httpExchanges.at(-1)),
         attemptedOperation: salesTrialAttemptedOperationForPath(lastRequest?.path),
         failureMode: reason,
       },
@@ -2178,7 +2192,7 @@ async function extensionFailure(
   );
   const httpExchanges = requestExchange
     ? context
-      ? [...completedExchanges, requestExchange]
+      ? [...completedExchanges, ...completedEnvironmentExchanges(error), requestExchange]
       : completedExchanges
     : completedExchanges;
   const failureMode =
@@ -2218,7 +2232,7 @@ async function extensionFailure(
           }
         : {}),
       details: {
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: salesTrialIntegrationSurfaceForPath(requestExchange?.request?.path),
         attemptedOperation,
         failureMode,
         ...(deps.cloudshareObserver ? { exchangeCount: httpExchanges.length } : { httpExchanges }),
@@ -2238,7 +2252,7 @@ async function extensionFailure(
       correlationId,
       details: {
         offeringId: request.offeringId,
-        integrationSurface: "cloudshare.v3.environments",
+        integrationSurface: salesTrialIntegrationSurfaceForPath(requestExchange?.request?.path),
         attemptedOperation,
         failureMode,
       },
@@ -2258,6 +2272,7 @@ function salesTrialIntegrationSurfaceForPath(path: unknown): string {
   if (typeof path !== "string") {
     return "portal.sales_trial";
   }
+  if (path.includes("/environments")) return "cloudshare.v4.environments";
   if (path.includes("/envs")) {
     return "cloudshare.v3.environments";
   }
@@ -2280,12 +2295,13 @@ function salesTrialAttemptedOperationForPath(path: unknown): string {
   if (typeof path !== "string") {
     return "portal_guard";
   }
-  if (path === "/api/v3/envs" || path === "/envs") {
+  if (path === "/v4/environments" || path === "/environments" || path === "/api/v3/envs" || path === "/envs") {
     return "resolve_environment_for_project";
   }
-  if (path.includes("/envs/actions/extend")) {
+  if (path.includes("/envs/actions/extend") || /^\/(?:v4\/)?environments\/[^/]+\/extend$/.test(path)) {
     return "extend_environment";
   }
+  if (path.includes("/environments/")) return "observe_environment";
   if (path.includes("/envs/actions/getextended")) {
     return "observe_extended_environment";
   }
