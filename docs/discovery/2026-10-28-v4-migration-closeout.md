@@ -3,8 +3,10 @@
 Inventory baseline: `3f324b2a1b34eb455325b70c2ebf7165443df7ea`, after A–D merged.
 This record separates source inspection, published contracts and prior acceptance from fresh
 closeout verification. It does not authorize new capabilities, live writes or retained-asset cleanup.
-**#474 remains BLOCKED, draft and unmerged.** Fresh verification below does not satisfy all
-required browser gates. No acceptance waiver, merge, issue closure or worktree archive is authorized.
+**Latest status (2026-10-28):** the bounded additional Candidate run below satisfies the previously
+missing browser gates. Final exact-head QA, Standards and Spec/security review remain required;
+PR477 is still draft/unmerged at this documentation checkpoint. Earlier blocked entries remain
+dated evidence, superseded only by the specific later proof.
 
 ## Production call and consumer inventory
 
@@ -244,3 +246,53 @@ while the current child423 remains an observed synthetic failure, never fresh su
 exact-head independent reviews/source equivalence remain required. PR477 stays draft/unmerged,
 #474 and parent#467 incomplete. The report's unproved fresh journey wording describes an evidence
 limit, not a new requirement or waiver. This amendment changes documentation only.
+
+### Human-designated browser personas (2026-10-28)
+
+The human subsequently specified **Candidate 1**, **Owner Admin** and **Foreign Admin** as the
+current profile names. Follow the durable [CloudShare browser-persona isolation protocol](../architecture/integration-slice-protocol.md#browser-persona-isolation-for-cloudshare-qa):
+one logged-in CloudShare persona per browser session, dedicated profiles, and verification of both
+portal Customer/role and actual CloudShare viewer identity. Different tabs or normal windows in
+one profile, or two Incognito windows in one profile, are not separate sessions. Earlier tool
+labels remain historical. This requirement does not establish the cause of earlier browser
+timeouts; the missing Blueprint fixture and admission-guard failure have separate evidence.
+
+### Latest Candidate acceptance and final cleanup (2026-10-28)
+
+The parent authorized one additional Candidate-only synthetic UI Resume/Suspend pair from source
+`2729cdda`, after independent preparation audits. A new external copy added only the exact
+Blueprint GET fixture; isolated typed adapter/guard checks were RED423 then GREEN with the saved
+default Snapshot. This fixed the known fixture gap without changing production code or broadening
+provider routes. No live-provider request, new live asset, invitation or Trial action occurred.
+
+| Gate | Actual additional-run proof |
+| --- | --- |
+| Resume and local admission | One real Resume click at13:05:54.088 UTC (action time, not HTTP-response time), portal HTTP200, one synthetic bodyless v4 Resume204 and exact-ID GET readbacks. Clock base715069ms retained prior714250ms. Blueprint GET succeeded and `/enter` returned302. Parent showed Exam window open / Suspend lab; the UI-created child visibly showed the exact localhost synthetic viewer and “No CloudShare connection.” Its HTTP status was not captured; no child200 or live guest claim. |
+| Suspend and clock | One real Suspend click at13:09:46.065 UTC; exact Ready GET at13:09:46.620, bodyless synthetic POST204 at.628, exact Suspended GET at.639 and portal HTTP200. Persisted Attempt suspended, clock paused946214ms, startedAt null, runtime command0; actual parent showed Lab suspended / Resume exam. |
+| Console / ordinary responses | Eleven saved warn/error captures had empty entries, including parent and existing child before/after Suspend and parent after child closure. Actual Resume/Suspend Network HTTP200 bodies excluded synthetic Environment ID, local viewer URL and body sentinels; buffers reported truncated=false / hasMore=false. These are captured-flow guarantees, not arbitrary-header or live-tenant claims. |
+| Isolation and preserved history | Trial held ambiguity1, ENDING0 and prior Sales finished1 unchanged. New commands are exactly UI Resume1/Suspend1, Extend0, API cleanup0. Earlier UI Resume1/Suspend0 and API cleanupSuspend1 remain separate history. The new result does not rewrite the earlier failed child or lost snapshot. |
+
+The actual local child stayed open through the post-Suspend console checks, then was closed;
+the paused Candidate screenshot was saved. A stale tab401 before the run's normal login is
+recorded separately, not an authenticated workflow failure. Owning/foreign Admin Support,
+protected403 body evidence and ordinary-surface checks remain the separately accepted persona
+run. Historical A–D live proof, including C302/guest and D manual continuity, is reused only
+within the source-equivalence limits above. Fresh real CloudShare guest verification is not claimed.
+
+Independent QA and Spec accepted this bounded actual Candidate interaction/clock/console proof.
+The report `qa-issue-474-blueprint-prep-20261028T125024Z/candidate-execution-qa-report.md` was read
+in full and its SHA256 checked:
+`4C0CC032FEAA99CD3016605BB3B0D1D8A6A72F5D5D1998AEC5E94008BFC1C0A0`.
+The new38-file execution manifest has SHA256
+`32CE19D08398B2445FE7E573118058E361B568D44F84FA3CDDDF4FE1971BA0F4`, distinct from the old persona
+manifest. New post-action DB is `C463683E0B277AF723130259169659099F7752601CA1362A2C9EA42F4C3C15B6`;
+new ledger is `389B49FB050732533095CD4ABA7DE36DD872C1ADD8BE368129C128CBE755D165`.
+Original7, persona38 and all59 inventoried persona top-level files remain unchanged. Of the prep18
+manifest entries, only intentionally exercised working DB and ledger changed; the other16 match.
+The earlier unrecoverable12:31 working-snapshot loss remains disclosed above.
+
+Owned processes105736/2468 stopped;3025/3026 are free and the existing3000 PID88380 is unchanged.
+Primary checkout/DB and retained A–D/#350/#351 assets remain untouched; new evidence is preserved
+externally. The required functional evidence is now assembled, with no acceptance waiver.
+Final exact-head QA/source-equivalence, Standards and Spec/security results must all return clean
+before merge. No merge, issue closure or worktree archive is claimed by this update.
