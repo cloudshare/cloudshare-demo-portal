@@ -4,6 +4,7 @@ import type {
   CloudShareDetailedResult,
   CloudShareRequestDiagnostics,
   CloudShareResponseDiagnostics,
+  V4RequestSpec,
 } from "./client";
 import type { CloudShareResourceLister } from "@/domain/resource-sync";
 
@@ -111,6 +112,7 @@ const blueprintSummarySchema = z.object({
 });
 
 const policySummarySchema = z.object({
+  projectId: z.string().min(1),
   id: z.string().min(1),
   name: z.string().min(1),
 });
@@ -118,8 +120,9 @@ const policySummarySchema = z.object({
 const policyDetailSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  runtimeLeaseMinutes: z.number().int().positive().optional(),
-  storageLeaseMinutes: z.number().int().positive().optional(),
+  projectId: z.string().min(1),
+  runtimeMinutes: z.number().int().positive().optional(),
+  storageMinutes: z.number().int().positive().optional(),
 });
 
 export interface CloudShareBlueprintSnapshot {
@@ -177,7 +180,7 @@ export interface CloudShareExamAuthoringSourceOptions {
  * HTTP exchange at this adapter boundary lets API handlers persist redacted,
  * supportable evidence without coupling domain code to CloudShare wire models. */
 export interface CloudShareSalesItemResourceSource {
-  readProjects(): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string }>>>;
+  readProjects(): Promise<{ data: Array<{ id: string; name: string }>; reads: readonly CloudShareDetailedResourceRead<unknown>[] }>;
   readRegions(): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string; friendlyName?: string }>>>;
   readProjectBlueprints(projectId: string): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string }>>>;
   readProjectBlueprintDetails(projectId: string, blueprintIds: readonly string[]): Promise<readonly CloudShareDetailedResourceRead<CloudShareBlueprintDetail>[]>;
@@ -214,7 +217,33 @@ export function createCloudShareResourceDiscovery(client: CloudShareClient) {
     return { data: detailed.data, ...toDiagnosticExchange(detailed), integrationSurface };
   }
   return {
-    readProjects: () => read("/projects", projectListSchema, "cloudshare.v3.projects"),
+    async readProjects(onPage?: (read: CloudShareDetailedResourceRead<unknown>) => Promise<void>) {
+      const data: Array<{ id: string; name: string }> = [];
+      const reads: CloudShareDetailedResourceRead<unknown>[] = [];
+      let count: number | undefined;
+      try {
+        do {
+          const detailed = await requestV4WithDiagnostics(client, {
+            method: "GET", path: "/projects",
+            query: { Count: "true", Offset: String(data.length), Limit: "100" },
+            schema: z.object({ count: z.number().int().nonnegative(), items: projectListSchema.max(100) }).refine((page) => {
+              const ids = [...data, ...page.items].map((project) => project.id);
+              return (count === undefined || page.count === count) &&
+                ids.length <= page.count && new Set(ids).size === ids.length &&
+                (page.items.length > 0 || ids.length === page.count);
+            }, "Project pagination was incomplete or inconsistent; refresh discovery."),
+          });
+          const page = { data: detailed.data, ...toDiagnosticExchange(detailed), integrationSurface: "cloudshare.v4.projects" };
+          reads.push(page);
+          await onPage?.(page);
+          count = detailed.data.count;
+          data.push(...detailed.data.items);
+        } while (data.length < count);
+      } catch (error) {
+        throw new CloudShareSalesResourceReadError(reads, error);
+      }
+      return { data, reads };
+    },
     readRegions: async () => {
       const result = await read("/regions", regionListSchema, "cloudshare.v3.regions");
       return { ...result, data: result.data.map((region) => ({
@@ -243,13 +272,23 @@ export function createCloudShareResourceDiscovery(client: CloudShareClient) {
         diagnosticSummary: summarizeBlueprintDetailForDiagnostics(detail),
       } };
     },
-    readProjectPolicies: (projectId: string) => read(`/projects/${projectId}/policies`, policyListSchema, "cloudshare.v3.projects.policies"),
+    readProjectPolicies: async (projectId: string) => {
+      const detailed = await requestV4WithDiagnostics(client, {
+        method: "GET", path: `/projects/${encodeURIComponent(projectId)}/policies`, query: { Count: "true" },
+        schema: z.object({ count: z.number().int().nonnegative(), items: policyListSchema }).refine((page) =>
+          page.count === page.items.length && page.items.every((policy) => policy.projectId === projectId) &&
+          new Set(page.items.map((policy) => policy.id)).size === page.items.length,
+        "Policy list was incomplete or belonged to another Project."),
+      });
+      return { data: detailed.data.items, ...toDiagnosticExchange(detailed), integrationSurface: "cloudshare.v4.projects.policies" };
+    },
     readPolicyDetail: async (projectId: string, policy: { id: string; name: string }): Promise<{ read: CloudShareDetailedResourceRead<z.infer<typeof policyDetailSchema>>; policy: CloudShareExamAuthoringPolicy }> => {
-      const result = await read(`/projects/${projectId}/policies/${policy.id}`, policyDetailSchema, "cloudshare.v3.projects.policy_detail");
+      const detailed = await requestV4WithDiagnostics(client, { method: "GET", path: `/projects/${encodeURIComponent(projectId)}/policies/${encodeURIComponent(policy.id)}`, schema: policyDetailSchema.refine((detail) => detail.id === policy.id && detail.projectId === projectId, "Policy identity did not match the requested Project and Policy.") });
+      const result = { data: detailed.data, ...toDiagnosticExchange(detailed), integrationSurface: "cloudshare.v4.projects.policy_detail" };
       return { read: result, policy: {
         id: policy.id, name: policy.name,
-        runtimeLeaseMinutes: result.data.runtimeLeaseMinutes ?? null,
-        storageLeaseMinutes: result.data.storageLeaseMinutes ?? null,
+        runtimeLeaseMinutes: result.data.runtimeMinutes ?? null,
+        storageLeaseMinutes: result.data.storageMinutes ?? null,
         diagnosticRequest: result.request, diagnosticResponse: result.response,
       } };
     },
@@ -295,10 +334,10 @@ export function createCloudShareSalesItemResourceSource(client: CloudShareClient
  * refreshed via the Sync Resources admin action rather than hard-coded.
  *
  * NOTE (assumptions to verify against a live tenant, isolated in this module):
- * - Projects: GET /projects (v3 Classic)
+ * - Projects: GET /projects (v4 Infrastructure, all pages)
  * - Regions: GET /regions (v3 Classic)
  * - Blueprints: GET /projects/{id}/blueprints (v3 Classic)
- * - Policies: GET /policies (v3 Classic)
+ * - Policies: GET /projects/{id}/policies (v4 Infrastructure, active policies)
  */
 
 const projectListSchema = z.array(projectSchema);
@@ -379,6 +418,12 @@ async function requestV3WithDiagnostics<T>(
   };
 }
 
+async function requestV4WithDiagnostics<T>(client: CloudShareClient, spec: V4RequestSpec<T>) {
+  if (client.requestV4Detailed) return client.requestV4Detailed(spec);
+  const data = await client.requestV4(spec);
+  return { data, request: { method: spec.method, path: spec.path, ...(spec.query ? { query: spec.query } : {}) }, response: { status: 200, body: data } };
+}
+
 export function createCloudShareResourceLister(
   client: CloudShareClient,
   options: CloudShareResourceListerOptions = {},
@@ -390,26 +435,17 @@ export function createCloudShareResourceLister(
 
   function loadProjects(): Promise<Array<{ id: string; name: string }>> {
     if (!projectsPromise) {
-      projectsPromise = requestV3WithDiagnostics(client, {
-        method: "GET",
-        path: "/projects",
-        schema: projectListSchema,
-      })
-        .then(async (detailed) => {
-          const projects = detailed.data;
-          await options.onReadSuccess?.({
-            operation: "cloudshare.resource_sync.projects.read",
-            integrationSurface: "cloudshare.v3.projects",
-            path: "/projects",
-            resourceType: "project",
-            ...toDiagnosticExchange(detailed),
-          });
-          return projects;
-        })
+      projectsPromise = createCloudShareResourceDiscovery(client).readProjects(async (read) => {
+        await options.onReadSuccess?.({
+          operation: "cloudshare.resource_sync.projects.read",
+          path: "/projects", resourceType: "project", ...read,
+        });
+      }).then((result) => result.data)
         .catch(async (error) => {
+          if (error instanceof CloudShareSalesResourceReadError) error = error.cause;
           await options.onReadFailure?.({
             operation: "cloudshare.resource_sync.projects.read",
-            integrationSurface: "cloudshare.v3.projects",
+            integrationSurface: "cloudshare.v4.projects",
             path: "/projects",
             resourceType: "project",
             error,
@@ -509,19 +545,14 @@ export function createCloudShareResourceLister(
         projects.map(async (project) => {
           const path = `/projects/${project.id}/policies`;
           try {
-            const detailed = await requestV3WithDiagnostics(client, {
-              method: "GET",
-              path,
-              schema: policyListSchema,
-            });
-            const result = detailed.data;
+            const read = await createCloudShareResourceDiscovery(client).readProjectPolicies(project.id);
+            const result = read.data;
             await options.onReadSuccess?.({
               operation: "cloudshare.resource_sync.policies.read",
-              integrationSurface: "cloudshare.v3.projects.policies",
               path,
               resourceType: "policy",
               resourceIds: { projectId: project.id },
-              ...toDiagnosticExchange(detailed),
+              ...read,
             });
             return result.map((policy) => ({
               id: policy.id,
@@ -530,7 +561,7 @@ export function createCloudShareResourceLister(
           } catch (error) {
             await options.onReadFailure?.({
               operation: "cloudshare.resource_sync.policies.read",
-              integrationSurface: "cloudshare.v3.projects.policies",
+              integrationSurface: "cloudshare.v4.projects.policies",
               path,
               resourceType: "policy",
               resourceIds: { projectId: project.id },
@@ -568,9 +599,12 @@ export function createCloudShareExamAuthoringSource(
   }
   return {
     async listProjects() {
-      const read = await discovery.readProjects();
-      await observe(read, "cloudshare.resource_sync.projects.read", "/projects", "project");
-      return read.data;
+      try {
+        const result = await discovery.readProjects((page) => observe(page, "cloudshare.resource_sync.projects.read", "/projects", "project"));
+        return result.data;
+      } catch (error) {
+        throw error instanceof CloudShareSalesResourceReadError ? error.cause : error;
+      }
     },
     async listRegions() {
       const read = await discovery.readRegions();

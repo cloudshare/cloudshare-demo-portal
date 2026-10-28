@@ -2,7 +2,12 @@
 
 This folder holds durable architecture planning artifacts that are not ADRs.
 
-## Infrastructure deepening status (2026-10-23)
+## Infrastructure deepening status (2026-10-28)
+
+The subsequent #467 A–D migration is merged through `3f324b2a`. See the
+[current call-site and evidence inventory](../discovery/2026-10-28-v4-migration-closeout.md).
+The original refactor verification reports retain their dated scope; the transport descriptions
+below reflect the migrated implementation.
 
 **SHIPPED MAIN:** #453's two implementation slices are merged: environment observations/commands
 #454 in [PR456](https://github.com/cloudshare/cloudshare-demo-portal/pull/456)
@@ -15,10 +20,10 @@ new capability, schema change or universal lifecycle engine. Certification, Sale
 Session and Sales Trial eligibility, clocks, persistence transitions and dispatch recovery stay
 with their owners. Sales Trial lifecycle extraction requires separate agreement.
 
-**UNMERGED PR448:** Cancellation remains outside shipped main at its retained QA head
-`1fd54696684964cdf72146dce11c8afb7165b93c`. Its Preparing-state gate remains open; it must rebase
-and repeat exact-head review/QA. The compatibility projection described below does not waive that
-gate or authorize changes to retained QA assets.
+**SHIPPED CANCELLATION:** #351 / PR448 is merged in this baseline, including the bounded
+Preparing eligibility repair. Its exact-target Preparing→Archived typed probe is not full UI
+cancellation proof; preserve the [dated verification](../verification/issue-351-cancellation.md)
+and retained assets/history. The older Oct23 unmerged statement remains historical.
 
 **PENDING:** #411 (post-provisioning Trial RDP download) is a proposed follow-on capability,
 requiring confirmation before implementation. The refactor completion is not its authorization.
@@ -58,30 +63,31 @@ named state, parsed expiry, protected exchange evidence and the existing persist
 Session extension, Trial extension and Trial ending consume this interface. Eligibility, clocks,
 dispatch fences, exact identity checks and recovery remain with their respective lifecycle.
 
-The CloudShare environment module owns string/numeric normalization, owner/Project resolution,
-getextended reads and expiry parsing. Certification still ignores numeric-only status for its
+The CloudShare environment module owns string/numeric normalization, exact owner/Project resolution,
+paginated v4 Environment list/detail reads and expiry parsing. Certification still ignores numeric-only status for its
 runtime state. Session expiry accepts ISO offset/Z and RFC GMT; Trial retains JavaScript Date
 acceptance. Snapshot has no Trial persisted label, so reconciliation retains the previous label.
-Session and Trial extension resolve environment IDs through owner/Project reads. Trial ending
-preserves its existing behavior of passing roster environment IDs directly to getextended;
-this refactor does not change that correlation path. Suspend, Resume, Archive and Extend share
-a single-dispatch v3 text transport; Archive is unchanged. Certification
+Session and Trial extension and Trial ending resolve opaque Environment IDs through owner/Project
+reads; numeric roster references remain separate evidence. Suspend, Resume and default Extend
+use bodyless v4 POST with empty204 acknowledgement and authoritative observation. Archive retains
+its single-dispatch v3 PUT/query transport, never Environment DELETE. Certification
 and Sales retain their different historical fallback evidence for clients without detailed reads.
 
 `integrations/cloudshare/sales-environment.ts` remains a compatibility projection over the semantic
-implementation for existing numeric persistence/display consumers and unmerged cancellation PR448.
+implementation for existing numeric persistence/display consumers and shipped cancellation.
 Its source methods, optional methods, error class identity and returned raw evidence remain intact.
 The persisted numeric decoder and separate roster provenance are intentionally retained: removing
-them requires a coordinated persistence/projection migration, outside this slice. PR448 must rebase
-and repeat exact-head review/QA before proceeding; this bridge neither changes nor waives its
-Preparing-state gate. See [environment-module-verification.md](environment-module-verification.md).
+them would discard required compatibility/history. New observations carry explicit v4 status/source/time.
+See the historical [environment-module-verification.md](environment-module-verification.md) and
+the current migration inventory for their different evidence boundaries.
 
 ## Resource discovery
 
 `createCloudShareResourceDiscovery` in `integrations/cloudshare/resources.ts` owns the actual
 single-resource reads and normalization for Projects, Regions, Project Blueprints, Blueprint
 detail/Snapshots, Project Policies and Policy detail. Both Exam and Sales Item authoring adapters
-use that interface. It owns the existing v3 paths, schemas, default Snapshot/Region projection,
+use that interface. Projects and Project Policy list/detail use v4; Blueprint/default Snapshot
+and VMware Regions retain v3. It owns schemas, complete Project pagination, default Snapshot/Region projection,
 missing timing evidence and detailed/fallback exchange conversion. Policy discovery returns the
 normalized authoring Policy alongside the original parsed detail read: list identity and name
 remain authoritative for authoring, while Item completed-read evidence keeps its original shape.
@@ -90,7 +96,8 @@ Exam retains descriptions, awaited diagnostic observers and `Promise.all` failur
 Item retains its summary projection, `allSettled` groups, completed exchanges and first input-order
 failure. Authoring validation, Customer-specific clients, cache/invalidation and diagnostic
 operation/resource anchors remain with their callers. Legacy resource-sync keeps its separate
-cached list workflow. No universal resource engine or v4 transport is introduced.
+cached list workflow, now using the same v4 Project/Policy discovery and retained direct v3
+Region/Blueprint reads. No universal resource engine was introduced.
 
 Deletion test: removing discovery would restore duplicated retrieval and Snapshot/Region/Policy
 normalization in the two authoring adapters. The extraction deletes that duplication; it does not

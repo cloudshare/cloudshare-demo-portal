@@ -263,13 +263,13 @@ function unknownInspection(input: {
         ? "get_training"
         : "get_training",
     integrationSurface: input.environmentExternalId
-      ? "cloudshare.v3.env.get"
+      ? "cloudshare.v4.environments.get"
       : input.trainingId || input.experienceId
         ? "cloudshare.v4.training.get"
         : "cloudshare.v4.training.get",
     method: "GET",
     path: input.environmentExternalId
-      ? `/v3/envs/${input.environmentExternalId}`
+      ? `/v4/environments/${input.environmentExternalId}`
       : input.trainingId
         ? `/v4/trainings/${input.trainingId}`
         : input.experienceId

@@ -162,6 +162,7 @@ function deriveV3OperationSurface(entry: DiagnosticLogTableEntry, surface: strin
 function deriveV4OperationSurface(entry: DiagnosticLogTableEntry, surface: string | null): string | null {
   if (surface !== "cloudshare.v4" || typeof entry.request?.path !== "string") return surface;
   const path = entry.request.path;
+  if (/^\/v4\/environments(?:\/[^/]+)?$/.test(path)) return "cloudshare.v4.environments";
   if (path === "/v4/sales") return "cloudshare.v4.sales";
   if (/^\/v4\/sales\/[^/]+\/salespros$/.test(path)) return "cloudshare.v4.sales.salespros";
   if (/^\/v4\/sales\/[^/]+\/salespros\/invite$/.test(path)) return "cloudshare.v4.sales.salespros.invite";

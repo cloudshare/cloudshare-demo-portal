@@ -160,6 +160,8 @@ model SalesTrialOffering {
 }
 
 model SalesTrialEnrollment {
+  v4EnvironmentStatus String?
+  v4EnvironmentObservedAt DateTime?
   id                                 String   @id
   customerId                         String
   salesTrialOfferingId               String
@@ -189,9 +191,10 @@ model SalesTrialEnrollment {
   @@index([customerId, salesTrialOfferingId, updatedAt])
 }
 
-// Immutable portal-to-CloudShare correlation. Sales Experiences are never
-// deleted by Certalis; this record preserves commercial delivery history.
+// Immutable portal record preserves commercial delivery history. The provider
+// Experience may be deleted only under the approved future-Start cancellation rule.
 model SalesDemoSession {
+  cancellationRequestedAt DateTime?
   extensionCommands SalesParticipantExtensionCommand[]
   id                          String   @id
   customerId                  String
@@ -233,6 +236,8 @@ model SalesDemoSession {
 /// Sales Experience. Invite and monitoring fields are reconciled from
 /// CloudShare; no invitation URL is retained.
 model SalesSessionParticipant {
+  v4EnvironmentStatus String?
+  v4EnvironmentObservedAt DateTime?
   extensionTargets SalesParticipantExtensionTarget[]
   id                          String   @id
   customerId                  String
@@ -511,6 +516,7 @@ model ExamAttempt {
   exam        Exam       @relation(fields: [examId], references: [id], onDelete: Cascade)
   labLaunch   LabLaunch?
   examClock   ExamClock?
+  runtimeCommand ExamAttemptRuntimeCommand?
 
   @@index([candidateId, createdAt])
   @@index([examId, createdAt])
@@ -630,6 +636,8 @@ model AuditTrailEntry {
   @@index([correlationId])
 }
 model SalesParticipantExtensionCommand {
+  /// Shared Session/environment fence for extension and terminal cancellation.
+  operation String @default("extension")
   customerId String
   commandId String
   sessionId String
@@ -656,4 +664,14 @@ model SalesParticipantExtensionTarget {
   @@id([customerId, commandId, salesSessionParticipantId])
   @@unique([customerId, activeParticipantId])
   @@unique([customerId, activeEnvironmentId])
+}
+
+model ExamAttemptRuntimeCommand {
+  examAttemptId String @id
+  customerId String
+  commandId String @unique
+  phase String @default("dispatching")
+  action String
+  environmentId String
+  attempt ExamAttempt @relation(fields: [examAttemptId], references: [id], onDelete: Cascade)
 }

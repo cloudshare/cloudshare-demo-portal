@@ -5,13 +5,15 @@ import type { SalesParticipantWorkspaceAddParticipantResult } from "@/domain/sal
 function fakePrisma() {
   const rows = new Map<string, any>();
   const key = (x: any) => `${x.customerId ?? x.customerId_commandId.customerId}:${x.commandId ?? x.customerId_commandId.commandId}`;
-  return { salesParticipantAddCommand: {
+  const client: any = { salesDemoSession: { findUnique: vi.fn(async () => ({ cancellationRequestedAt: null })) }, salesParticipantAddCommand: {
     findUnique: vi.fn(async ({ where }: any) => where.customerId_commandId ? rows.get(key(where.customerId_commandId)) ?? null : [...rows.values()].find((row) => row.customerId === where.customerId_sessionId_targetKey.customerId && row.sessionId === where.customerId_sessionId_targetKey.sessionId && row.targetKey === where.customerId_sessionId_targetKey.targetKey) ?? null),
     findUniqueOrThrow: vi.fn(async ({ where }: any) => where.customerId_commandId ? rows.get(key(where.customerId_commandId)) : [...rows.values()].find((row) => row.customerId === where.customerId_sessionId_targetKey.customerId && row.sessionId === where.customerId_sessionId_targetKey.sessionId && row.targetKey === where.customerId_sessionId_targetKey.targetKey)),
     create: vi.fn(async ({ data }: any) => { const k = key(data); if (rows.has(k)) throw new Error("unique"); rows.set(k, data); return data; }),
     updateMany: vi.fn(async ({ where, data }: any) => { const row = rows.get(key(where)); if (!row || (where.state && row.state !== where.state) || (where.correlationId && row.correlationId !== where.correlationId)) return { count: 0 }; Object.assign(row, data); return { count: 1 }; }),
     update: vi.fn(async ({ where, data }: any) => { const row = rows.get(key(where)); Object.assign(row, data); return row; }),
-  } } as any;
+  } };
+  client.$transaction = async (run: (tx: any) => Promise<unknown>) => run(client);
+  return client;
 }
 const ok: SalesParticipantWorkspaceAddParticipantResult = { status: 201, body: { outcome: "registered", participantId: "p", contactId: "c", correlationId: "safe" } };
 describe("Sales Participant add command fence", () => {

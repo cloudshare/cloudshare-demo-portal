@@ -65,7 +65,7 @@ async function save(deps: SalesItemDeps, request: SalesItemRequest, id: string |
     const live = await resolveLiveSelections(deps, request, connection, parsed.data, correlationId);
     const input = { customerId: request.customerId, name: parsed.data.name, description: parsed.data.description, project: live.project, blueprints: live.blueprints, policy: live.policy, regions: live.regions, defaultDurationMinutes: live.defaultDurationMinutes };
     const item = id ? await updateItem({ repository: deps.repository, now: deps.now }, { id, ...input }) : await createItem({ repository: deps.repository, now: deps.now, newId: deps.newId }, input);
-    await deps.diagnostics?.record({ source: "sales-items", operation: id ? "sales.item.updated" : "sales.item.created", outcome: "success", customerId: request.customerId, actor: request.actor, subject: { type: "item", id: item.id }, correlationId, message: `Item ${id ? "updated" : "created"} from live CloudShare resources`, externalIds: { itemId: item.id, projectId: item.project.id, policyId: item.policy.id, regionIds: item.regions.map((region) => region.id).join(",") }, details: { integrationSurface: "cloudshare.v3.authoring_resources", blueprintCount: item.blueprints.length, defaultDurationMinutes: item.defaultDurationMinutes } });
+    await deps.diagnostics?.record({ source: "sales-items", operation: id ? "sales.item.updated" : "sales.item.created", outcome: "success", customerId: request.customerId, actor: request.actor, subject: { type: "item", id: item.id }, correlationId, message: `Item ${id ? "updated" : "created"} from live CloudShare resources`, externalIds: { itemId: item.id, projectId: item.project.id, policyId: item.policy.id, regionIds: item.regions.map((region) => region.id).join(",") }, details: { integrationSurface: "cloudshare.authoring_resources", blueprintCount: item.blueprints.length, defaultDurationMinutes: item.defaultDurationMinutes } });
     await audit(deps, request, item.id, id ? "sales.item.updated" : "sales.item.created", "success", correlationId, { projectId: item.project.id, blueprintIds: item.blueprints.map((blueprint) => blueprint.id), policyId: item.policy.id, regionIds: item.regions.map((region) => region.id) });
     return response(id ? 200 : 201, { item });
   } catch (error) {
@@ -74,7 +74,7 @@ async function save(deps: SalesItemDeps, request: SalesItemRequest, id: string |
     const cloudShareError = typed ? error as CloudShareError : undefined;
     const context = cloudShareError?.context;
     const responseStatus = typeof context?.status === "number" ? context.status : typeof (cloudShareError as { status?: unknown } | undefined)?.status === "number" ? (cloudShareError as unknown as { status: number }).status : undefined;
-    const diagnostic = { operation: "sales.item.authoring_resources.read", integrationSurface: typed && typeof context?.integrationSurface === "string" ? context.integrationSurface : "cloudshare.v3.authoring_resources", failureMode: cloudShareError ? failureMode(cloudShareError) : "resource_selection", ...(responseStatus !== undefined ? { responseStatus } : {}) };
+    const diagnostic = { operation: "sales.item.authoring_resources.read", integrationSurface: typed && typeof context?.integrationSurface === "string" ? context.integrationSurface : "cloudshare.authoring_resources", failureMode: cloudShareError ? failureMode(cloudShareError) : "resource_selection", ...(responseStatus !== undefined ? { responseStatus } : {}) };
     await deps.diagnostics?.record({ source: "sales-items", operation: "sales.item.authoring_resources.read", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, correlationId, message: "Item resource validation failed", request: typed ? evidence?.request : { method: "GET", path: "/projects" }, response: typed ? evidence?.response : {}, details: diagnostic });
     await audit(deps, request, id ?? "unpersisted", id ? "sales.item.updated" : "sales.item.created", "failure", correlationId, null);
     if (error instanceof ItemValidationError) return response(400, { error: error.message, correlationId });
@@ -89,7 +89,15 @@ async function resolveLiveSelections(deps: Pick<SalesItemDeps, "cloudshare" | "d
   const candidate = deps.cloudshare.forConnection(connection, { scope: "customer_default", reason: "catalogue_resource_read" }) as unknown;
   if (typeof candidate === "object" && candidate !== null && "listProjects" in candidate) return selectFromAuthoringSource(candidate as CloudShareExamAuthoringSource, input);
   const source = createCloudShareSalesItemResourceSource(candidate as Parameters<typeof createCloudShareSalesItemResourceSource>[0]);
-  const projects = await source.readProjects(); await record(deps, request, correlationId, projects, "project");
+  let projects;
+  try { projects = await source.readProjects(); } catch (error) {
+    if (error instanceof CloudShareSalesResourceReadError) {
+      for (const read of error.completedReads) await record(deps, request, correlationId, read, "project");
+      throw error.cause;
+    }
+    throw error;
+  }
+  for (const read of projects.reads) await record(deps, request, correlationId, read, "project");
   const regions = await source.readRegions(); await record(deps, request, correlationId, regions, "region");
   const blueprints = await source.readProjectBlueprints(input.projectId); await record(deps, request, correlationId, blueprints, "blueprint");
   const details = await source.readProjectBlueprintDetails(input.projectId, input.blueprintIds); for (const detail of details) await record(deps, request, correlationId, detail, "blueprint_detail");

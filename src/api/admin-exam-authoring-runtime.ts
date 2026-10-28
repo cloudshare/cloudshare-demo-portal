@@ -88,7 +88,7 @@ export async function getExamAuthoringBootstrapRuntime(
     if (!capturesDetailedReads) await recordResourceRead(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.projects.read",
-      integrationSurface: "cloudshare.v3.projects",
+      integrationSurface: "cloudshare.v4.projects",
       path: "/projects",
       resourceType: "project",
       response: {
@@ -100,7 +100,7 @@ export async function getExamAuthoringBootstrapRuntime(
     return await handleCloudShareFailure(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.projects.read",
-      integrationSurface: "cloudshare.v3.projects",
+      integrationSurface: "cloudshare.v4.projects",
       path: "/projects",
       resourceType: "project",
       error,
@@ -197,7 +197,7 @@ export async function getProjectResourcesRuntime(
     if (!capturesDetailedReads) await recordResourceRead(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.policies.read",
-      integrationSurface: "cloudshare.v3.projects.policies",
+      integrationSurface: "cloudshare.v4.projects.policies",
       path: `/projects/${request.projectId}/policies`,
       resourceType: "policy",
       resourceIds: { projectId: request.projectId },
@@ -211,7 +211,7 @@ export async function getProjectResourcesRuntime(
         recordResourceRead(deps, {
           customerId: request.customerId,
           operation: "cloudshare.resource_sync.policy_detail.read",
-          integrationSurface: "cloudshare.v3.projects.policy_detail",
+          integrationSurface: "cloudshare.v4.projects.policy_detail",
           path: `/projects/${request.projectId}/policies/${policy.id}`,
           resourceType: "policy_detail",
           resourceIds: { projectId: request.projectId, policyId: policy.id },
@@ -421,7 +421,7 @@ function buildPolicyReadFailureSpec(
     return {
       customerId,
       operation: "cloudshare.resource_sync.policy_detail.read",
-      integrationSurface: "cloudshare.v3.projects.policy_detail",
+      integrationSurface: "cloudshare.v4.projects.policy_detail",
       path: detailFailure.path,
       resourceType: "policy_detail",
       resourceIds: { projectId, policyId: detailFailure.policyId },
@@ -432,7 +432,7 @@ function buildPolicyReadFailureSpec(
   return {
     customerId,
     operation: "cloudshare.resource_sync.policies.read",
-    integrationSurface: "cloudshare.v3.projects.policies",
+    integrationSurface: "cloudshare.v4.projects.policies",
     path: `/projects/${projectId}/policies`,
     resourceType: "policy",
     resourceIds: { projectId },
@@ -452,7 +452,7 @@ function getProjectPolicyDetailFailure(
 
   const normalizedPath = rawPath.startsWith("/api/v3/")
     ? rawPath.slice("/api/v3".length)
-    : rawPath;
+    : rawPath.startsWith("/v4/") ? rawPath.slice("/v4".length) : rawPath;
   const pathWithoutQuery = normalizedPath.split(/[?#]/, 1)[0] ?? normalizedPath;
   const prefix = `/projects/${projectId}/policies/`;
   if (!pathWithoutQuery.startsWith(prefix)) {

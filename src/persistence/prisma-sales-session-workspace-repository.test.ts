@@ -35,6 +35,42 @@ describe("Prisma Sales Session workspace repository", () => {
     await expect(repository.read("customer-a", "session-pending")).resolves.toEqual({ state: "stale" });
   });
 
+  it.each([
+    ["confirmed", true, {}],
+    ["admission only", false, {}],
+    ["different Customer", true, { customerId: "customer-b" }],
+    ["different Session", true, { sessionId: "session-2" }],
+    ["different correlation", true, { commandId: "other-command" }],
+    ["different operation", true, { operation: "extension" }],
+  ] as const)("projects future cancellation Activity from durable completion: %s", async (scenario, finished, overrides) => {
+    const completed = scenario === "confirmed";
+    const rows = [
+      row("cancel-admitted", "corr-cancel", "2026-07-24T09:00:00.000Z", "sales.demo_session.cancel"),
+      ...(finished ? [row("absence-readback", "corr-cancel", "2026-07-24T09:00:00.500Z", "cloudshare.http", "failure")] : []),
+      ...(finished ? [row("cancel-confirmed", "corr-cancel", "2026-07-24T09:00:01.000Z", "sales.demo_session.cancel")] : []),
+    ];
+    const command = {
+      customerId: "customer-a", sessionId: "session-1", commandId: "corr-cancel", experienceId: "sales-1",
+      cancelledAt: "2026-07-24T09:00:00.000Z", actor: { type: "admin", id: "admin-a" },
+      timeZone: "UTC", targetEnd: "2026-07-24T09:00", targets: [], revision: 2, accessState: "pending",
+      finished, deletion: { state: finished ? "confirmed" : "pending", providerStart: "2026-07-25T09:00", timeZone: "UTC" },
+    };
+    const commandRow = { customerId: command.customerId, sessionId: command.sessionId, commandId: command.commandId, operation: "cancellation", state: JSON.stringify(command), revision: command.revision, ...overrides };
+    const repository = createPrismaSalesSessionWorkspaceRepository({
+      salesDemoSession: { findFirst: vi.fn().mockResolvedValue(session()) },
+      diagnosticLogEntry: { findMany: vi.fn().mockResolvedValue(rows) },
+      salesParticipantExtensionCommand: { findMany: vi.fn().mockResolvedValue([commandRow]) },
+    } as never);
+
+    const result = await repository.read("customer-a", "session-1");
+
+    expect(result).toMatchObject({ state: "available", workspace: { activityGroups: [
+      { correlationId: "corr-cancel", outcome: completed ? "success" : "incomplete", summary: completed ? "Sales Session cancelled." : "Business outcome and evidence are incomplete." },
+    ] } });
+    expect(JSON.stringify(result)).not.toMatch(/providerStart|targetEnd|admin-a|accessState/);
+    if (completed && result?.state === "available") expect(result.workspace.activityGroups[0].steps).toEqual(expect.arrayContaining([expect.objectContaining({ outcome: "failure" })]));
+  });
+
   it("groups realistic high-volume child history before applying the workflow limit", async () => {
     const childOperations = ["sales.demo_session.participant_properties.ensured", "sales.demo_session.participant_correlation.backfilled", "sales.demo_session.participant.environment_observed", "sales.demo_session.participant.reconciled"];
     const rows = Array.from({ length: 101 }, (_, i) => row(`child-${i}`, "corr-one", `2026-07-24T09:00:${String(i % 60).padStart(2, "0")}.${String(i).padStart(3, "0")}Z`, childOperations[i % childOperations.length]))

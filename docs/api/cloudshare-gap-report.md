@@ -11,6 +11,55 @@ PR that surfaced the gap.
 
 ---
 
+## Current contract reconciliation (2026-10-28, #474)
+
+The [closeout inventory](../discovery/2026-10-28-v4-migration-closeout.md) records fresh official
+Infrastructure, Experience, Classic v3 and Introduction source URLs/hashes and all production
+consumers after A–D merged. Infrastructure is byte-identical to the preserved 2026-10-26 export.
+Projects/Policies, Environment list/detail, Suspend/Resume and default Extend are now v4.
+Remaining v3 calls are Archive, Blueprint/default Snapshot, VMware Regions, Teams, active Project
+members, timezones and ping. Current Classic documentation still omits Archive and the active
+`/users` GUI query; published Teams GET omits the existing query parameters. These remain explicit
+published-contract gaps supported only within their earlier verified tenant evidence. No fresh
+tenant behavior or universal absence of other APIs is inferred from documentation retrieval.
+Inbound webhooks are separate; no automatic outbound registration is shipped. Dated reports below
+retain the transport and acceptance state at their own observation time.
+
+## Dated observation: #472 suspend/resume QA (2026-10-27)
+
+This is bounded verification evidence, not a new provider-contract discrepancy or closure of any
+existing GAP. At unchanged runtime head `7756114f81f8276362cf547f6b07a356921eae72`, the original
+real UI flow produced Suspend 3 / Resume 2 with 204 and authoritative readbacks. A separate
+coordinator-authorized API preservation Suspend returned 204 then exact GET confirmed Suspended.
+Reported human viewer interaction does not establish causation of the earlier provider Ready/local
+Suspended discrepancy; no provider bug is inferred. No original timing was rewritten.
+
+Two Chrome connection failures sent no additional commands during those attempts; original console
+captures remained incomplete. A later authorized isolated replacement UI flow produced its own
+Suspend 3 / Resume 2, all 204, with clock pauses 62728, 130782 and 185978 ms and Ready resume
+readbacks retaining elapsed time. Explicit Suspend, post-timeout Home and logout settled consoles
+each captured zero warnings/errors, independently completing the three missing gates. Initial
+heartbeat 409 preceded settled admission and later 200. Stage 0's extra `fdprocessedid` attributes
+were absent from HTTP/source and appeared on a neutral script-free form in the same browser;
+only this demonstrated browser-side signature and the independently seen extension-source error
+received environmental attribution. Injector/timing remain unknown; no all-zero-console claim.
+
+Original real Support UI success and synthetic invalid-ID GET 400 diagnostics remain evidence;
+foreign Customer attempt API access returned 404. The synthetic 400 is not valid-missing provider
+404 behavior. Coordinator option 2 accepts unchanged Archive via independent exact-head audit and
+58/58 automated checks; current-ticket live Archive count is zero. Historical B evidence and
+unrelated GAP statuses remain unchanged.
+
+The replacement used 65 migrations and copied existing identities into an isolated DB; the temporary
+same-Candidate credential was restored, original DB/hash unchanged. Final exact provider/local
+state was Suspended, clock paused 185978 ms, pending/session zero; server/jobs stopped and browser
+cleanup recorded. See the [acceptance matrix and preservation record](../discovery/2026-10-26-suspend-resume-v4-migration.md)
+for chronology, evidence hashes and distinct original/replacement expiry. Experience End does not
+prove automatic suspension, nor do retained records guarantee extended retention. Final review and
+lifecycle disposition remain required; no merge or unrelated gap closure is claimed.
+
+---
+
 ## GAP-16 — Sales timezone catalogue and edit semantics require live confirmation
 
 | Field | Detail |
@@ -443,6 +492,34 @@ link results in a login-denied or access-denied error.
 |---|---|
 | **Status** | Confirmed / partially verified — from CloudShare admin and live v3 resource probing |
 | **Verified live** | Partial (resource scoping verified; some response shapes still pending) |
+
+**Current update (2026-10-26, #468 / PR #470):** Project and Policy discovery now use the published
+v4 Infrastructure contract. Independent QA on `e11d67447d691b085165f38eb180f1c155c8c1e2` exercised
+real Exam and Sales authoring controls: selected exact Project/Policy identities, saved disposable
+local catalog records, reopened/refreshed and verified selected-resource validation. Exam runtime
+20160, storage 43200 and manually authored open period 21000 minutes stayed distinct; Sales default
+1440 minutes came from Policy storage. A disposable same-origin form submitted the shipped Sync
+Resources handler (there is no current Resources tab), returning 2 Projects, 3 Regions, 4 Blueprints
+and 4 Policies. Acceptance-tab console contained zero warnings/errors; relevant live checks passed
+3/3. Full details: [migration evidence](../discovery/2026-10-26-project-policy-v4-migration.md).
+
+Protected Support showed a real v4 Policy-detail GET/200 with verbatim timing evidence and masked
+authorization. An authorized invalid-key UI save in the isolated QA Connection produced a real
+OAuth-token prerequisite 403 with `failureMode: http_failure`; ordinary UI stayed generic. QA
+restored valid credentials through UI and confirmed connection testing/Projects recovery. This is
+OAuth failure evidence, not a live Projects-endpoint error-response test.
+
+Exact v4 Project ids were accepted unchanged by retained v3 Blueprint browser reads, Sales
+Project-member preflight and direct Team GET (200, one Team). No Experience was created: write
+compatibility is static code/test mapping only. Live Policy results were consistent with active-only
+listing, but exclusion of a known inactive Policy was not provable with available assets. Team
+Member permission-empty responses remain contract/fixture evidence; no suitable credentials or
+new authorization were used. No provider resource mutation occurred. Region, Blueprint/default-
+Snapshot, Teams, members, timezones, ping and Environment operations retain their existing transports.
+
+**Historical observations and actions (before the 2026-10-26 migration):** The original v3 findings
+below explain the earlier implementation; they do not describe the current Project/Policy transport
+or imply a current Resources tab.
 
 **Observed behaviour**
 
@@ -1144,8 +1221,8 @@ environment was not left running.
 
 | Field | Detail |
 |---|---|
-| **Status** | Unverified — endpoint shape identified during issue #250 QA follow-up and isolated behind the CloudShare environment controller |
-| **Verified live** | No |
+| **Status** | Partially verified — Ready-to-Archived and Preparing-to-Archived confirmed on separate owned Sales Environments; endpoint remains undocumented and other source states remain unverified |
+| **Verified live** | 2026-09-19: issue #351 active cancellation, Ready (2) to Archived (4); 2026-10-26: bounded typed-seam probe, Preparing (8) to Archived (4) |
 
 **Observed behaviour**
 
@@ -1176,6 +1253,12 @@ Live-verify the archive action against a disposable CloudShare environment befor
 documented product contract. Confirm whether the action is idempotent for already-archived
 environments and whether any CloudShare role/RBAC permissions differ from suspend/resume.
 
+**Update (2026-09-19, issue #351):** owned Environment `EN0YJ4FccxfRaT4KGQmnoUWw2`, bound to Experience `EX1gJO4tHEshMyVUT-IAe0sQ2` and local Session `2cdb83d1-fc60-4202-bfcf-abf1edf908e9`, was observed with GET 200/status 2 (Ready), rechecked as 2, archived with PUT 204, and confirmed by exact-ID GET 200/status 4 (Archived). Cancellation command/correlation `541646d1-aaf4-493c-bff1-823f56b122e3` is retained at `2026-09-19T14:45:19.613Z`; v4 End/label PUT and confirming GET returned 200. This is one verified Ready-state transition, not proof of idempotency, RBAC equivalence or support for every status. Earlier status-8 Preparing preflight was rejected locally before any command or provider write. A separate proposed Preparing probe later read status 2 and stopped without direct archive dispatch. Preparing support remains OPEN; neither a success mock, a probe observing Ready nor later human acceptance of the mounted UI proves status-8 eligibility. This is historical evidence from unmerged PR #448; scheduled cancellation rejection and later future-Start deletion proof are recorded under GAP-20.
+
+**Preparing update (2026-10-26, issue #351):** after real UI launch and explicit authorization for this exact Preparing target, Customer `cmri9ggzc00033ep83gj0s2ax`, Session `7435c96f-bc8a-4823-9b74-e800ee4c6fa1`, Experience `EXIbmgLxI1LHZdaQhqyvrbDA2`, and Environment `ENAjRVO5SiJ0A3r1bqcsAubw2` were verified by GET getextended 200/status 8 at `2026-10-26T13:30:54.932Z`, exactly one typed `PUT /api/v3/envs/actions/archive` returning 204, and exact-ID GET 200/status 4 at `2026-10-26T13:30:55.993Z`. This supersedes the earlier OPEN Preparing eligibility finding for this observed transition only. The portal subsequently displayed Concluded/Archived with invitation NotSent and no console warnings/errors. This was a typed-seam archive probe after UI launch, **not** full UI cancellation: no Session End change, deletion, cancellation command or replay occurred. All four Sessions and three Participants, including earlier #350/#351 evidence, remain retained. [Probe audit](https://github.com/cloudshare/cloudshare-demo-portal/pull/448#issuecomment-6417295310); protected local evidence and verification limits are recorded in `docs/verification/issue-351-cancellation.md`. The bounded handler repair admits status 8 at both existing eligibility fences while retaining exact identity checks, durable no-replay dispatch and status-4 confirmation. Idempotency, RBAC equivalence and other source states remain unverified.
+
+**Full UI cancellation update (2026-10-26, issue #351):** the fresh authorized port-3000 flow on Session `8b7c07c1-da57-45ae-a992-36aea05a4f46`, Experience `EXc0fEapLX6svBAptptfaAzw2`, Environment `ENpWuYOY7NhzRDCwJQXS1V5w2` confirmed Preparing at both admission and pre-dispatch, one archive PUT 204 followed by exact-ID Archived readback, then one End/label PUT 200 and confirming GET. Correlation `60d3a79a-a533-4547-a5b5-fb77ffb7782d` finished at revision 6; Support displayed 16 rows, Activity completed at `2026-10-26T14:01:42.575Z`, and Verify confirmed Ended. Browser warnings/errors were empty. This is full UI cancellation evidence, separately from the earlier typed-seam probe. The retained Participant row exposed stale In progress/Preparing fields; the bounded read projection now uses exact confirmed cancellation evidence for Archived, labels its saved confirmation time, and displays portal Access blocked without fabricating provider participation status or a fresh roster observation. All history remains retained. See `docs/verification/issue-351-cancellation.md` for target identities, screenshots and verification limits. No broader status, idempotency or RBAC claim follows.
+
 **Code reference:** `src/integrations/cloudshare/environment-controller.ts`,
 `src/domain/exam-attempt-runtime-lifecycle.ts`,
 `src/api/exam-attempt-early-completion-runtime.ts`
@@ -1183,6 +1266,10 @@ environments and whether any CloudShare role/RBAC permissions differ from suspen
 ---
 
 ## GAP-20 — Experience cleanup is delete-only; no archive/hide lifecycle
+
+**Agreed Sales exception (2026-09-19, issue #351):** the user defines an Experience with current provider Start in the future as not yet run and permits its deletion. The selected implementation uses documented `DELETE /v4/sales/{id}` (204), with fresh provider Start/timezone checks and a separate durable deletion step; all portal records and history remain. Other Experiences retain archive + End behavior. The failed End PUT below is preserved and never replayed. No historical-use attestation is required. Future DELETE was live-verified through the UI on the historical unmerged PR #448 head `76847e4c`: fresh future-Start GET 200, exactly one DELETE 204, then exact-ID GET 404, with portal history retained ([evidence](https://github.com/cloudshare/cloudshare-demo-portal/pull/448#issuecomment-5745245832)). This does not establish Preparing archive eligibility; the unconditional provider endpoint has no documented atomic Start guard.
+
+**Sales cancellation update (2026-09-19, issue #351):** updating an active Sales Experience End succeeded (GAP-19), but scheduled End-before-Start was explicitly rejected. Owned Session `110561c6-26f4-4e3d-b82f-9996686cbb5c` had Start `2026-09-19T16:30:00Z`, with no invitation or launch. Cancellation `26648bd1-d455-4e65-ba3d-027cda70737c` at `2026-09-19T14:52:21.756Z` retained a `no_environment` target; its v4 End PUT returned 400 requiring End greater than scheduledStart (`16:30` UTC). GET confirmed unchanged `notStarted`, Start `2026-09-19T16:30:00Z`, End `2026-09-20T16:30:00Z`, and empty labels. The command remains unfinished with access state `dispatched`; the UI reports needs attention and no write was retried. This observed contract blocked the original scheduled End-update path. The separately authorized future-Start deletion proof above resolves that path for eligible future Experiences without replaying or resetting this failed command. No Start rewrite or deletion was attempted on this earlier target.
 
 **Jira tracking:** [BAC-26400](https://cloudshare.atlassian.net/browse/BAC-26400)
 
@@ -2015,10 +2102,10 @@ tracks the provider acknowledgement defect.
 
 | Field | Detail |
 |---|---|
-| **Status** | Confirmed and mitigated in issue #370 |
+| **Status** | Confirmed; historical v3 mitigation #370, current v4 observation mitigation #469 |
 | **Verified live** | Yes |
 
-**Observed behaviour**
+**Historical v3 evidence (#370)**
 
 The v4 Sales participant roster returns a 19-character numeric `envId`; it is not the
 opaque identifier accepted by v3 Environment actions. The verified resolution chain is
@@ -2026,14 +2113,25 @@ Customer-credential-scoped `GET /api/v3/envs?ownerEmail=<participant>&brief=fals
 exact server-side match to the Session Item Project, then
 `GET /api/v3/envs/actions/getextended?envId=<opaque-v3-id>`.
 
-**Impact on certification use**
+**Historical containment**
 
 Exactly one same-Project match is required. Zero or multiple matches are persisted and
 projected as an explicit needs-attention reason/source. Actual v3 exchanges and opaque IDs
 remain confined to protected Customer-scoped diagnostics; the roster reference is stored
 under a name that does not claim it is a v3 Environment ID.
 
-**Code reference:** `src/integrations/cloudshare/sales-environment.ts`,
+**Current v4 evidence — 2026-10-26 (#469)**
+
+At `80d88a8e54ff83fb2556a87065be78286a0c8261`, real Sales and Trial UI flows verified
+opaque Environment observation through v4 list/detail, with exact normalized owner and Item
+Project binding. The numeric Sales roster reference remains a separate value and is never sent
+as an opaque Environment ID. Certification's training-correlated opaque ID also read successfully
+through v4. Sales cancellation and Trial extension retained their existing v3 command transports
+and confirmed outcomes through v4 readback. New status/time evidence is explicitly v4; old numeric
+and roster evidence remains historical. See the [consumer evidence](../discovery/2026-10-26-environment-v4-migration.md)
+for command counts, Support isolation, and verification limits.
+
+**Code reference:** `src/integrations/cloudshare/environment-observation.ts`, `src/integrations/cloudshare/environments-v4.ts`,
 `src/api/sales-session-participants.ts`
 
 ---
@@ -2060,10 +2158,21 @@ provider request failure and not proof that the participant never consumed an En
 **Impact on Certalis Sales Sessions**
 
 Certalis can display a roster-associated Environment state with its v4 source, and can perform the
-separately labelled v3 owner-and-Project listable-Environment observation. It cannot claim a
+separately labelled v4 owner-and-Project listable-Environment observation. It cannot claim a
 complete historical Environment list or count for a participant in a Sales Experience. The
 undocumented `environmentsGrid` route is not an integration path and must not be used to fill this
 gap.
+
+**Current v4 evidence — 2026-10-26 (#469)**
+
+Real Sales and Trial flows at `80d88a8e54ff83fb2556a87065be78286a0c8261` confirmed current
+opaque Environment reads, separate source/time persistence and unchanged command readback.
+The v4 contract excludes storage-expired Environments and expired Projects. Its `expirationTime`
+is storage deletion, not runtime remaining or Experience End. Live Trial extension/Ending retained
+the Environment and its history; no deletion/history-completeness experiment was performed.
+The dated v3 absence evidence above remains historical. Neither the current v4 observations nor
+an empty list supplies a complete per-participant history/count or proves never-consumed state.
+GAP-33 therefore remains open; GAP-28's Project-member eligibility contract is unaffected.
 
 **Action required (CloudShare contract clarification)**
 
@@ -2126,6 +2235,43 @@ only one worker owns each reconciliation pass.
 
 ## GAP-35 — Live default extension outcome for a retained Trial Environment
 
+**2026-10-27 migration note (#473):** the current command is bodyless v4 POST
+`/v4/environments/{id}/extend`, followed by authoritative v4 observation. One actual automated
+Sales UI extension returned 204, increased storage by 24 hours, coordinated a separate access PUT,
+and displayed completed/confirmed readback. Separate viewer runtime readings increased from 48m
+to 1h43m across elapsed time and rounding. This does not prove exact runtime seconds or preserved
+guest data/work. Trial UI launch/binding/Ready evidence exists, but Trial Extend is held at zero
+because no guest-work witness was obtained. At that earlier checkpoint, independent acceptance reviews kept preserved-work
+proof blocking; structural identity continuity alone was insufficient. A second isolated Trial run
+confirmed Incognito identity/local role controls and resumed the same Environment, but the guest
+remained Connecting and no witness was saved. Correct isolation is not sole-cause proof. Trial
+Extend remains zero; one additional cleanup Suspend confirmed Suspended and owned servers stopped. Scoped live Support success and
+malformed-ID GET 400 evidence passed, alongside audited synthetic HTTP failure/recovery/isolation
+checks. GET 400 is neither valid-missing 404 nor Extend 403 proof. The historical v3 evidence below
+remains historical, not a general v4 eligibility guarantee. See the
+[migration evidence, provenance and blocked gates](../discovery/2026-10-27-default-extension-v4-migration.md).
+
+**2026-10-28 manual Sales update:** independent QA and Spec accepted the human-observed same
+Windows/pfSense application state before/after extension with exact-Environment diagnostics.
+No saved file is mandated by #473; the accepted witness proves observed application continuity,
+not arbitrary guest bytes or saved pfSense configuration. One further bodyless Extend POST 204,
+Ready GET and access PUT 200 increased storage expiry from `2026-10-29T13:53:30Z` to
+`2026-10-30T13:53:30Z`. At that Sales checkpoint, Trial Extend and continuity remained pending and overall acceptance
+was blocked. Port 3025 was left up for the human at that checkpoint; subsequent Trial acceptance
+and cleanup are recorded below. The linked migration record contains the frozen manifest and timing limits.
+
+**2026-10-28 manual Trial update:** independent QA and Spec accepted the same retained Windows
+2022 Notepad document/text before and after one bodyless Extend POST 204 with Ready GETs and
+expiry `2026-10-28T14:19:40Z` to `2026-10-29T14:19:40Z`. Close/reopen with unchanged contents
+is separately human-reported. No new Trial console capture or portal screenshot was collected.
+Live acceptance criteria now pass within the recorded limits; final exact-head reviews/merge
+remain pending, with PR #476 draft/unmerged and issue #473 active. After confirmed viewer closure,
+one guarded Suspend per owned Environment returned 204 and exact GET confirmed Suspended;
+owned servers stopped and ports 3025/3026 are free. Frozen evidence and precise timestamps are
+in the migration record. Earlier Trial Extend-zero and blocked entries remain historical.
+
+
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed |
@@ -2181,5 +2327,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-09-01 (added GAP-35 with the bounded live extension-verification result).
+*Last updated: 2026-10-27 (added bounded #472 observations; existing GAP statuses unchanged).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

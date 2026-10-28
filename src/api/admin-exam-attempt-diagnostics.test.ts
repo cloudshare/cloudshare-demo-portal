@@ -66,7 +66,7 @@ function makeDrilldownServices(
     },
     cloudshareClientFactory: {
       forConnection: vi.fn().mockReturnValue({
-        requestV3: vi.fn().mockResolvedValue({ status: "Running" }),
+        requestV4: vi.fn().mockResolvedValue({ id: "env-external-1", status: "ready", projectId: "p1", ownerEmail: "candidate@helioscx.demo", startTime: "Sat, 20 Jun 2026 09:00:00 GMT", expirationTime: "Sun, 21 Jun 2026 09:00:00 GMT" }),
       }),
     },
     environments: {
@@ -132,7 +132,7 @@ describe("refreshCloudShareEnvironmentStatus", () => {
         message: "CloudShare environment status refresh skipped: missing CloudShare Connection",
         externalIds: { environmentExternalId: "env-external-1" },
         details: expect.objectContaining({
-          integrationSurface: "cloudshare.v3.env",
+          integrationSurface: "cloudshare.v4.environments.get",
           refreshedBy: "admin_exam_attempt_diagnostics",
           reason: "missing_cloudshare_connection",
         }),
@@ -184,10 +184,10 @@ describe("refreshCloudShareEnvironmentStatus", () => {
           environmentExternalId: "env-external-1",
           environmentStatus: "running",
         },
-        request: { method: "GET", path: "/api/v3/envs/{envId}" },
-        response: { status: 200, body: { status: "running" } },
+        request: { method: "GET", path: "/v4/environments/env-external-1" },
+        response: { status: 200, body: expect.objectContaining({ id: "env-external-1", status: "ready", ownerEmail: "candidate@helioscx.demo", projectId: "p1" }) },
         details: expect.objectContaining({
-          integrationSurface: "cloudshare.v3.env",
+          integrationSurface: "cloudshare.v4.environments.get",
           refreshedBy: "admin_exam_attempt_diagnostics",
           observedAt: expect.any(String),
         }),
@@ -214,7 +214,7 @@ describe("handleGetAdminExamAttemptDiagnosticDrilldown", () => {
       request: { method: "POST", path: "/api/exam/resume" },
       response: { status: 502 },
       details: {
-        integrationSurface: "cloudshare.v3.env.action.resume",
+        integrationSurface: "cloudshare.v4.environments.get.action.resume",
         failureMode: "http_status",
       },
     });
@@ -365,14 +365,14 @@ describe("handleGetAdminExamAttemptDiagnosticDrilldown", () => {
             },
             request: {
               method: "GET",
-              path: "/api/v3/envs/{envId}",
+              path: "/v4/environments/{environmentId}",
             },
             response: {
               status: 200,
               body: { status: "Archived" },
             },
             details: {
-              integrationSurface: "cloudshare.v3.env",
+              integrationSurface: "cloudshare.v4.environments.get",
               refreshedBy: "admin_exam_attempt_diagnostics",
             },
           });

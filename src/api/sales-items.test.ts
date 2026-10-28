@@ -70,7 +70,7 @@ describe("Sales Item API", () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     const result = await handleCreateSalesItem({ ...deps(repository(), source({ listProjects: vi.fn().mockRejectedValue(new CloudShareRequestError("forbidden api-key", 403, { method: "GET", path: "/projects?include=active", requestHeaders: { authorization: "api-key" }, responseHeaders: { "x-request-id": "req-1" }, responseBody: "{\"error\":\"forbidden\"}" })) })), diagnostics: createDiagnosticRecorder({ repository: diagnostics, secrets: ["api-key"] }) }, { customerId: "certalis", body });
     expect(result.status).toBe(502);
-    expect(result.body).toMatchObject({ diagnostic: { integrationSurface: "cloudshare.v3.authoring_resources", failureMode: "http_status", responseStatus: 403 } });
+    expect(result.body).toMatchObject({ diagnostic: { integrationSurface: "cloudshare.authoring_resources", failureMode: "http_status", responseStatus: 403 } });
     const [entry] = await diagnostics.query({ customerId: "certalis" });
     expect(entry.message).not.toContain("api-key");
     expect(entry).toMatchObject({ request: { method: "GET", path: "/projects?include=active", headers: { authorization: "[REDACTED]" } }, response: { status: 403, headers: { "x-request-id": "req-1" }, body: "{\"error\":\"forbidden\"}" } });
@@ -104,7 +104,7 @@ describe("Sales Item API", () => {
       context: {
         method: "GET",
         path: "/projects",
-        integrationSurface: "cloudshare.v3.projects",
+        integrationSurface: "cloudshare.v4.projects",
         status: 503,
         responseBody: { error: "unavailable" },
       },
@@ -112,21 +112,22 @@ describe("Sales Item API", () => {
     const result = await handleCreateSalesItem({ ...deps(repository(), source({ listProjects: vi.fn().mockRejectedValue(brandedFailure) })), diagnostics: createDiagnosticRecorder({ repository: diagnostics }) }, { customerId: "certalis", body });
     const [failure] = await diagnostics.query({ operation: "sales.item.authoring_resources.read", outcome: "failure" });
 
-    expect(result).toMatchObject({ status: 502, body: { diagnostic: { integrationSurface: "cloudshare.v3.projects", failureMode: "http_status", responseStatus: 503 } } });
+    expect(result).toMatchObject({ status: 502, body: { diagnostic: { integrationSurface: "cloudshare.v4.projects", failureMode: "http_status", responseStatus: 503 } } });
     expect(failure).toMatchObject({
       request: expect.objectContaining({ method: "GET", path: "/projects" }),
       response: expect.objectContaining({ status: 503, body: { error: "unavailable" } }),
-      details: expect.objectContaining({ integrationSurface: "cloudshare.v3.projects", failureMode: "http_status", responseStatus: 503 }),
+      details: expect.objectContaining({ integrationSurface: "cloudshare.v4.projects", failureMode: "http_status", responseStatus: 503 }),
     });
   });
 
   it("persists completed policy exchanges before a sibling policy detail failure", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     const client = { requestV3Detailed: vi.fn(async (spec: { path: string; method: string; schema: { parse(value: unknown): unknown } }) => {
-      const values: Record<string, unknown> = { "/projects": [{ id: "project-1", name: "Certalis Project" }], "/regions": [{ id: "region-1", name: "us-west" }], "/projects/project-1/blueprints": [{ id: "bp-1", name: "Foundation" }], "/projects/project-1/blueprints/bp-1": { id: "bp-1", name: "Foundation", createFromVersions: [{ id: "snapshot-1", name: "Default", isDefault: true, regions: ["region-1"] }] }, "/projects/project-1/policies": [{ id: "policy-1", name: "One" }, { id: "policy-2", name: "Two" }], "/projects/project-1/policies/policy-1": { id: "policy-1", name: "One", storageLeaseMinutes: 60 } };
+      const values: Record<string, unknown> = { "/projects": { count: 1, items: [{ id: "project-1", name: "Certalis Project" }] }, "/regions": [{ id: "region-1", name: "us-west" }], "/projects/project-1/blueprints": [{ id: "bp-1", name: "Foundation" }], "/projects/project-1/blueprints/bp-1": { id: "bp-1", name: "Foundation", createFromVersions: [{ id: "snapshot-1", name: "Default", isDefault: true, regions: ["region-1"] }] }, "/projects/project-1/policies": { count: 2, items: [{ projectId: "project-1", id: "policy-1", name: "One" }, { projectId: "project-1", id: "policy-2", name: "Two" }] }, "/projects/project-1/policies/policy-1": { projectId: "project-1", id: "policy-1", name: "One", storageMinutes: 60 } };
       if (spec.path.endsWith("policy-2")) throw new CloudShareRequestError("forbidden", 403, { method: "GET", path: spec.path, responseBody: "{\"error\":\"forbidden\"}" });
       const value = spec.schema.parse(values[spec.path]); return { data: value, request: { method: spec.method, path: spec.path }, response: { status: 200, body: values[spec.path] } };
     }) };
+    Object.assign(client, { requestV4Detailed: client.requestV3Detailed });
     const result = await handleCreateSalesItem({ ...deps(repository(), client), diagnostics: createDiagnosticRecorder({ repository: diagnostics }) }, { customerId: "certalis", body: { ...body, blueprintIds: ["bp-1"], policyId: "policy-1" } });
     expect(result.status).toBe(502);
     const reads = await diagnostics.query({ operation: "sales.item.authoring_resources.read", outcome: "success" });

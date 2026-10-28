@@ -32,3 +32,11 @@ it("does not treat an unknown roster state as a documented display value", () =>
   expect(isProjectableSalesParticipantRosterEnvironment("toString")).toBe(false);
   expect(isProjectableSalesParticipantRosterEnvironment("__proto__")).toBe(false);
 });
+import { projectSalesParticipantV4Environment } from "./sales-participant-environment";
+it("projects a v4 Environment observation without claiming numeric or roster provenance", () => {
+  expect(projectSalesParticipantV4Environment("inGrace", new Date("2026-10-26T18:00:00Z"))).toEqual({ dimension: "cloudshare_environment", value: "In grace", source: "cloudshare_v4_environment", observedAt: "2026-10-26T18:00:00.000Z" });
+});
+import { projectQueueParticipantEnvironment } from "./sales-session-queue";
+it("a newer roster read supersedes a retained v4 observation without relabeling it", () => {
+ expect(projectQueueParticipantEnvironment({ participantName: "Ada", environmentStatus: "Deleted", environmentStatusCode: 2, environmentObservedAt: new Date("2026-10-26T19:00:00Z"), v4EnvironmentStatus: "ready", v4EnvironmentObservedAt: new Date("2026-10-26T18:00:00Z"), attentionReason: null }).observation).toMatchObject({ value: "Deleted", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-10-26T19:00:00.000Z" });
+});

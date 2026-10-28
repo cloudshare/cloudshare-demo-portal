@@ -5,6 +5,8 @@ export type SalesTrialEnrollmentStatus =
   | "retryable_failure";
 
 export interface SalesTrialEnrollment {
+  readonly v4EnvironmentStatus?: string | null;
+  readonly v4EnvironmentObservedAt?: Date | null;
   readonly id: string;
   readonly customerId: string;
   readonly salesTrialOfferingId: string;

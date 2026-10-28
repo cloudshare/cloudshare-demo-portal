@@ -327,6 +327,11 @@ The short version: verify CloudShare protocol assumptions early, keep offline te
 use `.env.e2e.local` for safe live E2E checks, build support diagnostics with the feature, and update
 the gap report as soon as live behavior confirms or contradicts an assumption.
 
+For all QA that logs into CloudShare or relies on a CloudShare persona, follow the
+[browser persona isolation rule](docs/architecture/integration-slice-protocol.md#browser-persona-isolation-for-cloudshare-qa):
+use a dedicated Chrome profile/session per persona; separate tabs or windows do not isolate logins.
+Purely local UI checks do not require a vendor login.
+
 ---
 
 ## Project structure and architecture

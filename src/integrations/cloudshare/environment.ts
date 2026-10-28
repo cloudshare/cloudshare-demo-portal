@@ -1,5 +1,5 @@
-import { mapCloudShareEnvironmentStatus, cloudShareV3EnvironmentStatusCode } from "./environment-observation";
-import { z } from "zod";
+import { mapV4EnvironmentStatus } from "./environment-observation";
+import { readV4Environment } from "./environments-v4";
 import type { EnvironmentStateEvidenceSource, EnvironmentStateReadEvidence } from "@/domain/environment";
 import type { CloudShareClient } from "./client";
 import { CloudShareRequestError } from "./errors";
@@ -10,20 +10,10 @@ import { CloudShareRequestError } from "./errors";
  * actually reads the truth from CloudShare and maps it onto the domain vocabulary.
  *
  * Live training launches discover CloudShare's own `envId` from the v4
- * training-students list. That `envId` is then used for the authoritative v3
+ * training-students list. That `envId` is then used for the authoritative v4
  * environment poll here. All endpoint/path/shape quirks stay isolated in this
  * adapter.
  */
-
-const v3EnvironmentSchema = z
-  .object({
-    statusCode: z.number().int().optional(),
-    status: z.string().min(1).optional(),
-    envStatus: z.string().min(1).optional(),
-  })
-  .refine((value) => typeof value.statusCode === "number" || typeof value.status === "string" || typeof value.envStatus === "string", {
-    message: "Expected CloudShare environment status field",
-  });
 
 // Compatibility exports remain available to external-lease and existing callers.
 export { mapCloudShareEnvironmentStatus, cloudShareV3EnvironmentStatusCode } from "./environment-observation";
@@ -32,14 +22,15 @@ export function createCloudShareEnvironmentSource(
   client: CloudShareClient,
 ): EnvironmentStateEvidenceSource {
   async function readEnvironmentState(environmentExternalId: string): Promise<EnvironmentStateReadEvidence> {
-    const request = { method: "GET", path: `/envs/${environmentExternalId}`, schema: v3EnvironmentSchema } as const;
+    const request = { method: "GET", path: `/v4/environments/${encodeURIComponent(environmentExternalId)}` } as const;
     try {
-      const detailed = client.requestV3Detailed ? await client.requestV3Detailed(request) : null;
-      const env = detailed ? detailed.data : await client.requestV3(request);
+      const detailed = await readV4Environment(client, environmentExternalId);
+      const env = detailed.data;
       const snapshot = {
         environmentExternalId,
-        status: mapCloudShareEnvironmentStatus(env.envStatus ?? env.status ?? "unknown"),
-        ...(cloudShareV3EnvironmentStatusCode(env.statusCode) !== null ? { statusCode: cloudShareV3EnvironmentStatusCode(env.statusCode)! } : {}),
+        status: mapV4EnvironmentStatus(env.status),
+        source: "cloudshare_v4_environment" as const,
+        providerStatus: env.status,
         request: detailed?.request ? { ...detailed.request } : { method: request.method, path: request.path },
         response: detailed?.response ? { ...detailed.response } : { status: 200, body: env },
       };
