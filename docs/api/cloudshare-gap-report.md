@@ -11,6 +11,20 @@ PR that surfaced the gap.
 
 ---
 
+## Current contract reconciliation (2026-10-28, #474)
+
+The [closeout inventory](../discovery/2026-10-28-v4-migration-closeout.md) records fresh official
+Infrastructure, Experience, Classic v3 and Introduction source URLs/hashes and all production
+consumers after A–D merged. Infrastructure is byte-identical to the preserved 2026-10-26 export.
+Projects/Policies, Environment list/detail, Suspend/Resume and default Extend are now v4.
+Remaining v3 calls are Archive, Blueprint/default Snapshot, VMware Regions, Teams, active Project
+members, timezones and ping. Current Classic documentation still omits Archive and the active
+`/users` GUI query; published Teams GET omits the existing query parameters. These remain explicit
+published-contract gaps supported only within their earlier verified tenant evidence. No fresh
+tenant behavior or universal absence of other APIs is inferred from documentation retrieval.
+Inbound webhooks are separate; no automatic outbound registration is shipped. Dated reports below
+retain the transport and acceptance state at their own observation time.
+
 ## Dated observation: #472 suspend/resume QA (2026-10-27)
 
 This is bounded verification evidence, not a new provider-contract discrepancy or closure of any
