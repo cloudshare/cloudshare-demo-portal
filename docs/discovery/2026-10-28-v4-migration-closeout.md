@@ -192,3 +192,55 @@ does not establish complete browser acceptance or replace the independent final-
 PR477 remains draft/unmerged, #474 incomplete and parent #467 not ready for closure. No worktree
 archive, merge, issue closure or blanket acceptance waiver follows from green offline checks or
 accurate evidence reporting. Resume only under the lifecycle owner's next explicit bounded decision.
+
+### Later separated-persona QA and preservation (2026-10-28)
+
+The parent subsequently authorized a bounded run from unchanged source `402e4ee5`, with isolated
+synthetic state and three separate Chrome profiles: Candidate7, owning Admin6 and foreign Admin5.
+All three neutral forms were filled/submitted with empty before/after warn/error captures;
+Admin logins were independent. This chronology supersedes only the earlier unproved gates that
+were actually exercised below. No production code, live provider action or original frozen file
+was changed. The fixture had no live-network fallback; jobs and seed stayed disabled.
+
+| Gate | Actual later evidence and disposition |
+| --- | --- |
+| Owner Support / protected response body | One Verify now click produced a synthetic exact Sales-detail GET403. Owner Support filtered correlation `ec913ec7-a94c-4aa0-9962-ed70a1272c61`, showed three entries and expanded the verbatim synthetic token/passphrase body with Authorization masked. QA and Spec accepted this specific gate. |
+| Ordinary surface / foreign Customer | Captured ordinary Verify HTTP502 response and DOM excluded the synthetic body markers and provider ID. The separately authenticated foreign Admin applied the same correlation filter and saw zero entries, with empty console capture. Its later screenshot timed out; no screenshot is claimed and foreign interaction stopped. QA and Spec accepted the saved interaction/DOM/response evidence. |
+| Candidate Resume | Login200 was followed by an evaluation timeout; a specifically authorized existing-tab observation later confirmed identity and empty console. The root's guessed `Resume` label caused a no-click selector failure, an agent error rather than a browser/product failure. One authorized correction clicked actual `Resume exam`: portal HTTP200 at12:29:30.537 UTC, one synthetic bodyless v4 Resume204, exact Ready readbacks and running clock. |
+| Candidate admission / Suspend / console | Automatic child `/enter` returned423 `snapshot_lookup_failed`: the strict fixture lacked exact v3 Blueprint detail. Final authorized parent observation showed in-progress state but launcher Recovery / entry unavailable and only End exam; Suspend was absent. The child was gone, so no child console could be captured. UI Suspend0; complete Candidate cycle/console remains BLOCKED. No further browser, locator or fixture loop was authorized. |
+| Separate preservation cleanup | Following fresh independent identity/state/fence guards, the parent authorized one authenticated synthetic API Suspend only. Portal HTTP200, synthetic POST204 and exact Suspended readback paused the clock at714250ms with runtime command0. This is cleanup, not UI acceptance: UI Resume1/Suspend0 plus API cleanup Suspend1. Trial ambiguity1, ENDING0 and prior Sales finished/access-confirmed1 remained unchanged; no Extend or Trial route in this run. |
+
+The specific missing fixture route was
+`GET /api/v3/projects/qa474-project/blueprints/qa474-blueprint`; the production Snapshot guard
+correctly failed closed. The remaining blocker is therefore fixture coverage and the resulting
+recovery UI, not connectivity alone, and is not evidence of a new production regression.
+Historical C successful302/guest proof remains separately reusable under exact source equivalence;
+it does not waive the required fresh UI Suspend/control and complete console evidence. Owner final
+console at12:23:40 UTC and Candidate final-parent console at12:36:08 UTC were empty, without a
+claim of complete Candidate child/post-action coverage.
+
+**Preservation incident:** a QA helper accidentally overwrote the working-copy12:31
+`post-resume-snapshot.db` while taking the12:39 pre-cleanup snapshot. The recorded earlier hash
+`91B0583B52F7005C6FF07DC4438DF3D17A37B8A6AEBDCAA5855103716C639158` identifies bytes that are no
+longer recoverable; no reconstruction or uninterrupted-preservation claim is made. Original seven
+frozen files, pre-action DB/key, append ledger/history and a distinct12:39 pre-cleanup DB remain
+intact. The latter hash is `8663F4D16B8A5F9F4EAC040652C4FCED56DF338C777B2CEBA892ADC3EBCC05D5`.
+Independent Spec accepted the truthful available before/after evidence for cleanup only, not QA
+completion. This loss remains a limitation even after a clean final readback.
+
+Final persona report `qa-issue-474-persona-run/persona-qa-report.md`, read in full, has SHA256
+`5075B568ADA7AD57C59B6F1E2E57425D315E0A4387A82D081F1F1AC177FCD5A9`; its final preservation manifest
+has SHA256 `13BA6752A6A073330F904AFCCE2020B075ACB4731B2845E1398DF6D292CC5229`. Both hashes were
+checked without modifying those frozen files. The post-cleanup DB hash is
+`CEAD677C2E4443F7BAD50DCC4219F2A3AD96EDB4FEDFBC2B3069AC8FC7C69A6D`; private ledger/state and key
+remain external. Owned server processes62148/47120 stopped;3025/3026 are free, and the existing
+port3000 listener PID88380 is unchanged. Retained A–D/#350/#351 assets and primary checkout/DB
+remain untouched. No real provider writes, invitations, cleanup retry or worktree archive occurred.
+
+**Current disposition:** admin Support/isolation/nondisclosure gates above are accepted; actual UI
+Suspend and complete Candidate child/settled-console evidence are still blocking. Fresh successful
+admission is not an additional gate: unchanged C302/guest evidence was accepted for bounded reuse,
+while the current child423 remains an observed synthetic failure, never fresh success. Final
+exact-head independent reviews/source equivalence remain required. PR477 stays draft/unmerged,
+#474 and parent#467 incomplete. The report's unproved fresh journey wording describes an evidence
+limit, not a new requirement or waiver. This amendment changes documentation only.
