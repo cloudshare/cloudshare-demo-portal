@@ -212,7 +212,7 @@ export class CloudShareSalesResourceReadError extends Error {
 /** Single-resource retrieval and normalization shared by authoring adapters.
  * Grouping, observer timing, cache and authoring rules belong to the callers. */
 export function createCloudShareResourceDiscovery(client: CloudShareClient) {
-  async function read<T>(path: string, schema: z.ZodType<T, z.ZodType["_def"], unknown>, integrationSurface: string): Promise<CloudShareDetailedResourceRead<T>> {
+  async function read<T>(path: string, schema: z.ZodType<T, unknown>, integrationSurface: string): Promise<CloudShareDetailedResourceRead<T>> {
     const detailed = await requestV3WithDiagnostics(client, { method: "GET", path, schema });
     return { data: detailed.data, ...toDiagnosticExchange(detailed), integrationSurface };
   }
@@ -399,7 +399,7 @@ async function requestV3WithDiagnostics<T>(
   spec: {
     readonly method: "GET" | "POST" | "PUT" | "DELETE";
     readonly path: string;
-    readonly schema: z.ZodType<T, z.ZodType["_def"], unknown>;
+    readonly schema: z.ZodType<T, unknown>;
   },
 ): Promise<{
   data: T;

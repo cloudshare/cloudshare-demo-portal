@@ -118,7 +118,7 @@ const guidedJourneyProgressSchema = z.unknown().transform<ParticipantProgress | 
   const parsed = normalizedProgressSchema.safeParse(normalized);
   if (!parsed.success) {
     for (const issue of parsed.error.issues) {
-      ctx.addIssue(issue);
+      ctx.addIssue({ ...issue });
     }
     return z.NEVER;
   }
@@ -165,7 +165,7 @@ const aggregateGuidedJourneyProgressSchema = z.unknown().transform<AggregateGuid
 
   if (!parsed.success) {
     for (const issue of parsed.error.issues) {
-      ctx.addIssue(issue);
+      ctx.addIssue({ ...issue });
     }
     return z.NEVER;
   }
