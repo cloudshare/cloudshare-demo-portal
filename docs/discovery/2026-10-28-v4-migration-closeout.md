@@ -3,7 +3,8 @@
 Inventory baseline: `3f324b2a1b34eb455325b70c2ebf7165443df7ea`, after A–D merged.
 This record separates source inspection, published contracts and prior acceptance from fresh
 closeout verification. It does not authorize new capabilities, live writes or retained-asset cleanup.
-Fresh #474 browser/check results and final lifecycle disposition must be recorded before closure.
+**#474 remains BLOCKED, draft and unmerged.** Fresh verification below does not satisfy all
+required browser gates. No acceptance waiver, merge, issue closure or worktree archive is authorized.
 
 ## Production call and consumer inventory
 
@@ -128,7 +129,7 @@ diagnostic classification and generic route sanitization are not live outbound r
 | Environment reads / correlation / lease | B Certification runtime, Sales monitoring/cancellation, Trial reopen/ending; independent external-lease dashboard used a local-only fixture bound to already-owned archived Environment | B numeric roster reference remained distinct; API input-rejection400 is not valid-missing404. Early Certification authoring console and child view were not captured. Lifecycle/Admin/Support/lease consoles clean. B: 2509 pass + same four baseline failures, targeted267, safe live3/3. |
 | Suspend / Resume / heartbeat / logout / clock | C replacement real UI S3/R2, all204 with exact readbacks; settled consoles clean and clock retained. Original flow guest/pfSense view continuity; real server302 | Narrow environmental console findings preserved, not blanket zero. Support synthetic invalid-ID400 plus foreign-Customer API404; Archive regression was audit +58 deterministic tests, current C Archive0. C: 2540 pass +same four failures, launcher14, live3/3. |
 | Sales default Extend / separate access End | D automated UI Extend204 + accessPUT200, exact same Environment/expiry and clean captured console. Later human UI extension established observed guest/application continuity | Earlier structural identity alone was insufficient and is not relabelled. Screenshots establish observed state, not arbitrary-byte integrity. D subsequent manual run added one Sales Extend/accessPUT; total2 each. |
-| Trial default Extend / retained work | D human UI test on same enrollment/Environment: Extend204 and Ready200, later storage expiry, same Notepad document; human separately reported reopen | No new manual Trial portal screenshot/console; not an automated Trial run. D's direct human work order superseded its earlier verification method. D:2545 pass +same four baseline failures, independent134, live3/3; real HTTP synthetic126 exchanges/9 targets/no replay remain simulation. |
+| Trial default Extend / retained work | D human UI test on same enrollment/Environment: Extend204 and Ready200, later storage expiry, same Notepad document; human separately reported reopen | No new manual Trial portal screenshot/console; not an automated Trial run. The later actual manual evidence was accepted against the same functional criterion. D:2545 pass +same four baseline failures, independent134, live3/3; real HTTP synthetic126 exchanges/9 targets/no replay remain simulation. |
 | Training / Sales provisioning and Participant properties | C real Schedule and server302; B Sales/Trial real launch; D Sales/Trial creation/registration and retained same identities | Reuse only exact unchanged delivery modules above. No new provider writes or unsolicited invitations are implied. Cohort variants and invitation ambiguity/isolation remain deterministic seams unless fresh run is separately recorded. |
 | Invitations / Guided Journey | No fresh live invocation claimed by this closeout inventory | Existing adapter/handler/persistence tests cover explicit invites, durable ambiguous outcomes and score parsing/correlation. Missing Journey and provider permissions remain observable limitations; no invitation sent merely to obtain evidence. |
 | Archive / future-Start Experience deletion | B actual Ready Archive; #351 separate current Preparing→Archived exact-target typed probe after UI launch, plus historical future-Start Sales DELETE UI evidence | Preserve `docs/verification/issue-351-cancellation.md` and GAP-18 chronology. Preparing probe was not full UI cancellation. Oct23 “unmerged PR448” statements remain dated; PR448 is in E's baseline. No Environment DELETE. |
@@ -143,10 +144,51 @@ and recovery. No new test duplicates are warranted by a documentation-only inven
 
 ## Closeout execution ledger
 
-At inventory preparation, no #474 live provider action, primary checkout change, database change,
-server start or asset cleanup was performed by the implementation role. Fresh full offline
-checks, combined automated browser interactions/console and Support proof, safe live checks,
-independent exact-head reviews, cleanup and final PR/issue state remain the lifecycle owner's
-pending acceptance entries. Prior evidence above is reusable only within its explicit bounds.
-The four inherited CandidateHome failures must be independently reproduced at E's baseline;
-previous reports alone do not waive a new regression.
+### Fresh verification and blocking gaps (2026-10-28)
+
+Independent QA's frozen `qa-issue-474-http/qa-report.md` was read in full and its SHA256 checked:
+`1124BD5AEB5B764F697430300C194C6201F3F783F4637849890F0E0447370D9B`.
+The accompanying private preservation-manifest hash was checked:
+`3FE49A5F330FDD05C439C58876CD1934131639BEDF5C63641F1ECAD68E644951`.
+The evidence directory is external to the worktree under the physical CloudShare Codex profile.
+Private access/configuration, database and raw diagnostic bodies remain there, not in this record.
+
+| Evidence class | Actual fresh result | Boundary / remaining gate |
+| --- | --- | --- |
+| Offline checks | Lint/typecheck passed after local Prisma generation; launcher14/14; canonical-path Vitest2545 passed and four CandidateHome focus failures. A fresh independent baseline archive reproduced the same four failures with seven passing. | Windows alias setup-resolution failures are separately recorded; no new product failure is silently waived. |
+| Safe live direct adapter reads | At 10:57 UTC, 3/3 ping and Sales preflight checks: v3 ping, v4 Projects and v3 active Project-member read. | No live provider writes, assets or invitations. These are direct-adapter evidence, not browser proof. Broad lifecycle stress was excluded. |
+| Isolated simulation setup | External archive of scaffold `885ccc9f` (same tree as baseline), 65 migrations, synthetic accounts/DB/key, jobs/seed OFF, strict synthetic provider transport with no network fallback. Initial comparison found only the fixture transport changed among712 tracked `src`/`app` files. | This runs real portal HTTP/auth/persistence/UI against simulated CloudShare. Final-head independent fixture/source equivalence remains pending. |
+| Candidate browser attempt | Real sign-in and Resume click returned202 not-correlated-yet; no provider command, clock remained suspended/paused60000ms. | Q1 fixture used a Training ID without the required EX prefix. Fixture-only repair supplied `EXqa474training` and exact roster GET; corrected Resume/Suspend was not successfully exercised afterward. No runtime success claimed. |
+| Sales browser + Support success | One selected synthetic Participant, one Extend click: success UI, bodyless synthetic POST204, exact Environment GET200, accessPUT200; expiry/access confirmed through2026-10-31T00:00Z. Owner Support opened from workflow,15 entries; expanded POST showed masked Authorization and204. | This is simulation, not fresh live extension/work preservation. Synthetic queue refresh lacked its list path and failed; no retry or product-defect claim. |
+| Trial browser + Support failure | One retained-mapping synthetic Trial Extend click produced unconfirmed UI and one transport failure after simulated application. Owner Support showed attempted operation/path/transport cause and masked Authorization. Held ambiguity remained, with no replay. | This is lost-acknowledgement simulation, not fresh live Trial success. A fixture-only launch marker enabled the retained mapping. |
+| Console | Unfiltered warn/error `tab.dev.logs`, limit1000, returned empty through the Trial failure. | These are tool outputs, with no separate console artifact. No post-final-attach capture or full console acceptance is claimed. |
+
+Login navigation first encountered a `Page.getFrameTree` timeout; later control encountered a
+detach and another timeout. After an independent scoped route-safety audit, the parent's one
+authorized final Chrome attachment detached immediately. **All browser recovery stopped.** No
+further retry, new context, native input, direct-API substitute or screenshot substitute is
+authorized by this record. Corrected Candidate Resume/Suspend, foreign-Customer Support denial,
+ordinary-surface sentinel nondisclosure and complete console evidence remain unproved. Final-head
+independent source/fixture equivalence and reviews also remain pending at this checkpoint.
+Earlier A–D evidence is not substituted for these required combined browser gates.
+Fresh protected-diagnostics proof is partial: the success has an empty204 response and the
+transport failure has no provider response body. No fresh403 sentinel-body branch, verbatim
+provider-response-body preservation or ordinary-surface sentinel nondisclosure is proven.
+Historical D diagnostics remain separate evidence with the source-equivalence limits above.
+
+### Stopped runtime and retained state
+
+QA stopped owned3025 processes114372/119604; the lifecycle owner confirmed3025 and3026 free.
+The existing port3000 listener PID88380 was unchanged. Primary checkout/database and retained
+A–D/#350/#351 assets were untouched; no fresh live provider writes, assets or invitations occurred.
+External synthetic DB/key/config/history are preserved for forensics, not deleted or archived.
+Final recorded synthetic state: Candidate suspended/clock paused60000ms, runtime commands0,
+ENDING Offerings0, one Sales command finished/access confirmed, one Trial command held
+`needs_attention` after ambiguity, unchanged and unreplayed.
+
+Implementation verified that the closeout changes are seven Markdown files only, with an empty
+`git diff 3f324b2a -- src app prisma`; this amendment changes only this ledger. That source check
+does not establish complete browser acceptance or replace the independent final-head check.
+PR477 remains draft/unmerged, #474 incomplete and parent #467 not ready for closure. No worktree
+archive, merge, issue closure or blanket acceptance waiver follows from green offline checks or
+accurate evidence reporting. Resume only under the lifecycle owner's next explicit bounded decision.
