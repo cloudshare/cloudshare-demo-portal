@@ -368,7 +368,7 @@ describe("createCloudShareGuidedJourneyProvider", () => {
       name: "CloudShareResponseError",
       context: expect.objectContaining({
         responseBody: JSON.stringify(payload),
-        issues: expect.arrayContaining(["Number must be less than or equal to 1"]),
+        issues: expect.arrayContaining(["Too big: expected number to be <=1"]),
       }),
     });
   });
