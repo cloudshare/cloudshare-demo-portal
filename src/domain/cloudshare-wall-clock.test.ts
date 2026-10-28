@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { WINDOWS_TO_IANA_MAP } from "windows-iana";
-import { addCloudShareWallClockMinutes, formatCloudShareWallClock, isValidCloudShareWallClock } from "./cloudshare-wall-clock";
+import { addCloudShareWallClockMinutes, cloudShareWallClockToInstant, formatCloudShareWallClock, isValidCloudShareWallClock } from "./cloudshare-wall-clock";
 
 describe("CloudShare wall-clock timing", () => {
+  it.each([
+    ["2026-07-23T00:00", "UTC", "2026-07-23T00:00:00.000Z"],
+    ["2026-07-23T00:00", "Asia/Kathmandu", "2026-07-22T18:15:00.000Z"],
+    ["2026-07-23T00:00", "Nepal Standard Time", "2026-07-22T18:15:00.000Z"],
+  ])("converts %s in %s to its exact instant", (value, timeZone, expected) => {
+    expect(cloudShareWallClockToInstant(value, timeZone)?.toISOString()).toBe(expected);
+  });
+
+  it("rejects malformed wall-clock values and unknown timezones", () => {
+    expect(cloudShareWallClockToInstant("2026-07-23T00:00:00Z", "UTC")).toBeNull();
+    expect(cloudShareWallClockToInstant("2026-07-23T00:00", "Unknown CloudShare Zone")).toBeNull();
+  });
+
   it("adds a Policy lease in the selected CloudShare timezone across spring DST", () => {
     expect(addCloudShareWallClockMinutes("2026-03-08T01:30", "Mountain Standard Time", 120)).toBe("2026-03-08T04:30");
   });
