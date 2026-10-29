@@ -243,3 +243,21 @@ Consistent post-live database backups, protected owner/foreign evidence, provide
 redacted summary and hashes remain private. Earlier synthetic DB/key retention limits are unchanged.
 The owned server/current participant/viewer pages are retained for the human. One native desktop,
 controls and QA/merge acceptance question is pending. No additional provider requests or cleanup.
+
+## Human native result and Copy failure (2026-10-29)
+
+The human confirms an actual remote RDP desktop login using the downloaded provider file and
+portal-supplied guest credential, establishing native connection success for this observed flow.
+However, both Copy controls failed to place the value on the human clipboard. The human used
+Show and copied directly from the field instead. Overall UI/QA acceptance and merge are NOT granted.
+
+Earlier synthetic browser-tool clipboard equality is browser-scoped evidence only, NOT proof of
+native/system clipboard delivery. Any stronger interpretation is explicitly withdrawn. The current
+live page's targeted status read had no feedback node; it cannot establish retrospectively whether
+the API resolved, rejected or remained pending. No real clipboard/value, full revealed-page dump
+or sensitive screenshot was read during diagnosis. One concise human feedback question is pending.
+
+Parent permits bounded read-only local diagnosis with synthetic values, not a fourth product repair.
+No clipboard monkeypatch/permission/security change, native automation, source fix, provider call
+or refetch is authorized. Integration totals remain 52 GET/12 OAuth/8 business POST; real page,
+asset, file, database/key/evidence remain retained. No merge or provider cleanup occurs.
