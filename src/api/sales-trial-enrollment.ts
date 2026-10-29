@@ -1271,7 +1271,7 @@ function ambiguousRoster(
   );
 }
 
-function isOfferingOpen(
+export function isOfferingOpen(
   start: string,
   end: string | null,
   timeZone: string,
@@ -1305,7 +1305,7 @@ function isParticipantRosterAmbiguity(error: unknown): boolean {
     );
 }
 
-function isLaunchableProviderSession(
+export function isLaunchableProviderSession(
   offering: Pick<SalesTrialOffering, "end" | "timeZone">,
   session: { readonly status: "notStarted" | "inProgress" | "ended"; readonly end?: string | null },
   continuedAccess = false,
@@ -1707,7 +1707,7 @@ function isUnavailableParticipantRoster(error: unknown): boolean {
   );
 }
 
-function hasRequiredEnrollmentCorrelation(
+export function hasRequiredEnrollmentCorrelation(
   participant: SalesParticipant,
   enrollment: Pick<SalesTrialEnrollment, "id" | "portalUserId">,
 ): boolean {
@@ -2413,3 +2413,4 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+

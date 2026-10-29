@@ -1,6 +1,7 @@
 "use client";
 
 import React, { type CSSProperties, useState } from "react";
+import { SalesTrialRdp } from "./sales-trial-rdp";
 import { useRouter } from "next/navigation";
 import {
   accountLogoutButtonStyle,
@@ -314,6 +315,7 @@ function SalesTrialOfferingCard({
           </section>
         </div>
       </div>
+      <SalesTrialRdp offeringId={offering.id} />
     </article>
   );
 }
@@ -597,3 +599,4 @@ const salesTrialHomeStyles = `
     }
   }
 `;
+
