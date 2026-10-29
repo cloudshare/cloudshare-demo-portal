@@ -69,3 +69,37 @@ it("never displays a credential failure body and leaves the download link usable
  expect(document.body.innerHTML).not.toContain("secret-error");
  expect(screen.getByRole("link", { name: "Download RDP for Windows one" })).toBeTruthy();
 });
+
+it.each(["preparing", "failure"])("keeps %s discovery retryable until ready", async state => {
+ const fetchImpl = vi.fn().mockResolvedValueOnce({ ok: state !== "failure", json: async () => ({ state, message: "Still preparing" }) }).mockResolvedValueOnce({ ok: true, json: async () => ({ state: "ready", machines: [{ name: "Desktop", selector: "opaque", state: "ready" }] }) });
+ render(<SalesTrialRdp offeringId="offering" fetchImpl={fetchImpl} />);
+ fireEvent.click(screen.getByRole("button", { name: "Check remote desktops" }));
+ await screen.findByText(state === "failure" ? /Remote desktop is unavailable/ : "Still preparing");
+ expect((screen.getByRole("button", { name: "Check remote desktops" }) as HTMLButtonElement).disabled).toBe(false);
+ fireEvent.click(screen.getByRole("button", { name: "Check remote desktops" }));
+ await screen.findByRole("link", { name: "Download RDP for Desktop" });
+ expect((screen.getByRole("button", { name: "Check remote desktops" }) as HTMLButtonElement).disabled).toBe(true);
+ expect(fetchImpl).toHaveBeenCalledTimes(2);
+});
+it("closing details discards credentials and pending responses while retaining the nonsecret ready listing", async () => {
+ let resolve: (value: unknown) => void = () => undefined;
+ const pending = new Promise(done => { resolve = done; });
+ const fetchImpl = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: "ready", machines: [{ name: "Desktop", selector: "opaque", state: "ready" }] }) }).mockResolvedValueOnce({ ok: true, json: async () => ({ username: "guest-user", password: "guest-secret" }) }).mockReturnValueOnce(pending);
+ const view = render(<SalesTrialRdp offeringId="offering" active fetchImpl={fetchImpl} />);
+ fireEvent.click(screen.getByRole("button", { name: "Check remote desktops" }));
+ fireEvent.click(await screen.findByRole("button", { name: "Show credentials for Desktop" }));
+ await screen.findByLabelText("Guest password");
+ view.rerender(<SalesTrialRdp offeringId="offering" active={false} fetchImpl={fetchImpl} />);
+ expect(document.body.innerHTML).not.toMatch(/guest-user|guest-secret/);
+ view.rerender(<SalesTrialRdp offeringId="offering" active fetchImpl={fetchImpl} />);
+ expect(screen.queryByLabelText("Guest password")).toBeNull();
+ expect((screen.getByRole("button", { name: "Check remote desktops" }) as HTMLButtonElement).disabled).toBe(true);
+ expect(fetchImpl).toHaveBeenCalledTimes(2);
+ fireEvent.click(screen.getByRole("button", { name: "Show credentials for Desktop" }));
+ view.rerender(<SalesTrialRdp offeringId="offering" active={false} fetchImpl={fetchImpl} />);
+ view.rerender(<SalesTrialRdp offeringId="offering" active fetchImpl={fetchImpl} />);
+ await act(async () => { resolve({ ok: true, json: async () => ({ username: "late-user", password: "late-secret" }) }); });
+ expect(screen.queryByLabelText("Guest password")).toBeNull();
+ expect(document.body.innerHTML).not.toMatch(/late-user|late-secret/);
+ expect(fetchImpl).toHaveBeenCalledTimes(3);
+});

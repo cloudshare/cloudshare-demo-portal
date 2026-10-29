@@ -1,10 +1,13 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, type CSSProperties } from "react";
+import { secondaryButtonStyle, disabledButtonStyle } from "./button-styles";
+import { colors, spacing, radius } from "./design-tokens";
 import type { TrialRdpStatus } from "@/api/sales-trial-rdp";
-export function SalesTrialRdp({ offeringId, fetchImpl = fetch }: { offeringId: string; fetchImpl?: typeof fetch }) {
+export function SalesTrialRdp({ offeringId, active = true, fetchImpl = fetch }: { offeringId: string; active?: boolean; fetchImpl?: typeof fetch }) {
  const [status, setStatus] = useState<TrialRdpStatus | null>(null);
  const [loading, setLoading] = useState(false);
  async function check() {
+  if (loading || status?.state === "ready") return;
   setStatus(null);
   setLoading(true);
   try {
@@ -15,12 +18,18 @@ export function SalesTrialRdp({ offeringId, fetchImpl = fetch }: { offeringId: s
    setStatus({ state: "unavailable", message: "Remote desktop is unavailable. You can still open the trial window." });
   } finally { setLoading(false); }
  }
- return <section aria-label="Remote desktop" style={{ padding: "1rem", borderTop: "1px solid #d9e2ec" }}>
-  <button type="button" disabled={loading} onClick={() => void check()}>{loading ? "Checking desktops…" : "Check remote desktops"}</button>
-  <div aria-live="polite">
-   {status?.message && <p>{status.message}</p>}
-   {status?.machines?.map(vm => <div key={`${offeringId}:${vm.selector}`} style={{ marginTop: "0.75rem" }}>
-    {vm.state === "ready" ? <><span>{vm.name}</span>{" — "}<a aria-label={`Download RDP for ${vm.name}`} href={`/api/sales-trial/offerings/${encodeURIComponent(offeringId)}/rdp/${encodeURIComponent(vm.selector)}`} download target="_blank" rel="noreferrer">Download RDP</a>{" "}<GuestCredentials offeringId={offeringId} selector={vm.selector} name={vm.name} fetchImpl={fetchImpl} /></> : <span>{vm.name} — {vm.message ?? (vm.state === "preparing" ? "preparing" : "remote desktop unavailable")}</span>}
+ if (!active) return null;
+ return <section aria-label="Remote desktop" style={desktopSectionStyle}>
+  <h4 style={{ margin: 0, color: colors.textPrimary }}>Remote desktop</h4>
+  <button type="button" style={{ ...actionStyle, ...(loading || status?.state === "ready" ? disabledButtonStyle : {}) }} disabled={loading || status?.state === "ready"} onClick={() => void check()}>{loading ? "Checking desktops…" : "Check remote desktops"}</button>
+  <div aria-live="polite" style={stackStyle}>
+   {status?.message && <p style={copyStyle}>{status.message}</p>}
+   {status?.machines?.map(vm => <div key={`${offeringId}:${vm.selector}`} style={machineStyle}>
+    {vm.state === "ready" ? <>
+     <strong style={{ overflowWrap: "anywhere", color: colors.textPrimary }}>{vm.name}</strong>
+     <a style={{ ...actionStyle, textDecoration: "none" }} aria-label={`Download RDP for ${vm.name}`} href={`/api/sales-trial/offerings/${encodeURIComponent(offeringId)}/rdp/${encodeURIComponent(vm.selector)}`} download target="_blank" rel="noreferrer">Download RDP</a>
+     <GuestCredentials offeringId={offeringId} selector={vm.selector} name={vm.name} fetchImpl={fetchImpl} />
+    </> : <span style={copyStyle}>{vm.name}: {vm.message ?? (vm.state === "preparing" ? "preparing" : "remote desktop unavailable")}</span>}
    </div>)}
   </div>
  </section>;
@@ -72,16 +81,29 @@ function GuestCredentials({ offeringId, selector, name, fetchImpl }: { offeringI
   }
  }
  return <>
-  {!open && <button type="button" aria-label={`Show credentials for ${name}`} onClick={() => void retrieve()}>Show credentials</button>}
-  {open && <div role="group" aria-label={`Guest credentials for ${name}`}>
-   <p>Guest credentials for your native RDP client. Hide or dismiss clears these values here. Copies remain on your clipboard.</p>
-   <button type="button" onClick={dismiss}>Dismiss credentials</button>
-   {credentials && (["username", "password"] as const).map(field => <div key={field}>
-    <label>Guest {field}<input aria-label={`Guest ${field}`} type={visible[field] ? "text" : "password"} value={credentials[field]} readOnly autoComplete="off" /></label>
-    <button type="button" onClick={() => visible[field] ? dismiss() : setVisible(value => ({ ...value, [field]: true }))}>{visible[field] ? "Hide" : "Show"} {field}</button>
-    <button type="button" onClick={() => void copy(field)}>Copy {field}</button>
+  {!open && <button type="button" style={actionStyle} aria-label={`Show credentials for ${name}`} onClick={() => void retrieve()}>Show credentials</button>}
+  {open && <div role="group" aria-label={`Guest credentials for ${name}`} style={credentialPanelStyle}>
+   <p style={copyStyle}>Guest credentials for your native RDP client. Hide or dismiss clears these values here. Copies remain on your clipboard.</p>
+   <button type="button" style={actionStyle} onClick={dismiss}>Dismiss credentials</button>
+   {credentials && (["username", "password"] as const).map(field => <div key={field} style={credentialRowStyle}>
+    <label style={fieldLabelStyle}>Guest {field}<input style={inputStyle} aria-label={`Guest ${field}`} type={visible[field] ? "text" : "password"} value={credentials[field]} readOnly autoComplete="off" /></label>
+    <div style={actionsStyle}>
+    <button type="button" style={actionStyle} onClick={() => visible[field] ? dismiss() : setVisible(value => ({ ...value, [field]: true }))}>{visible[field] ? "Hide" : "Show"} {field}</button>
+    <button type="button" style={actionStyle} onClick={() => void copy(field)}>Copy {field}</button>
+    </div>
    </div>)}
-   {message && <p role="status">{message}</p>}
+   {message && <p role="status" style={copyStyle}>{message}</p>}
   </div>}
  </>;
 }
+
+const stackStyle: CSSProperties = { display: "grid", gap: spacing.md, minWidth: 0 };
+const desktopSectionStyle: CSSProperties = { ...stackStyle, borderTop: `1px solid ${colors.border}`, paddingTop: spacing.md };
+const copyStyle: CSSProperties = { margin: 0, color: colors.textSecondary, lineHeight: 1.5, overflowWrap: "anywhere" };
+const actionStyle: CSSProperties = { ...secondaryButtonStyle, cursor: "pointer", minHeight: "2.75rem", maxWidth: "100%", boxSizing: "border-box", textAlign: "center" };
+const machineStyle: CSSProperties = { ...stackStyle, border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: spacing.md, background: colors.surfaceMuted };
+const credentialPanelStyle: CSSProperties = { ...stackStyle, borderTop: `1px solid ${colors.borderStrong}`, paddingTop: spacing.md };
+const credentialRowStyle: CSSProperties = { ...stackStyle, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 14rem), 1fr))", alignItems: "end" };
+const fieldLabelStyle: CSSProperties = { display: "grid", gap: spacing.xs, minWidth: 0, fontWeight: 600, color: colors.textPrimary };
+const inputStyle: CSSProperties = { width: "100%", minWidth: 0, boxSizing: "border-box", border: `1px solid ${colors.borderStrong}`, borderRadius: radius.sm, padding: "0.75rem", fontSize: "1rem", lineHeight: 1.4, background: colors.surface, color: colors.textPrimary };
+const actionsStyle: CSSProperties = { display: "flex", flexWrap: "wrap", gap: spacing.sm, minWidth: 0 };

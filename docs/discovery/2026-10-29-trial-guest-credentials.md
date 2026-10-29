@@ -261,3 +261,27 @@ Parent permits bounded read-only local diagnosis with synthetic values, not a fo
 No clipboard monkeypatch/permission/security change, native automation, source fix, provider call
 or refetch is authorized. Integration totals remain 52 GET/12 OAuth/8 business POST; real page,
 asset, file, database/key/evidence remain retained. No merge or provider cleanup occurs.
+
+## Explicitly authorized repair 4: Trial details layout and page-local discovery state
+
+The human requested remote-desktop controls inside each card's Trial details face, aligned with
+the portal design, and no repeat discovery after a successful ready result. The parent explicitly
+authorized this bounded UI/lifecycle change after the earlier three-repair checkpoint.
+Each card keeps its own mounted RDP listing state for the current page. Ready disables Check and
+its handler; closing/reopening details does not fetch again. Preparing and failed checks remain
+retryable. Closing details unmounts the credential child, discarding fetched values and invalidating
+pending results. No credentials, listing, or flags enter storage or a shared/global cache. Action-level
+server authorization, readiness and binding checks remain unchanged.
+
+Controls now use shared button styles, colors, spacing and radii, with wrapping action groups and
+shrinkable responsive fields. The card's details grid can shrink below its preferred column width.
+The Copy implementation is unchanged: the human reported native RDP login success but a Copy/OS
+clipboard failure without feedback. That failure is unresolved and is not waived or claimed fixed
+by layout changes. Separate synthetic diagnosis remains with the lifecycle orchestrator.
+
+TDD: the new home-seam test failed with remote-desktop controls visible outside Trial details.
+After implementation the two focused UI files passed 21 tests, covering per-card placement/isolation,
+ready state retained and disabled across flips without extra discovery, failure/preparing retry,
+secret discard and late-response rejection after closing details. Types and lint passed. Browser
+layout/interactions and human UI acceptance on the new exact head remain required; no live provider
+calls or full-suite repeat were performed for this UI change.

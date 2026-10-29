@@ -192,6 +192,7 @@ export function SalesTrialHome({
                   offering={offering}
                   active={openOfferingId === offering.id}
                   onLaunch={() => launch(offering.id)}
+                  fetchImpl={fetchImpl}
                 />
               ))}
             </div>
@@ -228,10 +229,12 @@ function SalesTrialOfferingCard({
   offering,
   active,
   onLaunch,
+  fetchImpl,
 }: {
   readonly offering: TrialOffering;
   readonly active: boolean;
   readonly onLaunch: () => void;
+  readonly fetchImpl: typeof fetch;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const windowLabel = offering.end
@@ -303,6 +306,7 @@ function SalesTrialOfferingCard({
                   </span>
                 </div>
               </div>
+              <SalesTrialRdp offeringId={offering.id} active={showDetails} fetchImpl={fetchImpl} />
               <button type="button" tabIndex={backFaceTabIndex} onClick={onLaunch} style={primaryButtonStyle}>
                 {active ? "Focus trial window" : "Open trial window"}
               </button>
@@ -315,7 +319,6 @@ function SalesTrialOfferingCard({
           </section>
         </div>
       </div>
-      <SalesTrialRdp offeringId={offering.id} />
     </article>
   );
 }
@@ -484,7 +487,7 @@ const summaryValueStyle: CSSProperties = {
 
 const detailsGridStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 12rem), 1fr))",
   gap: spacing.sm,
 };
 

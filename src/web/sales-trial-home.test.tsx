@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { createElement } from "react";
@@ -362,4 +362,28 @@ describe("Sales Trial participant home", () => {
     expect(screen.queryByText("Your Sales Trial sign-in is active")).toBeNull();
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
+});
+
+it("keeps remote desktop discovery inside each Trial details face and retains ready results across flips", async () => {
+ const user = userEvent.setup();
+ const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: "ready", machines: [{ name: "Desktop", selector: "opaque", state: "ready" }] }) });
+ const view = render(<SalesTrialHome email="guest@example.test" fetchImpl={fetchImpl} initialOfferings={["one", "two"].map(id => ({ id, title: `Trial ${id}`, description: "Trial", start: "2026-10-29T09:00", end: null, timeZone: "UTC" }))} />);
+ const cards = view.container.querySelectorAll("article");
+ expect(screen.queryByRole("button", { name: "Check remote desktops" })).toBeNull();
+ await user.click(within(cards[0]!).getByRole("button", { name: "Trial details" }));
+ const check = within(cards[0]!).getByRole("button", { name: "Check remote desktops" });
+ expect(check.closest(".sales-trial-offering-card__face--back")).not.toBeNull();
+ await user.click(check);
+ await within(cards[0]!).findByRole("link", { name: "Download RDP for Desktop" });
+ expect((check as HTMLButtonElement).disabled).toBe(true);
+ await user.click(check);
+ await user.click(within(cards[0]!).getByRole("button", { name: "Back to trial" }));
+ await user.click(within(cards[0]!).getByRole("button", { name: "Trial details" }));
+ expect((within(cards[0]!).getByRole("button", { name: "Check remote desktops" }) as HTMLButtonElement).disabled).toBe(true);
+ expect(fetchImpl).toHaveBeenCalledTimes(1);
+ await user.click(within(cards[1]!).getByRole("button", { name: "Trial details" }));
+ expect((within(cards[1]!).getByRole("button", { name: "Check remote desktops" }) as HTMLButtonElement).disabled).toBe(false);
+ await user.click(within(cards[1]!).getByRole("button", { name: "Check remote desktops" }));
+ await within(cards[1]!).findByRole("link", { name: "Download RDP for Desktop" });
+ expect(fetchImpl.mock.calls.map(call => call[0])).toEqual(["/api/sales-trial/offerings/one/rdp", "/api/sales-trial/offerings/two/rdp"]);
 });
