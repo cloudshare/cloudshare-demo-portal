@@ -2330,12 +2330,48 @@ provisioning or no external address. Its 404 includes a VM not belonging to the 
 These are documented outcomes, not tested failures, and this public-cloud contract is not a
 documented MC replacement.
 
-The bounded #411 metadata audit of one authorized disposable Environment returned four Windows
-MC entries with external addresses; the public-cloud list had zero items and count zero. VMware
-`count: null` leaves completeness unknown. The earlier viewer observation of two VMs was separate
-loading-time evidence. No RDP endpoint was called, no file was generated/downloaded, no native
-client connected, and no non-EM or absent-address failure was probed. Metadata alone proves
-neither file availability nor native connectivity.
+**Evidence correction (2026-10-29):** the initial bounded #411 audit made three GETs:
+Environment detail, its VMware VM list, and `/v4/environments/{id}/public-cloud-resources`.
+The third response had zero resources; it was **not** a public-cloud VM list and establishes
+no public-cloud VM count. The VMware list returned four Windows MC entries, but the request
+omitted `Count=true` and the response had `count: null`; completeness remains unknown.
+Their populated `externalAddress` values were private addresses, so address presence did not
+establish public RDP exposure. The earlier viewer observation of two VMs was separate loading-time
+evidence. Neither observation proves file availability or native connectivity.
+
+At `2026-10-29T09:50:26Z`, one authorized v3 `GET /api/v3/envs/actions/getextended` comparison
+returned 200 for the same preserved Environment. Four MC identities matched the saved v4 response;
+all corresponding external addresses and internal-address arrays matched. Recursive inspection
+found no public/exposure/NIC/network field. There was no OAuth request, retry, other provider call
+or write in this comparison. Raw bodies, identifiers, addresses and the hashed ledger remain in
+protected local evidence, not this report.
+
+The user explains that `externalAddress` is SparkGateway NAT routing metadata rather than an
+end-user public-access signal. This is **human-provided context**, not provider-verified contract
+semantics. [SUP-5325](https://cloudshare.atlassian.net/browse/SUP-5325) is a **Question**, asking about
+NAT/address semantics and end-user display, supported public-RDP discovery, the v3 file endpoint's
+behavior for unexposed VMs, and future MC v4 coverage. It does not assert a provider defect.
+
+No RDP endpoint was called, no file was generated/downloaded, and no native client connected in
+these metadata audits. Publication of the user's new Snapshot is not yet confirmed, and a new
+Snapshot must not be assumed to have changed an already-created Environment. #411 therefore requests a provider file only on explicit
+per-VM action after readiness/ownership checks, without inferring connection availability from
+addresses, VM names, or metadata-only observations. Connection availability remains unverified.
+
+**Later human-confirmed tenant evidence (2026-10-29):** the user confirmed the new Snapshot was
+saved and supplied v4 VM JSON with four Windows VMs. Only the intended public-remote-access VM
+had a nonblank `fqdn`; the other three had null FQDNs. All were Suspended with progress 100,
+so none was ready for a file request. The user confirms that this tenant populates `fqdn` only
+when the VM's vNIC has public remote access configured; `webAccessUrl` describes separate web
+access and `externalAddress` remains NAT metadata. This is human-confirmed tenant behavior,
+not an additional guarantee in the published OpenAPI schema and not an agent live verification.
+
+#411 now keeps only a server-side configured/unknown signal derived from `fqdn`, and requires
+configured public remote access plus Windows/Running/completed preparation on both discovery and
+fresh VM detail before an explicit file request. It does not expose the hostname, infer from VM
+names, query DNS, or resume a suspended machine. File retrieval and native connectivity remain
+unverified. The later Snapshot evidence supersedes the earlier publication-pending statement;
+it does not establish that any previously created Environment inherited that Snapshot.
 
 **Impact on Sales Trial use**
 

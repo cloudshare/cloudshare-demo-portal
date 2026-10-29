@@ -114,7 +114,7 @@ export function createSalesTrialCloudShareObserver(input: {
   readonly actor: DiagnosticActor;
   readonly subject: DiagnosticSubject | (() => DiagnosticSubject);
   readonly correlationId: string;
-  readonly source: "sales-trial-enrollment" | "sales-trial-offerings";
+  readonly source: "sales-trial-enrollment" | "sales-trial-offerings" | "sales-trial-rdp";
   readonly externalIds?: Record<string, string>;
   readonly candidateEmail?: string | null;
   readonly sequenceAllocator?: CloudShareWorkflowSequenceAllocator;
@@ -123,7 +123,7 @@ export function createSalesTrialCloudShareObserver(input: {
   readonly correlationId: string;
   readonly actor: DiagnosticActor;
   readonly subject: DiagnosticSubject | (() => DiagnosticSubject);
-  readonly source: "sales-trial-enrollment" | "sales-trial-offerings";
+  readonly source: "sales-trial-enrollment" | "sales-trial-offerings" | "sales-trial-rdp";
   readonly candidateEmail?: string | null;
   readonly externalIds?: Record<string, string>;
   readonly sequenceAllocator: CloudShareWorkflowSequenceAllocator;
@@ -230,3 +230,5 @@ export function createSalesTrialCloudShareObserver(input: {
     },
   };
 }
+
+

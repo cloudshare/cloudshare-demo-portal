@@ -73,6 +73,16 @@ That checkpoint preceded final documentation review; PR #475 has since merged as
     Public schema examples are reference material, not tenant evidence or runtime configuration.
     See [GAP-36](cloudshare-gap-report.md#gap-36--published-v4-remote-access-file-coverage-does-not-replace-vmware-v3-coverage)
     for the public-cloud v4 attachment contract, authorized current v3 VMware path and future v4 migration.
+**2026-10-29 evidence clarification:** the initial #411 third GET listed public-cloud **resources**,
+not VMs; zero resources proves no VM count. Its VMware VM list omitted `Count=true`, so `count: null`
+does not establish completeness. A later single v3 `getextended` comparison matched the four saved
+MC records and address fields but exposed no public-RDP eligibility field. Populated private/NAT
+`externalAddress` values are not a public-RDP signal. The SparkGateway explanation is human-provided;
+[SUP-5325](https://cloudshare.atlassian.net/browse/SUP-5325) requests provider clarification rather
+than asserting a bug. Later on 2026-10-29, the user confirmed tenant-specific `fqdn` population
+as the public-remote-access configuration signal and supplied matching VM JSON. #411 uses only
+a server-side derived signal and rechecks it before requesting a file; this is not a new OpenAPI
+guarantee or proof of connectivity. See GAP-36 for dated evidence and limits. Exports remain unchanged.
 
 - `docs/api/assets/cloudshare-infrastructure-v4-2026-10-26.json`
   - Current official Infrastructure 4.0 OpenAPI export, retrieved 2026-10-26.

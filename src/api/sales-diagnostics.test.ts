@@ -398,3 +398,35 @@ it.each([{}, { source: "sales-participant-extension" }])("returns only owned ext
   expect(result.status).toBe(200);
   expect((result.body as { entries: { message: string }[] }).entries.map(entry => entry.message)).toEqual(["retained extension evidence"]);
 });
+
+it.each([{}, { source: "sales-trial-rdp" }])("retrieves only owned RDP failure evidence from Support with filters %j", async filters => {
+  const diagnostics = createInMemoryDiagnosticLogRepository();
+  for (const [customerId, correlationId, message] of [["owned", "rdp-command", "RDP request failed"], ["other", "rdp-command", "Other Customer"], ["owned", "unrelated", "Other command"]]) {
+    await diagnostics.append({ source: "sales-trial-rdp", operation: "sales_trial.rdp.download", outcome: "failure", customerId, correlationId, message, response: { status: 403 }, details: { integrationSurface: "cloudshare.v3.vms.remote_access_file" } });
+  }
+  const result = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "owned", query: { correlationId: "rdp-command", ...filters } });
+  expect(result.status).toBe(200);
+  expect((result.body as { entries: unknown[] }).entries).toEqual([expect.objectContaining({ message: "RDP request failed", operation: "sales_trial.rdp.download", response: expect.objectContaining({ status: 403 }), details: expect.objectContaining({ integrationSurface: "cloudshare.v3.vms.remote_access_file" }) })]);
+});
+
+it.each(["sales_trial_offering", "sales_trial_enrollment"].flatMap(subjectType => [false, true].flatMap(withSource => [false, true].map(withCorrelation => ({ subjectType, withSource, withCorrelation })))))("includes scoped RDP workflow evidence for %j", async ({ subjectType, withSource, withCorrelation }) => {
+  const diagnostics = createInMemoryDiagnosticLogRepository();
+  const rows = [
+    ["owned", "sales_trial_enrollment", "enrollment-1", "rdp-command", "child"],
+    ["owned", "sales_trial_offering", "offering-1", "rdp-command", "parent"],
+    ["other", "sales_trial_enrollment", "enrollment-1", "rdp-command", "foreign child"],
+    ["other", "sales_trial_offering", "offering-1", "rdp-command", "foreign parent"],
+    ["owned", "sales_trial_enrollment", "sibling", "rdp-command", "sibling"],
+    ["owned", "sales_trial_offering", "unrelated", "rdp-command", "unrelated"],
+    ["owned", "sales_trial_offering", "offering-1", "other-command", "other workflow"],
+  ];
+  for (const [customerId, type, id, correlationId, message] of rows) await diagnostics.append({ source: "sales-trial-rdp", operation: "sales_trial.rdp.download", outcome: "failure", customerId, correlationId, subject: { type, id }, message, response: { status: 403 }, details: { integrationSurface: "cloudshare.v3.vms.remote_access_file" } });
+  const findById = vi.fn(async (customerId: string, id: string) => customerId === "owned" && id === "enrollment-1" ? { salesTrialOfferingId: "offering-1" } : null);
+  const result = await handleGetSalesDiagnosticLog({ diagnostics, salesTrialEnrollments: { findById } as unknown as SalesTrialEnrollmentRepository, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "owned", query: { subjectType, subjectId: subjectType === "sales_trial_enrollment" ? "enrollment-1" : "offering-1", ...(withSource ? { source: "sales-trial-rdp" } : {}), ...(withCorrelation ? { correlationId: "rdp-command" } : {}) } });
+  expect(result.status).toBe(200);
+  const entries = (result.body as { entries: { message: string; response: { status: number }; details: { integrationSurface: string } }[] }).entries;
+  expect(entries.map(entry => entry.message).sort()).toEqual([...(subjectType === "sales_trial_enrollment" ? ["child"] : []), "parent", ...(!withCorrelation ? ["other workflow"] : [])].sort());
+  expect(entries.every(entry => entry.response.status === 403 && entry.details.integrationSurface === "cloudshare.v3.vms.remote_access_file")).toBe(true);
+  if (subjectType === "sales_trial_enrollment") expect(findById).toHaveBeenCalledWith("owned", "enrollment-1");
+  else expect(findById).not.toHaveBeenCalled();
+});

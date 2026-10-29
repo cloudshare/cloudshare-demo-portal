@@ -7,7 +7,7 @@ import {
 import { redactDiagnosticInput, type DiagnosticLogEntryInput } from "@/domain/diagnostic-log";
 import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 
-const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-items", "sales-demo-sessions", "sales-session-reconciliation", "sales-session-participants", "sales-project-members", "sales-participant-launch", "sales-trial-offerings", "sales-trial-enrollment", "cloudshare-integration", "sales-participant-extension", "sales-session-cancellation"] as const;
+const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-items", "sales-demo-sessions", "sales-session-reconciliation", "sales-session-participants", "sales-project-members", "sales-participant-launch", "sales-trial-offerings", "sales-trial-enrollment", "sales-trial-rdp", "cloudshare-integration", "sales-participant-extension", "sales-session-cancellation"] as const;
 const SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET = 5_000;
@@ -99,13 +99,13 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
   const requestedSource = query.source;
   const sources: SalesDiagnosticSource[] = requestedType === "sales_trial_offering"
     ? (requestedSource === undefined
-        ? ["sales-trial-offerings", "sales-trial-enrollment"]
+        ? ["sales-trial-offerings", "sales-trial-enrollment", "sales-trial-rdp"]
         : requestedSource === "sales-trial-offerings"
           ? ["sales-trial-offerings"]
-          : requestedSource === "sales-trial-enrollment"
-            ? ["sales-trial-enrollment"]
+          : requestedSource === "sales-trial-enrollment" || requestedSource === "sales-trial-rdp"
+            ? [requestedSource]
             : [])
-    : (requestedSource === undefined ? ["sales-trial-enrollment"] : requestedSource === "sales-trial-enrollment" ? ["sales-trial-enrollment"] : []);
+    : (requestedSource === undefined ? ["sales-trial-enrollment", "sales-trial-rdp"] : requestedSource === "sales-trial-enrollment" || requestedSource === "sales-trial-rdp" ? [requestedSource] : []);
   const directReads = await Promise.all(sources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source }, source, requiredEntries: SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND })));
   const direct = directReads.flatMap((read) => read.entries).filter((entry) => {
     const subject = entry.subject as Record<string, unknown> | null;
@@ -118,9 +118,9 @@ async function readCausalSubjectEntries(deps: DiagnosticLogHandlerDeps & { reado
   if (!enrollmentEntries.length && typeof offeringId !== "string") return { entries: orderWorkflowDiagnostics(direct), truncated: directReads.some(causalScanTruncated) };
   if (typeof offeringId !== "string") return { entries: orderWorkflowDiagnostics(enrollmentEntries), truncated: directReads.some(causalScanTruncated) };
   const parentSources: SalesDiagnosticSource[] = requestedSource === undefined
-    ? ["sales-trial-offerings", "sales-trial-enrollment"]
-    : requestedSource === "sales-trial-offerings"
-      ? ["sales-trial-offerings"]
+    ? ["sales-trial-offerings", "sales-trial-enrollment", "sales-trial-rdp"]
+    : requestedSource === "sales-trial-offerings" || requestedSource === "sales-trial-rdp"
+      ? [requestedSource]
       : [];
   const parentReads = parentSources.length
     ? await Promise.all(parentSources.map((source) => readSourceEntries({ deps, customerId, query: { ...base, source, subjectId: offeringId, subjectType: "sales_trial_offering" }, source, requiredEntries: SALES_DIAGNOSTIC_CAUSAL_SCAN_BOUND })))
