@@ -16,3 +16,18 @@ it("rejects missing and nonparticipant sessions before repository or provider ac
   expect(await response.text()).not.toContain("selector");
  }
 });
+
+import { handleSalesTrialCredentialsHttp } from "./sales-trial-rdp-http";
+it("credential POST requires same origin and participant session and never caches failures", async () => {
+ for (const [origin, session, status] of [["https://foreign.test", null, 403], [undefined, null, 403], ["https://portal.test", null, 401]] as const) {
+  const request = new Request("https://portal.test/api/credentials", { method: "POST", headers: origin ? { origin } : {} });
+  const response = await handleSalesTrialCredentialsHttp({} as never, session, "offering", "selector", request);
+  expect(response.status).toBe(status);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+ }
+});
+it("credential HTTP success contains exactly username and password with no-store", async () => {
+ const response = salesTrialRdpHttpResponse({ status: 200, credentials: { username: "guest", password: "test-password" } });
+ expect(await response.json()).toEqual({ username: "guest", password: "test-password" });
+ expect(response.headers.get("cache-control")).toBe("no-store");
+});

@@ -91,3 +91,20 @@ it.each([null, "", undefined, 42])("rechecks removed or unconfirmed FQDN on fres
  await expect(rdp.download("EN-owned", "MC-owned")).rejects.toMatchObject({ context: { failureMode: "vm_not_ready_or_mismatched" } });
  expect(requests).toHaveLength(2);
 });
+
+it("retrieves only current guest credentials through VM detail without requesting an RDP file", async () => {
+ const { client, requests } = provider([{ ...windows, username: "guest-user" }]);
+ expect(await createCloudShareTrialRdp(client).credentials("EN-owned", "MC-owned")).toEqual({ username: "guest-user", password: "provider-password" });
+ expect(requests.map(r => r.url)).toEqual(["https://provider.test/v4/environments/EN-owned/vms/MC-owned"]);
+});
+
+it.each([null, undefined, ""])("rejects missing guest credentials with protected provider evidence: %s", async value => {
+ const raw = { ...windows, username: "guest-user", password: value };
+ const { client, requests } = provider([raw]);
+ await expect(createCloudShareTrialRdp(client).credentials("EN-owned", "MC-owned")).rejects.toMatchObject({ context: { failureMode: "guest_credentials_missing", responseBody: JSON.parse(JSON.stringify(raw)) } });
+ expect(requests).toHaveLength(1);
+});
+it.each([{ ...windows, username: "guest", id: "MC-other" }, { ...windows, username: "guest", fqdn: null }, { ...windows, username: "guest", status: "Suspended" }])("rechecks exact VM identity and RDP readiness before releasing credentials", async raw => {
+ const { client } = provider([raw]);
+ await expect(createCloudShareTrialRdp(client).credentials("EN-owned", "MC-owned")).rejects.toMatchObject({ context: { failureMode: "vm_not_ready_or_mismatched" } });
+});
