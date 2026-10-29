@@ -130,3 +130,33 @@ source. Parent explicitly accepted qualified reuse of the earlier full suite at2
 source-list changes. This evidence commit changes documentation only. Actual Support workflow
 button/foreign-Customer/browser-independence QA remains required, with live/native/human gates
 separate. No services or live provider calls were started by implementation.
+
+## Synthetic browser and Support QA (2026-10-29)
+
+QA exercised runtime base `d87344debb24e4aadee9966af0bb408fa3f06465` (application source
+reviewed/built at `dc526e47`) with a temporary provider-boundary fixture. This is simulated
+integration evidence, not live CloudShare or native-client acceptance.
+
+- Actual browser selection and native attachment download produced the Alpha fixture's 34 bytes,
+  SHA-256 `0aa6153cc955444ff5cb23804312604019055330722cde38cbe4ea1b98da1dce`.
+- Separate direct HTTP checks verified no-store on status 200, attachment 200, stale/detail 502,
+  provider failure 502, other-user 404, expired 409 and unauthenticated 401, with no ordinary JSON
+  provider/credential leakage. Multi-choice, FQDN configuration, preparing/unknown/Suspended and
+  unconfigured states were exercised; Linux was omitted. A stale FQDN on fresh detail produced
+  safe 502 without a v3 request; simulated provider 403 was safely surfaced.
+- The owning Customer's actual Offering and Enrollment **View workflow evidence** buttons showed
+  protected 403 request/response evidence with Authorization masked, for default and explicit RDP
+  source filters. Both foreign-Customer views returned zero evidence.
+- After simulated RDP 403, actual **Open Trial Window** changed to **Focus**. The synthetic sponsored
+  request returned 200 and redirected to a local fixture URL that returned the expected 404. This
+  proves browser-launch independence, not successful provider landing or a live launch.
+- Warning/error capture was empty for the allocated parent browser tab only. No child-tab console
+  claim is made; tool timeouts are not browser console errors. QA used its allocated browser/tab
+  and generated local child only, with no CloudShare navigation.
+
+Two QA setup repairs corrected disposable data mapping, not production code. QA positively stopped
+its owned server processes, verified port 3025 free/no children, and restored the temporary fixture
+overlay to clean d87344de. Private DB/key, evidence and downloaded fixture data were retained;
+this report contains no private artifact paths. The documentation-only evidence commit preserves
+application/test identity. Live provider download, native-client behavior, live Support evidence
+and human acceptance remain pending and require separate coordinated authorization.
