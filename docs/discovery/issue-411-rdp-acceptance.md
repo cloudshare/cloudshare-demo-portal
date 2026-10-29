@@ -83,3 +83,14 @@ checks. Docs attribute the signal to human-confirmed tenant behavior, not an Ope
 or agent live evidence. Both fresh reviews and coordinated final build/full-suite verification
 remain required at the new exact head. Any further blocker must be escalated before another
 repair loop; this correction adds no product scope.
+
+Final correction-3 verification: both independent review axes found no blockers at
+`275d8dd3fa17011346bcbd38a0c3b8fccc612db4`, including the accepted main PostCSS dependency
+merge. Own dependency install and Prisma client generation completed; types and lint passed.
+The isolated production fixture build passed (seed off, jobs disabled, process-only key and
+owned test DB). The strictly serial full suite completed: launcher 14/14; Vitest 2596 passed
+and exactly the same four established candidate-home-route-focus failures, 296 passing files
+of 297, 194.29s. No new failures. All verification processes ended. This evidence update changes
+only documentation; application/test source remains identical to the reviewed and tested head.
+Browser/live/native-client/Support and human acceptance remain pending; no live calls or services
+were started by implementation.
