@@ -48,7 +48,7 @@ function GuestCredentials({ offeringId, selector, name, fetchImpl }: { offeringI
  async function retrieve() {
   const current = ++generation.current;
   setOpen(true);
-  setMessage("Retrieving guest credentials…");
+  setMessage("Retrieving guest credentials...");
   try {
    const response = await fetchImpl(`/api/sales-trial/offerings/${encodeURIComponent(offeringId)}/rdp/${encodeURIComponent(selector)}/credentials`, { method: "POST", cache: "no-store" });
    if (!response.ok) throw new Error("Unavailable");
