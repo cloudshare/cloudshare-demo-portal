@@ -330,3 +330,25 @@ Live native RDP evidence remains at app805d6156; final app1cb differs only in we
 not API/adapter/auth/config. Integration totals remain52GET/12OAuth/8businessPOST, with no further
 provider action, live asset, real credential fetch or provider cleanup authorized. Overall QA and
 merge remain withheld until final human UI/Copy acceptance or an explicit new scope decision.
+
+## Further human fixture feedback (2026-10-29)
+
+The human reports that viewing credentials allowed Show, Hide and Copy for both username/password
+in the actual updated product fixture. Record this functional retest pass without attributing the
+earlier failure to a proven mechanism or claiming a Copy code fix. Overall layout and merge are
+still unaccepted: full-width actions and expanded per-VM panels take excessive space; a compact
+per-Trial dialog or inline list is under the parent's single layout-choice question. No fifth
+repair/source edit is authorized before that decision.
+
+The apparent pre-launch discovery case used the account deliberately seeded with prior active
+launched enrollments and Ready provider state. A separate existing never-enrolled fixture account
+was checked through a local HTTP cookie jar: zero enrollments; discovery404/unavailable/no-store;
+zero new provider-fixture transports. Human browser state was untouched. This is fixture evidence,
+not a bypass of the real enrollment/lastLaunchedAt gate.
+
+The Missing Credentials/Provider Failure/Stale rows are adversarial fixtures, initially ready and
+failing on fresh action. Their names are not capabilities. Known unavailable rows already have
+status only; credential presence cannot be inferred by prefetching or from one failed operation,
+and valid RDP download remains independent. The next already-required UI build may use a simpler
+representative human preview, preserving earlier private negative cases/evidence; this is not a
+production filter or another provider probe. All live totals/asset restrictions remain unchanged.
