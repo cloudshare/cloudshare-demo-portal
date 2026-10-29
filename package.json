@@ -46,5 +46,10 @@
     "prisma@6.19.3": true,
     "sharp@0.35.5": true,
     "unrs-resolver@1.12.2": true
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.23"
+    }
   }
 }
