@@ -119,3 +119,36 @@ Live preflight, separately authorized disposable Trial UI retrieval, protected l
 human native-RDP connection and explicit acceptance remain required before merge. No live calls
 were made during synthetic QA. The original full-suite result and targeted repairs above remain
 qualified; no clean full-suite run is implied.
+
+## Authorized read-only live preflight and identity gate (2026-10-29)
+
+At reviewed documentation head `a5b4a517272ada0b518cef27ad8e13b7a5e046c7` (application
+unchanged from `805d6156`), the separately authorized metadata preflight completed exactly seven
+physical provider GETs and one OAuth request, all HTTP 200. Reads were Projects, Regions, selected
+Project Blueprints, selected Blueprint detail, Project Policies, selected Policy detail and active
+Project members. No Experience, Environment/VM, credential, file or business-write operation ran.
+The selected local Item resources matched uniquely. Fresh protected evidence confirmed default/latest
+Chris's Fourth Snapshot, version 3, createTime 2026-10-29T09:52:52Z, supporting the selected Region.
+The Policy reports runtime 60 minutes/storage 1440 minutes; two Policies and three active members
+were observed, with the selected Sales Pro uniquely active.
+
+A fresh migrated isolated database and Customer Connection reencrypted under a new key were used.
+Database/key/runtime/scripts/ledger/protected evidence and manifest are retained externally under
+qa/issue-487-live-preflight-20261029. The before-UI database backup matches the retained database
+hash. A clean production build without the synthetic overlay passed at a5b4a517, seed off and
+background jobs disabled; no server was started and no further provider calls occurred.
+
+The parent conditionally released one separate disposable live Trial with cumulative whole-run
+ceilings of 42 provider GETs, 7 OAuth and 4 business POSTs (Experience, optional property definitions,
+participant registration and sponsored link only). Planned future phase is 30 GETs/6 OAuth with
+one credential retrieval and one provider file. That phase has NOT started: the retained viewer
+shows only a greeting and archived Environment, without establishing the current account email.
+Historical identity is insufficient. One human identity-confirmation/sign-in question is pending.
+No Settings/identity endpoint, logout, persona switch, new Experience or native action was attempted.
+
+No new transport hook, preload, counter or guard framework is authorized. Future execution must use
+the unchanged reviewed runtime and existing protected physical exchange/OAuth evidence after each
+sequential UI action, stopping on errors/retries, identity ambiguity, cap or missing count evidence.
+Preflight totals remain seven GETs/one OAuth; business writes remain zero. Primary checkout/3000,
+old 3025, retained viewer and all prior live assets remain untouched. Live UI, human native-RDP
+acceptance, final gates and merge remain pending.
