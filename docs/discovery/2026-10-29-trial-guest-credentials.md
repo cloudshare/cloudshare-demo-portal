@@ -50,3 +50,19 @@ Each passed after the corresponding bounded implementation.
 Final focused command: `npx vitest run src/api/sales-trial-rdp.test.ts src/api/sales-trial-rdp-http.test.ts src/integrations/cloudshare/trial-rdp.test.ts src/web/sales-trial-rdp.test.tsx` — 72 passed.
 `npm run typecheck` passed. Full-suite, build, independent review, browser and live acceptance
 are lifecycle-orchestrator gates, not claimed by this implementation evidence.
+
+## Lifecycle full-suite checkpoint and bounded inherited-test repair
+
+At `9c778c76301474beec41e4cfcdb2afe00d91b80c`, the lifecycle orchestrator reported
+2631 passing and five failing tests. Four were known Candidate UI failures; the fifth was an
+inherited Sales diagnostics source-order expectation. The relevant production/test files were
+unchanged from baseline `18911189`. The orchestrator minimized the latter with
+`npx vitest run src/api/sales-diagnostics-route.test.ts -t "keeps the Sales Customer scope" --maxWorkers=1`
+(red). Parent-authorized repair only updates that expectation: tenth source `sales-trial-rdp`,
+eleventh `cloudshare-integration`. No production behavior changes. A targeted passing rerun
+would resolve this one failure only; it does not claim a clean full-suite run or resolve the four
+Candidate UI failures.
+
+Targeted resolution: `npx vitest run src/api/sales-diagnostics-route.test.ts src/web/sales-trial-rdp.test.tsx --maxWorkers=1`
+passed both files, 23 tests, after the correction and loading-text repair. No full-suite repeat
+was run; the four known Candidate UI failures remain explicitly unresolved by this slice.
