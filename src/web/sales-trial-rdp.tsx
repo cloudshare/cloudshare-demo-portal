@@ -19,8 +19,9 @@ export function SalesTrialRdp({ offeringId, fetchImpl = fetch }: { offeringId: s
   <div aria-live="polite">
    {status?.message && <p>{status.message}</p>}
    {status?.machines?.map(vm => <div key={vm.selector} style={{ marginTop: "0.75rem" }}>
-    {vm.state === "ready" ? <><span>{vm.name}</span>{" — "}<a aria-label={`Download RDP for ${vm.name}`} href={`/api/sales-trial/offerings/${encodeURIComponent(offeringId)}/rdp/${encodeURIComponent(vm.selector)}`} download target="_blank" rel="noreferrer">Download RDP</a></> : <span>{vm.name} — {vm.state === "preparing" ? "preparing" : "remote desktop unavailable"}</span>}
+    {vm.state === "ready" ? <><span>{vm.name}</span>{" — "}<a aria-label={`Download RDP for ${vm.name}`} href={`/api/sales-trial/offerings/${encodeURIComponent(offeringId)}/rdp/${encodeURIComponent(vm.selector)}`} download target="_blank" rel="noreferrer">Download RDP</a></> : <span>{vm.name} — {vm.message ?? (vm.state === "preparing" ? "preparing" : "remote desktop unavailable")}</span>}
    </div>)}
   </div>
  </section>;
 }
+

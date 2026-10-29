@@ -53,3 +53,14 @@ it("keeps provider RDP/password evidence in the protected request observer only"
  expect(JSON.stringify(entries)).not.toContain("cs_sha1 userapiid");
 });
 
+it.each([undefined, "New provider state", "Adding from template", "Adding from upload"])("fails closed for unconfirmed VM readiness label %s despite completed progress", async status => {
+ const { client, requests } = provider([{ ...windows, status }, { rdpFileContent: "full address:s:host" }]);
+ await expect(createCloudShareTrialRdp(client).download("EN-owned", "MC-owned")).rejects.toThrow();
+ expect(requests).toHaveLength(1);
+});
+
+it("retains the successful but inconsistent VM page as typed protected failure evidence", async () => {
+ const badPage = { count: 2, items: [windows, windows], providerEvidence: "protected-page" };
+ const { client } = provider([badPage]);
+ await expect(createCloudShareTrialRdp(client).list("EN-owned")).rejects.toMatchObject({ name: "CloudShareResponseError", context: { failureMode: "inconsistent_vm_page", responseStatus: 200, responseBody: badPage, path: "/v4/environments/EN-owned/vms" } });
+});
