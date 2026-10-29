@@ -2406,8 +2406,10 @@ The fresh-participant live UI retrieved both fields once, initially masked, then
 unchanged provider RDP file through the existing v3 path. Its 585 bytes privately matched protected
 provider `rdpFileContent`; no password was embedded or file generated. Protected owner diagnostics,
 local foreign-Customer exclusion and zero participant-console warnings/errors passed separately.
-Live no-store headers were not captured; actual synthetic HTTP verified the contract. Human native
-connection/acceptance remains pending here. These dated results supersede earlier retrieval-unverified
+Live no-store headers were not captured; actual synthetic HTTP verified the contract. The human
+confirmed actual native RDP desktop login, but both Copy controls failed with no feedback; overall
+UI acceptance and merge remain withheld pending that issue and the requested layout QA.
+These dated results supersede earlier retrieval-unverified
 statements only for this flow, not general reachability or v4 MC parity. See the
 [acceptance record](../discovery/2026-10-29-trial-guest-credentials.md) for counts and limits.
 
