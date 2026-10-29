@@ -43,7 +43,7 @@ export interface V4RequestSpec<T> {
   readonly body?: unknown;
   /** Opt in only for documented v4 operations whose successful response has no body. */
   readonly allowEmptyResponse?: boolean;
-  readonly schema: ZodType<T, ZodType["_def"], unknown>;
+  readonly schema: ZodType<T, unknown>;
   readonly timeoutMs?: number;
 }
 
@@ -51,7 +51,7 @@ export interface V3RequestSpec<T> {
   readonly method: Method;
   readonly path: string;
   readonly query?: Record<string, string>;
-  readonly schema: ZodType<T, ZodType["_def"], unknown>;
+  readonly schema: ZodType<T, unknown>;
 }
 
 export interface CloudShareRequestDiagnostics {
@@ -560,7 +560,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
   async function executeDetailed<T>(
     request: HttpRequest,
-    schema: ZodType<T, ZodType["_def"], unknown>,
+    schema: ZodType<T, unknown>,
     allowEmptyResponse = false,
   ): Promise<CloudShareDetailedResult<T>> {
     const requestInfo = describeRequest(request.url);

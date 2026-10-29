@@ -695,7 +695,7 @@ describe("createCloudShareSalesItemResourceSource", () => {
       "v4:/projects/p-1/policies": { count: 2, items: [{ projectId: "p-1", id: "slow", name: "List name" }, { projectId: "p-1", id: "missing", name: "Missing" }] },
       "v4:/projects/p-1/policies/slow": { projectId: "p-1", id: "slow", name: "Detail name", runtimeMinutes: 20 },
     });
-    const original = (client.requestV4Detailed as ReturnType<typeof vi.fn>).getMockImplementation()!;
+    const original = (client.requestV4Detailed as ReturnType<typeof vi.fn<(spec: { path: string }) => Promise<unknown>>>).getMockImplementation()!;
     let releaseRead!: () => void;
     const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
     let releaseObserver!: () => void;
@@ -740,7 +740,7 @@ describe("createCloudShareSalesItemResourceSource", () => {
   it("Exam rejects promptly while Item waits for sibling policy evidence and selects the first list failure", async () => {
     for (const kind of ["exam", "item"] as const) {
       const client = makeClient({ "v4:/projects/p-1/policies": { count: 2, items: [{ projectId: "p-1", id: "slow", name: "Slow" }, { projectId: "p-1", id: "fast", name: "Fast" }] } });
-      const original = (client.requestV4Detailed as ReturnType<typeof vi.fn>).getMockImplementation()!;
+      const original = (client.requestV4Detailed as ReturnType<typeof vi.fn<(spec: { path: string }) => Promise<unknown>>>).getMockImplementation()!;
       let release!: () => void;
       const delayed = new Promise<void>((resolve) => { release = resolve; });
       const slowError = new Error("first in list");

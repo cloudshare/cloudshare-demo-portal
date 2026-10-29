@@ -217,7 +217,7 @@ const optionalMutableSalesExperienceFields = ["teamId", "allowParticipantsSwitch
  * wire keys, or response parsing; they only validate an owner and create a
  * time-bounded registered-only delivery. */
 export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDelivery {
-  async function detailed<T>(spec: { method: "GET" | "POST" | "PUT" | "DELETE"; path: string; query?: Record<string, string>; body?: unknown; allowEmptyResponse?: boolean; timeoutMs?: number; schema: z.ZodType<T, z.ZodTypeDef, unknown> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
+  async function detailed<T>(spec: { method: "GET" | "POST" | "PUT" | "DELETE"; path: string; query?: Record<string, string>; body?: unknown; allowEmptyResponse?: boolean; timeoutMs?: number; schema: z.ZodType<T, unknown> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
     const result = client.requestV4Detailed
       ? await client.requestV4Detailed(spec)
       : await client.requestV4(spec).then((data) => ({ data, request: { method: spec.method, path: spec.path, ...(spec.body === undefined ? {} : { body: spec.body }) }, response: { status: 200, body: data } } as CloudShareDetailedResult<T>));

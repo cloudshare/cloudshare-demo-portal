@@ -79,7 +79,7 @@ export function createCloudShareOnDemandExperienceCreator(
     readonly method: "GET" | "POST" | "PUT" | "DELETE";
     readonly path: string;
     readonly body?: unknown;
-    readonly schema: z.ZodType<T, z.ZodType["_def"], unknown>;
+    readonly schema: z.ZodType<T, unknown>;
   }): Promise<CloudShareDetailedResult<T>> {
     return requestV4Detailed(spec) as Promise<CloudShareDetailedResult<T>>;
   }

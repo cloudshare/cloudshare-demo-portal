@@ -23,7 +23,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "windows-iana": "5.1.0",
-    "zod": "^3.24.1"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.2",
@@ -36,12 +36,13 @@
     "jsdom": "^29.1.1",
     "prisma": "^6.1.0",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vite": "6.4.4",
+    "vitest": "4.1.12"
   },
   "allowScripts": {
     "@prisma/client@6.19.3": true,
     "@prisma/engines@6.19.3": true,
-    "esbuild@0.21.5": true,
+    "esbuild@0.25.12": true,
     "prisma@6.19.3": true,
     "sharp@0.35.5": true,
     "unrs-resolver@1.12.2": true
