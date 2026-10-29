@@ -285,3 +285,48 @@ ready state retained and disabled across flips without extra discovery, failure/
 secret discard and late-response rejection after closing details. Types and lint passed. Browser
 layout/interactions and human UI acceptance on the new exact head remain required; no live provider
 calls or full-suite repeat were performed for this UI change.
+
+## Repair 4 synthetic browser verification and manual diagnostic (2026-10-29)
+
+Direct human UI feedback was implemented at application head
+1cb590b19cc14e5d0e4b8f02c38879320479f81a; documentation successor
+785422b9fd245aa752ca8d6b082121a80a4bb0b7 was independently reviewed. The Copy function was
+unchanged. Twenty-one focused UI tests, types and lint passed; fixture production build and actual
+HTTP success/no-store/failure/method checks passed with a temporary provider-only overlay and
+fresh isolated synthetic database/key. No full-suite rerun is claimed for this bounded UI delta.
+
+Actual browser QA on intended localhost:3029 exercised two cards/details placement, no front-face
+RDP controls, independent listing state, disabled ready Check surviving flips with zero extra
+status requests, masked fields, Show/Hide/Dismiss and details-close secret clearing. A simulated
+owned-server outage left retry enabled; retry succeeded after owned restart. Desktop 1905px and
+narrow 375px interactions had no horizontal overflow; screenshots showed aligned fields/actions.
+Both task consoles had zero warnings/errors. Late responses and an all-preparing browser result
+were not separately exercised; focused automated tests cover them. Copy feedback was observed,
+but browser clipboard evidence is not OS clipboard proof.
+
+A deliberately different 127.0.0.1:3029 host yielded credential POST403 while intended localhost
+returned200. Parent kept that alternate-host limitation out of this UI repair; no cause or auth
+fix is asserted. Localhost cookies were intentionally replaced serially for fixture login while
+real3027 was stopped; port-session isolation is not claimed. The actual real credential DOM was
+not reloaded/read. Browser authentication/viewer and host observations are not provider API calls.
+
+One separate external static localhost:3028 diagnostic had no clipboard read, user-input/paste
+endpoint, auth, provider call or telemetry. Human manually opened an unclaimed tab, verified a
+known synthetic seed in their own local Notepad, clicked the distinct target and reported target
+pasted with Resolved; trusted=true; focused=true; secure=true. This proves that synthetic manual
+page's write reached the human clipboard, not the portal's different-origin/context behavior or
+any virtualization mechanism. Script/outcome hashes are retained; owned PID129140 was positively
+stopped and port3028 verified free after completion. No product Copy fix was inferred.
+
+Automated fixture tabs were closed after retaining hashed database/key/overlay/build/screenshots
+and browser summary under qa/issue-487-repair4-synthetic. Owned fixture server restarted as
+PID68080 on3029 and remains available for ONE human manual new normal unclaimed-tab check of
+actual updated product UI with disposable login/guest values. No concurrent browser automation
+will control that human tab before the outcome. The question explicitly covers layout, retained
+ready/disabled Check, details-close credential clearing, both Copy-to-local-Notepad checks and
+QA/normal-merge acceptance. Human acceptance is still pending at this checkpoint.
+
+Live native RDP evidence remains at app805d6156; final app1cb differs only in web UI/state/tests,
+not API/adapter/auth/config. Integration totals remain52GET/12OAuth/8businessPOST, with no further
+provider action, live asset, real credential fetch or provider cleanup authorized. Overall QA and
+merge remain withheld until final human UI/Copy acceptance or an explicit new scope decision.
