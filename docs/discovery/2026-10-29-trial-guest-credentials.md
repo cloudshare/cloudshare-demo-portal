@@ -152,3 +152,48 @@ sequential UI action, stopping on errors/retries, identity ambiguity, cap or mis
 Preflight totals remain seven GETs/one OAuth; business writes remain zero. Primary checkout/3000,
 old 3025, retained viewer and all prior live assets remain untouched. Live UI, human native-RDP
 acceptance, final gates and merge remain pending.
+
+## Live UI attempt and existing-correlation blocker (2026-10-29)
+
+Human-provided account-menu evidence confirmed the intended existing QA participant identity.
+The unchanged clean production build ran in the isolated Customer/database/key on owned port 3027,
+seed and background jobs off. One new Trial was published for 2026-10-29T13:13Z to 13:53Z.
+Publication used six GETs, two OAuth requests and one Experience POST201; UI setup used two GETs.
+
+The first launch at 13:13:15Z read Experience200/notStarted and correctly denied access before any
+enrollment or business write. Local audit confirmed zero enrollment rows and no provider business
+POST. Parent explicitly authorized one further normal launch after at least 60 seconds and amended
+budgets; no separate probe/poll or third launch was allowed. That action succeeded, creating only
+the required correlation definitions/participant/sponsored link. The new viewer became visibly
+ready after preparation; no portal status polling occurred. Start propagation is a possible cause
+of the earlier notStarted response, not a proven general provider guarantee or duration.
+
+The single authorized desktop-status action then failed closed. Protected Environment-list data
+contained two exact owner-email/Project matches: the new ready Environment and retained archived
+411 Environment. The accepted resolver requires one match before detail/readiness, so it refused
+both. No credentials or RDP file were retrieved. Cumulative observed canonical transport evidence,
+including preflight, is 23 GETs, 6 OAuth and 4 business POSTs, with no transport retry/failure.
+Business writes were exactly one Experience, definitions, participant and sponsored link. Semantic
+rows referencing the same exchange IDs were excluded from physical counts. Post-denial consistent
+database backups and private evidence were retained and hashed; no provider cleanup occurred.
+
+Independent read-only diagnosis confirmed this is the existing resolver contract, not a regression
+introduced by credential controls. The generic local_request_failed summary also predates 487:
+SalesEnvironmentResolutionError has reason/exchanges, while the shared projection accepts typed
+CloudShare error context. Correlated protected transport records retain the actual list evidence.
+No additional diagnostic repair was proposed or enacted.
+
+Current saved roster envId is an opaque-looking string literally equal to one listed Environment
+ID, but the Sales export specifies only string|null without guaranteeing Infrastructure identity;
+GAP32's historical numeric-reference distinction remains. One review identified a possible additive
+positive-literal-match gate with exact detail checks; the other recommended retaining the existing
+contract and using a fresh unique participant/profile. Either continuation requires explicit scope
+or asset/profile/budget authority. No conversion, archive filtering, first/newest/Ready heuristic,
+source edit, fourth repair, provider probe or new ticket was authorized during diagnosis.
+
+The parent recommends a fresh participant in a separately allocated clean QA profile to keep this
+credential slice bounded; the human choice is pending in the parent chat. Existing ready asset,
+viewer, owned server, database/key/evidence and original 13:53Z end are retained. No forced timing
+rewrite or second Experience is authorized if the window expires. Live credential/file retrieval,
+human native-RDP acceptance, final audit and merge remain blocked. Primary checkout/3000 and old
+411/3025 assets remain untouched. No exact-correlation safeguard is waived.
