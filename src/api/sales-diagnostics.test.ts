@@ -398,3 +398,13 @@ it.each([{}, { source: "sales-participant-extension" }])("returns only owned ext
   expect(result.status).toBe(200);
   expect((result.body as { entries: { message: string }[] }).entries.map(entry => entry.message)).toEqual(["retained extension evidence"]);
 });
+
+it.each([{}, { source: "sales-trial-rdp" }])("retrieves only owned RDP failure evidence from Support with filters %j", async filters => {
+  const diagnostics = createInMemoryDiagnosticLogRepository();
+  for (const [customerId, correlationId, message] of [["owned", "rdp-command", "RDP request failed"], ["other", "rdp-command", "Other Customer"], ["owned", "unrelated", "Other command"]]) {
+    await diagnostics.append({ source: "sales-trial-rdp", operation: "sales_trial.rdp.download", outcome: "failure", customerId, correlationId, message, response: { status: 403 }, details: { integrationSurface: "cloudshare.v3.vms.remote_access_file" } });
+  }
+  const result = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "owned", query: { correlationId: "rdp-command", ...filters } });
+  expect(result.status).toBe(200);
+  expect((result.body as { entries: unknown[] }).entries).toEqual([expect.objectContaining({ message: "RDP request failed", operation: "sales_trial.rdp.download", response: expect.objectContaining({ status: 403 }), details: expect.objectContaining({ integrationSurface: "cloudshare.v3.vms.remote_access_file" }) })]);
+});

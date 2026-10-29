@@ -94,3 +94,16 @@ of 297, 194.29s. No new failures. All verification processes ended. This evidenc
 only documentation; application/test source remains identical to the reviewed and tested head.
 Browser/live/native-client/Support and human acceptance remain pending; no live calls or services
 were started by implementation.
+
+## Support visibility repair 4 (2026-10-29)
+
+The parent explicitly authorized this bounded fourth repair after synthetic QA found persisted
+RDP diagnostics absent from Sales Support. Root cause: the Sales diagnostics source allowlist
+omitted `sales-trial-rdp`; aggregate queries returned no rows and explicit source queries returned
+400. The production fix adds that single source. A parameterized real-repository handler regression
+first reproduced both failures, then passed while retaining owned 403 operation/surface evidence
+and excluding other-Customer/unrelated evidence. All 39 diagnostics tests, types and lint pass.
+Fresh reviews and an isolated production build remain required. Prior full-suite evidence at
+275d8dd3 is reused with this narrow delta explicitly qualified; no new full-suite claim is made.
+Actual Support/foreign-Customer and browser-independence QA must repeat. No live actions occurred;
+any additional blocker requires escalation before a fifth repair.
