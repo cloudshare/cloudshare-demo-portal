@@ -1,7 +1,7 @@
 import { CloudShareResponseError } from "./errors";
 import { z } from "zod";
 import type { CloudShareClient, CloudShareDetailedResult, V4RequestSpec } from "./client";
-const vmSchema = z.object({ id: z.string().startsWith("MC"), name: z.string(), os: z.string().nullable(), progress: z.number().int().min(0).max(100), externalAddress: z.string().nullable(), status: z.string().optional() });
+const vmSchema = z.object({ id: z.string().startsWith("MC"), name: z.string(), os: z.string().nullable(), progress: z.number().int().min(0).max(100), status: z.string().optional() });
 const pageSchema = z.object({ count: z.number().int().nonnegative(), items: z.array(vmSchema) });
 export type TrialRdpVm = z.infer<typeof vmSchema>;
 /** Running is the documented positive display label, not a stable provider enum.
@@ -9,7 +9,7 @@ export type TrialRdpVm = z.infer<typeof vmSchema>;
 export function trialRdpVmAvailability(vm: TrialRdpVm): "ready" | "preparing" | "unavailable" {
  if (vm.os !== "Windows") return "unavailable";
  if (vm.progress < 100) return "preparing";
- if (!vm.externalAddress?.trim() || vm.status?.trim().toLowerCase() !== "running") return "unavailable";
+ if (vm.status?.trim().toLowerCase() !== "running") return "unavailable";
  return "ready";
 }
 export function createCloudShareTrialRdp(client: CloudShareClient) {

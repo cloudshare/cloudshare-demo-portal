@@ -2330,12 +2330,33 @@ provisioning or no external address. Its 404 includes a VM not belonging to the 
 These are documented outcomes, not tested failures, and this public-cloud contract is not a
 documented MC replacement.
 
-The bounded #411 metadata audit of one authorized disposable Environment returned four Windows
-MC entries with external addresses; the public-cloud list had zero items and count zero. VMware
-`count: null` leaves completeness unknown. The earlier viewer observation of two VMs was separate
-loading-time evidence. No RDP endpoint was called, no file was generated/downloaded, no native
-client connected, and no non-EM or absent-address failure was probed. Metadata alone proves
-neither file availability nor native connectivity.
+**Evidence correction (2026-10-29):** the initial bounded #411 audit made three GETs:
+Environment detail, its VMware VM list, and `/v4/environments/{id}/public-cloud-resources`.
+The third response had zero resources; it was **not** a public-cloud VM list and establishes
+no public-cloud VM count. The VMware list returned four Windows MC entries, but the request
+omitted `Count=true` and the response had `count: null`; completeness remains unknown.
+Their populated `externalAddress` values were private addresses, so address presence did not
+establish public RDP exposure. The earlier viewer observation of two VMs was separate loading-time
+evidence. Neither observation proves file availability or native connectivity.
+
+At `2026-10-29T09:50:26Z`, one authorized v3 `GET /api/v3/envs/actions/getextended` comparison
+returned 200 for the same preserved Environment. Four MC identities matched the saved v4 response;
+all corresponding external addresses and internal-address arrays matched. Recursive inspection
+found no public/exposure/NIC/network field. There was no OAuth request, retry, other provider call
+or write in this comparison. Raw bodies, identifiers, addresses and the hashed ledger remain in
+protected local evidence, not this report.
+
+The user explains that `externalAddress` is SparkGateway NAT routing metadata rather than an
+end-user public-access signal. This is **human-provided context**, not provider-verified contract
+semantics. [SUP-5325](https://cloudshare.atlassian.net/browse/SUP-5325) is a **Question**, asking about
+NAT/address semantics and end-user display, supported public-RDP discovery, the v3 file endpoint's
+behavior for unexposed VMs, and future MC v4 coverage. It does not assert a provider defect.
+
+No RDP endpoint was called, no file was generated/downloaded, and no native client connected in
+these metadata audits. Publication of the user's new Snapshot is not yet confirmed, and a new
+Snapshot must not be assumed to have changed an already-created Environment. #411 therefore requests a provider file only on explicit
+per-VM action after readiness/ownership checks, without inferring connection availability from
+addresses, VM names, or metadata-only observations. Connection availability remains unverified.
 
 **Impact on Sales Trial use**
 

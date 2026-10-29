@@ -7,7 +7,7 @@ Each existing Windows VM is shown by friendly name with its own explicit Downloa
 - `GET /api/sales-trial/offerings/{offeringId}/rdp`: authenticated participant status and opaque VM selectors; no provider IDs or credentials.
 - `GET /api/sales-trial/offerings/{offeringId}/rdp/{selector}`: fresh ownership, continued-enrollment lifecycle, participant correlation, exact Environment, and VM membership checks; provider file as an `application/rdp` attachment. All outcomes are `no-store`.
 - Environment and VM discovery use v4. The narrowly authorized v3 `GET /vms/actions/getremoteaccessfile` uses the discovered MC ID and required 1920×1080 dimensions. The public-cloud EM-only v4 download operation is not used for these machines.
-- Readiness requires a ready, unexpired Environment, completed VM preparation and a public external address. The documented positive Running display label is required; missing, unknown and transitional labels fail closed without treating the provider status as a stable enum. No resume, provisioning, ending reconciliation, or other provider mutation occurs.
+- File-request readiness requires a ready, unexpired Environment and completed VM preparation. Address fields do not determine public exposure or connection availability. The documented positive Running display label is required; missing, unknown and transitional labels fail closed without treating the provider status as a stable enum. No resume, provisioning, ending reconciliation, or other provider mutation occurs.
 - Protected Customer-scoped diagnostics retain provider evidence through the existing observer; ordinary responses and audit metadata exclude the separate password, raw provider bodies and provider IDs. The explicit attachment alone carries the provider's RDP content.
 
 ## Acceptance evidence
@@ -39,3 +39,20 @@ Addressed the three reported P2 findings: unknown/transitional VM labels cannot 
 Each affected behavior was observed failing before its fix. Final focused checks: 36/36. Typecheck and lint passed. Fixture production build passed, including both RDP routes, with seed off, background jobs disabled, a temporary process-only random key and this worktree's disposable test database; no real credentials or server were used. Final full `npm test`: launcher 14/14; Vitest 2586 passed + the same four candidate-home baseline failures, 296 passing files/297, 283.29 seconds. No new failure. Build and test processes terminated before releasing the CPU slot.
 
 Both independent review axes must re-review this repair; browser/live/Support/native-client and human QA remain pending. No additional feature scope or provider routing was added.
+
+## New-fact reconciliation 2 (2026-10-29)
+
+The saved private/NAT addresses and the human's SparkGateway explanation invalidate the prior
+external-address presence gate. It has been removed from both the parsed VM projection and file
+request checks; no IP classifier, DNS lookup or exposure inference replaces it. The UI states that
+it requests a provider connection file and that connection availability is unverified. Running
+and completed preparation remain necessary readiness checks, alongside all fresh ownership and
+membership checks. Download remains an explicit per-VM action with no prefetch.
+
+Absent, null and private/NAT address regressions were observed red before the adapter change;
+the disclosure regression was observed red before the wording change. Updated focused checks:
+38 passed. The earlier no-address refusal evidence is historical and is superseded here. Protected
+diagnostics and safe provider-failure messages remain. This is a correction from new evidence,
+not additional network functionality. Fresh independent reviews and bounded live/native-client
+verification are still required; new Snapshot availability and its effect on new Environments
+have not been verified by implementation.

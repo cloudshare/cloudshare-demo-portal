@@ -68,11 +68,11 @@ export async function handleSalesTrialRdp(deps: SalesTrialRdpDeps, request: Sale
   if (!request.selector) {
    const machines = vms.map(vm => {
     const state = trialRdpVmAvailability(vm);
-    const message = state === "preparing" ? "preparing" : state === "ready" ? undefined : !vm.externalAddress?.trim() ? "remote desktop unavailable: no public IP address" : "remote desktop unavailable: VM readiness is not confirmed";
+    const message = state === "preparing" ? "preparing" : state === "ready" ? undefined : "remote desktop unavailable: VM readiness is not confirmed";
     return { selector: selector(vm.id), name: vm.name || "Windows desktop", state, ...(message ? { message } : {}) };
    });
    const state = machines.some(vm => vm.state === "ready") ? "ready" : machines.some(vm => vm.state === "preparing") ? "preparing" : "unavailable";
-   const message = !machines.length ? "No Windows desktops are available. You can still use the trial window." : state === "ready" ? "Your desktop app may ask for guest credentials." : state === "preparing" ? "Your Windows desktops are still preparing. Check again shortly." : "Remote desktop is not currently available. Check each desktop below or use the trial window.";
+   const message = !machines.length ? "No Windows desktops are available. You can still use the trial window." : state === "ready" ? "Download a provider connection file. Connection availability is not verified; your desktop app may ask for guest credentials." : state === "preparing" ? "Your Windows desktops are still preparing. Check again shortly." : "Remote desktop is not currently available. Check each desktop below or use the trial window.";
    return { status: 200, body: { state, machines, message } };
   }
   const chosen = vms.find(vm => selector(vm.id) === request.selector);
@@ -87,8 +87,6 @@ export async function handleSalesTrialRdp(deps: SalesTrialRdpDeps, request: Sale
   const failureMode = typeof context?.failureMode === "string" ? context.failureMode : error instanceof CloudShareResponseError ? "invalid_provider_response" : error instanceof CloudShareTransportError ? "provider_transport" : evidence ? "provider_request_failed" : "local_request_failed";
   // Only protected diagnostics receive the typed provider context; client errors stay static.
   await deps.diagnostics?.record({ customerId: request.customerId, source: "sales-trial-rdp", operation, outcome: "failure", level: "warn", actor: { type: "sales_trial_participant", id: request.userId }, subject: { type: "sales_trial_offering", id: request.offeringId }, correlationId, message: "Sales Trial remote desktop request failed.", request: evidence?.request, response: evidence?.response, details: { integrationSurface: typeof context?.integrationSurface === "string" && !["cloudshare.v4", "cloudshare.v3"].includes(context.integrationSurface) ? context.integrationSurface : integrationSurface, failureMode, ...(context ? { providerContext: context } : {}) } }).catch(() => undefined);
-  return unavailable(502);
+  return { status: 502, body: { state: "unavailable", message: "The connection file could not be retrieved. You can still use the trial window." } };
  }
 }
-
-

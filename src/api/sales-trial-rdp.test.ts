@@ -36,7 +36,7 @@ it("lists friendly Windows names and downloads only the provider file through an
  expect(JSON.stringify(downloaded)).not.toContain("protected-password");
 });
 
-it.each(["customer", "user", "offering", "ended", "concluded", "expired", "no-public-ip", "preparing"])("denies download after %s changes", async change => {
+it.each(["customer", "user", "offering", "ended", "concluded", "expired", "preparing"])("denies download after %s changes", async change => {
  const s = setup();
  const listed = await handleSalesTrialRdp(s.deps, request);
  const selector = (listed.body as { machines: { selector: string }[] }).machines[0]!.selector;
@@ -46,7 +46,6 @@ it.each(["customer", "user", "offering", "ended", "concluded", "expired", "no-pu
  if (change === "ended") s.offering.status = "ended";
  if (change === "concluded") s.participant.participationStatus = "concluded";
  if (change === "expired") s.environment.expirationTime = "Wed, 28 Oct 2026 08:00:00 GMT";
- if (change === "no-public-ip") s.vm.externalAddress = "";
  if (change === "preparing") s.vm.progress = 30;
  const result = await handleSalesTrialRdp(s.deps, { ...request, selector });
  expect(result.status).toBeGreaterThanOrEqual(400);
@@ -104,3 +103,11 @@ it("retains derived roster failure evidence with attempted operation while the c
 });
 
 
+
+it("offers only a file request with an explicit unverified connection notice, regardless of NAT address", async () => {
+ const s = setup(); s.vm.externalAddress = "10.7.12.34";
+ const result = await handleSalesTrialRdp(s.deps, request);
+ expect(result.body).toMatchObject({ state: "ready", message: "Download a provider connection file. Connection availability is not verified; your desktop app may ask for guest credentials." });
+ expect(JSON.stringify(result)).not.toMatch(/10\.7\.|MC-owned|EN-owned|public IP/);
+ expect(s.urls.some(url => url.includes("getremoteaccessfile"))).toBe(false);
+});

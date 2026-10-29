@@ -25,7 +25,6 @@ it("downloads provider file after exact VM membership read using signed v3 and r
 it.each([
  { ...windows, id: "MC-other" },
  { ...windows, os: "Linux" },
- { ...windows, externalAddress: null },
  { ...windows, progress: 20 },
  { ...windows, status: "Suspended" },
 ])("never requests a file for mismatched or unavailable VM detail", async detail => {
@@ -63,4 +62,14 @@ it("retains the successful but inconsistent VM page as typed protected failure e
  const badPage = { count: 2, items: [windows, windows], providerEvidence: "protected-page" };
  const { client } = provider([badPage]);
  await expect(createCloudShareTrialRdp(client).list("EN-owned")).rejects.toMatchObject({ name: "CloudShareResponseError", context: { failureMode: "inconsistent_vm_page", responseStatus: 200, responseBody: badPage, path: "/v4/environments/EN-owned/vms" } });
+});
+
+it.each([undefined, null, "10.7.12.34"])("does not infer connection availability from externalAddress %s", async externalAddress => {
+ const observed = { ...windows, externalAddress };
+ const file = "full address:s:provider-gateway.example.test\r\n";
+ const { client } = provider([{ count: 1, items: [observed] }, observed, { rdpFileContent: file }]);
+ const rdp = createCloudShareTrialRdp(client);
+ const machines = await rdp.list("EN-owned");
+ expect(machines[0]).not.toHaveProperty("externalAddress");
+ expect(await rdp.download("EN-owned", "MC-owned")).toBe(file);
 });
