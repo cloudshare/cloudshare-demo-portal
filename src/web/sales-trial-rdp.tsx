@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useId, useRef, useState, type CSSProperties } from "react";
-import { compactButtonStyle, disabledButtonStyle } from "./button-styles";
+import { compactButtonStyle } from "./button-styles";
 import { colors, spacing, radius } from "./design-tokens";
 import type { TrialRdpStatus } from "@/api/sales-trial-rdp";
 export function SalesTrialRdp({ offeringId, title = "Trial", active = true, fetchImpl = fetch }: { offeringId: string; title?: string; active?: boolean; fetchImpl?: typeof fetch }) {
@@ -8,11 +8,15 @@ export function SalesTrialRdp({ offeringId, title = "Trial", active = true, fetc
  const [loading, setLoading] = useState(false);
  const [dialogOpen, setDialogOpen] = useState(false);
  const trigger = useRef<HTMLButtonElement>(null);
- useEffect(() => { if (!active) setDialogOpen(false); }, [active]);
- function closeDialog() { setDialogOpen(false); queueMicrotask(() => trigger.current?.focus()); }
+ const attempted = useRef(false);
+ const [selected, setSelected] = useState<string | null>(null);
+ useEffect(() => { if (!active) { setDialogOpen(false); setSelected(null); } }, [active]);
+ function closeDialog() { setDialogOpen(false); setSelected(null); queueMicrotask(() => trigger.current?.focus()); }
  async function check() {
   if (loading || status?.state === "ready") return;
+  attempted.current = true;
   setStatus(null);
+  setSelected(null);
   setLoading(true);
   try {
    const response = await fetchImpl(`/api/sales-trial/offerings/${encodeURIComponent(offeringId)}/rdp`, { cache: "no-store" });
@@ -22,23 +26,28 @@ export function SalesTrialRdp({ offeringId, title = "Trial", active = true, fetc
    setStatus({ state: "unavailable", message: "Remote desktop is unavailable. You can still open the trial window." });
   } finally { setLoading(false); }
  }
+ const chosen = status?.machines?.find(vm => vm.selector === selected && vm.state === "ready");
  if (!active) return null;
  return <>
-  <button ref={trigger} type="button" style={actionStyle} onClick={() => setDialogOpen(true)}>Remote desktops</button>
+  <button ref={trigger} type="button" style={actionStyle} onClick={() => { setDialogOpen(true); if (!attempted.current) void check(); }}>Remote desktops</button>
   {dialogOpen && <RemoteDesktopDialog title={title} onDismiss={closeDialog}>
-   <button type="button" style={{ ...actionStyle, ...(loading || status?.state === "ready" ? disabledButtonStyle : {}) }} disabled={loading || status?.state === "ready"} onClick={() => void check()}>{loading ? "Checking desktops..." : "Check remote desktops"}</button>
-   <div aria-live="polite" style={stackStyle}>
-    {status?.message && <p style={copyStyle}>{status.message}</p>}
-    {status?.machines?.map(vm => <div key={`${offeringId}:${vm.selector}`} style={machineStyle}>
-     <div style={machineHeadingStyle}>
-      <strong style={{ overflowWrap: "anywhere", color: colors.textPrimary }}>{vm.name}</strong>
+   {loading && <p role="status" style={copyStyle}>Checking desktops...</p>}
+   {!loading && status && status.state !== "ready" && <button type="button" style={textActionStyle} onClick={() => void check()}>Retry desktops</button>}
+   {status?.message && <p style={copyStyle}>{status.message}</p>}
+   <div style={workspaceStyle}>
+    <div aria-label="Desktops" style={stackStyle}>
+     {status?.machines?.map(vm => <div key={vm.selector} style={machineStyle}>
+      {vm.state === "ready" ? <button type="button" style={{ ...textActionStyle, textAlign: "left", fontWeight: 600 }} aria-label={`Select desktop ${vm.name}`} aria-pressed={selected === vm.selector} onClick={() => setSelected(vm.selector)}>{vm.name}</button> : <strong style={{ overflowWrap: "anywhere" }}>{vm.name}</strong>}
       <span style={copyStyle}>{vm.state === "ready" ? "Ready" : vm.message ?? (vm.state === "preparing" ? "Preparing" : "Remote desktop unavailable")}</span>
-     </div>
-     {vm.state === "ready" && <div style={actionsStyle}>
-      <a style={{ ...actionStyle, textDecoration: "none" }} aria-label={`Download RDP for ${vm.name}`} href={`/api/sales-trial/offerings/${encodeURIComponent(offeringId)}/rdp/${encodeURIComponent(vm.selector)}`} download target="_blank" rel="noreferrer">Download RDP</a>
-      <GuestCredentials offeringId={offeringId} selector={vm.selector} name={vm.name} fetchImpl={fetchImpl} />
-     </div>}
-    </div>)}
+     </div>)}
+    </div>
+    <section aria-label="Selected desktop" style={selectedPanelStyle}>
+     {chosen ? <>
+      <h3 style={{ margin: 0, fontSize: "1rem", overflowWrap: "anywhere" }}>{chosen.name}</h3>
+      <a style={textActionStyle} aria-label={`Download RDP for ${chosen.name}`} href={`/api/sales-trial/offerings/${encodeURIComponent(offeringId)}/rdp/${encodeURIComponent(chosen.selector)}`} download target="_blank" rel="noreferrer">Download RDP</a>
+      <GuestCredentials key={chosen.selector} offeringId={offeringId} selector={chosen.selector} name={chosen.name} fetchImpl={fetchImpl} />
+     </> : <p style={copyStyle}>Select a ready desktop for its connection file and guest credentials.</p>}
+    </section>
    </div>
   </RemoteDesktopDialog>}
  </>;
@@ -107,15 +116,15 @@ function GuestCredentials({ offeringId, selector, name, fetchImpl }: { offeringI
   }
  }
  return <>
-  {!open && <button type="button" style={actionStyle} aria-label={`Show credentials for ${name}`} onClick={() => void retrieve()}>Show credentials</button>}
+  {!open && <button type="button" style={textActionStyle} aria-label={`Show credentials for ${name}`} onClick={() => void retrieve()}>Show credentials</button>}
   {open && <div role="group" aria-label={`Guest credentials for ${name}`} style={credentialPanelStyle}>
    {credentials && <p style={copyStyle}>Guest credentials for your native RDP client. Hide or dismiss clears these values here. Copies remain on your clipboard.</p>}
-   <button type="button" style={actionStyle} onClick={dismiss}>Dismiss credentials</button>
+   <button type="button" style={textActionStyle} onClick={dismiss}>Dismiss credentials</button>
    {credentials && (["username", "password"] as const).map(field => <div key={field} style={credentialRowStyle}>
     <label style={fieldLabelStyle}>Guest {field}<input style={inputStyle} aria-label={`Guest ${field}`} type={visible[field] ? "text" : "password"} value={credentials[field]} readOnly autoComplete="off" /></label>
     <div style={actionsStyle}>
-    <button type="button" style={actionStyle} onClick={() => visible[field] ? dismiss() : setVisible(value => ({ ...value, [field]: true }))}>{visible[field] ? "Hide" : "Show"} {field}</button>
-    <button type="button" style={actionStyle} onClick={() => void copy(field)}>Copy {field}</button>
+    <button type="button" style={textActionStyle} onClick={() => visible[field] ? dismiss() : setVisible(value => ({ ...value, [field]: true }))}>{visible[field] ? "Hide" : "Show"} {field}</button>
+    <button type="button" style={textActionStyle} onClick={() => void copy(field)}>Copy {field}</button>
     </div>
    </div>)}
   </div>}
@@ -128,12 +137,15 @@ const copyStyle: CSSProperties = { margin: 0, color: colors.textSecondary, lineH
 const actionStyle: CSSProperties = { ...compactButtonStyle, cursor: "pointer", minHeight: "2.25rem", maxWidth: "100%", boxSizing: "border-box", textAlign: "center" };
 const machineStyle: CSSProperties = { ...stackStyle, border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: spacing.sm, background: colors.surfaceMuted };
 const credentialPanelStyle: CSSProperties = { ...stackStyle, flexBasis: "100%", justifyItems: "start", borderTop: `1px solid ${colors.borderStrong}`, paddingTop: spacing.md };
-const credentialRowStyle: CSSProperties = { ...stackStyle, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 14rem), 1fr))", alignItems: "end" };
+const credentialRowStyle: CSSProperties = { ...stackStyle, width: "100%", gap: spacing.xs };
 const fieldLabelStyle: CSSProperties = { display: "grid", gap: spacing.xs, minWidth: 0, fontWeight: 600, color: colors.textPrimary };
 const inputStyle: CSSProperties = { width: "100%", minWidth: 0, boxSizing: "border-box", border: `1px solid ${colors.borderStrong}`, borderRadius: radius.sm, padding: "0.5rem", fontSize: "1rem", lineHeight: 1.4, background: colors.surface, color: colors.textPrimary };
 const actionsStyle: CSSProperties = { display: "flex", flexWrap: "wrap", gap: spacing.sm, minWidth: 0 };
 
-const machineHeadingStyle: CSSProperties = { display: "flex", flexWrap: "wrap", gap: spacing.sm, justifyContent: "space-between", alignItems: "baseline", minWidth: 0 };
-const dialogStyle: CSSProperties = { width: "min(42rem, calc(100vw - 2rem))", maxWidth: "none", maxHeight: "calc(100dvh - 2rem)", padding: 0, border: `1px solid ${colors.borderStrong}`, borderRadius: radius.lg, boxShadow: "0 20px 60px rgba(15,23,42,0.25)", color: colors.textPrimary, boxSizing: "border-box" };
+const dialogStyle: CSSProperties = { width: "min(56rem, calc(100vw - 2rem))", maxWidth: "none", maxHeight: "calc(100dvh - 2rem)", padding: 0, border: `1px solid ${colors.borderStrong}`, borderRadius: radius.lg, boxShadow: "0 20px 60px rgba(15,23,42,0.25)", color: colors.textPrimary, boxSizing: "border-box" };
 const dialogHeaderStyle: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, padding: spacing.md, borderBottom: `1px solid ${colors.border}` };
 const dialogBodyStyle: CSSProperties = { ...stackStyle, padding: spacing.md, overflowY: "auto", maxHeight: "65dvh", boxSizing: "border-box" };
+
+const workspaceStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 20rem), 1fr))", gap: spacing.md, alignItems: "start", minWidth: 0 };
+const selectedPanelStyle: CSSProperties = { ...stackStyle, border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: spacing.md, background: colors.surface, alignContent: "start", justifyItems: "start" };
+const textActionStyle: CSSProperties = { background: "transparent", border: 0, padding: "0.3rem 0", color: colors.accentStrong, textDecoration: "underline", textUnderlineOffset: "0.15em", font: "inherit", cursor: "pointer", maxWidth: "100%", overflowWrap: "anywhere" };

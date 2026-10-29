@@ -410,3 +410,31 @@ hashed under `qa/issue-487-repair5-preview` outside the repository. Owned previe
 remains at localhost:3029 for a NEW normal unclaimed human tab; automated tabs are closed and
 automation has stopped. No live/provider calls or primary-checkout changes occurred. Final human
 compact-layout and explicit normal-merge acceptance remain pending.
+
+## Explicitly authorized revision 6: first-open discovery and one selected desktop panel
+
+The human and parent approved this bounded simplification. The first explicit Remote desktops open
+now initiates one metadata discovery, superseding revision 5's no-fetch-on-open rule for metadata
+only. An attempt marker is set before dispatch. Reopening a pending, ready, preparing or failed
+result does not dispatch another request. Ready metadata remains page-local per Trial; preparing
+and failed results offer an explicit Retry, with no polling/timers. Credentials are never prefetched.
+
+The native dialog now uses a responsive two-column desktop-list/selected-desktop composition,
+stacking at narrow widths. Selecting a ready VM shows one keyed connection panel with its Download
+link and an explicit Show credentials action. Switching VM, closing the dialog or closing details
+unmounts credential state and invalidates in-flight results; returning to a VM requires deliberate
+retrieval. Known-unavailable VMs remain status-only. Compact text controls use existing tokens;
+credential failure stays action-specific and does not disable file download. Copy's mechanism is
+unchanged. No backend/auth/readiness/correlation/provider or global/persistent-cache changes.
+
+Red-green: the first-open test initially expected one metadata GET and observed zero. The updated
+existing UI seams then passed 23 tests across the home and RDP files, covering first-open metadata,
+cache/reopen, in-flight and failed/preparing manual retry, two-Trial isolation, single selected panel,
+explicit credential retrieval, selection/close/dismiss/pagehide late-response rejection, safe errors,
+Copy and native cancel/focus return. Types and lint passed. Previous interaction tests were revised
+for the accepted composition rather than retaining contradictory Check-first expectations.
+
+No full suite, build, browser or live provider call was performed by implementation. Fresh independent
+reviews, one representative fixture build, actual desktop/narrow and keyboard browser checks, and
+human acceptance remain required. This sixth revision is explicitly authorized; new production
+blockers or design growth require parent direction before revision 7.
