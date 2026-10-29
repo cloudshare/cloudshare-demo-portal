@@ -72,7 +72,7 @@ That checkpoint preceded final documentation review; PR #475 has since merged as
     an MC example and JSON `RemoteAccessFile` with `rdpFileContent`/`clearTextPassword`.
     Public schema examples are reference material, not tenant evidence or runtime configuration.
     See [GAP-36](cloudshare-gap-report.md#gap-36--published-v4-remote-access-file-coverage-does-not-replace-vmware-v3-coverage)
-    for the separate public-cloud v4 attachment contract and the blocked VMware requirement.
+    for the public-cloud v4 attachment contract, authorized current v3 VMware path and future v4 migration.
 
 - `docs/api/assets/cloudshare-infrastructure-v4-2026-10-26.json`
   - Current official Infrastructure 4.0 OpenAPI export, retrieved 2026-10-26.

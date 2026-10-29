@@ -2339,9 +2339,19 @@ neither file availability nor native connectivity.
 
 **Impact on certification use**
 
-[#411](https://github.com/cloudshare/cloudshare-demo-portal/issues/411) / PR #478 remains blocked under
-the user's v4-only, provider-produced-file direction. No v3 fallback, locally generated RDP,
-EM/MC substitution, guessed route or silent public-cloud Blueprint substitution is authorized.
+**Current disposition (2026-10-29, superseding the earlier v4-only direction):** the user authorizes
+[#411](https://github.com/cloudshare/cloudshare-demo-portal/issues/411) / PR #478 to use the documented
+v3 MC remote-access-file endpoint now, then migrate when v4 VMware coverage becomes available.
+BAC-29261 is a future v4 migration follow-up, not a dependency or blocker for #411. Access remains
+per Windows VM using provider-produced file content; a native-client credential prompt is accepted.
+Locally generated RDP, EM/MC substitution, guessed routes and silent public-cloud Blueprint
+substitution remain unauthorized. This documentation change implements no RDP behavior and claims
+no successful file retrieval or connection.
+
+**Historical disposition (earlier on 2026-10-29):** #411 / PR #478 was blocked under the then-current
+v4-only direction, with no v3 fallback authorized. The current disposition above supersedes that
+decision; the bounded metadata and untested-behavior observations remain unchanged.
+
 “Private VM” here means the VMware/private-cloud category; it does not promise native RDP to a
 secure-access-only or private-IP network.
 
@@ -2353,8 +2363,9 @@ re-scoped generic download to the public-cloud route; its Merged status does not
 parity. Request published and deployed v4 coverage for eligible Windows VMware/private-cloud and
 public-cloud VMs, with correct Customer/Environment/VM ownership and permissions, readiness and
 external-address eligibility, explicit secure-access-only/unavailable outcomes, and provider-produced
-files with documented content type/disposition. Provider confirmation and separately authorized
-live verification are required before unblocking #411. Closing documentation issue #485 does not
+files with documented content type/disposition. Provider confirmation and live verification of
+the replacement contract are future v4 migration gates, not prerequisites for the authorized v3
+implementation in #411. Closing documentation issue #485 does not
 close #411 or change BAC-29261's provider-owned status.
 
 ---
