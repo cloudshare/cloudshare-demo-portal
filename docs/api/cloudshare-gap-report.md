@@ -2300,6 +2300,65 @@ it remains fail-closed and reports success only after the provider expiry readba
 
 ---
 
+## GAP-36 — Published v4 remote-access-file coverage does not replace VMware v3 coverage
+
+**Jira tracking:** [BAC-29261](https://cloudshare.atlassian.net/browse/BAC-29261) (authoritative VMware request; Backlog),
+parent [BAC-29246](https://cloudshare.atlassian.net/browse/BAC-29246) (Selected for Development), and
+[BAC-26323](https://cloudshare.atlassian.net/browse/BAC-26323) (Merged public-cloud implementation).
+Statuses were checked on 2026-10-29; a planned route is not published or deployed support.
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed published-contract coverage gap; VMware v4 implementation remains provider-owned backlog |
+| **Verified live** | Partial — bounded VM metadata only on 2026-10-29; remote-access-file retrieval and native RDP remain untested |
+
+**Observed behaviour**
+
+The [official Classic v3 source](https://cloudshare.stoplight.io/api/v1/projects/cloudshare/V3/nodes/cloudshare-API-v3.openapi.json?branch=main)
+documents `GET /api/v3/vms/actions/getremoteaccessfile` with required query parameters `vmId`
+(an MC VMware VM example), `desktopWidth` and `desktopHeight`. Its 200 response is
+`application/json`, model `RemoteAccessFile`, containing `rdpFileContent` and `clearTextPassword`;
+it is not the v4 binary-attachment contract. The immutable user-provided v3 bundle and its
+[provenance/comparison](cloudshare-api-reference.md#local-reference-files) preserve this reference.
+
+The [official Infrastructure v4 source](https://cloudshare.stoplight.io/api/v1/projects/cloudshare/AccelerateAPI/nodes/reference/infrastructure-Public-API.openapi.json?branch=main)
+checked on 2026-10-29 documents
+`GET /v4/environments/{environmentId}/public-cloud-vms/{vmId}/remote-access-file` for EN Environment
+and EM public-cloud VM identifiers. It returns an `application/rdp` binary attachment, requires
+Environment view permission, and documents 400 for a non-EM/malformed VM identifier, incomplete
+provisioning or no external address. Its 404 includes a VM not belonging to the Environment.
+These are documented outcomes, not tested failures, and this public-cloud contract is not a
+documented MC replacement.
+
+The bounded #411 metadata audit of one authorized disposable Environment returned four Windows
+MC entries with external addresses; the public-cloud list had zero items and count zero. VMware
+`count: null` leaves completeness unknown. The earlier viewer observation of two VMs was separate
+loading-time evidence. No RDP endpoint was called, no file was generated/downloaded, no native
+client connected, and no non-EM or absent-address failure was probed. Metadata alone proves
+neither file availability nor native connectivity.
+
+**Impact on certification use**
+
+[#411](https://github.com/cloudshare/cloudshare-demo-portal/issues/411) / PR #478 remains blocked under
+the user's v4-only, provider-produced-file direction. No v3 fallback, locally generated RDP,
+EM/MC substitution, guessed route or silent public-cloud Blueprint substitution is authorized.
+“Private VM” here means the VMware/private-cloud category; it does not promise native RDP to a
+secure-access-only or private-IP network.
+
+**Action required (CloudShare contract and implementation)**
+
+Reuse BAC-29261 rather than creating a duplicate. Its proposed
+`/api/v4/environments/{envId}/vms/{vmId}/remote-access-file` is planned only. BAC-26323 explicitly
+re-scoped generic download to the public-cloud route; its Merged status does not establish VMware
+parity. Request published and deployed v4 coverage for eligible Windows VMware/private-cloud and
+public-cloud VMs, with correct Customer/Environment/VM ownership and permissions, readiness and
+external-address eligibility, explicit secure-access-only/unavailable outcomes, and provider-produced
+files with documented content type/disposition. Provider confirmation and separately authorized
+live verification are required before unblocking #411. Closing documentation issue #485 does not
+close #411 or change BAC-29261's provider-owned status.
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
@@ -2327,5 +2386,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-10-27 (added bounded #472 observations; existing GAP statuses unchanged).
+*Last updated: 2026-10-29 (added GAP-36 remote-access-file coverage; existing GAP statuses unchanged).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

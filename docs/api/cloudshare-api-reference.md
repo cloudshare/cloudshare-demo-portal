@@ -55,6 +55,25 @@ That checkpoint preceded final documentation review; PR #475 has since merged as
 
 ## Local Reference Files
 
+- `docs/api/assets/cloudshare-api-v3-2026-10-29.json`
+  - Immutable user-provided Stoplight bundle, received 2026-10-29; original export date unknown.
+    The filename records receipt, not an inferred export date. Original download preserved.
+  - OpenAPI `3.1.0`; title/version `CloudShare API v3` / `v3`; 74 paths; 299,912 bytes.
+  - SHA-256: `f6c9ea634b1c003ff53fb46f547aea30937cdbf69b4dd312fe5d7601e3dbd363`.
+  - All 578 `$ref` occurrences resolve within the bundle; no external references.
+  - Compared with the [fresh official Classic v3 source](https://cloudshare.stoplight.io/api/v1/projects/cloudshare/V3/nodes/cloudshare-API-v3.openapi.json?branch=main)
+    on 2026-10-29: same path set, production server and top-level `cs_sha1` security.
+    The bundle makes operation security/servers explicit where the source inherits them and
+    expands examples into schema/example collections. It is not asserted byte-identical or
+    globally semantically identical: the source additionally defines `ProjectMemberRef`, and
+    nullable typing differs (for example `Blueprint.envTemplateScope` is `integer` with a null
+    enum member in the bundle, versus type `[integer, null]` in the source).
+  - Both document `/vms/actions/getremoteaccessfile`, required `vmId`/`desktopWidth`/`desktopHeight`,
+    an MC example and JSON `RemoteAccessFile` with `rdpFileContent`/`clearTextPassword`.
+    Public schema examples are reference material, not tenant evidence or runtime configuration.
+    See [GAP-36](cloudshare-gap-report.md#gap-36--published-v4-remote-access-file-coverage-does-not-replace-vmware-v3-coverage)
+    for the separate public-cloud v4 attachment contract and the blocked VMware requirement.
+
 - `docs/api/assets/cloudshare-infrastructure-v4-2026-10-26.json`
   - Current official Infrastructure 4.0 OpenAPI export, retrieved 2026-10-26.
   - Project/Policy contracts: `/v4/projects`, `/v4/projects/{projectId}/policies`,
