@@ -194,3 +194,25 @@ human with the12:01UTC deadline. A credential prompt alone is not native connect
 actual RDP login and human acceptance remain pending, and merge is not authorized. Protected
 raw evidence remains private; no addresses, provider IDs, hostnames, passwords or file contents
 are included here. This documentation update does not change source or the running3025 service.
+
+## Human native acceptance (2026-10-29)
+
+The human reports locating the guest password for the relevant VM through the normal admin
+Environment page and successfully logging in using the downloaded RDP file. QA compared the
+provided Environment URL's final segment with the saved current Environment identifier after
+removing its EN prefix and confirmed an exact literal match. The private human-native report
+is retained. This is human-reported successful native login, not agent-observed desktop activity;
+no connection event time was supplied, so no precise login timestamp is asserted.
+
+The parent accepted the current #411 live and human acceptance gates as passed. The unchanged
+585-byte provider-file hash recorded above remains the retrieval evidence. All current acceptance
+gates are ready for final audit and merge, with existing qualifications preserved: the full suite
+was run at275d8dd3 and explicitly reused for the narrow subsequent Support changes; live no-store
+headers were not captured; the foreign-admin check was local Customer isolation, not a second
+CloudShare tenant. Earlier pending entries above are historical and superseded by this acceptance.
+
+An on-demand per-VM credential Show/Hide/Copy experience was agreed as a separate follow-on,
+with masked display, clearing on hide/leave, own-active-enrollment access, no-store and no logging.
+It is not implemented here and is not a blocker for #411. No follow-on ticket or chat is created
+by this evidence update. Active human inspection and private evidence are preserved; no provider,
+source, test, service or cleanup action accompanies this documentation-only commit.
