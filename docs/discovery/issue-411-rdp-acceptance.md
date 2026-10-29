@@ -160,3 +160,37 @@ overlay to clean d87344de. Private DB/key, evidence and downloaded fixture data 
 this report contains no private artifact paths. The documentation-only evidence commit preserves
 application/test identity. Live provider download, native-client behavior, live Support evidence
 and human acceptance remain pending and require separate coordinated authorization.
+
+## Live provider retrieval evidence (2026-10-29; human acceptance pending)
+
+The coordinated live run used e2b2e5f9, with application source identical to reviewed/built
+dc526e47. The parent authorized one new Trial using the current default Snapshot and a
+2026-10-29 11:16–12:01 UTC window. Preflight consumed seven GETs against an approved five:
+this is an explicit budget deviation caused by a proposal/release instruction race, not
+retrospectively compliant activity. The final amended ledger is 31 GETs of 35 and six OAuth
+requests of six, accounting for fresh clients across the three exact phases.
+
+Each business POST occurred once: Experience 201, properties 201, participant 201 and sponsored
+link 200. No 429s, retries or provider errors occurred. One status request used five GETs and one
+OAuth request: exact owner Project/Environment correlation, Ready Environment, Count=4 and four
+returned VMs. Only the configured Windows Server 2025 VM was Running/progress100 with FQDN;
+the other three were not configured. Actual UI exposed only the eligible server action, with no
+provider IDs. Selection remains metadata-driven, not hardcoded to this VM's name.
+
+One explicit download used seven GETs and one OAuth request, including fresh VM detail and v3
+getremoteaccessfile 200 with1920×1080 dimensions. The downloaded585bytes exactly matched the
+protected provider rdpFileContent, SHA-256
+`6e2f14d1d7ad1434b140f15f632cbe01a20cf15b600448ce634724f09b621464`.
+Live no-store headers were not captured: that claim remains supported only by synthetic HTTP
+checks and reviewed source, not this live observation. Authenticated local owner Support API200
+returned the real protected exchange with Authorization masked; an isolated local foreign-admin
+query returned200 with zero evidence. This was local Customer-isolation verification, not a
+query from a different CloudShare tenant. Portal DOM contained no FQDN, password, provider ID or
+RDP content. Portal and viewer consoles were independently checked and each had zero warnings/errors.
+
+The viewer and portal remain open with the participant logged in. No cleanup or provider writes
+occurred after download; the OAuth cap stops further calls. The existing file was handed to the
+human with the12:01UTC deadline. A credential prompt alone is not native connection success:
+actual RDP login and human acceptance remain pending, and merge is not authorized. Protected
+raw evidence remains private; no addresses, provider IDs, hostnames, passwords or file contents
+are included here. This documentation update does not change source or the running3025 service.
