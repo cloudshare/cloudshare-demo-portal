@@ -68,7 +68,7 @@ export async function handleSalesTrialRdp(deps: SalesTrialRdpDeps, request: Sale
   if (!request.selector) {
    const machines = vms.map(vm => {
     const state = trialRdpVmAvailability(vm);
-    const message = state === "preparing" ? "preparing" : state === "ready" ? undefined : "remote desktop unavailable: VM readiness is not confirmed";
+    const message = state === "preparing" ? "preparing" : state === "ready" ? undefined : vm.publicRdpConfigured === false ? "Public remote access is not configured" : vm.publicRdpConfigured === null ? "Public remote access configuration could not be confirmed" : "remote desktop unavailable: VM readiness is not confirmed";
     return { selector: selector(vm.id), name: vm.name || "Windows desktop", state, ...(message ? { message } : {}) };
    });
    const state = machines.some(vm => vm.state === "ready") ? "ready" : machines.some(vm => vm.state === "preparing") ? "preparing" : "unavailable";

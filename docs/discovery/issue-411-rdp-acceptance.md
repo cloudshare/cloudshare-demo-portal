@@ -7,7 +7,7 @@ Each existing Windows VM is shown by friendly name with its own explicit Downloa
 - `GET /api/sales-trial/offerings/{offeringId}/rdp`: authenticated participant status and opaque VM selectors; no provider IDs or credentials.
 - `GET /api/sales-trial/offerings/{offeringId}/rdp/{selector}`: fresh ownership, continued-enrollment lifecycle, participant correlation, exact Environment, and VM membership checks; provider file as an `application/rdp` attachment. All outcomes are `no-store`.
 - Environment and VM discovery use v4. The narrowly authorized v3 `GET /vms/actions/getremoteaccessfile` uses the discovered MC ID and required 1920×1080 dimensions. The public-cloud EM-only v4 download operation is not used for these machines.
-- File-request readiness requires a ready, unexpired Environment and completed VM preparation. Address fields do not determine public exposure or connection availability. The documented positive Running display label is required; missing, unknown and transitional labels fail closed without treating the provider status as a stable enum. No resume, provisioning, ending reconciliation, or other provider mutation occurs.
+- File-request readiness requires a ready, unexpired Environment, completed VM preparation and a server-side public-remote-access configuration signal derived from FQDN using human-confirmed tenant semantics. External IP/address and web-access fields do not determine eligibility or connection availability. The documented positive Running display label is required; missing, unknown and transitional labels fail closed without treating the provider status as a stable enum. No resume, provisioning, ending reconciliation, or other provider mutation occurs.
 - Protected Customer-scoped diagnostics retain provider evidence through the existing observer; ordinary responses and audit metadata exclude the separate password, raw provider bodies and provider IDs. The explicit attachment alone carries the provider's RDP content.
 
 ## Acceptance evidence
@@ -66,3 +66,20 @@ finished: launcher 14/14; Vitest 2588 passed + the same four candidate-home base
 had already passed for the same application source. All build/test processes ended. This final
 note changes documentation only; application and test files remain identical to the reviewed,
 built and tested head. Browser/live/native-client/Support and human acceptance remain pending.
+
+## Human-confirmed FQDN correction 3 (2026-10-29)
+
+The parent explicitly approved this third, bounded new-evidence correction after the human
+confirmed a saved Snapshot and supplied the four-VM JSON/tenant FQDN semantics. The adapter
+retains only `publicRdpConfigured` (true/false/unknown), discarding the hostname from its parsed
+projection. Nonblank FQDN is necessary alongside Windows/Running/progress 100; null/blank means
+not configured and missing/nonstring is unknown. Fresh detail repeats the same check. Suspended
+VMs remain unavailable, with no resume or other provider write. Public connection availability
+is still unverified. No name, NAT-address, web-access or DNS inference is introduced.
+
+The four-VM eligibility and configuration-message regressions were observed RED before GREEN.
+All 46 focused tests pass, including the changed-detail refusal and hostname/address/ID leakage
+checks. Docs attribute the signal to human-confirmed tenant behavior, not an OpenAPI guarantee
+or agent live evidence. Both fresh reviews and coordinated final build/full-suite verification
+remain required at the new exact head. Any further blocker must be escalated before another
+repair loop; this correction adds no product scope.

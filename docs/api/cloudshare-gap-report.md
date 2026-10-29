@@ -2358,6 +2358,21 @@ Snapshot must not be assumed to have changed an already-created Environment. #41
 per-VM action after readiness/ownership checks, without inferring connection availability from
 addresses, VM names, or metadata-only observations. Connection availability remains unverified.
 
+**Later human-confirmed tenant evidence (2026-10-29):** the user confirmed the new Snapshot was
+saved and supplied v4 VM JSON with four Windows VMs. Only the intended public-remote-access VM
+had a nonblank `fqdn`; the other three had null FQDNs. All were Suspended with progress 100,
+so none was ready for a file request. The user confirms that this tenant populates `fqdn` only
+when the VM's vNIC has public remote access configured; `webAccessUrl` describes separate web
+access and `externalAddress` remains NAT metadata. This is human-confirmed tenant behavior,
+not an additional guarantee in the published OpenAPI schema and not an agent live verification.
+
+#411 now keeps only a server-side configured/unknown signal derived from `fqdn`, and requires
+configured public remote access plus Windows/Running/completed preparation on both discovery and
+fresh VM detail before an explicit file request. It does not expose the hostname, infer from VM
+names, query DNS, or resume a suspended machine. File retrieval and native connectivity remain
+unverified. The later Snapshot evidence supersedes the earlier publication-pending statement;
+it does not establish that any previously created Environment inherited that Snapshot.
+
 **Impact on Sales Trial use**
 
 **Current disposition (2026-10-29, superseding the earlier v4-only direction):** the user authorizes

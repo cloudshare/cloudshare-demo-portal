@@ -1,13 +1,18 @@
 import { CloudShareResponseError } from "./errors";
 import { z } from "zod";
 import type { CloudShareClient, CloudShareDetailedResult, V4RequestSpec } from "./client";
-const vmSchema = z.object({ id: z.string().startsWith("MC"), name: z.string(), os: z.string().nullable(), progress: z.number().int().min(0).max(100), status: z.string().optional() });
+const vmSchema = z.object({ id: z.string().startsWith("MC"), name: z.string(), os: z.string().nullable(), progress: z.number().int().min(0).max(100), status: z.string().optional(), fqdn: z.unknown().optional() }).transform(({ fqdn, ...vm }) => ({
+ ...vm,
+ // Human-confirmed tenant behavior: FQDN reflects configured public remote access.
+ // Preserve only the derived signal; never project the hostname outside this adapter.
+ publicRdpConfigured: fqdn === null || typeof fqdn === "string" ? typeof fqdn === "string" && fqdn.trim().length > 0 : null,
+}));
 const pageSchema = z.object({ count: z.number().int().nonnegative(), items: z.array(vmSchema) });
 export type TrialRdpVm = z.infer<typeof vmSchema>;
 /** Running is the documented positive display label, not a stable provider enum.
  * Unknown/new labels fail closed until their readiness semantics are verified. */
 export function trialRdpVmAvailability(vm: TrialRdpVm): "ready" | "preparing" | "unavailable" {
- if (vm.os !== "Windows") return "unavailable";
+ if (vm.os !== "Windows" || vm.publicRdpConfigured !== true) return "unavailable";
  if (vm.progress < 100) return "preparing";
  if (vm.status?.trim().toLowerCase() !== "running") return "unavailable";
  return "ready";

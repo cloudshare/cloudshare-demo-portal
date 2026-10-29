@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { createCloudShareClient, createCloudShareNoopRequestObserver } from "./client";
 import type { HttpRequest } from "./http";
-import { createCloudShareTrialRdp } from "./trial-rdp";
+import { createCloudShareTrialRdp, trialRdpVmAvailability } from "./trial-rdp";
 export function provider(responses: unknown[]) {
  const requests: HttpRequest[] = [];
  const client = createCloudShareClient({ endpoints: { v4BaseUrl: "https://provider.test/v4", v3BaseUrl: "https://provider.test/api/v3" }, v3: { apiId: "test", apiKey: "test" }, tokenProvider: { getToken: async () => "test-token" }, observer: createCloudShareNoopRequestObserver(), http: { send: async request => { requests.push(request); return { status: 200, body: JSON.stringify(responses.shift()) }; } } });
@@ -72,4 +72,22 @@ it.each([undefined, null, "10.7.12.34"])("does not infer connection availability
  const machines = await rdp.list("EN-owned");
  expect(machines[0]).not.toHaveProperty("externalAddress");
  expect(await rdp.download("EN-owned", "MC-owned")).toBe(file);
+});
+
+it("requires configured FQDN and runtime readiness for the four-Windows-VM pattern without projecting hostnames", async () => {
+ const sample = [windows, ...["MC-two", "MC-three", "MC-four"].map(id => ({ ...windows, id, fqdn: null }))];
+ const { client } = provider([{ count: 4, items: sample }]);
+ const machines = await createCloudShareTrialRdp(client).list("EN-owned");
+ expect(machines.map(trialRdpVmAvailability)).toEqual(["ready", "unavailable", "unavailable", "unavailable"]);
+ expect(machines.map(vm => trialRdpVmAvailability({ ...vm, status: "Suspended" }))).toEqual(["unavailable", "unavailable", "unavailable", "unavailable"]);
+ expect(JSON.stringify(machines)).not.toContain("host.example.test");
+});
+
+
+it.each([null, "", undefined, 42])("rechecks removed or unconfirmed FQDN on fresh VM detail before requesting a file: %s", async fqdn => {
+ const { client, requests } = provider([{ count: 1, items: [windows] }, { ...windows, fqdn }, { rdpFileContent: "must-not-download" }]);
+ const rdp = createCloudShareTrialRdp(client);
+ expect((await rdp.list("EN-owned"))[0]!.publicRdpConfigured).toBe(true);
+ await expect(rdp.download("EN-owned", "MC-owned")).rejects.toMatchObject({ context: { failureMode: "vm_not_ready_or_mismatched" } });
+ expect(requests).toHaveLength(2);
 });

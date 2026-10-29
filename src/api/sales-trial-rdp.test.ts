@@ -11,7 +11,7 @@ const request = { customerId: "customer", userId: "user", email: "guest@example.
 function setup(options: { failDownload?: boolean; incompleteRoster?: boolean } = {}) {
  const enrollment = { id: "enrollment", customerId: "customer", portalUserId: "user", salesTrialOfferingId: "offering", email: request.email, status: "active", lastLaunchedAt: now, cloudShareParticipantId: "participant", cloudShareRosterEnvironmentReference: "42", environmentStatus: "Ready" };
  const offering = { id: "offering", customerId: "customer", itemId: "item", status: "published", cloudShareSalesExperienceId: "EX-owned", start: "2026-10-29T08:00", end: null, timeZone: "UTC" };
- const vm = { id: "MC-owned", name: "My Windows desktop", os: "Windows", progress: 100, externalAddress: "203.0.113.1", status: "Running", password: "protected-password" };
+ const vm = { id: "MC-owned", name: "My Windows desktop", fqdn: "desktop.example.test", os: "Windows", progress: 100, externalAddress: "203.0.113.1", status: "Running", password: "protected-password" };
  const machines = [vm];
  const environment = { id: "EN-owned", projectId: "PR-owned", ownerEmail: request.email, status: "ready", startTime: "Thu, 29 Oct 2026 08:00:00 GMT", expirationTime: "Fri, 30 Oct 2026 08:00:00 GMT" };
  const participant = { id: "participant", firstName: "Guest", lastName: "User", email: request.email, invitationStatus: "notSent", participationStatus: "inProgress", invitedBy: null, firstJoined: null, envId: "42", envStatus: "Ready", customProperties: [{ name: "certalisSalesTrialEnrollmentId", value: "enrollment" }, { name: "certalisSalesTrialParticipantUserId", value: "user" }] };
@@ -110,4 +110,16 @@ it("offers only a file request with an explicit unverified connection notice, re
  expect(result.body).toMatchObject({ state: "ready", message: "Download a provider connection file. Connection availability is not verified; your desktop app may ask for guest credentials." });
  expect(JSON.stringify(result)).not.toMatch(/10\.7\.|MC-owned|EN-owned|public IP/);
  expect(s.urls.some(url => url.includes("getremoteaccessfile"))).toBe(false);
+});
+
+
+it.each([
+ [null, "Public remote access is not configured"],
+ [undefined, "Public remote access configuration could not be confirmed"],
+ [42, "Public remote access configuration could not be confirmed"],
+])("explains FQDN configuration %s without exposing any hostname or address", async (fqdn, message) => {
+ const s = setup(); Object.assign(s.vm, { fqdn });
+ const result = await handleSalesTrialRdp(s.deps, request);
+ expect(result.body?.machines).toMatchObject([{ state: "unavailable", message }]);
+ expect(JSON.stringify(result)).not.toMatch(/desktop\.example\.test|203\.0\.113|MC-owned|EN-owned|fqdn/);
 });
