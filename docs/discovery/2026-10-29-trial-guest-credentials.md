@@ -66,3 +66,14 @@ Candidate UI failures.
 Targeted resolution: `npx vitest run src/api/sales-diagnostics-route.test.ts src/web/sales-trial-rdp.test.tsx --maxWorkers=1`
 passed both files, 23 tests, after the correction and loading-text repair. No full-suite repeat
 was run; the four known Candidate UI failures remain explicitly unresolved by this slice.
+
+## Repair 3: unsupported credential-route methods
+
+Synthetic real-HTTP QA found the framework-generated GET 405 lacked `Cache-Control: no-store`.
+The parent approved a bounded correction only in the new credential route: GET, HEAD, PUT, PATCH,
+DELETE and OPTIONS explicitly return a static 405 with `Allow: POST`, reusing the existing
+noncacheable response helper. POST is unchanged. Tests import the actual route exports: all six
+failed before the correction, then passed. The affected HTTP/handler run passed 43 tests;
+`npm run typecheck` and `npm run lint` passed with no lint warnings/errors. No full-suite repeat
+is claimed. Fresh independent review, fixture rebuild and actual HTTP recheck remain required.
+This reaches the three-repair boundary; further product changes require explicit parent direction.

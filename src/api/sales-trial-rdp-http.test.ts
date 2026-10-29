@@ -31,3 +31,14 @@ it("credential HTTP success contains exactly username and password with no-store
  expect(await response.json()).toEqual({ username: "guest", password: "test-password" });
  expect(response.headers.get("cache-control")).toBe("no-store");
 });
+
+import * as credentialRoute from "../../app/api/sales-trial/offerings/[offeringId]/rdp/[selector]/credentials/route";
+it.each(["GET", "HEAD", "PUT", "PATCH", "DELETE", "OPTIONS"])("credential route rejects %s with a noncacheable static 405", async method => {
+ const handler = (credentialRoute as unknown as Record<string, () => Response>)[method];
+ expect(handler).toBeTypeOf("function");
+ const response = await handler!();
+ expect(response.status).toBe(405);
+ expect(response.headers.get("cache-control")).toBe("no-store");
+ expect(response.headers.get("allow")).toBe("POST");
+ expect(await response.json()).toEqual({ state: "unavailable", message: "Use Show credentials from your Sales Trial page." });
+});
