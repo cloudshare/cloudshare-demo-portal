@@ -15,3 +15,11 @@ it("checks available desktops on explicit action and uses native attachment link
  expect(screen.getByText(/Windows two.*preparing/i)).toBeTruthy();
  expect(fetchImpl).toHaveBeenCalledTimes(1);
 });
+it("reports an unavailable response without rendering a raw provider error", async () => {
+ const fetchImpl = vi.fn().mockResolvedValue({ ok: false, json: async () => ({ password: "never-render" }) });
+ render(<SalesTrialRdp offeringId="offering" fetchImpl={fetchImpl} />);
+ fireEvent.click(screen.getByRole("button", { name: "Check remote desktops" }));
+ expect(await screen.findByText(/You can still open the trial window/)).toBeTruthy();
+ expect(screen.queryByText(/never-render/)).toBeNull();
+ expect(screen.queryByRole("link")).toBeNull();
+});

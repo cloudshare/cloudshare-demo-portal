@@ -8,20 +8,22 @@ import { createCloudShareClient, createCloudShareNoopRequestObserver } from "@/i
 import type { SalesTrialRdpDeps } from "./sales-trial-rdp";
 const now = new Date("2026-10-29T09:00:00Z");
 const request = { customerId: "customer", userId: "user", email: "guest@example.test", offeringId: "offering" };
-function setup() {
+function setup(options: { failDownload?: boolean } = {}) {
  const enrollment = { id: "enrollment", customerId: "customer", portalUserId: "user", salesTrialOfferingId: "offering", email: request.email, status: "active", lastLaunchedAt: now, cloudShareParticipantId: "participant", cloudShareRosterEnvironmentReference: "42", environmentStatus: "Ready" };
  const offering = { id: "offering", customerId: "customer", itemId: "item", status: "published", cloudShareSalesExperienceId: "EX-owned", start: "2026-10-29T08:00", end: null, timeZone: "UTC" };
  const vm = { id: "MC-owned", name: "My Windows desktop", os: "Windows", progress: 100, externalAddress: "203.0.113.1", status: "Running", password: "protected-password" };
+ const machines = [vm];
  const environment = { id: "EN-owned", projectId: "PR-owned", ownerEmail: request.email, status: "ready", startTime: "Thu, 29 Oct 2026 08:00:00 GMT", expirationTime: "Fri, 30 Oct 2026 08:00:00 GMT" };
  const participant = { id: "participant", firstName: "Guest", lastName: "User", email: request.email, invitationStatus: "notSent", participationStatus: "inProgress", invitedBy: null, firstJoined: null, envId: "42", envStatus: "Ready", customProperties: [{ name: "certalisSalesTrialEnrollmentId", value: "enrollment" }, { name: "certalisSalesTrialParticipantUserId", value: "user" }] };
  const urls: string[] = [];
  const client = createCloudShareClient({ endpoints: { v4BaseUrl: "https://provider.test/v4", v3BaseUrl: "https://provider.test/api/v3" }, v3: { apiId: "test", apiKey: "test" }, tokenProvider: { getToken: async () => "test" }, observer: createCloudShareNoopRequestObserver(), http: { send: async r => {
   urls.push(r.url); const path = new URL(r.url).pathname;
-  const body = path.endsWith("/participants") ? { count: 1, items: [participant] } : path.endsWith("/sales/EX-owned") ? { id: "EX-owned", status: "inProgress", end: null } : path.endsWith("/environments") ? { count: 1, items: [environment] } : path.endsWith("/environments/EN-owned") ? environment : path.endsWith("/vms") ? { count: 1, items: [vm] } : path.endsWith("/vms/MC-owned") ? vm : { rdpFileContent: "full address:s:desktop.example.test\r\n", clearTextPassword: "protected-password" };
+  if (options.failDownload && path.endsWith("getremoteaccessfile")) return { status: 403, body: JSON.stringify({ password: "protected-failure", vmId: "MC-owned" }) };
+  const body = path.endsWith("/participants") ? { count: 1, items: [participant] } : path.endsWith("/sales/EX-owned") ? { id: "EX-owned", status: "inProgress", end: null } : path.endsWith("/environments") ? { count: 1, items: [environment] } : path.endsWith("/environments/EN-owned") ? environment : path.endsWith("/vms") ? { count: machines.length, items: machines } : path.includes("/environments/EN-owned/vms/") ? machines.find(m => path.endsWith(m.id)) : { rdpFileContent: "full address:s:desktop.example.test\r\n", clearTextPassword: "protected-password" };
   return { status: 200, body: JSON.stringify(body) };
  } } });
  const deps = { offerings: { findById: async () => offering }, enrollments: { findByOfferingAndPortalUser: async () => enrollment }, items: { findById: async () => ({ customerId: "customer", project: { id: "PR-owned" } }) }, connections: { findByCustomerId: async () => ({ customerId: "customer" }) }, cloudshare: { forConnection: () => client }, now: () => now } as unknown as SalesTrialRdpDeps;
- return { deps, enrollment, offering, vm, participant, environment, urls };
+ return { deps, enrollment, offering, vm, participant, environment, urls, machines };
 }
 it("lists friendly Windows names and downloads only the provider file through an opaque selection", async () => {
  const { deps } = setup();
@@ -61,3 +63,25 @@ it("cannot use another enrollment's selector or a supplied provider id", async (
  expect(result.status).toBe(409);
  expect(s.urls.some(url => url.includes("getremoteaccessfile"))).toBe(false);
 });
+
+it("shows each Windows VM while keeping Linux and provider ids out of the response", async () => {
+ const s = setup(); s.machines.push({ ...s.vm, id: "MC-second", name: "Second Windows" }, { ...s.vm, id: "MC-linux", os: "Linux" });
+ const result = await handleSalesTrialRdp(s.deps, request);
+ expect(result.body?.machines?.map(vm => vm.name)).toEqual(["My Windows desktop", "Second Windows"]);
+ expect(new Set(result.body?.machines?.map(vm => vm.selector)).size).toBe(2);
+ expect(JSON.stringify(result)).not.toMatch(/MC-|protected-password/);
+});
+it("provider download failures remain generic and leave status usable", async () => {
+ const s = setup({ failDownload: true });
+ const listing = await handleSalesTrialRdp(s.deps, request);
+ const result = await handleSalesTrialRdp(s.deps, { ...request, selector: listing.body!.machines![0]!.selector });
+ expect(result.status).toBe(502);
+ expect(JSON.stringify(result)).not.toMatch(/protected-failure|MC-owned|password/);
+ expect(await handleSalesTrialRdp(s.deps, request)).toMatchObject({ status: 200 });
+});
+it("waits for participant provisioning without trying Environment discovery", async () => {
+ const s = setup(); s.participant.participationStatus = "pending";
+ expect(await handleSalesTrialRdp(s.deps, request)).toMatchObject({ status: 200, body: { state: "preparing" } });
+ expect(s.urls.some(url => url.includes("environments"))).toBe(false);
+});
+
