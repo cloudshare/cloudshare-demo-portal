@@ -2337,7 +2337,7 @@ loading-time evidence. No RDP endpoint was called, no file was generated/downloa
 client connected, and no non-EM or absent-address failure was probed. Metadata alone proves
 neither file availability nor native connectivity.
 
-**Impact on certification use**
+**Impact on Sales Trial use**
 
 **Current disposition (2026-10-29, superseding the earlier v4-only direction):** the user authorizes
 [#411](https://github.com/cloudshare/cloudshare-demo-portal/issues/411) / PR #478 to use the documented
