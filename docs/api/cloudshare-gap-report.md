@@ -2131,6 +2131,16 @@ and confirmed outcomes through v4 readback. New status/time evidence is explicit
 and roster evidence remains historical. See the [consumer evidence](../discovery/2026-10-26-environment-v4-migration.md)
 for command counts, Support isolation, and verification limits.
 
+**Later bounded observation — 2026-10-29 (#487)**
+
+A current Trial roster returned a string `envId` literally equal to one opaque v4 Environment
+list ID. The Sales export defines only `string|null`, without an Infrastructure-equivalence
+guarantee; this does not replace historical numeric-reference evidence or authorize conversion.
+Reusing the earlier participant returned two exact owner/Project matches, one new ready and one
+retained archived Environment. The existing resolver correctly rejected ambiguity before VM access.
+No archive filtering or first/newest/Ready selection was introduced. The credential slice used a
+separately authorized fresh participant; repeated-participant correlation remains separate work.
+
 **Code reference:** `src/integrations/cloudshare/environment-observation.ts`, `src/integrations/cloudshare/environments-v4.ts`,
 `src/api/sales-session-participants.ts`
 
@@ -2383,6 +2393,23 @@ per Windows VM using provider-produced file content; a native-client credential 
 Locally generated RDP, EM/MC substitution, guessed routes and silent public-cloud Blueprint
 substitution remain unauthorized. This documentation change implements no RDP behavior and claims
 no successful file retrieval or connection.
+
+**Later bounded credential/file verification — 2026-10-29 (#487)**
+
+Infrastructure VM detail documents nullable `username` and `password`. The human approved one
+narrow participant-facing exception: deliberate per-VM retrieval through the authenticated portal
+action, with fresh enrollment/owner/Project/VM checks, no-store and transient masked fields.
+Ordinary listings/logs/audits remain credential-free; protected Customer-admin diagnostics retain
+their established contract. No credential vault or general redaction relaxation is introduced.
+
+The fresh-participant live UI retrieved both fields once, initially masked, then downloaded the
+unchanged provider RDP file through the existing v3 path. Its 585 bytes privately matched protected
+provider `rdpFileContent`; no password was embedded or file generated. Protected owner diagnostics,
+local foreign-Customer exclusion and zero participant-console warnings/errors passed separately.
+Live no-store headers were not captured; actual synthetic HTTP verified the contract. Human native
+connection/acceptance remains pending here. These dated results supersede earlier retrieval-unverified
+statements only for this flow, not general reachability or v4 MC parity. See the
+[acceptance record](../discovery/2026-10-29-trial-guest-credentials.md) for counts and limits.
 
 **Historical disposition (earlier on 2026-10-29):** #411 / PR #478 was blocked under the then-current
 v4-only direction, with no v3 fallback authorized. The current disposition above supersedes that

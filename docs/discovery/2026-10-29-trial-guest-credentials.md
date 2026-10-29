@@ -47,7 +47,7 @@ Red/green commands: `npx vitest run src/integrations/cloudshare/trial-rdp.test.t
 for missing credential retrieval; handler test initially returned a file instead of credentials;
 HTTP tests initially failed for the absent action/response; UI test initially lacked the action.
 Each passed after the corresponding bounded implementation.
-Final focused command: `npx vitest run src/api/sales-trial-rdp.test.ts src/api/sales-trial-rdp-http.test.ts src/integrations/cloudshare/trial-rdp.test.ts src/web/sales-trial-rdp.test.tsx` — 72 passed.
+Final focused command: `npx vitest run src/api/sales-trial-rdp.test.ts src/api/sales-trial-rdp-http.test.ts src/integrations/cloudshare/trial-rdp.test.ts src/web/sales-trial-rdp.test.tsx` - 72 passed.
 `npm run typecheck` passed. Full-suite, build, independent review, browser and live acceptance
 are lifecycle-orchestrator gates, not claimed by this implementation evidence.
 
@@ -197,3 +197,49 @@ viewer, owned server, database/key/evidence and original 13:53Z end are retained
 rewrite or second Experience is authorized if the window expires. Live credential/file retrieval,
 human native-RDP acceptance, final audit and merge remain blocked. Primary checkout/3000 and old
 411/3025 assets remain untouched. No exact-correlation safeguard is waived.
+
+## Fresh two-hour live phase (2026-10-29; native acceptance pending)
+
+The human chose a fresh independent participant, then explicitly authorized serial reuse of the
+dedicated QA profile through normal CloudShare logout and fresh sponsored sign-in. A visible login
+form proved the old persona signed out; the new viewer User menu privately matched the fresh local
+email. Old tabs/assets were preserved where practical, but old authentication is not claimed to
+survive the cookie change. Browser web authentication/viewer navigation is separate from the portal
+integration API ledger. No correlation repair, security change or native automation occurred.
+
+After the short window elapsed, parent authority allowed one NEW Experience for
+2026-10-29T15:31Z to 17:31Z, timed only after setup was ready. No old End was rewritten. Creation
+returned 201; two-hour access does not change Policy runtime 60 minutes/storage 1440 minutes or
+promise two-hour compute. One launch at Start+90 seconds succeeded without a separate status probe.
+The fresh viewer visibly reached readiness before the single desktop check. Publication revalidated
+configured resources through unchanged code.
+
+The single live desktop check selected Windows Server 2025 Standard; other displayed targets
+reported public access not configured. One credential retrieval returned both fields, initially
+masked, retained in the existing participant page. The agent did not reveal/copy/dismiss/reload or
+refetch them. One unchanged RDP attachment downloaded: 585 bytes, privately equal to protected
+provider rdpFileContent. No file bytes, password or hostname was emitted.
+
+Whole-run observed canonical integration totals INCLUDING earlier preflight/blocked actions:
+52 GETs, 12 OAuth and 8 business POSTs, with no observed transport errors/retries. Business writes
+were exactly two Experiences, two property-definition requests, two registrations and two sponsored
+links. This is within conditional 60 GET/12 OAuth/8 POST ceilings; OAuth/write allowances are now
+exhausted. No further provider action is authorized. Counts use existing canonical exchanges/OAuth
+metadata, not automatic global network enforcement; observer persistence failure is not ruled out
+by construction. No such warning/gap was observed.
+
+Separate local HTTP cookie jars preserved participant browser authentication for Support checks.
+Owner Enrollment plus sales-trial-rdp source returned 21 entries (18 GET200 transports/three OAuth),
+all 18 Authorization headers masked. Offering default returned 20 entries; Offering plus RDP source
+returned zero because successful RDP transports anchor to Enrollment. Enrollment default returned
+48 entries including parent Offering. Actual View workflow subjectType/subjectId semantics traverse
+Enrollment-to-parent, not Offering-to-all-Enrollments. Foreign Offering/Enrollment queries each
+returned zero. This is live-evidence API verification; Support browser buttons were exercised
+synthetically, not repeated live. No guest password appeared in ordinary audit/server logs;
+participant console warnings/errors zero. Live no-store headers were not captured; actual synthetic
+HTTP verified them separately.
+
+Consistent post-live database backups, protected owner/foreign evidence, provider file copy,
+redacted summary and hashes remain private. Earlier synthetic DB/key retention limits are unchanged.
+The owned server/current participant/viewer pages are retained for the human. One native desktop,
+controls and QA/merge acceptance question is pending. No additional provider requests or cleanup.
