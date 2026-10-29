@@ -7,7 +7,7 @@ Each existing Windows VM is shown by friendly name with its own explicit Downloa
 - `GET /api/sales-trial/offerings/{offeringId}/rdp`: authenticated participant status and opaque VM selectors; no provider IDs or credentials.
 - `GET /api/sales-trial/offerings/{offeringId}/rdp/{selector}`: fresh ownership, continued-enrollment lifecycle, participant correlation, exact Environment, and VM membership checks; provider file as an `application/rdp` attachment. All outcomes are `no-store`.
 - Environment and VM discovery use v4. The narrowly authorized v3 `GET /vms/actions/getremoteaccessfile` uses the discovered MC ID and required 1920×1080 dimensions. The public-cloud EM-only v4 download operation is not used for these machines.
-- Readiness requires a ready, unexpired Environment, completed VM preparation and a public external address. Known stopped/transitional VM states are unavailable. No resume, provisioning, ending reconciliation, or other provider mutation occurs.
+- Readiness requires a ready, unexpired Environment, completed VM preparation and a public external address. The documented positive Running display label is required; missing, unknown and transitional labels fail closed without treating the provider status as a stable enum. No resume, provisioning, ending reconciliation, or other provider mutation occurs.
 - Protected Customer-scoped diagnostics retain provider evidence through the existing observer; ordinary responses and audit metadata exclude the separate password, raw provider bodies and provider IDs. The explicit attachment alone carries the provider's RDP content.
 
 ## Acceptance evidence
@@ -28,3 +28,14 @@ Runtime/test head: `182eeec0d518be7bcb09b3e15041af6d5a936054`.
 - Tests used the native physical worktree path and an external configuration preserving repository test settings with serial workers and an absolute, disposable `prisma/test.db` in this worktree. The initial alias-path UI bootstrap failure was reproduced on an unchanged test and resolved by canonical paths; no tracked test-runner/package change was made.
 - One test-fixture repair narrowed its v4 VM-detail URL matcher so it no longer intercepted the v3 file endpoint. No production repair loop was needed.
 - Browser/live/native-client/Support and human QA are pending. No live provider call or service start was performed by implementation.
+
+
+## Independent review repair 1 (2026-10-29)
+
+Runtime/test/build head: `f809b588` (documentation-only follow-up does not change it).
+
+Addressed the three reported P2 findings: unknown/transitional VM labels cannot authorize download; aggregate preparing status and per-machine reasons accurately distinguish preparation, absent public address and unconfirmed readiness; derived roster/page failures retain typed protected request/response context, operation, integration surface and failure mode while ordinary client errors remain static. The existing diagnostic failure projection is reused.
+
+Each affected behavior was observed failing before its fix. Final focused checks: 36/36. Typecheck and lint passed. Fixture production build passed, including both RDP routes, with seed off, background jobs disabled, a temporary process-only random key and this worktree's disposable test database; no real credentials or server were used. Final full `npm test`: launcher 14/14; Vitest 2586 passed + the same four candidate-home baseline failures, 296 passing files/297, 283.29 seconds. No new failure. Build and test processes terminated before releasing the CPU slot.
+
+Both independent review axes must re-review this repair; browser/live/Support/native-client and human QA remain pending. No additional feature scope or provider routing was added.
