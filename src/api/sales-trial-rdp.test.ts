@@ -19,7 +19,7 @@ function setup(options: { failDownload?: boolean; incompleteRoster?: boolean } =
  const client = createCloudShareClient({ endpoints: { v4BaseUrl: "https://provider.test/v4", v3BaseUrl: "https://provider.test/api/v3" }, v3: { apiId: "test", apiKey: "test" }, tokenProvider: { getToken: async () => "test" }, observer: createCloudShareNoopRequestObserver(), http: { send: async r => {
   urls.push(r.url); const path = new URL(r.url).pathname;
   if (options.failDownload && path.endsWith("getremoteaccessfile")) return { status: 403, body: JSON.stringify({ password: "protected-failure", vmId: "MC-owned" }) };
-  const body = path.endsWith("/participants") ? (options.incompleteRoster ? { participants: [participant] } : { count: 1, items: [participant] }) : path.endsWith("/sales/EX-owned") ? { id: "EX-owned", status: "inProgress", end: null } : path.endsWith("/environments") ? { count: 1, items: [environment] } : path.endsWith("/environments/EN-owned") ? environment : path.endsWith("/vms") ? { count: machines.length, items: machines } : path.includes("/environments/EN-owned/vms/") ? machines.find(m => path.endsWith(m.id)) : { rdpFileContent: "full address:s:desktop.example.test\r\n", clearTextPassword: "protected-password" };
+  const body = path.endsWith("/participants") ? (options.incompleteRoster ? { participants: [participant] } : { count: 1, items: [participant] }) : path.endsWith("/sales/EX-owned") ? { id: "EX-owned", status: "inProgress", end: null } : path.endsWith("/environments") ? { count: 1, items: [environment] } : path.endsWith(`/environments/${environment.id}`) ? environment : path.endsWith("/vms") ? { count: machines.length, items: machines } : path.includes(`/environments/${environment.id}/vms/`) ? machines.find(m => path.endsWith(m.id)) : { rdpFileContent: "full address:s:desktop.example.test\r\n", clearTextPassword: "protected-password" };
   return { status: 200, body: JSON.stringify(body) };
  } } });
  const deps = { offerings: { findById: async () => offering }, enrollments: { findByOfferingAndPortalUser: async () => enrollment }, items: { findById: async () => ({ customerId: "customer", project: { id: "PR-owned" } }) }, connections: { findByCustomerId: async () => ({ customerId: "customer" }) }, cloudshare: { forConnection: () => client }, now: () => now } as unknown as SalesTrialRdpDeps;
@@ -122,4 +122,54 @@ it.each([
  const result = await handleSalesTrialRdp(s.deps, request);
  expect(result.body?.machines).toMatchObject([{ state: "unavailable", message }]);
  expect(JSON.stringify(result)).not.toMatch(/desktop\.example\.test|203\.0\.113|MC-owned|EN-owned|fqdn/);
+});
+
+it("retrieves only credentials after deliberate owner action and leaves file download independent", async () => {
+ const s = setup(); Object.assign(s.vm, { username: "guest-user" });
+ const listing = await handleSalesTrialRdp(s.deps, request);
+ expect(s.urls.some(url => /\/vms\//.test(url))).toBe(false);
+ const result = await handleSalesTrialRdp(s.deps, { ...request, selector: listing.body!.machines![0]!.selector, action: "credentials" });
+ expect(result).toEqual({ status: 200, credentials: { username: "guest-user", password: "protected-password" } });
+ expect(s.urls.some(url => url.includes("getremoteaccessfile"))).toBe(false);
+});
+
+it.each(["customer", "user", "ended", "participant", "binding", "project", "owner", "vm", "unavailable"])("denies credential action after %s changes and records a safe failure", async change => {
+ const { createDiagnosticRecorder } = await import("@/domain/diagnostic-log");
+ const { createInMemoryDiagnosticLogRepository } = await import("@/persistence/diagnostic-log-repository");
+ const repository = createInMemoryDiagnosticLogRepository();
+ const s = setup(); Object.assign(s.vm, { username: "guest-user" });
+ const listing = await handleSalesTrialRdp(s.deps, request);
+ if (change === "customer") s.enrollment.customerId = "other";
+ if (change === "user") s.enrollment.portalUserId = "other";
+ if (change === "ended") s.enrollment.status = "ended";
+ if (change === "participant") s.participant.id = "other";
+ if (change === "binding") s.participant.customProperties[0]!.value = "other";
+ if (change === "project") s.environment.projectId = "PR-other";
+ if (change === "owner") s.environment.ownerEmail = "other@example.test";
+ if (change === "vm") s.vm.id = "MC-other";
+ if (change === "unavailable") s.vm.status = "Suspended";
+ const result = await handleSalesTrialRdp({ ...s.deps, diagnostics: createDiagnosticRecorder({ repository }) }, { ...request, selector: listing.body!.machines![0]!.selector, action: "credentials" });
+ expect(result.status).toBeGreaterThanOrEqual(400);
+ expect(JSON.stringify(result)).not.toMatch(/protected-password|guest-user|MC-|EN-/);
+ expect(s.urls.some(url => url.includes("getremoteaccessfile"))).toBe(false);
+ expect((await repository.query({ customerId: "customer", outcome: "failure" })).length).toBeGreaterThan(0);
+});
+it("missing credential values leave RDP download usable and retain protected diagnosis", async () => {
+ const s = setup();
+ const listing = await handleSalesTrialRdp(s.deps, request);
+ const selected = { ...request, selector: listing.body!.machines![0]!.selector };
+ const result = await handleSalesTrialRdp(s.deps, { ...selected, action: "credentials" });
+ expect(result.status).toBe(502);
+ expect(JSON.stringify(result)).not.toContain("protected-password");
+ expect(await handleSalesTrialRdp(s.deps, selected)).toHaveProperty("file");
+});
+
+it("rejects an old selector after the same VM id rebinds to a different Environment", async () => {
+ const s = setup(); Object.assign(s.vm, { username: "guest-user" });
+ const listing = await handleSalesTrialRdp(s.deps, request);
+ s.environment.id = "EN-replacement";
+ const result = await handleSalesTrialRdp(s.deps, { ...request, selector: listing.body!.machines![0]!.selector, action: "credentials" });
+ expect(result.status).toBe(409);
+ expect(result.credentials).toBeUndefined();
+ expect(s.urls.some(url => /\/vms\//.test(url))).toBe(false);
 });

@@ -1,5 +1,17 @@
 # CloudShare API Reference Sources
 
+## Deliberate Trial guest credentials (#487, 2026-10-29)
+
+The Infrastructure export documents `GET /v4/environments/{envId}/vms/{vmId}` and nullable
+`VmResponse.username` / `password` (password populated when ready). The deliberate portal POST
+uses a dedicated detail projection after fresh participant/enrollment, owner/Project resolution,
+VM membership and RDP-readiness checks. Only username/password enter the narrowly authorized
+transient participant response; shared listings still discard them. The provider-produced v3
+RDP attachment remains independent and unchanged. Fresh-participant live UI retrieval/file
+comparison passed; native acceptance is recorded separately in the
+[acceptance record](../discovery/2026-10-29-trial-guest-credentials.md). No new provider path,
+credential cache or general redaction exception is introduced.
+
 This project keeps local CloudShare API exports so implementation agents do not infer endpoint
 paths from memory or from earlier slices.
 

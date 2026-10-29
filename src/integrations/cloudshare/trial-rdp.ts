@@ -8,6 +8,14 @@ const vmSchema = z.object({ id: z.string().startsWith("MC"), name: z.string(), o
  publicRdpConfigured: fqdn === null || typeof fqdn === "string" ? typeof fqdn === "string" && fqdn.trim().length > 0 : null,
 }));
 const pageSchema = z.object({ count: z.number().int().nonnegative(), items: z.array(vmSchema) });
+const credentialVmSchema = z.object({
+ vm: vmSchema,
+ username: z.string().nullable().optional(),
+ password: z.string().nullable().optional(),
+});
+// Keep credentials out of the shared listing/detail projection used for file downloads.
+const credentialsSchema = z.preprocess(value => ({ ...(typeof value === "object" && value !== null ? value : {}), vm: value }), credentialVmSchema);
+export interface TrialRdpCredentials { username: string; password: string }
 export type TrialRdpVm = z.infer<typeof vmSchema>;
 /** Running is the documented positive display label, not a stable provider enum.
  * Unknown/new labels fail closed until their readiness semantics are verified. */
@@ -19,6 +27,13 @@ export function trialRdpVmAvailability(vm: TrialRdpVm): "ready" | "preparing" | 
 }
 export function createCloudShareTrialRdp(client: CloudShareClient) {
  return {
+  async credentials(environmentId: string, vmId: string): Promise<TrialRdpCredentials> {
+   const detail = await readVm(client, { method: "GET", path: `/environments/${encodeURIComponent(environmentId)}/vms/${encodeURIComponent(vmId)}`, schema: credentialsSchema });
+   const { vm, username, password } = detail.data;
+   if (vm.id !== vmId || trialRdpVmAvailability(vm) !== "ready") throw invalidVm(detail, "vm_not_ready_or_mismatched", "VM is unavailable for remote desktop.");
+   if (!username?.trim() || !password?.length) throw invalidVm(detail, "guest_credentials_missing", "Guest credentials are unavailable.");
+   return { username, password };
+  },
   async download(environmentId: string, vmId: string): Promise<string> {
    const detail = await readVm(client, { method: "GET", path: `/environments/${encodeURIComponent(environmentId)}/vms/${encodeURIComponent(vmId)}`, schema: vmSchema });
    const vm = detail.data;

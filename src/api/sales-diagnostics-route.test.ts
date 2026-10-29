@@ -86,6 +86,10 @@ describe("Sales diagnostics HTTP isolation", () => {
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(10, expect.anything(), {
       customerId: "customer-certalis",
+      query: { operation: "account.created", source: "sales-trial-rdp", limit: "500", offset: "0" },
+    });
+    expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(11, expect.anything(), {
+      customerId: "customer-certalis",
       query: { operation: "account.created", source: "cloudshare-integration", limit: "500", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ customerId: "customer-certalis", query: expect.objectContaining({ source: "sales-items", operation: "item.resource_read", limit: "500", offset: "0" }) }));
