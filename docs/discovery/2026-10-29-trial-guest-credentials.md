@@ -77,3 +77,45 @@ failed before the correction, then passed. The affected HTTP/handler run passed 
 `npm run typecheck` and `npm run lint` passed with no lint warnings/errors. No full-suite repeat
 is claimed. Fresh independent review, fixture rebuild and actual HTTP recheck remain required.
 This reaches the three-repair boundary; further product changes require explicit parent direction.
+
+## Synthetic browser and HTTP acceptance (2026-10-29)
+
+Independent QA built and tested application head `805d61569ea23645799a1fc37152cfbcf6a5f22f`
+with a temporary provider-boundary fixture, a fresh migrated disposable database and process key,
+seed off and background jobs disabled. This is synthetic evidence, not live CloudShare acceptance.
+Both independent review axes were clean at that exact head.
+
+Actual HTTP verified credential POST 200 with exactly username/password and no-store; listings
+omitted both. Missing credentials, stale readiness and provider denial produced safe 502; other
+participant 404, unauthenticated 401 and cross-origin 403 were noncacheable. All six unsupported
+methods returned 405, no-store and Allow: POST after repair 3.
+
+Actual browser controls verified no credential prefetch on render or desktop check, both fields
+masked initially, each Show/Hide, dismissal, fresh retrieval and reload clearing. Four deliberate
+credential POSTs were counted in the browser capture window, excluding the HTTP checker. Actual
+Copy clicks for both fields matched their synthetic fixture values using private browser clipboard
+comparisons; values were not emitted. An initial invalid comparison against the browser inspection
+redaction sentinel was corrected without product changes or instrumentation. Reload was exercised;
+BFCache restoration and delayed responses were not separately browser-tested (late-response
+invalidation has automated UI coverage). The task tab had zero console warnings/errors.
+
+Owner Offering and Enrollment workflow evidence buttons reached protected credential-failure
+records. Explicit sales-trial-rdp source showed operation, integration surface, provider 403 and
+masked Authorization. Local foreign-Customer filters returned no entries for either owner scope;
+this is portal Customer-isolation evidence, not a second live CloudShare tenant.
+
+Owned server PID 130380 was positively stopped; port 3027 is free. Only the new task tab 925992435
+was closed; the retained viewer, primary checkout, port 3000 and old 3025 service were untouched.
+The provider overlay was reversed and its source removed; checkout was clean. Private redacted
+summary/scripts/build logs and SHA256 manifest remain externally in qa/issue-487-synthetic-qa.
+Retention limitation: disposable synthetic DB/key/accounts/server logs were removed before their
+hashes were captured; those hashes are unavailable. No full-retention claim is made.
+
+Overlay SHA256: 50fb155b5b39aef90a38fc41c61e491e7ba0a61bbcb61dbe5972218c3124048e.
+Fixture SHA256: 7cc3b017f686f0280800d19ec42b41b4e06c2b5c09066a3b025cfc55f7e10e1b.
+Redacted summary SHA256: 5c97194de1c9fbfeeeee805a9687b810179b67c0b502222f257e3858f3b94859.
+
+Live preflight, separately authorized disposable Trial UI retrieval, protected live diagnostics,
+human native-RDP connection and explicit acceptance remain required before merge. No live calls
+were made during synthetic QA. The original full-suite result and targeted repairs above remain
+qualified; no clean full-suite run is implied.
