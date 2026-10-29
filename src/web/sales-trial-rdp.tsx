@@ -35,7 +35,7 @@ export function SalesTrialRdp({ offeringId, title = "Trial", active = true, fetc
    {!loading && status && status.state !== "ready" && <button type="button" style={textActionStyle} onClick={() => void check()}>Retry desktops</button>}
    {status?.message && <p style={copyStyle}>{status.message}</p>}
    <div style={workspaceStyle}>
-    <div aria-label="Desktops" style={stackStyle}>
+    <div aria-label="Desktops" style={desktopListStyle}>
      {status?.machines?.map(vm => <div key={vm.selector} style={machineStyle}>
       {vm.state === "ready" ? <button type="button" style={{ ...textActionStyle, textAlign: "left", fontWeight: 600 }} aria-label={`Select desktop ${vm.name}`} aria-pressed={selected === vm.selector} onClick={() => setSelected(vm.selector)}>{vm.name}</button> : <strong style={{ overflowWrap: "anywhere" }}>{vm.name}</strong>}
       <span style={copyStyle}>{vm.state === "ready" ? "Ready" : vm.message ?? (vm.state === "preparing" ? "Preparing" : "Remote desktop unavailable")}</span>
@@ -149,3 +149,5 @@ const dialogBodyStyle: CSSProperties = { ...stackStyle, padding: spacing.md, ove
 const workspaceStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 20rem), 1fr))", gap: spacing.md, alignItems: "start", minWidth: 0 };
 const selectedPanelStyle: CSSProperties = { ...stackStyle, border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: spacing.md, background: colors.surface, alignContent: "start", justifyItems: "start" };
 const textActionStyle: CSSProperties = { background: "transparent", border: 0, padding: "0.3rem 0", color: colors.accentStrong, textDecoration: "underline", textUnderlineOffset: "0.15em", font: "inherit", cursor: "pointer", maxWidth: "100%", overflowWrap: "anywhere" };
+
+const desktopListStyle: CSSProperties = { ...stackStyle, maxHeight: "45dvh", overflowY: "auto", overscrollBehavior: "contain" };

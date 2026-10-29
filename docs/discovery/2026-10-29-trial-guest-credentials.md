@@ -438,3 +438,18 @@ No full suite, build, browser or live provider call was performed by implementat
 reviews, one representative fixture build, actual desktop/narrow and keyboard browser checks, and
 human acceptance remain required. This sixth revision is explicitly authorized; new production
 blockers or design growth require parent direction before revision 7.
+
+## Explicitly authorized revision 7: independently scrolling desktop list
+
+The human requested independent desktop-list scrolling after the functional preview. The existing
+list and selected panel shared the dialog-body scroller, so a long VM list moved the selected
+credentials away with it. This local layout-only change bounds the VM-list column to 45dvh with
+its own vertical overflow and contained overscroll. The adjacent panel remains in its column;
+the existing responsive stacked layout and outer dialog overflow remain available on narrow screens.
+No state, discovery, credential, Copy, authorization, API or provider behavior changed.
+
+The existing two focused UI files passed 23 tests; types and lint passed. No CSS-property-mirroring
+test or visual framework was added. Actual many-VM scrolling, desktop/narrow layout and keyboard
+browser verification remain outstanding for the lifecycle QA gate. The human's functional preview
+is not a merge waiver. Fresh independent reviews and one preview build remain required; implementation
+performed no build or live calls. Any revision 8 blocker requires explicit parent direction.
