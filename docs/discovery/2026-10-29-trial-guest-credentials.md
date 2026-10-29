@@ -465,3 +465,29 @@ types and lint passed. This proves keyboard reachability, not native scrolling i
 Actual scroll QA remains required after fresh delta reviews and the same single planned fixture
 build. No build/live calls/full-suite repeat occurred. This is the explicitly approved accessibility
 completion, not expanded product scope; a further blocker requires parent direction before revision 9.
+
+## Final human acceptance and bounded browser verification
+
+The human accepted the final preview: "Okay, let's call it done." This records human layout and
+functional acceptance, not an invented automated result. Both independent reviews are clean at
+app `1178a7aa98878ac72764c5f57d13c93ccc5bf923`; the single many-VM fixture production build passed.
+The earlier browser-control timeouts were overcome by one authorized documented lookup of the
+existing exact synthetic localhost:3029/sales-trial page, resolving Edge. This did not select or
+inspect unrelated pages, switch authentication, open another tab, or access real provider data.
+
+Actual many-VM browser evidence at that app: two ready and nine unavailable Windows rows;
+Alpha's synthetic credentials initially masked. Desktops scrollTop moved from 0 to 490/490,
+while the selected panel top/bottom remained exactly 344.05/803.55px and credentials remained
+present. The labelled Desktops region took keyboard focus; Home/End moved its scroll position
+(449 of 490 observed during smooth movement), with no background focus. At 390x844, the list
+and panel stacked and page width was 375px, without horizontal overflow. Viewport was restored.
+Escape closed the dialog and returned focus to its trigger. Console warnings/errors: zero.
+No screenshot was retained for this bounded session; interaction measurements and console
+evidence are the proof. No real credential/provider calls or clipboard reads occurred.
+
+This final session did not repeat earlier cache, download or all credential-control checks.
+Those earlier synthetic results and focused automated checks remain separately qualified;
+the unchanged API/adapter/auth live flow and human native RDP pass remain at their recorded
+earlier app identity. No clean full-suite rerun or final-app live-provider rerun is claimed.
+Normal merge follows final documentation review, exact-head/thread/check audit and preservation
+of the isolated fixture evidence. Primary checkout and retained provider assets remain untouched.
