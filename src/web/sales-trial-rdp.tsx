@@ -35,7 +35,7 @@ export function SalesTrialRdp({ offeringId, title = "Trial", active = true, fetc
    {!loading && status && status.state !== "ready" && <button type="button" style={textActionStyle} onClick={() => void check()}>Retry desktops</button>}
    {status?.message && <p style={copyStyle}>{status.message}</p>}
    <div style={workspaceStyle}>
-    <div aria-label="Desktops" style={desktopListStyle}>
+    <div role="region" aria-label="Desktops" tabIndex={0} style={desktopListStyle}>
      {status?.machines?.map(vm => <div key={vm.selector} style={machineStyle}>
       {vm.state === "ready" ? <button type="button" style={{ ...textActionStyle, textAlign: "left", fontWeight: 600 }} aria-label={`Select desktop ${vm.name}`} aria-pressed={selected === vm.selector} onClick={() => setSelected(vm.selector)}>{vm.name}</button> : <strong style={{ overflowWrap: "anywhere" }}>{vm.name}</strong>}
       <span style={copyStyle}>{vm.state === "ready" ? "Ready" : vm.message ?? (vm.state === "preparing" ? "Preparing" : "Remote desktop unavailable")}</span>

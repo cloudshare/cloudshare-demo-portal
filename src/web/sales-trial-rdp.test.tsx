@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
+import userEvent from "@testing-library/user-event";
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { SalesTrialRdp } from "./sales-trial-rdp";
@@ -110,4 +111,16 @@ it("keeps credential errors compact and retryable without disabling file downloa
  expect(screen.getByRole("link", { name: "Download RDP for Desktop A" })).toBeTruthy();
  await retrieve(); await screen.findByLabelText("Guest password");
  expect(fetchImpl).toHaveBeenCalledTimes(3);
+});
+
+it("lets keyboard users reach the scroll region for an all-unavailable desktop list", async () => {
+ const user = userEvent.setup();
+ const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: "unavailable", machines: [{ name: "Unavailable desktop", selector: "unavailable", state: "unavailable", message: "Public remote access is not configured" }] }) });
+ render(<SalesTrialRdp offeringId="offering" fetchImpl={fetchImpl} />);
+ openDialog();
+ await screen.findByText("Public remote access is not configured");
+ await user.tab();
+ expect(document.activeElement).toBe(screen.getByRole("button", { name: "Retry desktops" }));
+ await user.tab();
+ expect(document.activeElement).toBe(screen.getByRole("region", { name: "Desktops" }));
 });

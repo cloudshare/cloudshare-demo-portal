@@ -453,3 +453,15 @@ test or visual framework was added. Actual many-VM scrolling, desktop/narrow lay
 browser verification remain outstanding for the lifecycle QA gate. The human's functional preview
 is not a merge waiver. Fresh independent reviews and one preview build remain required; implementation
 performed no build or live calls. Any revision 8 blocker requires explicit parent direction.
+
+## Explicitly authorized revision 8: keyboard access to the new scroll region
+
+Independent Standards review caught the scroll-region accessibility gap before the planned build:
+a list containing only unavailable rows had no keyboard focus target. The parent authorized only
+standard local semantics on the existing Desktops element: `role="region"` and `tabIndex={0}`,
+preserving its label. No keyboard interception, scrolling logic or framework was added.
+A user-tab behavior test failed before the change and passed afterward; all 13 RDP UI tests,
+types and lint passed. This proves keyboard reachability, not native scrolling in a real browser.
+Actual scroll QA remains required after fresh delta reviews and the same single planned fixture
+build. No build/live calls/full-suite repeat occurred. This is the explicitly approved accessibility
+completion, not expanded product scope; a further blocker requires parent direction before revision 9.
