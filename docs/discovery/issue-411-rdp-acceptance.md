@@ -107,3 +107,17 @@ Fresh reviews and an isolated production build remain required. Prior full-suite
 275d8dd3 is reused with this narrow delta explicitly qualified; no new full-suite claim is made.
 Actual Support/foreign-Customer and browser-independence QA must repeat. No live actions occurred;
 any additional blocker requires escalation before a fifth repair.
+
+## Support causal-filter completion 5 (2026-10-29)
+
+Both reviewers identified that repair 4 missed parallel source selections for the actual workflow
+evidence buttons. Parent explicitly approved completing the three existing selections: direct
+Offering, direct Enrollment, and Enrollment-to-parent Offering, including explicit source branches.
+Both reviewers confirmed the bounded matrix before edits. Eight real-repository cases (Offering/
+Enrollment × source absent/RDP × correlation absent/present) failed empty before the fix and pass
+afterward. They retain owner 403 operation/surface evidence, mapped parent scope, exact Offering
+scope, foreign/sibling/unrelated exclusions and correlation filtering. No traversal/filter framework
+was introduced. All 47 diagnostics tests, types and lint pass. Fresh independent reviews and one
+fixture build remain pending; full-suite275d8dd3 evidence remains qualified prior-head evidence.
+Actual Support/browser QA must repeat. Any further blocker requires explicit escalation before
+repair 6; no live actions or services were started.
