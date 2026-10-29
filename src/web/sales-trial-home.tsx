@@ -306,7 +306,7 @@ function SalesTrialOfferingCard({
                   </span>
                 </div>
               </div>
-              <SalesTrialRdp offeringId={offering.id} active={showDetails} fetchImpl={fetchImpl} />
+              <SalesTrialRdp offeringId={offering.id} title={offering.title} active={showDetails} fetchImpl={fetchImpl} />
               <button type="button" tabIndex={backFaceTabIndex} onClick={onLaunch} style={primaryButtonStyle}>
                 {active ? "Focus trial window" : "Open trial window"}
               </button>

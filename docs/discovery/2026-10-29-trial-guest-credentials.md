@@ -352,3 +352,31 @@ status only; credential presence cannot be inferred by prefetching or from one f
 and valid RDP download remains independent. The next already-required UI build may use a simpler
 representative human preview, preserving earlier private negative cases/evidence; this is not a
 production filter or another provider probe. All live totals/asset restrictions remain unchanged.
+
+## Explicitly authorized repair 5: compact remote-desktop dialog
+
+The human and parent approved replacing the expanded inline desktop section with one compact
+Remote desktops action inside each Trial details face. This opens a Trial-named native HTML dialog
+in the browser top layer, so the card's transformed flip ancestor cannot constrain the overlay.
+Native modal behavior supplies keyboard containment; Escape/cancel and Close remove the dialog,
+with focus returned to the originating action. The dialog body is bounded and scrollable, with
+compact wrapping VM rows and actions. Known-unavailable rows show status only. Credential failures
+show compact action-specific feedback and an available retry action, without an empty credential
+panel or full-width Dismiss button; RDP download remains independent.
+
+The existing page-local per-Trial listing state remains mounted. Opening and closing never fetch;
+ready disables Check across dialog closure and details flips. Credential children unmount on either
+closure, invalidating pending responses. No API, authorization, provider, capability, permanent-failure
+cache, persistence or global-cache changes. No separate grid-stretch change. Copy's function remains
+unchanged. The human passed Show/Hide/Copy on the current synthetic fixture; the earlier reported
+clipboard failure's cause remains unproven and is not attributed to these layout changes.
+
+TDD at the existing UI seams: after supplying the absent jsdom native-dialog browser boundary,
+the dialog test failed because the Remote desktops trigger did not exist, then passed. The two
+focused UI files passed 23 tests: two Trial contexts, details-only trigger, no fetch on open,
+ready retention across close/flip, unavailable status-only rows, retryable compact safe errors,
+secret/late-result discard, native cancel/focus return, and unchanged explicit Copy behavior.
+Browser verification must still exercise actual native focus containment/Escape, desktop/narrow
+layout and interactions on the new exact head. No full-suite repeat, build, browser or provider
+calls were performed by implementation. This fifth UI revision is explicitly approved; any new
+production blocker requires a fresh parent decision before a sixth repair.
