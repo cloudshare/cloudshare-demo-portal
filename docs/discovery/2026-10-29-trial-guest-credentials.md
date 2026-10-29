@@ -380,3 +380,33 @@ Browser verification must still exercise actual native focus containment/Escape,
 layout and interactions on the new exact head. No full-suite repeat, build, browser or provider
 calls were performed by implementation. This fifth UI revision is explicitly approved; any new
 production blocker requires a fresh parent decision before a sixth repair.
+
+### Repair 5 independent review and representative browser evidence
+
+Both independent Standards and Spec/security reviews are clean at
+`b34a487bc6f4ba0742f3d5125563b45fc706310d`. Typecheck/lint passed; focused home/RDP
+23 tests and final RDP 12 tests passed. One isolated representative fixture production build
+passed. It explicitly describes preseeded enrollment/launch history, with two eligible Windows
+desktops and one unconfigured Windows desktop; Linux is omitted by existing production filtering.
+Earlier adversarial fixtures/evidence remain preserved separately, not filtered from production.
+
+Actual browser interactions confirmed: dialog opening makes no discovery request; one Check
+produces the expected rows and disables Check; cached ready results survive close/details flips
+without extra discovery; the second Trial remains independent. Unconfigured rows have status only.
+Masked credentials, Show/Hide/Dismiss and Copy feedback, Escape clearing/focus return, and a
+34-byte synthetic RDP download passed. Desktop and 375px views had no horizontal overflow;
+the bounded dialog keeps the card compact. Console warnings/errors: zero. Delayed-response
+discard remains targeted automated coverage, not separate browser timing evidence.
+
+Native keyboard evidence: initial focus is Close; Tab/Shift-Tab traverse modal controls and an
+empty page-focus/browser-chrome boundary, without focusing background portal elements. This is
+not claimed as a strict two-control wrap. Two immediately batched clicks during card transition
+detached the dialog; fresh observed settled details followed by normal clicks worked for both
+Trials. The cause is unproven; this is recorded as a rapid-automation limitation, with no repair
+or extra build.
+
+Private representative evidence, screenshots, fixture database/key and manifest are retained and
+hashed under `qa/issue-487-repair5-preview` outside the repository. Owned preview PID147012
+remains at localhost:3029 for a NEW normal unclaimed human tab; automated tabs are closed and
+automation has stopped. No live/provider calls or primary-checkout changes occurred. Final human
+compact-layout and explicit normal-merge acceptance remain pending.
