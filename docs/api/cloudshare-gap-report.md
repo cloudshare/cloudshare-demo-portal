@@ -2407,8 +2407,12 @@ unchanged provider RDP file through the existing v3 path. Its 585 bytes privatel
 provider `rdpFileContent`; no password was embedded or file generated. Protected owner diagnostics,
 local foreign-Customer exclusion and zero participant-console warnings/errors passed separately.
 Live no-store headers were not captured; actual synthetic HTTP verified the contract. The human
-confirmed actual native RDP desktop login, but both Copy controls failed with no feedback; overall
-UI acceptance and merge remain withheld pending that issue and the requested layout QA.
+confirmed actual native RDP desktop login. Both Copy controls initially failed with no feedback;
+the cause remains unproven and the Copy mechanism is unchanged. Later human synthetic-fixture
+Show/Hide/Copy checks passed. The final compact side-panel layout and independent VM-list scrolling
+were accepted by the human; bounded final synthetic browser scrolling, keyboard, narrow-layout,
+credential-visibility and console checks passed at app `1178a7aa`. These later UI checks did not
+repeat the live-provider flow or establish the earlier clipboard failure's cause.
 These dated results supersede earlier retrieval-unverified
 statements only for this flow, not general reachability or v4 MC parity. See the
 [acceptance record](../discovery/2026-10-29-trial-guest-credentials.md) for counts and limits.
