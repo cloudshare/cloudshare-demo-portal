@@ -65,7 +65,7 @@ sequenceDiagram
   H->>D: Resolve Connection by path token
   H->>H: Verify HMAC over exact raw body
   H->>H: Parse supported environment event
-  H->>D: Record diagnostic fingerprint; do not suppress repeats
+  H->>D: Record diagnostic fingerprint, do not suppress repeats
   H->>R: Resolve Customer correlation and reconcile hint
   R->>C: GET authoritative environment state
   R->>D: Persist observation and diagnostic evidence

@@ -27,14 +27,14 @@ flowchart TD
 
 `GET /api/candidate/exams` assembles the Customer's published catalog and this Candidate's attempts/session options through the dashboard runtime. Existing attempt completion/external-lease reconciliation can run while deriving availability. It is not always a passive SQL-only read: a runtime/lease inspection can use training participants, v4 environment detail or training detail as described below. History comes from owned persisted attempts; it does not enumerate another Candidate's provider environments.
 
-Individual scheduling requires a published individual Exam, connected Customer, future valid start, valid admin-configured Regions and no conflicting active admission. Cohort joining requires the published cohort/session, admission still open, eligible timing and no conflicting attempt. A changed Blueprint default Snapshot or invalid Region blocks both even if the card was previously available.
+Individual scheduling requires a published individual Exam, connected Customer, future valid start and no conflicting active admission. Cohort joining requires the published cohort/session, admission still open, eligible timing and no conflicting attempt. A changed Blueprint default Snapshot blocks both even if the card was previously available. The runtime guard compares the current default Snapshot ID with the saved ID; it does not revalidate Region deployability. Training uses the admin-authored `Exam.allowedRegions`.
 
 ## Schedule an individual Exam
 
 | Order | Call / local action | Inputs, output and state |
 |---|---|---|
 | 1 | Browser `POST /api/candidate/exams` | `examId` and `scheduledFor`; validate current published Exam, future timestamp, Customer Connection and admission conflicts. |
-| 2 | v3 `GET /projects/{projectId}/blueprints/{blueprintId}` | Runtime default-Snapshot/Region guard; failure returns safe Candidate error with internal resource evidence. |
+| 2 | v3 `GET /projects/{projectId}/blueprints/{blueprintId}` | Runtime default-Snapshot ID guard; failure returns safe Candidate error with internal resource evidence. |
 | 3 | Local reserve ExamAttempt | Allocate attempt identity before remote admission to prevent conflicting parallel requests. |
 | 4 | v3 `GET /teams` with Project lookup query | Resolve required team for the training, using stored Exam/Customer configuration. |
 | 5 | v4 `POST /trainings` | Individual Experience from the Exam Project/Blueprint/Policy and all `Exam.allowedRegions`; scheduled Start and authored open-period End. Persisted evidence retains training ID even if a later step fails. |
