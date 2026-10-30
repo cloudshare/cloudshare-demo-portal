@@ -17,11 +17,17 @@ separately before using the installation through CloudShare Web Access.
 | Dependency installation, Prisma generation and migrations | Passed | Passed |
 | Production build | Passed | Passed |
 | Private health and admin API login, session and logout | Passed | Passed |
+| Guest HTTPS, form redirects and cookie attributes | Passed | Pending |
+| Public HTTPS login page request | HTTP 200 with normal certificate validation | Pending |
+| Persistent startup configuration | Scheduled tasks running | Pending |
+| Browser interaction and console checks | Pending | Pending |
+| Reboot recovery | Pending | Pending |
 
-The private API checks kept credentials and cookies inside each VM. They do not
-establish browser cookie behavior or public HTTPS access. Both production servers
-currently run temporarily on `127.0.0.1:3000`; persistent startup, public HTTPS and
-reboot verification remain unfinished.
+The API checks kept credentials and cookies inside each VM. Windows now runs
+Next.js privately on `127.0.0.1:3000` and Nginx on HTTPS 443 through scheduled
+tasks. Its public login page returned HTTP 200 with normal certificate validation.
+These checks do not establish browser interaction or reboot recovery. Linux still
+runs its temporary private Next.js process while native Nginx installation is pending.
 
 ## Install the prerequisites
 
@@ -190,7 +196,9 @@ On Linux, use `umask 077` before creating the checkout and local files. On
 Windows, Node's `mode: 0o600` does not set NTFS permissions. Before public access,
 restrict the new `.env`, SQLite directory and sidecars, logs, and any TLS private
 keys to the identities that operate the installation. The Windows rehearsal found
-inherited read access for local Users; that permissions correction remains pending.
+inherited read access for local Users. The later Windows setup applied scoped
+permissions; guest QA verified that only SYSTEM and Administrators have allow
+entries on the deployed TLS key and SQLite database.
 
 These fixture accounts and the synthetic instructor require no CloudShare API
 credentials. An admin supplies a real Customer-scoped CloudShare Connection later
@@ -244,14 +252,26 @@ configuration.
 Both private checks passed persistence-backed health, the login page, local admin
 API login and session validation, and logout. A form-login probe with the intended
 public Host and HTTPS forwarding headers returned a redirect to
-`https://localhost:3000/login` on both platforms. Public HTTPS deployment must
-correct and verify that origin, including successful browser login and logout.
-The proxy versus direct HTTPS startup choice is still pending.
+`https://localhost:3000/login` on both platforms. Nginx was selected to provide
+HTTPS on guest port 443 while Next.js remains private. Windows guest QA then
+verified canonical public HTTPS redirects for both invalid and valid login,
+Secure/HttpOnly/SameSite=Lax cookies, authenticated admin session and logout,
+and six positive/negative Location and Refresh rewrite cases. The isolated guest
+test listeners were stopped afterward. Browser interaction and console checks
+remain pending.
+
+Linux deployment will use the native vendor package and stock service, including
+the package's [non-login `nginx` account](https://github.com/nginx/pkg-oss/blob/master/debian/debian/nginx.preinst)
+and standard directories. Private package
+extraction skipped those installation assumptions and failed configuration
+validation; that approach is retired. The reviewed native installation procedure
+has not yet run, so it is not a verified Linux HTTPS recipe.
 
 CloudShare's [Web Access documentation](https://support.cloudshare.com/hc/en-us/articles/200701625-Connect-to-Your-Application-via-Web-Access)
 lists supported HTTP and HTTPS ports, including HTTPS 443. The intended public
 configuration uses the generated Web Access hostname with HTTPS and no URL suffix;
-public reachability and browser behavior remain unverified. A new VM or
+Windows public reachability is verified, with real browser behavior still pending
+on both operating systems. A new VM or
 Blueprint clone receives its own hostname; supply that deployment's hostname
 explicitly rather than retaining an earlier VM's setting.
 
