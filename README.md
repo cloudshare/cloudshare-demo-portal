@@ -22,9 +22,9 @@ separate evidence; shipped source alone does not prove a new tenant capability.
 
 ## Quick start
 
-For a fresh Windows or Linux VM, follow the verified
-[two OS installation procedure](docs/implementation/two-os-installation.md),
-including private source transfer and independent local configuration.
+For Windows or Linux VM installation, see the
+[two OS installation rehearsal](docs/implementation/two-os-installation.md) for
+completed build steps and the remaining runtime verification work.
 
 No CloudShare credentials are needed. `fixture` mode (the default) runs entirely on in-memory simulators.
 
