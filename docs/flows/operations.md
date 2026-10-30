@@ -37,7 +37,7 @@ Useful distinctions:
 | Invitation says unconfirmed | Durable invitation command, capability GET, POST acknowledgement and roster readback | Reconcile retained command; do not send a new invitation to evade its fence. |
 | Suspend/resume/extend times out | Command dispatch marker, provider acknowledgement, subsequent GETs | Observe target/expiry and settle; do not assume timeout means not applied. |
 | End exam archived lab but shows error | Archive exchange vs completion persistence | UI-supported completion retry can save state; no second destructive dispatch is implied. |
-| Webhook accepted but state unchanged | Trust gate, correlation, dedupe and reconciliation evidence | 202 acknowledges the hint, not state-transition success; polling remains authoritative. |
+| Webhook accepted but state unchanged | Trust gate, correlation, fingerprint and reconciliation evidence | 202 acknowledges the hint, not state-transition success; polling remains authoritative. |
 
 ## Automatic work and request-triggered work
 
@@ -45,7 +45,7 @@ Useful distinctions:
 |---|---|---|
 | Browser session watchdog | Protected UI lifecycle | Local `GET /api/auth/session`; redirect on expiry. |
 | Candidate heartbeat | Browser every 15 seconds while active | `POST /api/heartbeat`; local tracking and completion settlement; conditional provider work through lifecycle reconciliation. |
-| Candidate status/home refresh | Lab status 15 seconds; home 30 seconds | Status/dashboard runtime reconciliation and safe view updates. Window check every three seconds only checks the child handle. |
+| Candidate status/home refresh | Lab status 15 seconds; home 30 seconds | Status performs local elapsed-clock reconciliation; dashboard can perform conditional provider/lease inspection. Window check every three seconds only checks the child handle. |
 | Missing-heartbeat sweep | Server check every 10 seconds; default missing interval 60 seconds (`HEARTBEAT_TIMEOUT_MS`) | Tracks observed heartbeats in process and invokes correlated suspend; not a durable distributed scheduler and not a CloudShare lease renewal. |
 | Trial ending sweep | Server every five minutes | Reconcile `ending` Offerings, retained environments and conditional Sales End update. In-process overlap guard; per-Offering lease protects reconciliation ownership. |
 | Explicit page/action requests | User read/refresh/enter/extend | Can reconcile completion, external expiry or ending even when background jobs are disabled. |
@@ -65,7 +65,7 @@ sequenceDiagram
   H->>D: Resolve Connection by path token
   H->>H: Verify HMAC over exact raw body
   H->>H: Parse supported environment event
-  H->>D: Check synthesized idempotency key
+  H->>D: Record diagnostic fingerprint; do not suppress repeats
   H->>R: Resolve Customer correlation and reconcile hint
   R->>C: GET authoritative environment state
   R->>D: Persist observation and diagnostic evidence
@@ -74,10 +74,10 @@ sequenceDiagram
 
 `POST /api/webhooks/cloudshare/{webhookPathToken}` is the inbound provider route. It resolves the Customer's Connection by opaque path token, checks `x-cloudshare-signature` as base64 HMAC-SHA256 of the **raw** body using that Customer's secret, then validates the payload. Supported events are environment created/suspended/resumed/deleted/extended/archived. Normalisation supports the documented `Event`, `CreatedAt`, `Payload` shape, including the stringified payload variant handled by the adapter.
 
-The dedupe key is derived from environment identity, event type and provider timestamp, not a user-supplied Portal attempt ID. Customer correlation must be resolved before applying an observation. Duplicate/replayed/out-of-order hints cannot replace authoritative polling. Reconciliation reads v4 `GET /environments/{id}` through the environment source and records the resulting state; training participant reads are the separate assignment/correlation path.
+The synthesized Customer-scoped fingerprint includes environment identity, event type and `CreatedAt`; it is diagnostic evidence only. ADR-003 records `CreatedAt` as the webhook definition creation time, not event time. The receiver records `markIfNew` but ignores its result: repeated valid hints still trigger reconciliation. There is no event ordering or replay suppression based on this fingerprint. Customer correlation must be resolved before applying an observation; authoritative polling, not the hint timestamp, determines current state. Reconciliation reads v4 `GET /environments/{id}` through the environment source and records the resulting state; training participant reads are the separate assignment/correlation path.
 
 Unknown path returns 404; missing/invalid signature 401; invalid supported payload 400. A validated event returns 202 even when reconciliation fails, with failure evidence retained. Unexpected handler failures return a deliberate 500. Automatic CloudShare webhook registration is not implemented as a verified operational flow here: register the configured receiver through the existing operator process. A working local tunnel or health check does not prove signed provider delivery.
 
 `GET /api/health` is a local application/persistence readiness surface; it does not provision assets or certify provider reachability. Ordinary logs carry safe failure summaries; detailed Customer evidence belongs to admin diagnostics.
 
-Sources: [diagnostic/event/audit handlers](../../src/api/admin.ts), [Sales diagnostic scope](../../src/api/sales-diagnostics.ts), [monitoring](../../src/api/admin-monitoring.ts), [attempt diagnostics](../../src/api/admin-exam-attempt-diagnostics.ts), [webhook handler](../../src/api/cloudshare-webhook.ts), [signature/normalisation](../../src/integrations/cloudshare/webhooks.ts), [receiver/dedupe](../../src/integrations/cloudshare/webhook-receiver.ts), [composition/sweeps](../../src/composition.ts), [heartbeat sweep](../../src/domain/heartbeat-auto-suspend.ts), [HTTP client](../../src/integrations/cloudshare/client.ts), [protected headers](../../src/observability/protected-request-headers.ts), [ADR-003](../decisions/ADR-003-event-correlation-and-polling-as-truth.md), [ADR-004](../decisions/ADR-004-typed-diagnostic-log-entry.md).
+Sources: [diagnostic/event/audit handlers](../../src/api/admin.ts), [Sales diagnostic scope](../../src/api/sales-diagnostics.ts), [monitoring](../../src/api/admin-monitoring.ts), [attempt diagnostics](../../src/api/admin-exam-attempt-diagnostics.ts), [webhook handler](../../src/api/cloudshare-webhook.ts), [signature/normalisation](../../src/integrations/cloudshare/webhooks.ts), [receiver/fingerprint](../../src/integrations/cloudshare/webhook-receiver.ts), [composition/sweeps](../../src/composition.ts), [heartbeat sweep](../../src/domain/heartbeat-auto-suspend.ts), [HTTP client](../../src/integrations/cloudshare/client.ts), [protected headers](../../src/observability/protected-request-headers.ts), [ADR-003](../decisions/ADR-003-event-correlation-and-polling-as-truth.md), [ADR-004](../decisions/ADR-004-typed-diagnostic-log-entry.md).

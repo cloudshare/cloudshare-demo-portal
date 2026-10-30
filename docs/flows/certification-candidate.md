@@ -7,7 +7,7 @@ After registration/login the Candidate opens `/candidate`, chooses an individual
 ```mermaid
 flowchart TD
   C[Published catalog and own attempt history] --> M{Delivery mode}
-  M -->|Individual| S[Schedule future start and Region]
+  M -->|Individual| S[Schedule future start]
   M -->|Cohort| J[Join published open session]
   S --> T[Create training and admit participant]
   J --> A[Admit participant to existing training]
@@ -27,17 +27,17 @@ flowchart TD
 
 `GET /api/candidate/exams` assembles the Customer's published catalog and this Candidate's attempts/session options through the dashboard runtime. Existing attempt completion/external-lease reconciliation can run while deriving availability. It is not always a passive SQL-only read: a runtime/lease inspection can use training participants, v4 environment detail or training detail as described below. History comes from owned persisted attempts; it does not enumerate another Candidate's provider environments.
 
-Individual scheduling requires a published individual Exam, connected Customer, future valid start, permitted Region and no conflicting active admission. Cohort joining requires the published cohort/session, admission still open, eligible timing and no conflicting attempt. A changed Blueprint default Snapshot or invalid Region blocks both even if the card was previously available.
+Individual scheduling requires a published individual Exam, connected Customer, future valid start, valid admin-configured Regions and no conflicting active admission. Cohort joining requires the published cohort/session, admission still open, eligible timing and no conflicting attempt. A changed Blueprint default Snapshot or invalid Region blocks both even if the card was previously available.
 
 ## Schedule an individual Exam
 
 | Order | Call / local action | Inputs, output and state |
 |---|---|---|
-| 1 | Browser `POST /api/candidate/exams` | Exam ID, chosen Region and `scheduledFor`; validate current published Exam, future timestamp, Customer Connection and admission conflicts. |
+| 1 | Browser `POST /api/candidate/exams` | `examId` and `scheduledFor`; validate current published Exam, future timestamp, Customer Connection and admission conflicts. |
 | 2 | v3 `GET /projects/{projectId}/blueprints/{blueprintId}` | Runtime default-Snapshot/Region guard; failure returns safe Candidate error with internal resource evidence. |
 | 3 | Local reserve ExamAttempt | Allocate attempt identity before remote admission to prevent conflicting parallel requests. |
 | 4 | v3 `GET /teams` with Project lookup query | Resolve required team for the training, using stored Exam/Customer configuration. |
-| 5 | v4 `POST /trainings` | Individual Experience from Project/Blueprint/Region/Policy; scheduled Start and authored open-period End. Persisted evidence retains training ID even if a later step fails. |
+| 5 | v4 `POST /trainings` | Individual Experience from the Exam Project/Blueprint/Policy and all `Exam.allowedRegions`; scheduled Start and authored open-period End. Persisted evidence retains training ID even if a later step fails. |
 | 6 | v4 `GET /trainings/{id}/users/properties`; conditional `POST` same | Ensure Certalis correlation definitions used by participant admission. |
 | 7 | v4 `POST /trainings/{id}/students` | Candidate identity plus attempt correlation properties. This is admission, not proof of an assigned running environment. |
 | 8 | v4 `POST /trainings/{id}/sponsored-link` | Obtain login URL. Persist `LabLaunch` server-side with training/Experience ID and participant identity; mark attempt `ready`; return safe scheduling result. |
@@ -46,7 +46,7 @@ The training and sponsored link are created **during scheduling**, before `/ente
 
 ## Join a cohort session
 
-`POST /api/candidate/exams/cohort-sessions/join` takes Exam/session identity and chosen Region. Ordered work: validate published owned session/admission and candidate conflicts; reserve attempt; recheck default Snapshot; v4 `GET /trainings/{id}` reads provider Start; if not started, release/recover local admission and deny; otherwise GET/conditional POST `/trainings/{id}/users/properties`, POST `/trainings/{id}/students`, POST `/trainings/{id}/sponsored-link`; persist the ready attempt and server-side launch. No new training is created on join. The [admin publication flow](certification-admin.md#cohort-session-configuration-and-admission) created that shared training earlier.
+`POST /api/candidate/exams/cohort-sessions/join` takes `examId` and `cohortSessionId`. Regions come from the admin-authored Exam and already published training, not Candidate input. Ordered work: validate published owned session/admission and candidate conflicts; reserve attempt; recheck default Snapshot; v4 `GET /trainings/{id}` reads provider Start; if not started, release/recover local admission and deny; otherwise GET/conditional POST `/trainings/{id}/users/properties`, POST `/trainings/{id}/students`, POST `/trainings/{id}/sponsored-link`; persist the ready attempt and server-side launch. No new training is created on join. The [admin publication flow](certification-admin.md#cohort-session-configuration-and-admission) created that shared training earlier.
 
 ## Enter and discover the environment
 
@@ -81,12 +81,12 @@ External lease checks use the mapped environment when available and training det
 
 | Action / order | Portal request | Internal/provider behavior |
 |---|---|---|
-| Status | `GET /api/exam/status?examAttemptId={id}` | Ownership, completion reconciliation, then safe attempt/clock state. Conditional runtime settlement can inspect provider environment and capture completion evidence; it is not a raw provider proxy. |
+| Status | `GET /api/exam/status?examAttemptId={id}` | Ownership and local elapsed-clock completion reconciliation, then safe attempt/clock state. This status composition has no provider client and does not capture scores; it makes no CloudShare call. |
 | Heartbeat | `POST /api/heartbeat` with attempt ID | Candidate launcher sends every 15 seconds while lab lifecycle permits. Refresh tracking; reconcile completion; suspended returns suspended, non-running attempts conflict. It does not create a training or renew the CloudShare lease. |
 | Suspend | `POST /api/exam/suspend` with attempt ID | Settle completion; resolve student/environment correlation; durable runtime-command guard; observe environment, v4 `POST /environments/{id}/suspend` if needed, poll v4 GET detail until observed target/bounded failure; settle persisted timer and attempt only through the lifecycle workflow. |
 | Resume | `POST /api/exam/resume` with attempt ID | Settle completion; require suspended/reconcilable command, valid open period and external lease; correlate and observe; v4 `POST /environments/{id}/resume` if needed; observe confirmation; resume clock. Already active recovery can settle from observation rather than dispatch another command. |
 | End exam early | `POST /api/exam/complete` with attempt ID | For running/suspended attempts, verify correlation; v3 `PUT /envs/actions/archive?envId={id}` if not already archived; observe confirmation; persist completion. Archive is not DELETE. A provider-success/local-save failure explicitly says the lab is archived but completion still needs saving. |
-| Automatic completion | Status, heartbeat and other lifecycle reconciliation | Persisted elapsed time/open-period/lease evidence drives completion/expiry; completion settlement and score capture can occur without a separate button click. Do not infer a provider write from every timer display update. |
+| Automatic completion | Status, heartbeat and other lifecycle reconciliation | Status reconciles local elapsed-clock completion only. Heartbeat and richer lifecycle paths can inspect provider state and capture completion/score evidence; open-period/external-lease checks in their respective workflows drive additional completion/expiry. Do not infer a provider write from every timer display update. |
 | Client runtime report | `POST /api/candidate/runtime-diagnostics` | Owned, constrained browser-event diagnostics. Local evidence only; not permission to submit arbitrary protected provider payloads. |
 
 The launcher checks its child window every three seconds. The lab shell refreshes status every 15 seconds; the Candidate home refresh interval is 30 seconds. Timer state is persisted server-side rather than reset by browser reload. Automatic missing-heartbeat suspension runs through the same correlated suspend workflow when background jobs are enabled; [operations](operations.md#automatic-work-and-request-triggered-work) explains its limits.

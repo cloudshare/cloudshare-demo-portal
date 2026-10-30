@@ -18,8 +18,8 @@ This matrix was built from `app` pages/routes, `src/web`, framework-independent 
 | Sales Admin / setup | Naming template, timezone cache/preference, Project member/Sales Pro choices | [Sales configuration](sales-configuration.md#local-records-and-defaults) |
 | Sales Admin / Items | Catalog/detail, live authoring resource controls, save/edit/archive, default Snapshot/Region/Policy validation | [Sales configuration](sales-configuration.md#item-authoring-and-control-population) |
 | Sales Admin / sessions | Local queue/workspace, demo API alias, creation reservation, provider provisioning, safe partial outcomes | [Sales sessions](sales-sessions.md#read-controls-provision-verify-and-cancel) |
-| Sales Admin / sessions | Verify/reconcile existing active mapping, targeted queue refresh, stale/incomplete observations, disabled PATCH | [Sales sessions](sales-sessions.md#read-controls-provision-verify-and-cancel) |
-| Sales Admin / cancellation | Not-started DELETE vs started archive/End update, durable command and readback/partial result | [Sales sessions](sales-sessions.md#read-controls-provision-verify-and-cancel) |
+| Sales Admin / sessions | Verify/reconcile existing active mapping, targeted queue refresh, stale/incomplete observations, deferred PUT; unsupported PATCH | [Sales sessions](sales-sessions.md#read-controls-provision-verify-and-cancel) |
+| Sales Admin / cancellation | Authoritative future Start/timezone DELETE gate vs archive/End update, durable command and readback/partial result | [Sales sessions](sales-sessions.md#read-controls-provision-verify-and-cancel) |
 | Sales Admin / participants | Local search/page, remote discovery/refresh, existing Contact/ad hoc add, explicit legacy repair, uncertain-add reconciliation | [Sales sessions](sales-sessions.md#participant-workspace-reads-addition-and-invitation) |
 | Sales Admin / invitation | Capability, target/revision guards, invite/resend command ledger, accepted-unconfirmed/readback/no blind resend | [Sales sessions](sales-sessions.md#participant-workspace-reads-addition-and-invitation) |
 | Sales Admin / participant access | Generate/regenerate/revoke local capability; recipient redirect and denial recovery contacts | [Sales sessions](sales-sessions.md#launch-links) |
@@ -32,7 +32,7 @@ This matrix was built from `app` pages/routes, `src/web`, framework-independent 
 | Customer admin / Exams | List/create/edit/publish/unpublish/archive, existing attempts confirmation, active cohort archive gate, timing fields | [Certification admin](certification-admin.md#exam-authoring-and-lifecycle) |
 | Customer admin / Candidates | Roster/search/detail/history, account creation with local-only scope | [Certification admin](certification-admin.md#candidates) |
 | Customer admin / cohorts | Draft/list/detail/publication, parent publication, unknown-outcome fence, close admission, retire | [Certification admin](certification-admin.md#cohort-session-configuration-and-admission) |
-| Candidate / admission | Catalog and own history, future individual schedule/Region, per-attempt training provisioning, partial steps | [Candidate](certification-candidate.md#schedule-an-individual-exam) |
+| Candidate / admission | Catalog and own history, future individual schedule with admin-configured Regions, per-attempt training provisioning, partial steps | [Candidate](certification-candidate.md#schedule-an-individual-exam) |
 | Candidate / cohort admission | Existing training join, provider Start gate, properties/student/link, no second training | [Candidate](certification-candidate.md#join-a-cohort-session) |
 | Candidate / entry | Start/status/open-period/lease/ownership gates, server-only URL, persisted clock start, environment discovery | [Candidate](certification-candidate.md#enter-and-discover-the-environment) |
 | Candidate / runtime | Status/heartbeat, child window, suspend/resume, durable command and observation, automatic completion/expiry | [Candidate](certification-candidate.md#runtime-clock-suspend-and-completion) |
@@ -40,7 +40,7 @@ This matrix was built from `app` pages/routes, `src/web`, framework-independent 
 | Support / monitoring | Certification current state, attempt diagnostic context, Sales workspace/Trial history, stale observations | [Operations](operations.md#find-one-action-end-to-end) |
 | Support / evidence | Diagnostic queries, exchange/correlation IDs, semantic vs HTTP evidence, audit vs events, protected payload limits | [Operations](operations.md#find-one-action-end-to-end) |
 | Operator / automatic work | Session watchdog, heartbeat/sweep, Trial ending interval, local seed/health, background-disabled limits | [Operations](operations.md#automatic-work-and-request-triggered-work) |
-| Provider / webhook | Opaque Customer path, raw-body HMAC, payload variants, dedupe/correlation, authoritative read, rejection/202 semantics | [Operations](operations.md#webhook-receipt-and-correlation) |
+| Provider / webhook | Opaque Customer path, raw-body HMAC, payload variants, diagnostic fingerprint/correlation; repeated valid hints reconcile, authoritative read, rejection/202 semantics | [Operations](operations.md#webhook-receipt-and-correlation) |
 
 ## Page inventory
 
@@ -65,7 +65,7 @@ All **89 route files** are listed in the [endpoint index](endpoints.md), includi
 
 ## Intentional exclusions and unavailable behavior
 
-General Sales Session editing is explicitly deferred (PATCH 409). Automatic CloudShare webhook registration is not a verified implemented operational flow. An actual desktop RDP connection is not tested by the Portal's download/readiness checks. Full Certification journeys beyond Exams, external CRM integrations, and speculative provider endpoints are not presented as shipped features. Unused compatibility adapter operations are identified in the [contract discrepancy record](endpoints.md#contract-and-implementation-discrepancies), not promoted to current flow calls.
+General Sales Session editing is explicitly deferred (valid PUT 409; invalid PUT 400; unsupported PATCH 405). Automatic CloudShare webhook registration is not a verified implemented operational flow. An actual desktop RDP connection is not tested by the Portal's download/readiness checks. Full Certification journeys beyond Exams, external CRM integrations, and speculative provider endpoints are not presented as shipped features. Unused compatibility adapter operations are identified in the [contract discrepancy record](endpoints.md#contract-and-implementation-discrepancies), not promoted to current flow calls.
 
 No runtime/UI features, new product site, screenshots of protected data or live provider mutations are part of this documentation change. It is a repository guide rendered with Markdown/Mermaid. Tests that merely repeat prose were not added; validation targets source agreement, route completeness, links and diagrams.
 

@@ -41,7 +41,7 @@ Inventory of every `app/**/route.ts` at the recorded baseline, including the two
 | `POST` | `/api/exam/complete` | [certification-candidate](certification-candidate.md) | Candidate admission/runtime/score conditional provider calls; see ordered action trace | [route](../../app/api/exam/complete/route.ts) |
 | `POST` | `/api/exam/resume` | [certification-candidate](certification-candidate.md) | Candidate admission/runtime/score conditional provider calls; see ordered action trace | [route](../../app/api/exam/resume/route.ts) |
 | `GET` | `/api/exam/score` | [certification-candidate](certification-candidate.md) | Candidate admission/runtime/score conditional provider calls; see ordered action trace | [route](../../app/api/exam/score/route.ts) |
-| `GET` | `/api/exam/status` | [certification-candidate](certification-candidate.md) | Candidate admission/runtime/score conditional provider calls; see ordered action trace | [route](../../app/api/exam/status/route.ts) |
+| `GET` | `/api/exam/status` | [certification-candidate](certification-candidate.md) | Local elapsed-clock completion/status only; no provider calls or score capture | [route](../../app/api/exam/status/route.ts) |
 | `POST` | `/api/exam/suspend` | [certification-candidate](certification-candidate.md) | Candidate admission/runtime/score conditional provider calls; see ordered action trace | [route](../../app/api/exam/suspend/route.ts) |
 | `GET` | `/api/health` | [operations](operations.md) | Local application/persistence readiness | [route](../../app/api/health/route.ts) |
 | `POST` | `/api/heartbeat` | [certification-candidate](certification-candidate.md) | Candidate admission/runtime/score conditional provider calls; see ordered action trace | [route](../../app/api/heartbeat/route.ts) |
@@ -64,7 +64,7 @@ Inventory of every `app/**/route.ts` at the recorded baseline, including the two
 | `POST` | `/api/sales/enablement-sessions/{sessionId}/participants/refresh` | [sales-sessions](sales-sessions.md) | Conditional Sales roster/properties/participant or environment calls; see action trace | [route](../../app/api/sales/enablement-sessions/[sessionId]/participants/refresh/route.ts) |
 | `GET` | `/api/sales/enablement-sessions/{sessionId}/participants` | [sales-sessions](sales-sessions.md) | Local workspace/query projection | [route](../../app/api/sales/enablement-sessions/[sessionId]/participants/route.ts) |
 | `POST` | `/api/sales/enablement-sessions/{sessionId}/reconcile` | [sales-sessions](sales-sessions.md) | v4 GET /sales/{id}; persist observation | [route](../../app/api/sales/enablement-sessions/[sessionId]/reconcile/route.ts) |
-| `PUT` | `/api/sales/enablement-sessions/{sessionId}` | [sales-sessions](sales-sessions.md) | PATCH unavailable: 409; no provider call | [route](../../app/api/sales/enablement-sessions/[sessionId]/route.ts) |
+| `PUT` | `/api/sales/enablement-sessions/{sessionId}` | [sales-sessions](sales-sessions.md) | Valid PUT deferred: 409; invalid input: 400; PATCH unsupported: 405; no provider call | [route](../../app/api/sales/enablement-sessions/[sessionId]/route.ts) |
 | `POST` | `/api/sales/enablement-sessions/{sessionId}/verify` | [sales-sessions](sales-sessions.md) | v4 GET /sales/{id}; persist observation | [route](../../app/api/sales/enablement-sessions/[sessionId]/verify/route.ts) |
 | `GET` | `/api/sales/enablement-sessions/{sessionId}/workspace` | [sales-sessions](sales-sessions.md) | Local workspace/query projection | [route](../../app/api/sales/enablement-sessions/[sessionId]/workspace/route.ts) |
 | `GET` | `/api/sales/enablement-sessions/project-members` | [sales-configuration](sales-configuration.md) | v3 GET /users (export gap) | [route](../../app/api/sales/enablement-sessions/project-members/route.ts) |
@@ -94,7 +94,7 @@ Inventory of every `app/**/route.ts` at the recorded baseline, including the two
 | `GET` | `/api/sales-trial/offerings/{offeringId}/rdp` | [sales-trial](sales-trial.md) | Trial entry/RDP conditional Sales + environment + VM calls; offering list local | [route](../../app/api/sales-trial/offerings/[offeringId]/rdp/route.ts) |
 | `GET` | `/api/sales-trial/offerings` | [sales-trial](sales-trial.md) | Trial entry/RDP conditional Sales + environment + VM calls; offering list local | [route](../../app/api/sales-trial/offerings/route.ts) |
 | `POST` | `/api/sales-trial/register` | [authentication](authentication.md) | Local identity; Candidate logout conditionally uses runtime suspension | [route](../../app/api/sales-trial/register/route.ts) |
-| `POST` | `/api/webhooks/cloudshare/{webhookPathToken}` | [operations](operations.md) | Inbound HMAC/dedupe; authoritative v4 environment GET reconciliation | [route](../../app/api/webhooks/cloudshare/[webhookPathToken]/route.ts) |
+| `POST` | `/api/webhooks/cloudshare/{webhookPathToken}` | [operations](operations.md) | Inbound HMAC/diagnostic fingerprint; repeated valid hints reconcile; authoritative v4 environment GET reconciliation | [route](../../app/api/webhooks/cloudshare/[webhookPathToken]/route.ts) |
 | `GET` | `/enter` | [certification-candidate](certification-candidate.md) | Candidate admission/runtime/score conditional provider calls; see ordered action trace | [route](../../app/enter/route.ts) |
 | `GET` | `/sales/launch/{token}` | [sales-sessions](sales-sessions.md) | v4 POST /sales/{id}/sponsored-link; conditional Sales Pro recovery read | [route](../../app/sales/launch/[token]/route.ts) |
 | `GET` | `/sales-trial/offerings/{offeringId}/enter` | [sales-trial](sales-trial.md) | Trial entry/RDP conditional Sales + environment + VM calls; offering list local | [route](../../app/sales-trial/offerings/[offeringId]/enter/route.ts) |
@@ -120,7 +120,7 @@ Paths below are relative to the appropriate configured API base. v4 uses Bearer 
 | S | v4 `POST /sales` | Enablement Session/Trial Offering provisioning | Sales delivery, v4 export |
 | S | v4 `GET /sales/{id}` | Status, invitation capability, guarded update pre-read, Trial/RDP access | Sales delivery, v4 export |
 | S | v4 `PUT /sales/{id}` | Conditional controlled End/cancel-label update preserving returned mutable fields; not the disabled Portal general edit | Sales delivery, v4 export |
-| S | v4 `DELETE /sales/{id}` | Conditional not-started session cancellation | Sales delivery, v4 export |
+| S | v4 `DELETE /sales/{id}` | Conditional future-session cancellation, gated by freshly read Start/timezone | Sales delivery, v4 export |
 | S | v4 `GET /sales/{id}/salespros` | Launch denial recovery contacts; bounded pages | Sales delivery, v4 export |
 | S | v4 `GET`, `POST /sales/{id}/users/properties` | Read then create missing correlation definitions | Sales delivery, v4 export |
 | S | v4 `GET /sales/{id}/participants` | Complete roster via `offset`/`limit`; registration/invite/monitor/access proof | Sales delivery, v4 export |
