@@ -31,6 +31,10 @@ separates implemented behavior from live verification.
 
 ## Quick start
 
+For Windows or Linux VM installation, see the
+[two OS installation rehearsal](docs/implementation/two-os-installation.md) for
+completed build steps and the remaining runtime verification work.
+
 No CloudShare credentials are needed. `fixture` mode (the default) runs entirely on in-memory simulators.
 
 ```bash
