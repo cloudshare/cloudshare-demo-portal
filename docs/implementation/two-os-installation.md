@@ -22,7 +22,7 @@ separately before using the installation through CloudShare Web Access.
 | Nginx | 1.31.8, Windows console application | Ubuntu package 1.28.3-2ubuntu1.12 |
 | Persistent startup configuration | Scheduled tasks running | Stock nginx.service and app systemd service running |
 | Browser interaction and console checks | Registration, sign-in, candidate navigation and logout passed; captured warning/error log empty | Pending |
-| Reboot recovery | Pending | Pending |
+| Reboot recovery | Passed after user restart | Passed after controlled guest restart |
 
 The API checks kept credentials and cookies inside each VM. Windows now runs
 Next.js privately on `127.0.0.1:3000` and Nginx on HTTPS 443 through scheduled
@@ -33,11 +33,26 @@ Windows browser QA used normal public HTTPS without a certificate warning or
 bypass; certificate details and cookie attributes were not independently inspected
 in the browser. The captured tab warning/error log was empty, subject to capture
 limits. A synthetic candidate remains for the later image-cleanup audit.
-Windows reboot and follow-up read-only execution requests returned provider HTTP
-500 without execution IDs. Its reboot outcome remains unverified; requests were
-not replayed. Linux's public login page also returned HTTP 200 with normal
+Earlier Windows reboot and follow-up execution requests returned provider HTTP
+500 without execution IDs and were not replayed. A later user restart advanced
+its boot time; read-only checks confirmed both startup tasks running, the expected
+Node/Nginx executable owners, private port 3000, HTTPS port 443, and fixture
+database health. No service was started manually. An agent-controlled Linux
+restart likewise advanced its boot identity and recovered both enabled services,
+the same listener layout, and fixture database health. Linux's environment file
+and TLS key hashes were unchanged across that restart. No pre-restart hash
+baseline was available for the user's Windows restart.
+Both public HTTPS health and login pages returned HTTP 200 after restart.
+Linux's public login page also returned HTTP 200 with normal
 certificate validation, but browser automation stopped before navigation with
-`Debugger unattached`. Linux browser and controlled reboot checks remain pending.
+`Debugger unattached`. Linux browser interaction remains unverified.
+
+Both guest checkouts still use the application commit shown above. The later
+main-branch documentation commit `ae922874f58372005fc5bc71da26cc3595e12ad2`
+changes only README and flow documentation. Its credential-free incremental Git
+bundle has been prepared and verified, but browser file transfer detached before
+either upload. Neither guest has been claimed current with that commit; syncing
+it does not require a rebuild or database migration.
 
 ## Install the prerequisites
 
@@ -306,8 +321,8 @@ browser verification remains pending. A new VM or
 Blueprint clone receives its own hostname; supply that deployment's hostname
 explicitly rather than retaining an earlier VM's setting.
 
-Persistent startup, controlled reboot checks and trusted public HTTPS browser
-verification must complete before this is a prepared image. Snapshot or Blueprint
+Startup and reboot recovery are verified on both systems. Linux public HTTPS
+browser interaction must still complete before this is a prepared image. Snapshot or Blueprint
 capture also requires a separate audit of local passwords, master keys, database
 state, TLS keys, logs, source history and any retained authentication. No prepared
 image has been captured during this rehearsal.
