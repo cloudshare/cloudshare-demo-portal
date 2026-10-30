@@ -17,17 +17,27 @@ separately before using the installation through CloudShare Web Access.
 | Dependency installation, Prisma generation and migrations | Passed | Passed |
 | Production build | Passed | Passed |
 | Private health and admin API login, session and logout | Passed | Passed |
-| Guest HTTPS, form redirects and cookie attributes | Passed | Pending |
-| Public HTTPS login page request | HTTP 200 with normal certificate validation | Pending |
-| Persistent startup configuration | Scheduled tasks running | Pending |
-| Browser interaction and console checks | Pending | Pending |
+| Guest HTTPS, form redirects and cookie attributes | Passed | Passed |
+| Public HTTPS login page request | HTTP 200 with normal certificate validation | HTTP 200 with normal certificate validation |
+| Nginx | 1.31.8, Windows console application | Ubuntu package 1.28.3-2ubuntu1.12 |
+| Persistent startup configuration | Scheduled tasks running | Stock nginx.service and app systemd service running |
+| Browser interaction and console checks | Registration, sign-in, candidate navigation and logout passed; captured warning/error log empty | Pending |
 | Reboot recovery | Pending | Pending |
 
 The API checks kept credentials and cookies inside each VM. Windows now runs
 Next.js privately on `127.0.0.1:3000` and Nginx on HTTPS 443 through scheduled
 tasks. Its public login page returned HTTP 200 with normal certificate validation.
-These checks do not establish browser interaction or reboot recovery. Linux still
-runs its temporary private Next.js process while native Nginx installation is pending.
+Linux uses the standard Ubuntu Nginx package, with the app managed by systemd and
+bound only to `127.0.0.1:3000`. Guest HTTPS and authenticated API checks passed.
+Windows browser QA used normal public HTTPS without a certificate warning or
+bypass; certificate details and cookie attributes were not independently inspected
+in the browser. The captured tab warning/error log was empty, subject to capture
+limits. A synthetic candidate remains for the later image-cleanup audit.
+Windows reboot and follow-up read-only execution requests returned provider HTTP
+500 without execution IDs. Its reboot outcome remains unverified; requests were
+not replayed. Linux's public login page also returned HTTP 200 with normal
+certificate validation, but browser automation stopped before navigation with
+`Debugger unattached`. Linux browser and controlled reboot checks remain pending.
 
 ## Install the prerequisites
 
@@ -253,25 +263,46 @@ Both private checks passed persistence-backed health, the login page, local admi
 API login and session validation, and logout. A form-login probe with the intended
 public Host and HTTPS forwarding headers returned a redirect to
 `https://localhost:3000/login` on both platforms. Nginx was selected to provide
-HTTPS on guest port 443 while Next.js remains private. Windows guest QA then
+HTTPS on guest port 443 while Next.js remains private. Both guests then
 verified canonical public HTTPS redirects for both invalid and valid login,
 Secure/HttpOnly/SameSite=Lax cookies, authenticated admin session and logout,
 and six positive/negative Location and Refresh rewrite cases. The isolated guest
-test listeners were stopped afterward. Browser interaction and console checks
-remain pending.
+test listeners were stopped afterward. Windows browser registration, sign-in,
+candidate navigation and logout also passed; Linux browser checks remain pending.
 
-Linux deployment will use the native vendor package and stock service, including
-the package's [non-login `nginx` account](https://github.com/nginx/pkg-oss/blob/master/debian/debian/nginx.preinst)
-and standard directories. Private package
-extraction skipped those installation assumptions and failed configuration
-validation; that approach is retired. The reviewed native installation procedure
-has not yet run, so it is not a verified Linux HTTPS recipe.
+Linux installation used Ubuntu's standard repository and service:
+
+```sh
+sudo apt update
+sudo apt install nginx -y
+```
+
+This installs dependencies and starts the stock welcome site on HTTP port 80, as
+described in [Ubuntu's installation guide](https://ubuntu.com/server/docs/how-to-install-nginx/).
+The rehearsal accepted that brief stock welcome page; the portal remained private.
+No extra repository, upstream version pin, package extraction or startup-policy
+guard is needed. Earlier extracted-package and local-DEB attempts are retired.
+
+Before starting the portal proxy, stop Nginx, remove the default enabled site,
+and add one HTTPS-only site under `/etc/nginx/sites-available`, linked from
+`sites-enabled`. Use the existing deployment certificate and key in a root-private
+directory, listen on 443, and proxy to `http://127.0.0.1:3000`. Preserve the public
+Host, forward HTTPS, disable access logging, and scope the redirect correction to
+the deployment's own hostname. Validate with `sudo nginx -t` before startup.
+
+The app's separate systemd service runs as its installation user with the checkout
+as its working directory, the installed Node binary, production mode, and the
+private `next start --hostname 127.0.0.1 --port 3000` command. Start it and the stock
+Nginx service with `systemctl enable --now`. Stop only a positively identified
+temporary app process during this handoff. Guest QA confirmed both services,
+private port 3000, HTTPS port 443, key mode 0600 owned by root, and database mode
+0600 owned by the installation user. Port 80 was no longer listening.
 
 CloudShare's [Web Access documentation](https://support.cloudshare.com/hc/en-us/articles/200701625-Connect-to-Your-Application-via-Web-Access)
 lists supported HTTP and HTTPS ports, including HTTPS 443. The intended public
 configuration uses the generated Web Access hostname with HTTPS and no URL suffix;
-Windows public reachability is verified, with real browser behavior still pending
-on both operating systems. A new VM or
+Windows public reachability and browser interaction are verified; Linux public
+browser verification remains pending. A new VM or
 Blueprint clone receives its own hostname; supply that deployment's hostname
 explicitly rather than retaining an earlier VM's setting.
 
