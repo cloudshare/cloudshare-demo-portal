@@ -2,7 +2,7 @@
 
 Certalis demo portal for Helios CX to connect its own CloudShare subscription, build exams, and deliver real CloudShare environments to Candidates.
 
-## Delivery status (2026-10-23)
+## Delivery status (source baseline 2026-10-30)
 
 **SHIPPED MAIN:** Certification MVP issues #39 through #47 are closed. The isolated Sales workspace
 supports Opportunities, Items and Sales Enablement Sessions. Sales Trials include registration
@@ -12,13 +12,22 @@ supports Opportunities, Items and Sales Enablement Sessions. Sales Trials includ
 **SHIPPED MAIN:** Infrastructure deepening #453 landed as environment observations/commands
 (#454, [PR456](https://github.com/cloudshare/cloudshare-demo-portal/pull/456)) and shared resource
 discovery (#455, [PR457](https://github.com/cloudshare/cloudshare-demo-portal/pull/457)). Both preserve
-existing provider and portal contracts; neither migrates runtime traffic to Infrastructure v4.
+existing provider and portal contracts. Subsequent changes now use Infrastructure v4 for Project/Policy discovery and environment state, suspend/resume and default extension; archive remains v3.
 See [architecture boundaries](docs/architecture/README.md).
 
 **PENDING:** Optional automatic webhook registration remains unverified; polling remains the
-fallback and source of truth. Post-provisioning Trial RDP download (#411) is a proposed next slice
-requiring confirmation before implementation. Published API contracts and live verification are
+fallback and source of truth. Post-provisioning Trial RDP download and explicit guest-credential
+controls are implemented in the current source; downloaded connection availability is not verified.
+Published API contracts and live verification are
 separate evidence; shipped source alone does not prove a new tenant capability.
+
+
+## How the portal works
+
+Start with the [customer flow guide](docs/flows/README.md): a fully worked Sales Trial example,
+linked persona/action diagrams, exact Portal and CloudShare call traces, diagnostics walkthroughs,
+and [endpoint/coverage indexes](docs/flows/endpoints.md). The guide records its source baseline and
+separates implemented behavior from live verification.
 
 ## Quick start
 
