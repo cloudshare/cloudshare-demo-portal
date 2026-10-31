@@ -12,6 +12,18 @@ Run `npm run setup:instance -- --reset` to replace an existing application basel
 Stop the application first and make an external backup before reset. Backup/export and
 deployment to the two demo VMs are separately reviewed operational steps.
 
+The explicit prepared-VM entry points are `scripts/Initialize-Portal.cmd`, copied
+to `C:\Users\Public\Desktop\Initialize-Portal.cmd`, and
+`scripts/initialize-portal.sh`, copied executable to `/home/sysadmin/initialize-portal.sh`.
+They use the fixed VM checkout and installed Node path, call normal setup without
+`--reset`, and start only the existing `issue489-next` scheduled task or
+`issue489-next.service` after setup exits successfully. Setup failure prevents
+service startup; service startup failure returns nonzero. Windows pauses before
+exiting with the saved result. These wrappers do not install software, create
+services, change policies, or initialize automatically at boot. The human runs
+them after capture of the uninitialized image. Copy instructions are in the
+[Quick Start](../quick-start.md#prepared-vm-launchers).
+
 The command generates one random master key and two distinct random admin passwords for
 this instance. Secrets live only in ignored private runtime files; terminal output identifies
 the files and reports safe outcomes without printing credential values. There is no first-boot
@@ -63,6 +75,13 @@ followed by compatibility checks through existing configuration, seeding, and pa
 Tests cover new setup, distinct instance credentials, explicit reset, preserved runtime settings,
 connection refusal, and prerequisite/migration failures without replacement. No fixture test
 contacts CloudShare or starts an application listener.
+
+Launcher tests use the approved synthetic command seam: disposable copies with
+exact fixed checkout/Node path substitutions, plus a Windows service-executable
+substitution, call fake setup/service commands. They verify failure prevents
+startup, success starts exactly once, and service errors remain failures. Run
+`npm run test:instance-launchers` in the isolated guest test checkout; these tests
+do not run the real initializer or start the actual portal.
 
 Operational acceptance separately verifies both demo VMs after backup and approved deployment:
 fresh keys and passwords, both admin logins, expected basic defaults, and preserved surrounding

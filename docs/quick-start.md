@@ -19,6 +19,38 @@ of manually copying private seed credentials or running an initial migration. St
 the portal app using its existing startup procedure before running setup; keep
 Nginx and the documentation site in place. Setup does not stop or start services.
 
+### Prepared VM launchers
+
+After the owner has captured the uninitialized VM image, initialize each instance
+manually. On Windows, double-click **Initialize-Portal.cmd** on the shared desktop.
+On Ubuntu, run `/home/sysadmin/initialize-portal.sh` in a terminal as `sysadmin`.
+Each launcher runs normal setup and starts the existing portal task/service only
+when setup succeeds. Neither launcher passes `--reset` or creates a service.
+Windows keeps its window open so you can read the result. Ubuntu may request your
+normal `sudo` authorization to start the existing service.
+
+To reproduce the launcher files from the canonical repository scripts, copy them
+once using the commands below. An existing destination must be inspected rather
+than overwritten. These copy commands do not initialize or start the portal.
+
+Windows PowerShell:
+
+```powershell
+[IO.File]::Copy('C:\CloudShareDemoPortal\scripts\Initialize-Portal.cmd', 'C:\Users\Public\Desktop\Initialize-Portal.cmd', $false)
+```
+
+Ubuntu, as `sysadmin`:
+
+```sh
+(umask 077; set -C; cat /home/sysadmin/cloudshare-demo-portal/scripts/initialize-portal.sh > /home/sysadmin/initialize-portal.sh) && chmod 700 /home/sysadmin/initialize-portal.sh
+```
+
+If initialization fails, the launcher does not start the app. If only service
+startup fails, initialization has already succeeded: inspect the existing task or
+service and start it through its normal procedure; do not initialize again.
+
+### Direct CLI setup
+
 In a terminal opened in that checkout, run:
 
 ```sh
@@ -49,7 +81,7 @@ installation with its owner rather than deleting provider state or changing a
 master key independently. Stop on any error and inspect the safe explanation.
 Do not retry a reset as a generic repair.
 
-After successful setup, start the portal through its existing startup procedure,
+After successful direct CLI setup, start the portal through its existing startup procedure,
 then sign in with each new admin account using the steps below. Ordinary
 sign-ins do not rerun setup. The existing lazy seed behavior reapplies configured
 admin credentials once per app process, so keep the private seed file consistent

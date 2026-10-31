@@ -61,6 +61,12 @@ accounts/history and regenerates the key and both admin passwords: stop the app
 and take an external private backup first. See the
 [manual setup and sign-in guide](docs/quick-start.md).
 
+On prepared VMs, the owner can instead double-click `Initialize-Portal.cmd` on
+the Windows shared desktop or run `/home/sysadmin/initialize-portal.sh` on Ubuntu
+after image capture. These wrappers run normal setup and start the existing
+portal task/service only on success. The guide includes exact copy instructions;
+the canonical scripts are retained in `scripts/`.
+
 Open **http://localhost:3000/login** for the shared portal login. Anonymous visitors can choose
 the **Certification demo** or **Sales Trial demo** registration path there.
 
