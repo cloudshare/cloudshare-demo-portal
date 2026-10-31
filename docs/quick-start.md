@@ -64,8 +64,8 @@ with this instance.
    named by `PORTAL_SEED_CONFIG_PATH` (default `./config/portal-seed.local.json`,
    relative to the checkout). For `off`, ask the installation owner for existing
    credentials; do not turn seeding on to reset them.
-3. Use **Open portal** in this documentation header, or the VM's native portal
-   page in the CloudShare viewer, to open `/login`. Sign in with the desired admin.
+3. Open `/login` on this VM's deployed hostname, for example
+   `https://<this-VM-hostname>/login`. Sign in with the desired admin.
 
 Do not copy passwords into chat, screenshots, documentation or another VM.
 
@@ -77,6 +77,9 @@ Do not copy passwords into chat, screenshots, documentation or another VM.
 The Certalis account administers the Sales Customer workspace; it is not a
 provider-wide super-admin console. Sign out before switching accounts. Public
 registration creates participant accounts, not administrators.
+These are portal accounts, separate from CloudShare API credentials. Setup does
+not generate CloudShare API keys; each Customer supplies those separately when
+connecting CloudShare.
 
 If configured credentials fail, inspect with the installation owner rather than
 reseed, edit passwords or assume the other VM's credentials apply.
