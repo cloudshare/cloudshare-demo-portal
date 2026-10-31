@@ -220,14 +220,17 @@ describe("manual instance setup CLI", () => {
     expect(setup("--reset").status).toBe(0);
     const query = aclScript(`
       $ErrorActionPreference = 'Stop'
-      $allowed = @([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544')
+      $allowed = @(@([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544') | Select-Object -Unique)
       foreach ($path in (ConvertFrom-Json $env:PORTAL_TEST_ACL_PATHS)) {
         $acl = [System.IO.File]::GetAccessControl($path)
         if (-not $acl.AreAccessRulesProtected) { exit 1 }
         $rules = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
-        if ($rules.Count -ne 3) { exit 1 }
+        if ($rules.Count -ne $allowed.Count) { exit 1 }
         foreach ($rule in $rules) {
           if ($rule.IdentityReference.Value -notin $allowed -or $rule.AccessControlType -ne 'Allow') { exit 1 }
+        }
+        foreach ($sid in $allowed) {
+          if ($sid -notin @($rules | ForEach-Object { $_.IdentityReference.Value })) { exit 1 }
         }
       }
     `);
