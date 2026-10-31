@@ -24,4 +24,13 @@ if not "%result%"=="0" (
 echo Portal start requested. Open this VM's portal and use its private admin credentials.
 :finished
 pause
+if "%result%"=="0" if /i "%~f0"=="C:\Users\Public\Desktop\Initialize-Portal.cmd" (
+  del "%~f0"
+  if exist "%~f0" (
+    echo ERROR: Initialization and task start succeeded, but the desktop launcher could not be removed.
+    pause
+    exit /b 1
+  )
+  exit /b 0
+)
 exit /b %result%

@@ -20,3 +20,9 @@ if [ "$result" -ne 0 ]; then
   exit "$result"
 fi
 printf '%s\n' "Portal start requested. Open this VM's portal and use its private admin credentials."
+if [ "${BASH_SOURCE[0]}" = "/home/sysadmin/initialize-portal.sh" ]; then
+  if ! rm -- "${BASH_SOURCE[0]}"; then
+    printf '%s\n' 'ERROR: Initialization and service start succeeded, but the launcher could not be removed.' >&2
+    exit 1
+  fi
+fi

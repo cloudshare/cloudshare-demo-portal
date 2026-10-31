@@ -21,7 +21,10 @@ They use the fixed VM checkout and installed Node path, call normal setup withou
 `--reset`, and start only the existing `issue489-next` scheduled task or
 `issue489-next.service` after setup exits successfully. Setup failure prevents
 service startup; service startup failure returns nonzero. Windows pauses before
-exiting with the saved result. These wrappers do not install software, create
+exiting with the saved result. After setup and service start both succeed, each
+wrapper removes itself only at its exact deployed desktop/home path above; canonical
+repository scripts remain. Setup/start failure retains the launcher, and deletion
+failure is visible and returns nonzero. These wrappers do not install software, create
 services, change policies, or initialize automatically at boot. The human runs
 them after capture of the uninitialized image. Copy instructions are in the
 [Quick Start](../quick-start.md#prepared-vm-launchers).

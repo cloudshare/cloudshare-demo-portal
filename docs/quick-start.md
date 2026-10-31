@@ -29,6 +29,9 @@ Each launcher runs normal setup and starts the existing portal task/service only
 when setup succeeds. Neither launcher passes `--reset` or creates a service.
 Windows keeps its window open so you can read the result. Ubuntu may request your
 normal `sudo` authorization to start the existing service.
+After setup and service start both succeed, the launcher removes only its deployed
+copy at the documented desktop/home path. It remains on either failure; the canonical
+repository scripts always remain. A removal failure is reported with a nonzero exit.
 
 To reproduce the launcher files from the canonical repository scripts, copy them
 once using the commands below. An existing destination must be inspected rather

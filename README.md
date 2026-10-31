@@ -65,7 +65,8 @@ On prepared VMs, the owner can instead right-click `Initialize-Portal.cmd` on
 the Windows shared desktop and choose **Run as administrator**, or run `/home/sysadmin/initialize-portal.sh` on Ubuntu
 after image capture. These wrappers run normal setup and start the existing
 portal task/service only on success. The guide includes exact copy instructions;
-the canonical scripts are retained in `scripts/`.
+the deployed copy removes itself after setup and service start both succeed.
+The canonical scripts are retained in `scripts/`.
 
 Open **http://localhost:3000/login** for the shared portal login. Anonymous visitors can choose
 the **Certification demo** or **Sales Trial demo** registration path there.
