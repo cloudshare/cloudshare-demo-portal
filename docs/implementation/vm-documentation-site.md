@@ -102,3 +102,104 @@ Test encoded traversal attempts as well, checking that no checkout content leaks
 Browser QA on both real HTTPS hosts must follow navigation/anchors, inspect
 tables/fences and console output, then exercise portal login/logout. Record exact
 head, guest checks, browser evidence and human acceptance separately before merge.
+
+On the Windows rehearsal VM, the existing Nginx task runs as SYSTEM. An admin
+API execution of `nginx -s reload` failed with `OpenEvent` error 5 (access denied);
+the original configuration was restored before recovery. Reload under the
+existing Nginx owner's SYSTEM identity, using its executable, prefix and
+configuration paths. The rehearsal used a one-time SYSTEM scheduled task whose
+only action was that reload: it exited 0 and was then removed. Do not kill Nginx,
+replace its startup task, or restart the portal to work around the identity mismatch.
+
+## Windows VS Code
+
+Download the official x64 system installer inside the Windows guest from
+`https://update.code.visualstudio.com/latest/win32-x64/stable`. Before running it,
+record its SHA256 and require `Get-AuthenticodeSignature` to report `Valid` with
+a Microsoft signer. Run the verified installer with
+`/VERYSILENT /NORESTART /MERGETASKS=!runcode`, wait for completion, and record the
+exit code and installed version. Open the existing portal checkout in VS Code
+inside the guest to verify the actual result. Do not add accounts, credentials or
+extensions. The rehearsal installed version `1.144.0`; the installer SHA256 was
+`73110a3dad68b4ec32636cddf5693192a2058ab62fe159ea3d3a19368d6d7f76`.
+Both installer and installed `Code.exe` had Valid Microsoft Corporation
+Authenticode signatures, and the installer exited 0. A first API-launched
+installer attempt failed with a registry-key-marked-for-deletion error; its cause
+was not established. A separately reviewed one-time SYSTEM task ran the same
+verified installer successfully and was removed after completion. No registry,
+profile or security-policy change was made. Record interactive checkout-opening
+evidence separately on the PR; installation metadata alone does not prove it.
+
+## CloudShare environment Overview
+
+Confirm the owned environment's exact identity in the real viewer, then open its
+environment editor and the Overview tab's existing HTML field. Do not
+select a customization file by name alone. A short content template is:
+
+```html
+<h1>{{Name}}</h1>
+<p>Choose Windows or Ubuntu. Either VM works independently, with its own copy
+of the Certalis demo portal and local data.</p>
+<ul>
+  <li><a href="WINDOWS_HTTPS_HOST/login">Windows portal</a> ·
+      <a href="WINDOWS_HTTPS_HOST/docs/">Windows documentation</a></li>
+  <li><a href="UBUNTU_HTTPS_HOST/login">Ubuntu portal</a> ·
+      <a href="UBUNTU_HTTPS_HOST/docs/">Ubuntu documentation</a></li>
+</ul>
+<cs-viewer-start-button></cs-viewer-start-button>
+```
+
+Replace both host placeholders with the verified HTTPS origins for that exact
+environment. Before Save, verify the environment-only scope. The current editor
+offers a separate **Save To Snapshot** action; use normal **Save Changes** and
+never select Snapshot propagation for this procedure. Leave Guided Journey and
+unrelated customizations unchanged. Reopen the actual environment viewer, verify
+the text, and check the four links.
+
+The rehearsal confirmed the exact environment in the editor and viewer. Normal
+Save Changes followed by its generic confirmation reported success; Save Changes
+then became disabled. Fresh viewer readback showed the title, independent-VM text,
+four correct HTTPS links and preserved VM-list button. The Windows documentation
+link opened the published guide. Save To Snapshot was not selected. This is
+environment customization evidence, not a Snapshot or image-capture claim.
+
+## Verification record (2026-10-31)
+
+The generated artifact was built from reviewed source
+`e280809625891e08bc9998dbe96222566a16bfaa`; archive SHA256
+`0f6b4b01d55e4a26102784d597bca488f1f88a9831a90ebe31a9eb1b50cb3142`.
+Both application checkouts stayed clean at `3b0cfb31`; deploying static files did
+not require an app build or database migration.
+
+- Both existing HTTPS hosts returned all thirteen artifact files with identical
+  hashes, HTML/CSS MIME types and HTTP 200. `/docs` redirected to `/docs/`, whose
+  content matched the generated index.
+- Both returned 404 for environment, Git, database, source, unselected Markdown,
+  arbitrary missing and tested traversal paths. Environment-file and TLS-key
+  hashes matched their recorded baselines; values stayed private.
+- Login pages returned HTTP 200; health confirmed fixture mode and persistence.
+- Browser interaction on both hosts followed the flow guide to the endpoint
+  index/anchor, back to the guide and into the installation guide. Captured
+  warning/error lists were empty, subject to capture limits; no HTTPS warning or
+  bypass occurred. Certificate details were not independently inspected.
+- Portal browser regression remains partial: registration/sign-in submissions
+  were followed by browser attachment timeouts. Login, authenticated navigation
+  and logout still need human confirmation. The synthetic Linux registration
+  exists; do not repeat it blindly.
+- Static CLI tests (4/4), lint and typecheck passed. The isolated Linux run
+  passed 13 launcher tests with one Windows-only skip. Full Vitest finished with
+  296 passing files and one failing file: 2,645 tests passed and four failed in
+  the unchanged `candidate-home-route-focus.test.tsx` focus, scheduled-copy and
+  card-label/order expectations. The same four failures reproduced at baseline
+  `3b0cfb31f487faf15d9c4bc0d8d094b6dbd23d53`; a separate comparison installed that
+  commit's original lockfile and again reported four failures and seven passes.
+  These are pre-existing failures; the full suite is not green.
+  The parent accepted this documented baseline exception for #493. The four names
+  are:
+  - keeps focus on the task control and announces route-backed task changes;
+  - explains a scheduled current attempt without making the destination heading focusable;
+  - renders every current Exam Attempt as a complete card with its own action target;
+  - keeps current cards in place when background refresh changes their statuses.
+- The environment Overview was saved and verified in the real viewer as above.
+  VS Code installation passed as above. Interactive checkout opening and human
+  acceptance must be recorded separately on the PR before merge.
