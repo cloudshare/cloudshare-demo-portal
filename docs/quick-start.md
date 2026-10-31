@@ -22,7 +22,8 @@ Nginx and the documentation site in place. Setup does not stop or start services
 ### Prepared VM launchers
 
 After the owner has captured the uninitialized VM image, initialize each instance
-manually. On Windows, double-click **Initialize-Portal.cmd** on the shared desktop.
+manually. On Windows, right-click **Initialize-Portal.cmd** on the shared desktop
+and choose **Run as administrator**, as required for portal maintenance.
 On Ubuntu, run `/home/sysadmin/initialize-portal.sh` in a terminal as `sysadmin`.
 Each launcher runs normal setup and starts the existing portal task/service only
 when setup succeeds. Neither launcher passes `--reset` or creates a service.

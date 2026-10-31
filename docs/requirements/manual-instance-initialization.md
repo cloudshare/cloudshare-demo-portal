@@ -15,6 +15,8 @@ deployment to the two demo VMs are separately reviewed operational steps.
 The explicit prepared-VM entry points are `scripts/Initialize-Portal.cmd`, copied
 to `C:\Users\Public\Desktop\Initialize-Portal.cmd`, and
 `scripts/initialize-portal.sh`, copied executable to `/home/sysadmin/initialize-portal.sh`.
+On Windows, the operator right-clicks the desktop file and chooses **Run as administrator**;
+the launcher does not elevate itself.
 They use the fixed VM checkout and installed Node path, call normal setup without
 `--reset`, and start only the existing `issue489-next` scheduled task or
 `issue489-next.service` after setup exits successfully. Setup failure prevents
