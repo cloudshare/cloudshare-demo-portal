@@ -9,6 +9,7 @@ Only these Markdown files are published. URLs are relative to `/docs/`.
 
 | Repository source | Output URL |
 |---|---|
+| `docs/quick-start.md` | `quick-start.html` |
 | `docs/flows/README.md` | `index.html` |
 | `docs/flows/authentication.md` | `authentication.html` |
 | `docs/flows/certification-admin.md` | `certification-admin.html` |
@@ -35,8 +36,9 @@ other unselected file are excluded even when a selected page links to them.
 
 ## Rendering and links
 
-The fixed CLI `npm run build:docs` reads only the twelve sources above and writes
-`build/docs-site`: twelve HTML files and one stylesheet. It accepts no source or
+The fixed CLI `npm run build:docs` reads only the thirteen sources above and writes
+`build/docs-site`: thirteen HTML files and one stylesheet. Quick start is the first
+navigation entry and has a prominent link from the flow guide. It accepts no source or
 output arguments. The artifact works independently of its checkout. Rebuilding
 replaces stale output; deploy only this artifact, never a repository directory.
 
@@ -69,7 +71,7 @@ The static test cannot prove Nginx routing; guest and browser checks remain sepa
 Record the source commit and artifact archive SHA256 before transferring the same
 artifact to both VMs. Extract into an empty deployment directory outside the
 checkout (Windows `C:/CloudSharePortalDocs`, Linux `/var/www/cloudshare-portal-docs`).
-Require exactly the twelve HTML files and `style.css`; copy no source, environment,
+Require exactly the thirteen HTML files and `style.css`; copy no source, environment,
 database, key, history, log or evidence files. Retain the previous artifact outside
 the served directory for rollback. Updates repeat build, hash, transfer and replace.
 
@@ -119,8 +121,10 @@ record its SHA256 and require `Get-AuthenticodeSignature` to report `Valid` with
 a Microsoft signer. Run the verified installer with
 `/VERYSILENT /NORESTART /MERGETASKS=!runcode`, wait for completion, and record the
 exit code and installed version. Open the existing portal checkout in VS Code
-inside the guest to verify the actual result. Do not add accounts, credentials or
-extensions. The rehearsal installed version `1.144.0`; the installer SHA256 was
+inside the guest to verify the actual result. Do not add accounts or credentials.
+Only the subsequently requested official Microsoft Remote - SSH extension and its
+required Microsoft dependencies are authorized; no extension packs. The rehearsal
+installed version `1.144.0`; the installer SHA256 was
 `73110a3dad68b4ec32636cddf5693192a2058ab62fe159ea3d3a19368d6d7f76`.
 Both installer and installed `Code.exe` had Valid Microsoft Corporation
 Authenticode signatures, and the installer exited 0. A first API-launched
@@ -130,42 +134,66 @@ verified installer successfully and was removed after completion. No registry,
 profile or security-policy change was made. Record interactive checkout-opening
 evidence separately on the PR; installation metadata alone does not prove it.
 
+The requested Windows VS Code setup uses two separate windows/workspaces:
+
+| Workspace | Folder |
+|---|---|
+| Local `C:\CloudSharePortalWorkspaces\Windows.code-workspace` | `C:\CloudShareDemoPortal` |
+| Remote `/home/sysadmin/CloudSharePortal.code-workspace` | `/home/sysadmin/cloudshare-demo-portal` |
+
+Both workspace files passed guest JSON/folder checks. The Windows SSH alias
+`cloudshare-portal-ubuntu` resolves locally to `10.160.151.202`, user `sysadmin`,
+port `22`. The provisioned profile is `C:\Users\Administrator`; an active GUI
+session in that profile has not been verified. Remote - SSH registration remains
+**unknown**, despite CLI exit 0 and folders for Remote - SSH `0.128.0`, SSH config
+editing `0.87.0` and Remote Explorer `0.5.0`; folders alone do not prove registration.
+
+In Windows VS Code, check Extensions for Microsoft's **Remote - SSH**. Open the
+local workspace in one window; use Remote - SSH in a separate window to connect to
+the alias, then open the remote workspace and its `README.md`. Enter the private
+password from CloudShare VM details inside the VM, never in chat. Before accepting
+the first SSH host key, compare the independently verified ED25519 fingerprint
+`SHA256:U3GH+Hp9CNAoZ7QijwdAXbSY6wZWuwWBmsz9CVaMriw`.
+Authentication, VS Code Server installation and remote README opening are not yet
+verified. No further automatic extension repair is planned; inspect the GUI if
+registration is missing. No SSH keys, stored passwords, host-key bypass, service
+or network changes, shares or mounts are part of this setup. The alias IP and
+fingerprint belong to this environment; verify and refresh the target/known-host
+record for a clone without removing unrelated records. This is not a portability claim.
+
 ## CloudShare environment Overview
 
 Confirm the owned environment's exact identity in the real viewer, then open its
 environment editor and the Overview tab's existing HTML field. Do not
-select a customization file by name alone. A short content template is:
+select a customization file by name alone. The user confirmed on 2026-10-31 that
+the current Overview has no supported variable for VM Web Access/public URLs.
+Class custom properties are manually supplied values, not automatic VM URLs.
+Selecting a VM by array position is a future idea; no such template syntax was
+established or implemented here. Relevant public references are the
+[current Overview guide](https://support.accelerate.cloudshare.com/hc/en-us/articles/32839553836945-Overview-Page),
+[older custom-properties guide](https://support.cloudshare.com/hc/en-us/articles/360056292792)
+and [native application-page guide](https://support.cloudshare.com/hc/en-us/articles/360058037651).
 
-```html
-<h1>{{Name}}</h1>
-<p>Choose Windows or Ubuntu. Either VM works independently, with its own copy
-of the Certalis demo portal and local data.</p>
-<ul>
-  <li><a href="WINDOWS_HTTPS_HOST/login">Windows portal</a> ·
-      <a href="WINDOWS_HTTPS_HOST/docs/">Windows documentation</a></li>
-  <li><a href="UBUNTU_HTTPS_HOST/login">Ubuntu portal</a> ·
-      <a href="UBUNTU_HTTPS_HOST/docs/">Ubuntu documentation</a></li>
-</ul>
-<cs-viewer-start-button></cs-viewer-start-button>
-```
+The user subsequently reported manually replacing the Overview with a stronger
+story and removing the hardcoded links. Preserve that human-authored HTML,
+including the VS Code guidance and VM-list button, and the three existing native
+pages with hostname-variable and URL-path bindings. The earlier proposed agent
+fallback text is retired: do not reapply it or overwrite the human story.
+No agent save or fresh viewer readback of this manual revision is claimed.
 
-Replace both host placeholders with the verified HTTPS origins for that exact
-environment. Before Save, verify the environment-only scope. The current editor
-offers a separate **Save To Snapshot** action; use normal **Save Changes** and
-never select Snapshot propagation for this procedure. Leave Guided Journey and
-unrelated customizations unchanged. Reopen the actual environment viewer, verify
-the text, and check the four links.
-
-The rehearsal confirmed the exact environment in the editor and viewer. Normal
+The initial rehearsal confirmed the exact environment in the editor and viewer. Normal
 Save Changes followed by its generic confirmation reported success; Save Changes
 then became disabled. Fresh viewer readback showed the title, independent-VM text,
 four correct HTTPS links and preserved VM-list button. The Windows documentation
 link opened the published guide. Save To Snapshot was not selected. This is
-environment customization evidence, not a Snapshot or image-capture claim.
+environment customization evidence, not a Snapshot or image-capture claim. Those
+four static links were rejected during human QA and superseded by the user's
+reported manual revision. The earlier readback does not prove that revision or
+clone behavior. No Snapshot propagation or image capture is authorized here.
 
 ## Verification record (2026-10-31)
 
-The generated artifact was built from reviewed source
+The initial twelve-page artifact was built from reviewed source
 `e280809625891e08bc9998dbe96222566a16bfaa`; archive SHA256
 `0f6b4b01d55e4a26102784d597bca488f1f88a9831a90ebe31a9eb1b50cb3142`.
 Both application checkouts stayed clean at `3b0cfb31`; deploying static files did
@@ -205,7 +233,8 @@ not require an app build or database migration.
   - explains a scheduled current attempt without making the destination heading focusable;
   - renders every current Exam Attempt as a complete card with its own action target;
   - keeps current cards in place when background refresh changes their statuses.
-- The environment Overview was saved and verified in the real viewer as above.
+- The initial environment Overview was saved and verified in the real viewer;
+  the user's subsequent manual story/link revision is reported separately above.
   VS Code installation passed as above. Interactive checkout opening and human
   acceptance must be recorded separately on the PR before merge.
 

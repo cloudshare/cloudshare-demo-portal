@@ -1,5 +1,8 @@
 # Portal flow guide
 
+**[Quick start: sign in as an administrator](../quick-start.md)** — find the
+correct VM's Helios Certification or Certalis Sales login before exploring the flows.
+
 Choose an action to see what the browser asks Certalis to do, what Certalis persists, and which CloudShare calls follow. Start with the [Sales Trial walkthrough](sales-trial.md). This guide describes the implemented portal at source commit **`0d5794a20532735d8d0f80bffb533ae541c7b4a9`** (2026-10-30), not an MVP roadmap.
 
 | Persona / question | Read next |

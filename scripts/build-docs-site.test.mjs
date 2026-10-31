@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const pages = ['index', 'authentication', 'certification-admin', 'certification-candidate',
+const pages = ['quick-start', 'index', 'authentication', 'certification-admin', 'certification-candidate',
   'coverage', 'endpoints', 'operations', 'sales-configuration', 'sales-sessions',
   'sales-trial', 'trial-administration', 'installation'];
 
@@ -21,6 +21,7 @@ function fixture(t) {
   mkdirSync(path.join(dir, 'scripts'));
   cpSync(path.join(root, 'scripts/build-docs-site.mjs'), path.join(dir, 'scripts/build-docs-site.mjs'));
   cpSync(path.join(root, 'docs/flows'), path.join(dir, 'docs/flows'), { recursive: true });
+  cpSync(path.join(root, 'docs/quick-start.md'), path.join(dir, 'docs/quick-start.md'));
   mkdirSync(path.join(dir, 'docs/implementation'), { recursive: true });
   cpSync(path.join(root, 'docs/implementation/two-os-installation.md'), path.join(dir, 'docs/implementation/two-os-installation.md'));
   return { dir, build: () => execFileSync(process.execPath, ['scripts/build-docs-site.mjs'], { cwd: dir, encoding: 'utf8', stdio: 'pipe' }),
@@ -32,6 +33,10 @@ test('CLI publishes exactly the reviewed pages with working navigation, tables a
   f.build();
   assert.deepEqual(readdirSync(path.join(f.dir, 'build/docs-site')).sort(), [...pages.map(p => `${p}.html`), 'style.css'].sort());
   const html = f.read('index.html');
+  assert.match(html, /<nav aria-label="Documentation"><a href="quick-start.html">Quick start<\/a>/);
+  assert.match(html, /<strong><a href="quick-start.html">Quick start: sign in as an administrator<\/a><\/strong>/);
+  assert.match(f.read('quick-start.html'), /<h1[^>]*>Quick start: sign in as an administrator<\/h1>/);
+  assert.match(f.read('quick-start.html'), /<code>certalisSalesAdminPassword<\/code>/);
   assert.match(html, /<table>/);
   assert.match(html, /<code class="language-mermaid">/);
   assert.match(html, /href="sales-trial.html"/);
@@ -48,7 +53,7 @@ test('CLI publishes exactly the reviewed pages with working navigation, tables a
 
 test('unselected files and unsafe Markdown never become published content or active URLs', t => {
   const f = fixture(t);
-  for (const file of ['README.md', '.env', '.git/config', 'prisma/dev.db', 'src/private.ts', 'docs/private.md']) {
+  for (const file of ['README.md', '.env', '.git/config', 'prisma/dev.db', 'src/private.ts', 'docs/private.md', 'config/portal-seed.local.json']) {
     mkdirSync(path.dirname(path.join(f.dir, file)), { recursive: true });
     writeFileSync(path.join(f.dir, file), 'PRIVATE_SENTINEL_DO_NOT_PUBLISH');
   }
@@ -58,6 +63,7 @@ test('unselected files and unsafe Markdown never become published content or act
 <iframe src="https://example.invalid"></iframe>
 
 [source](../../src/private.ts) [env](../../.env) [other](../private.md)
+[private seed](../../config/portal-seed.local.json)
 [absolute](/.env) [network](//example.invalid/x) [disk](file:///C:/secret)
 [run](javascript:alert(1)) [data](data:text/html,bad)
 [credential](https://user:password@example.invalid/x)
@@ -75,6 +81,7 @@ test('unselected files and unsafe Markdown never become published content or act
   assert.match(html, /id="repeat-heading-1"/);
   assert.match(html, /href="index.html#repeat-heading-1"/);
   assert.doesNotMatch(html, /<script|<iframe|<img|PRIVATE_SENTINEL/);
+  assert.doesNotMatch(html, /href="[^"]*portal-seed\.local\.json/);
   assert.doesNotMatch(html, /href="(?:javascript:|data:|file:|\/\/|\/\.env|https:\/\/user:|[^" ]*private)/);
   for (const file of readdirSync(path.join(f.dir, 'build/docs-site'))) {
     assert.doesNotMatch(f.read(file), /PRIVATE_SENTINEL/);

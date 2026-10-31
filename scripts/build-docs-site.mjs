@@ -5,6 +5,7 @@ import MarkdownIt from 'markdown-it';
 
 // Publication is an explicit review decision, never a directory walk or link crawl.
 const pages = [
+  ['docs/quick-start.md', 'quick-start', 'Quick start'],
   ['docs/flows/README.md', 'index', 'Flow guide'],
   ['docs/flows/authentication.md', 'authentication', 'Authentication'],
   ['docs/flows/certification-admin.md', 'certification-admin', 'Certification admin'],
