@@ -17,7 +17,7 @@ Those procedures distinguish static planning from operations actually verified.
 | Node.js | 24.22.2 | 24.22.2 |
 | npm | 11.19.1 | 11.19.1 |
 | Git | 2.56.0.windows.4 | 2.53.0 |
-| Application commit | `0d5794a20532735d8d0f80bffb533ae541c7b4a9` | Same commit |
+| Original installation commit | `0d5794a20532735d8d0f80bffb533ae541c7b4a9` | Same commit |
 | Dependency installation, Prisma generation and migrations | Passed | Passed |
 | Production build | Passed | Passed |
 | Private health and admin API login, session and logout | Passed | Passed |
@@ -51,12 +51,20 @@ Linux's public login page also returned HTTP 200 with normal
 certificate validation, but browser automation stopped before navigation with
 `Debugger unattached`. Linux browser interaction remains unverified.
 
-Both guest checkouts still use the application commit shown above. The later
-main-branch documentation commit `ae922874f58372005fc5bc71da26cc3595e12ad2`
-changes only README and flow documentation. Its credential-free incremental Git
-bundle has been prepared and verified, but browser file transfer detached before
-either upload. Neither guest has been claimed current with that commit; syncing
-it does not require a rebuild or database migration.
+Both guest checkouts initially used the installation commit shown above. At an
+intermediate checkpoint, a credential-free bundle for the documentation-only
+commit `ae922874f58372005fc5bc71da26cc3595e12ad2` had been prepared, but browser
+transfer detached before either upload. That bundle was subsequently superseded
+by the completed synchronization below; it is not the latest recorded guest state.
+
+**Later synchronization, 2026-10-30:** after PR #490 merged, the replacement bundle
+was uploaded and applied to both guests. Each reached
+`3b0cfb31f487faf15d9c4bc0d8d094b6dbd23d53` with a clean checkout and unchanged
+environment/TLS-key hashes; public HTTPS login and fixture persistence checks
+passed afterward. The [synchronization evidence](https://github.com/cloudshare/cloudshare-demo-portal/pull/490#issuecomment-6534043964)
+records that completed operation. The versions table records the initial
+application installation; this later change was Markdown-only. Subsequent #493
+deployment state is tracked separately and is not asserted by this dated record.
 
 ## Install the prerequisites
 

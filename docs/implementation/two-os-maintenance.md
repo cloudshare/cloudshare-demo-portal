@@ -81,6 +81,7 @@ Windows example for application data, from the checkout:
 
 ```powershell
 $backup = Join-Path $env:USERPROFILE ('portal-maintenance-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ'))
+if (!(Test-Path -LiteralPath 'prisma\dev.db' -PathType Leaf)) { throw 'Main database missing' }
 New-Item -ItemType Directory -Path $backup -ErrorAction Stop | Out-Null
 Invoke-Checked icacls.exe $backup /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
 Copy-Item -LiteralPath .env -Destination (Join-Path $backup 'portal.env') -ErrorAction Stop
@@ -93,13 +94,18 @@ foreach ($name in @('dev.db','dev.db-wal','dev.db-shm','dev.db-journal')) {
 Ubuntu example for application data:
 
 ```sh
-umask 077
-backup="$HOME/portal-maintenance-$(date -u +%Y%m%dT%H%M%SZ)"
-mkdir -m 700 "$backup"
-cp -p .env "$backup/portal.env"
-for file in prisma/dev.db prisma/dev.db-wal prisma/dev.db-shm prisma/dev.db-journal; do
-  if [ -f "$file" ]; then cp -p "$file" "$backup/"; fi
-done
+(
+  set -eu
+  umask 077
+  backup="$HOME/portal-maintenance-$(date -u +%Y%m%dT%H%M%SZ)"
+  [ -f prisma/dev.db ]
+  mkdir -m 700 "$backup"
+  install -m 600 .env "$backup/portal.env"
+  for file in prisma/dev.db prisma/dev.db-wal prisma/dev.db-shm prisma/dev.db-journal; do
+    if [ -f "$file" ]; then install -m 600 "$file" "$backup/"; fi
+  done
+  printf 'Backup directory: %s\n' "$backup"
+)
 ```
 
 Check each exit status and verify the main database was copied. Add the listed
@@ -122,21 +128,30 @@ After successful hash verification, replace these example values explicitly:
 ```powershell
 $bundle = 'C:\Uploads\REPLACE_WITH_APPROVED_BUNDLE.bundle'
 $target = 'REPLACE_WITH_REVIEWED_40_CHARACTER_COMMIT'
+if (Invoke-Checked git.exe status --porcelain) { throw 'Checkout is not clean' }
 Invoke-Checked git.exe bundle verify $bundle
 Invoke-Checked git.exe fetch -- $bundle refs/remotes/origin/main:refs/remotes/origin/main
 Invoke-Checked git.exe merge --ff-only $target
-Invoke-Checked git.exe rev-parse HEAD
-Invoke-Checked git.exe status --porcelain
+$actual = Invoke-Checked git.exe rev-parse HEAD
+if ($actual -cne $target) { throw 'Target HEAD mismatch' }
+if (Invoke-Checked git.exe status --porcelain) { throw 'Updated checkout is not clean' }
 ```
 
 ```sh
-bundle=/home/sysadmin/Uploads/REPLACE_WITH_APPROVED_BUNDLE.bundle
-target=REPLACE_WITH_REVIEWED_40_CHARACTER_COMMIT
-git bundle verify "$bundle"
-git fetch -- "$bundle" refs/remotes/origin/main:refs/remotes/origin/main
-git merge --ff-only "$target"
-git rev-parse HEAD
-git status --porcelain
+(
+  set -eu
+  bundle=/home/sysadmin/Uploads/REPLACE_WITH_APPROVED_BUNDLE.bundle
+  target=REPLACE_WITH_REVIEWED_40_CHARACTER_COMMIT
+  dirty=$(git status --porcelain)
+  [ -z "$dirty" ]
+  git bundle verify "$bundle"
+  git fetch -- "$bundle" refs/remotes/origin/main:refs/remotes/origin/main
+  git merge --ff-only "$target"
+  actual=$(git rev-parse HEAD)
+  [ "$actual" = "$target" ]
+  dirty=$(git status --porcelain)
+  [ -z "$dirty" ]
+)
 ```
 
 Check each exit status; require exact target HEAD and a clean checkout. Stop on
