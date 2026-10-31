@@ -183,9 +183,14 @@ not require an app build or database migration.
   warning/error lists were empty, subject to capture limits; no HTTPS warning or
   bypass occurred. Certificate details were not independently inspected.
 - Portal browser regression remains partial: registration/sign-in submissions
-  were followed by browser attachment timeouts. Login, authenticated navigation
-  and logout still need human confirmation. The synthetic Linux registration
-  exists; do not repeat it blindly.
+  were followed by browser attachment timeouts. Linux's guest-only HTTPS check
+  passed admin login, session, admin home, logout and post-logout session rejection
+  using its existing fixture credentials in memory. Windows's inline check
+  returned a provider 500 without an execution ID; its outcome is unknown. Browser
+  control detached before the file-based follow-up could be uploaded, so no
+  further automated auth attempt was made. A possible extra Windows QA auth
+  session must be considered in the later image audit. The synthetic Linux
+  registration exists; do not repeat it blindly.
 - Static CLI tests (4/4), lint and typecheck passed. The isolated Linux run
   passed 13 launcher tests with one Windows-only skip. Full Vitest finished with
   296 passing files and one failing file: 2,645 tests passed and four failed in
@@ -203,3 +208,12 @@ not require an app build or database migration.
 - The environment Overview was saved and verified in the real viewer as above.
   VS Code installation passed as above. Interactive checkout opening and human
   acceptance must be recorded separately on the PR before merge.
+
+The Windows GUI attempt stopped at the viewer's RDP connection screen; no desktop
+interaction or README preview was verified. Human QA must open VS Code inside the
+Windows VM, open `C:\CloudShareDemoPortal`, and preview `README.md` in Restricted
+Mode. For the Windows portal regression, use `HELIOS_ADMIN_EMAIL` and
+`HELIOS_ADMIN_PASSWORD` from that same VM's local `.env` inside the VM to sign in,
+open the admin home and sign out. Do not copy those values into chat, edit the
+file, use a real Customer credential, or add/reset an account. If the viewer
+cannot connect, record the check as blocked rather than accepted.
