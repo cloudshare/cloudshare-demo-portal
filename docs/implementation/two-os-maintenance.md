@@ -6,10 +6,14 @@ reboot recovery and a documentation-only Git-bundle update were verified on
 2026-10-30. The maintenance stop/backup/reset and runtime-update sequences below
 are statically reviewed proposals; execution and human acceptance are outstanding.
 
-**Wait for the current task to release the guests.** #493 owns their documentation,
-VS Code and Overview deployment. Read its final deployment record before operating;
-preserve its added static files/configuration. Run these commands inside the chosen
-guest, never the workstation checkout. This guide does not authorize a reset.
+**Coordinate a maintenance window before touching the guests.** #493's deployment
+was accepted and merged in #494 on 2026-10-31. Read its
+[deployment record](vm-documentation-site.md) and preserve its static files,
+VS Code/workspace settings and human-authored Overview/native pages. Its current
+thirteen-page artifact is independent of the checkout; merging this runbook does
+not refresh that artifact or add these maintenance/capture pages to its allowlist.
+Run commands inside the chosen guest, never the workstation checkout. This guide
+does not authorize a reset or any other guest changes.
 
 ## Installation and preconditions
 
@@ -36,6 +40,13 @@ and `git status --porcelain`; stop on unexpected changes. Resolve `DATABASE_URL`
 to this guest's SQLite file. For reset, privately verify `.env` has fixture mode,
 disabled background jobs, env seeding and no provider credentials. Disabled jobs
 alone do not block explicit provider calls. Never print secret values.
+
+For existing administrator access, follow [Quick start](../quick-start.md): use
+that same VM's configured credentials and distinguish Helios CX Certification
+admin from Certalis Sales admin, not a provider-wide super-admin. This runbook is
+not password recovery. The proposed reset below covers the original env-seeded
+fixture setup only; do not switch a file/off-seeded installation to env to fit it.
+Such installations need a separately reviewed reset/seed decision with the owner.
 
 ## Stop and confirm quiescence
 

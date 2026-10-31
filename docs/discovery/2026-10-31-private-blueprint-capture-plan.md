@@ -4,10 +4,11 @@
 
 This is a static contract audit and proposed operator plan for #489. No provider
 request, guest sanitation, Snapshot, clone, Blueprint or privacy change was
-executed for it. #493 owns the mutable guests; wait for its deployment acceptance
-before inspecting/changing them. Earlier install/build, HTTPS/authentication,
-reboot and source-sync evidence remains historical, not a current inventory.
-Linux browser interaction and maintenance acceptance remain outstanding.
+executed for it. #493's deployment was accepted and merged in #494 on 2026-10-31;
+this documentation merge is not permission to alter that deployment. Earlier
+install/build, HTTPS/authentication, reboot and source-sync evidence remains
+historical, not a current inventory. #493 adds documentation/browser evidence;
+do not equate that with complete #489 portal-browser or maintenance acceptance.
 
 A Blueprint is an object associated with Projects; multiple Projects can point
 to the same object. Project-nested reads demonstrate availability, not exclusive
@@ -75,7 +76,8 @@ No first-use provisioning feature is implemented or authorized by this plan.
 ## Sanitation manifest for separately approved guest work
 
 Preserve evidence and matched private backups **outside the captured guests**
-before clearing anything. Review Windows and Linux independently after #493.
+before clearing anything. Review Windows and Linux independently against #493's
+accepted deployment record, including its instance-specific SSH/workspace state.
 
 | Material | Required capture decision/check |
 |---|---|
@@ -94,7 +96,7 @@ and therefore does not sanitize a reusable image.
 
 ## Proposed bounded capture and verification
 
-1. After #493 releases the assets, finish outstanding browser/maintenance
+1. After a separately coordinated maintenance release, finish outstanding portal/browser/maintenance
    acceptance. Re-read identities and Snapshot inventory, freeze source/config,
    and record the approved sanitation and clone-setup decisions.
 2. Obtain separate approval for concrete sanitation and the exact capture request.
