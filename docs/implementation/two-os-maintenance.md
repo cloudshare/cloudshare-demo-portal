@@ -17,6 +17,10 @@ does not authorize a reset or any other guest changes.
 
 ## Installation and preconditions
 
+Preserve the installation guide's [current retained layout](two-os-installation.md#current-retained-layout),
+including `/home/sysadmin/issue489-nginx`, which the app unit still uses for output.
+Historical directory names alone do not establish that a directory is disposable.
+
 | Item | Windows | Ubuntu |
 |---|---|---|
 | Checkout | `C:\CloudShareDemoPortal` | `/home/sysadmin/cloudshare-demo-portal` |
