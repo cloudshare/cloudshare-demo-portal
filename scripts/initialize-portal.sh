@@ -1,6 +1,7 @@
 #!/bin/bash
 set -u
 export PATH=/home/sysadmin/.local/node-v24.22.2-linux-x64/bin:/usr/bin:/bin
+launcher_path=$(realpath -- "${BASH_SOURCE[0]}") || exit 1
 if ! cd /home/sysadmin/cloudshare-demo-portal; then
   printf '%s\n' 'ERROR: The portal checkout is unavailable. Nothing was initialized.' >&2
   exit 1
@@ -20,8 +21,8 @@ if [ "$result" -ne 0 ]; then
   exit "$result"
 fi
 printf '%s\n' "Portal start requested. Open this VM's portal and use its private admin credentials."
-if [ "${BASH_SOURCE[0]}" = "/home/sysadmin/initialize-portal.sh" ]; then
-  if ! rm -- "${BASH_SOURCE[0]}"; then
+if [ "$launcher_path" = "/home/sysadmin/initialize-portal.sh" ]; then
+  if ! rm -- "$launcher_path"; then
     printf '%s\n' 'ERROR: Initialization and service start succeeded, but the launcher could not be removed.' >&2
     exit 1
   fi

@@ -54,7 +54,7 @@ for (const windows of [true, false]) for (const scenario of cases) {
         writeFileSync(join(bin, 'npm'), '#!/bin/sh\n[ "$#" = 2 ] && [ "$1" = run ] && [ "$2" = setup:instance ] || exit 91\nprintf "setup\\n" >> "$PORTAL_LAUNCHER_TEST_EVENTS"\nexit "$PORTAL_LAUNCHER_TEST_SETUP_EXIT"\n', { mode: 0o700 });
         writeFileSync(join(bin, 'sudo'), '#!/bin/sh\n[ "$#" = 3 ] && [ "$1" = systemctl ] && [ "$2" = start ] && [ "$3" = issue489-next.service ] || exit 92\nprintf "service\\n" >> "$PORTAL_LAUNCHER_TEST_EVENTS"\nexit "$PORTAL_LAUNCHER_TEST_SERVICE_EXIT"\n', { mode: 0o700 });
         writeFileSync(launcher, source, { mode: 0o700 });
-        result = spawnSync('/bin/bash', [launcher], { cwd: root, env, encoding: 'utf8', timeout: 10_000 });
+        result = spawnSync('/bin/bash', [scenario.succeeds && !scenario.canonical ? './initialize-portal.sh' : launcher], { cwd: root, env, encoding: 'utf8', timeout: 10_000 });
       }
       assert.equal(result.error, undefined, 'Synthetic launcher must finish without a timeout');
       assert.equal(result.status === 0, scenario.succeeds);
