@@ -16,6 +16,10 @@ The command generates one random master key and two distinct random admin passwo
 this instance. Secrets live only in ignored private runtime files; terminal output identifies
 the files and reports safe outcomes without printing credential values. There is no first-boot
 service, marker-based skip, HTTP endpoint, listener, automatic provider call, or new dependency.
+On Windows, setup protects staging before writing secrets and applies explicit private ACLs
+to the promoted files for the current operator, SYSTEM, and Administrators. Linux private
+files use mode `0600`. Unrelated environment values must survive the actual Next.js parser;
+representations that cannot preserve those values are refused before replacement.
 
 ## Baseline and preservation
 

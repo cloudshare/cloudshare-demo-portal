@@ -1,7 +1,7 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { parseEnv } from "node:util";
 import { PrismaClient } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -10,11 +10,13 @@ import { createPortalAuthenticator } from "../src/auth/portal-auth";
 import { createPortalSessionStore, createPortalUserRepository } from "../src/persistence/portal-auth-repository";
 
 const repo = process.cwd();
+const fixtureParent = join(repo, "build", "setup-instance-tests");
 let root: string;
 let prisma: PrismaClient | undefined;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "portal-instance-test-"));
+  mkdirSync(fixtureParent, { recursive: true });
+  root = mkdtempSync(join(fixtureParent, "portal-instance-test-"));
   cpSync(join(repo, "prisma", "schema.prisma"), join(root, "prisma", "schema.prisma"), { recursive: true });
   cpSync(join(repo, "prisma", "migrations"), join(root, "prisma", "migrations"), { recursive: true });
   cpSync(join(repo, ".env.example"), join(root, ".env.example"));
@@ -23,7 +25,7 @@ beforeEach(() => {
 afterEach(async () => {
   await prisma?.$disconnect();
   prisma = undefined;
-  if (dirname(root) !== resolve(tmpdir()) || !root.includes("portal-instance-test-")) throw new Error("Unexpected fixture path");
+  if (dirname(root) !== fixtureParent || !root.includes("portal-instance-test-")) throw new Error("Unexpected fixture path");
   rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
@@ -86,8 +88,8 @@ describe("manual instance setup CLI", () => {
     seed.heliosInstructor = { id: "configured-instructor", name: "Configured Instructor" };
     writeFileSync(seedPath, JSON.stringify(seed));
     const envPath = join(root, ".env");
-    writeFileSync(envPath, readFileSync(envPath, "utf8").replace('PORTAL_MODE="fixture"', 'PORTAL_MODE="live"') +
-      '\nPORTAL_TUNNEL_URL=https://preserved.example.invalid\nUNRELATED_SETTING="keep this # value"\nHELIOS_ADMIN_PASSWORD=old-shared-password\nCLOUDSHARE_V3_API_KEY=old-shared-key\n');
+    writeFileSync(envPath, readFileSync(envPath, "utf8") +
+      '\nPORTAL_MODE=live\nPORTAL_TUNNEL_URL=https://preserved.example.invalid\nUNRELATED_SETTING="keep this # value"\nHELIOS_ADMIN_PASSWORD=old-shared-password\nCLOUDSHARE_V3_API_KEY=old-shared-key\n');
     prisma = new PrismaClient({ datasources: { db: { url: `file:${join(root, "prisma", "dev.db")}` } } });
     const users = createPortalUserRepository(prisma);
     const customer = await users.findCustomerBySlug("helios-cx");
@@ -180,5 +182,55 @@ describe("manual instance setup CLI", () => {
     expect(result.status).toBe(1);
     expect(paths.map(path => readFileSync(join(root, path)))).toEqual(before);
     expect(result.stdout + result.stderr).not.toContain("old-private-override");
+  }, 90_000);
+
+  it("preserves Windows path values as read by the actual Next environment loader", () => {
+    expect(setup().status).toBe(0);
+    const envPath = join(root, ".env");
+    writeFileSync(envPath, readFileSync(envPath, "utf8") + '\nREPORTS_DIR=C:\\reports\n');
+    const loadReports = () => {
+      const nextEnvPath = createRequire(import.meta.url).resolve("@next/env");
+      const result = spawnSync(process.execPath, ["-e",
+        "process.env={};const {loadEnvConfig}=require(process.argv[1]);process.stdout.write(JSON.stringify(loadEnvConfig(process.cwd()).parsedEnv.REPORTS_DIR));",
+        nextEnvPath,
+      ], { cwd: root, encoding: "utf8" });
+      expect(result.status).toBe(0);
+      return JSON.parse(result.stdout);
+    };
+    expect(loadReports()).toBe("C:\\reports");
+    expect(setup("--reset").status).toBe(0);
+    expect(loadReports()).toBe("C:\\reports");
+  }, 90_000);
+
+  it.skipIf(process.platform !== "win32")("keeps replacement private files restricted to the operator, SYSTEM and Administrators", () => {
+    expect(setup().status).toBe(0);
+    const privatePaths = [".env", "config/portal-seed.local.json", "prisma/dev.db"].map(path => join(root, path));
+    const aclScript = (script: string) => spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], {
+      env: { ...process.env, PORTAL_TEST_ACL_PATHS: JSON.stringify(privatePaths) }, encoding: "utf8", windowsHide: true,
+    });
+    const restrict = aclScript(`
+      $ErrorActionPreference = 'Stop'
+      $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+      foreach ($path in (ConvertFrom-Json $env:PORTAL_TEST_ACL_PATHS)) {
+        & icacls.exe $path /inheritance:r /grant:r "*$($sid):(F)" '*S-1-5-18:(F)' '*S-1-5-32-544:(F)' | Out-Null
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+      }
+    `);
+    expect(restrict.status).toBe(0);
+    expect(setup("--reset").status).toBe(0);
+    const query = aclScript(`
+      $ErrorActionPreference = 'Stop'
+      $allowed = @([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544')
+      foreach ($path in (ConvertFrom-Json $env:PORTAL_TEST_ACL_PATHS)) {
+        $acl = [System.IO.File]::GetAccessControl($path)
+        if (-not $acl.AreAccessRulesProtected) { exit 1 }
+        $rules = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
+        if ($rules.Count -ne 3) { exit 1 }
+        foreach ($rule in $rules) {
+          if ($rule.IdentityReference.Value -notin $allowed -or $rule.AccessControlType -ne 'Allow') { exit 1 }
+        }
+      }
+    `);
+    expect(query.status).toBe(0);
   }, 90_000);
 });

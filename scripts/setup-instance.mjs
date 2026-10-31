@@ -8,6 +8,35 @@ import { parseEnv } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 
 const require = createRequire(import.meta.url);
+function protectWindowsFiles(paths) {
+  if (process.platform !== 'win32') return;
+  const command = `
+    $ErrorActionPreference = 'Stop'
+    $operator = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    foreach ($path in (ConvertFrom-Json $env:PORTAL_SETUP_PRIVATE_PATHS)) {
+      $directory = [System.IO.Directory]::Exists($path)
+      $acl = if ($directory) { New-Object System.Security.AccessControl.DirectorySecurity } else { New-Object System.Security.AccessControl.FileSecurity }
+      $acl.SetAccessRuleProtection($true, $false)
+      $inheritance = if ($directory) { [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit' } else { [System.Security.AccessControl.InheritanceFlags]::None }
+      foreach ($sid in @($operator, 'S-1-5-18', 'S-1-5-32-544')) {
+        $identity = [System.Security.Principal.SecurityIdentifier]::new($sid)
+        $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($identity, 'FullControl', $inheritance, 'None', 'Allow'))
+      }
+      if ($directory) { [System.IO.Directory]::SetAccessControl($path, $acl) }
+      else { [System.IO.File]::SetAccessControl($path, $acl) }
+    }
+  `;
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')], {
+    env: { ...process.env, PORTAL_SETUP_PRIVATE_PATHS: JSON.stringify(paths) }, stdio: 'pipe', windowsHide: true, timeout: 10_000,
+  });
+}
+function parseForNext(contents) {
+  // Isolate Next's process.env mutation and suppress parser diagnostics containing values.
+  return JSON.parse(execFileSync(process.execPath, ['-e',
+    "process.env={};const {processEnv}=require(process.argv[1]);const contents=require('node:fs').readFileSync(0,'utf8');const [,parsed]=processEnv([{path:'.env',contents,env:{}}],undefined,{info(){},error(){throw Error()}},true);process.stdout.write(JSON.stringify(parsed));",
+    require.resolve('@next/env'),
+  ], { input: contents, encoding: 'utf8', stdio: 'pipe', timeout: 10_000 }));
+}
 let stage;
 let replacing = false;
 let phase = 'prerequisites';
@@ -33,7 +62,8 @@ try {
     refusal = 'SQLite sidecar files found. Stop the application and resolve its database state before setup.';
     throw new Error();
   }
-  const env = parseEnv(readFileSync(join(root, existsSync(join(root, '.env')) ? '.env' : '.env.example'), 'utf8'));
+  const originalEnv = readFileSync(join(root, existsSync(join(root, '.env')) ? '.env' : '.env.example'), 'utf8');
+  const env = parseEnv(originalEnv);
   if ((env.DATABASE_URL && env.DATABASE_URL !== 'file:./dev.db') ||
       (env.PORTAL_SEED_CONFIG_PATH && resolve(root, env.PORTAL_SEED_CONFIG_PATH) !== join(root, 'config', 'portal-seed.local.json'))) {
     refusal = 'Setup supports only canonical .env, config/portal-seed.local.json and prisma/dev.db paths; no runtime files were replaced.';
@@ -96,6 +126,7 @@ try {
   const { createPortalUserRepository } = await import('../src/persistence/portal-auth-repository.ts');
   const prismaCli = require.resolve('prisma/build/index.js');
   stage = mkdtempSync(join(root, '.setup-instance-'));
+  protectWindowsFiles([stage]);
   const stagedDb = join(stage, 'instance.db');
   const stagedDatabaseUrl = `file:${stagedDb.replaceAll('\\', '/')}`;
   const prisma = new PrismaClient({ datasources: { db: { url: stagedDatabaseUrl } } });
@@ -117,15 +148,22 @@ try {
     });
   } finally { await prisma.$disconnect(); }
   writeFileSync(join(stage, 'seed.json'), JSON.stringify(seed, null, 2) + '\n', { mode: 0o600 });
-  writeFileSync(join(stage, 'env'), Object.entries(env).map(([key, value]) => {
+  const encodedEnv = Object.entries(env).map(([key, value]) => {
     // Keep the parsed value exactly, including comments/quotes inside a value.
-    const encoded = [`"${value}"`, `'${value}'`, `\`${value}\``, value].find(candidate => {
+    const encoded = [`'${value}'`, `"${value}"`, `\`${value}\``, value].find(candidate => {
       const parsed = parseEnv(`${key}=${candidate}\n`);
       return Object.keys(parsed).length === 1 && parsed[key] === value;
     });
     if (encoded === undefined) throw new Error();
     return `${key}=${encoded}`;
-  }).join('\n') + '\n', { mode: 0o600 });
+  }).join('\n') + '\n';
+  const before = parseForNext(originalEnv);
+  const after = parseForNext(encodedEnv);
+  for (const [key, value] of Object.entries(before)) {
+    if (key in env && !['PORTAL_MASTER_KEY', 'PORTAL_SEED_SOURCE', 'PORTAL_SEED_CONFIG_PATH', 'DATABASE_URL'].includes(key) && after[key] !== value) throw new Error();
+  }
+  writeFileSync(join(stage, 'env'), encodedEnv, { mode: 0o600 });
+  protectWindowsFiles([stagedDb, join(stage, 'seed.json'), join(stage, 'env')]);
   mkdirSync(join(root, 'config'), { recursive: true });
   replacing = true;
   renameSync(stagedDb, join(root, 'prisma', 'dev.db'));
