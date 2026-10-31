@@ -8,6 +8,7 @@
     "build:docs": "node scripts/build-docs-site.mjs",
     "test:docs": "node --test scripts/build-docs-site.test.mjs",
     "start": "next start",
+    "setup:instance": "node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/setup-instance.mjs",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:launcher && vitest run",
