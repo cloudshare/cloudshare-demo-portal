@@ -5,6 +5,10 @@ and local fixture accounts. It covers the steps verified on Windows Server 2025
 and Ubuntu 26.04 LTS on 2026-10-30. Configure public HTTPS and persistent startup
 separately before using the installation through CloudShare Web Access.
 
+For later operations, see the [stop/reset/update runbook](two-os-maintenance.md)
+and [private Blueprint capture plan](../discovery/2026-10-31-private-blueprint-capture-plan.md).
+Those procedures distinguish static planning from operations actually verified.
+
 ## Verified versions and results
 
 | Component | Windows | Linux |
