@@ -31,6 +31,6 @@ if "%result%"=="0" if /i "%~f0"=="C:\Users\Public\Desktop\Initialize-Portal.cmd"
     pause
     exit /b 1
   )
-  exit /b 0
+  exit 0
 )
 exit /b %result%

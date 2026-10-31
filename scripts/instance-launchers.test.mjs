@@ -57,7 +57,7 @@ for (const windows of [true, false]) for (const scenario of cases) {
         result = spawnSync('/bin/bash', [scenario.succeeds && !scenario.canonical ? './initialize-portal.sh' : launcher], { cwd: root, env, encoding: 'utf8', timeout: 10_000 });
       }
       assert.equal(result.error, undefined, 'Synthetic launcher must finish without a timeout');
-      assert.equal(result.status === 0, scenario.succeeds);
+      assert.equal(result.status === 0, scenario.succeeds, `Synthetic launcher status ${result.status}; stdout: ${result.stdout}; stderr: ${result.stderr}`);
       const trace = existsSync(events) ? readFileSync(events, 'utf8').trim().split(/\r?\n/) : [];
       assert.deepEqual(trace, scenario.events);
       assert.equal(existsSync(launcher), !scenario.succeeds || !!scenario.canonical, 'Only the deployed launcher removes itself after setup and service start succeed');
