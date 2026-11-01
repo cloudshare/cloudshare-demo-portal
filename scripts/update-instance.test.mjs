@@ -55,6 +55,8 @@ test('pinned updates preserve matched state and a failed next build supports exp
     cpSync(join(repo, 'prisma'), join(root, 'prisma'), { recursive: true,
       filter: path => !/\.db(?:-|$)/.test(path) });
     writeFileSync(join(root, '.gitignore'), '.env\nconfig/*.local.json\nprisma/*.db*\nnode_modules/\n.next/\nruntime/\n');
+    writeFileSync(join(root, '.env.example'), 'PORTAL_MODE=fixture\n');
+    writeFileSync(join(root, '.env.e2e.example'), 'PORTAL_MODE=fixture\n');
     const pkg = { name: 'portal-update-fixture', version: '1.0.0', scripts: {
       'prisma:generate': 'node -e "process.exit(0)"', build: 'node build.cjs',
     } };
@@ -185,6 +187,22 @@ test('preflight refuses a wrong base, dirty tracked source and a divergent relea
     refuses(base, /tracked source changes/i);
     commit('Divergent local release');
     refuses(git(root, 'rev-parse', 'HEAD'), /not a fast-forward/i);
+    git(root, 'checkout', '--detach', target);
+    writeFileSync(join(root, '.env.local'), 'PRIVATE=fixture-secret\n');
+    git(root, 'add', '.env.local');
+    commit('Unsupported private configuration');
+    const privateTarget = git(root, 'rev-parse', 'HEAD');
+    const privateBundle = join(root, 'private.bundle');
+    git(root, 'bundle', 'create', privateBundle, 'HEAD');
+    git(root, 'checkout', '--detach', target);
+    const privateHash = createHash('sha256').update(readFileSync(privateBundle)).digest('hex');
+    const refused = spawnSync(process.execPath, [cli, 'preflight', privateBundle, privateHash, target, privateTarget],
+      { cwd: root, encoding: 'utf8', timeout: 30_000 });
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /tracks private instance/);
+    assert.equal(git(root, 'rev-parse', 'HEAD'), target);
+    assert.equal(existsSync(join(root, '.env.local')), false);
+    assert.equal(readFileSync(join(root, 'release.txt'), 'utf8'), 'target release\n');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
