@@ -15,9 +15,10 @@ Use Node.js 24 and the installed dependencies in the VM checkout:
 `/home/sysadmin/cloudshare-demo-portal` on Ubuntu. Complete the
 [installation prerequisites](implementation/two-os-installation.md) first,
 including `npm ci` and `npm run prisma:generate`. Use this setup command in place
-of manually copying private seed credentials or running an initial migration. Stop
-the portal app using its existing startup procedure before running setup; keep
-Nginx and the documentation site in place. Setup does not stop or start services.
+of manually copying private seed credentials or running an initial migration. When
+running the CLI directly, stop the portal app first using its existing startup
+procedure; keep Nginx and the documentation site in place. The CLI does not stop
+or start services. The prepared launchers below handle the app reload themselves.
 
 ### Prepared VM launchers
 
@@ -25,10 +26,12 @@ After the owner has captured the uninitialized VM image, initialize each instanc
 manually. On Windows, right-click **Initialize-Portal.cmd** on the shared desktop
 and choose **Run as administrator**, as required for portal maintenance.
 On Ubuntu, run `/home/sysadmin/initialize-portal.sh` in a terminal as `sysadmin`.
-Each launcher runs normal setup and starts the existing portal task/service only
-when setup succeeds. Neither launcher passes `--reset` or creates a service.
+Each launcher runs normal setup, then starts or restarts the existing portal app
+so it loads the generated configuration, even if already running. No manual stop
+is required before using a prepared launcher. Setup failure leaves the service alone.
+Neither launcher passes `--reset` or creates a service.
 Windows keeps its window open so you can read the result. Ubuntu may request your
-normal `sudo` authorization to start the existing service.
+normal `sudo` authorization to restart the existing service.
 After setup and service start both succeed, the launcher removes only its deployed
 copy at the documented desktop/home path. It remains on either failure; the canonical
 repository scripts always remain. A removal failure is reported with a nonzero exit.

@@ -14,7 +14,7 @@ if [ "$result" -ne 0 ]; then
   exit "$result"
 fi
 printf '%s\n' 'Initialization succeeded. Starting the existing portal service...'
-sudo systemctl start issue489-next.service
+sudo systemctl restart issue489-next.service
 result=$?
 if [ "$result" -ne 0 ]; then
   printf '%s\n' 'ERROR: The portal service could not be started. Initialization already succeeded; do not initialize again.' >&2

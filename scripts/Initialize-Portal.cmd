@@ -15,7 +15,7 @@ if not "%result%"=="0" (
   goto finished
 )
 echo Initialization succeeded. Starting the existing portal task...
-powershell.exe -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; Start-ScheduledTask -TaskName 'issue489-next'"
+powershell.exe -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; if ((Get-ScheduledTask -TaskName 'issue489-next').State -eq 'Running') { Stop-ScheduledTask -TaskName 'issue489-next'; $deadline=[DateTime]::UtcNow.AddSeconds(10); while ((Get-ScheduledTask -TaskName 'issue489-next').State -eq 'Running') { if ([DateTime]::UtcNow -ge $deadline) { throw 'Portal task did not stop' }; Start-Sleep -Milliseconds 200 } }; Start-ScheduledTask -TaskName 'issue489-next'"
 set "result=%errorlevel%"
 if not "%result%"=="0" (
   echo ERROR: The portal task could not be started. Initialization already succeeded; do not initialize again.

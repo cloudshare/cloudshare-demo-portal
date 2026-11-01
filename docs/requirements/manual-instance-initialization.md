@@ -18,9 +18,12 @@ to `C:\Users\Public\Desktop\Initialize-Portal.cmd`, and
 On Windows, the operator right-clicks the desktop file and chooses **Run as administrator**;
 the launcher does not elevate itself.
 They use the fixed VM checkout and installed Node path, call normal setup without
-`--reset`, and start only the existing `issue489-next` scheduled task or
-`issue489-next.service` after setup exits successfully. Setup failure prevents
-service startup; service startup failure returns nonzero. Windows pauses before
+`--reset`, and reload only the existing owned app after setup exits successfully,
+so generated configuration takes effect even when the app was already running.
+Prepared launchers require no manual prestop. Windows stops a Running `issue489-next`
+task, waits at most ten seconds for it to stop, then starts it; a Ready task starts
+without a stop. Ubuntu restarts `issue489-next.service`. Setup failure leaves the
+service alone; service reload failure returns nonzero. Windows pauses before
 exiting with the saved result. After setup and service start both succeed, each
 wrapper removes itself only at its exact deployed desktop/home path above; canonical
 repository scripts remain. Setup/start failure retains the launcher, and deletion
@@ -100,9 +103,11 @@ connection refusal, and prerequisite/migration failures without replacement. No 
 contacts CloudShare or starts an application listener.
 
 Launcher tests use the approved synthetic command seam: disposable copies with
-exact fixed checkout/Node path substitutions, plus a Windows service-executable
-substitution, call fake setup/service commands. They verify failure prevents
-startup, success starts exactly once, and service errors remain failures. Run
+exact fixed checkout/Node path substitutions, Windows task-cmdlet mocks executed
+by native PowerShell, and Linux PATH command stubs. They verify running-app reload,
+Ready-task start without an unnecessary stop, setup failure without service changes,
+service failure with a nonzero exit, and success-only deployed-copy self-removal
+while canonical scripts remain. Run
 `npm run test:instance-launchers` in the isolated guest test checkout; these tests
 do not run the real initializer or start the actual portal.
 
