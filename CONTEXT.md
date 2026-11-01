@@ -238,8 +238,12 @@ Subscriptions, but the portal discovers and presents Blueprints through the sele
 (v3 `GET /api/v3/projects/{projectId}/blueprints`).
 
 **Snapshot**:
-A saved state of an environment's VMs and network configuration. Up to five per Blueprint
-(first-in-first-out); one is the **default** (often the latest unless a CloudShare instructor/project
+A saved state of an environment's VMs and network configuration. A Blueprint retains up to five
+Snapshots in first-in-first-out order. Creating a sixth automatically removes the oldest Snapshot,
+unless that Snapshot is the **default**, in which case the next-oldest is removed instead. The
+default is protected from automatic eviction; manually deleting history first is not required.
+This retention rule was confirmed by the owner on 2026-11-01, not newly live-verified here.
+One Snapshot is the **default** (often the latest unless a CloudShare instructor/project
 manager changes it) and is what provisions an environment for **experience-based** launches. The
 portal models Snapshot discovery as part of selected Project + Blueprint detail, including the
 default-Snapshot signal, not as a global top-level resource list. The portal does **not** choose an
