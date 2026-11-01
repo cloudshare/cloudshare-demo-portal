@@ -253,3 +253,35 @@ test('preflight rejects checkout-contained destinations, effective overrides and
     }
   }
 });
+
+test('create requires every applied migration in the recorded source commit while allowing unrelated untracked scratch', () => {
+  const root = mkdtempSync(join(tmpdir(), 'portal-backup-test-'));
+  const destination = `${root}-backup`;
+  try {
+    instance(root);
+    writeFileSync(join(root, 'qa-scratch.txt'), 'Unrelated operator notes\n');
+    const migration = join(root, 'prisma', 'migrations', '20990101000000_untracked_fixture');
+    mkdirSync(migration);
+    writeFileSync(join(migration, 'migration.sql'), 'CREATE TABLE FixtureRecoveryEvidence (id TEXT PRIMARY KEY);\n');
+    execFileSync(process.execPath, [require.resolve('prisma/build/index.js'), 'migrate', 'deploy', '--schema', join(root, 'prisma', 'schema.prisma')], {
+      cwd: root, env: { ...process.env, DATABASE_URL: `file:${join(root, 'prisma', 'dev.db').replaceAll('\\', '/')}` }, stdio: 'pipe', timeout: 60_000,
+    });
+    const before = readFileSync(join(root, 'prisma', 'dev.db'));
+    const untracked = run(root, 'create', destination);
+    assert.equal(untracked.status, 1);
+    assert.match(untracked.stderr, /migration.*committed/i);
+    assert.equal(existsSync(destination), false);
+    assert.deepEqual(readFileSync(join(root, 'prisma', 'dev.db')), before);
+    execFileSync('git', ['add', '--', migration], { cwd: root, stdio: 'pipe' });
+    execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Retain recovery migration'], { cwd: root, stdio: 'pipe' });
+    const committed = run(root, 'create', destination);
+    assert.equal(committed.status, 0, committed.stderr);
+    assert.equal(readFileSync(join(root, 'qa-scratch.txt'), 'utf8'), 'Unrelated operator notes\n');
+  } finally {
+    for (const path of [root, destination]) {
+      assert.equal(dirname(path), dirname(root));
+      assert.ok(path.startsWith(join(tmpdir(), 'portal-backup-test-')));
+      rmSync(path, { recursive: true, force: true, maxRetries: 3 });
+    }
+  }
+});

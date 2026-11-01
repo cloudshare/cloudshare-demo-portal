@@ -74,6 +74,8 @@ function source(root) {
     const path = join(directory, entry.name, 'migration.sql'); regular(path);
     return { name: entry.name, checksum: hash(readFileSync(path)) };
   }).sort((a, b) => a.name.localeCompare(b.name, 'en'));
+  const committedPaths = new Set(execFileSync('git', ['ls-tree', '-r', '-z', '--name-only', sha, '--', 'prisma/migrations'], { cwd: root, encoding: 'utf8', stdio: 'pipe' }).split('\0'));
+  if (migrations.some(migration => !committedPaths.has(`prisma/migrations/${migration.name}/migration.sql`))) fail('Every included migration SQL file must be committed before backing up or restoring.');
   return { sha, version: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version,
     schemaHash: hash(readFileSync(join(root, 'prisma', 'schema.prisma'))), migrations };
 }

@@ -23,7 +23,9 @@ paths, environment override files and conflicting process configuration first.
 Relevant configuration must be self-contained in `.env`: shell-variable
 expansion cannot supply a key or setting absent from the artifact. Tracked
 source changes must be committed so the recorded source SHA identifies recovery
-source accurately. The CLI records that SHA; it does not check out or build it.
+source accurately. Every included migration SQL file must exist in that commit;
+unrelated untracked scratch files are allowed. The CLI records the SHA; it does
+not check out or build it.
 
 Keep artifacts outside the checkout and every public web root or Nginx alias.
 Use a new destination directory; never overwrite an existing backup. Directory
@@ -94,11 +96,13 @@ staging remnants and test data before preparing a delivery image.
 ## Evidence
 
 On 2026-11-01 the Windows Alpha disposable fixture runner (Node 24.22.2) passed
-five CLI scenarios after recorded red/green cycles: incomplete-source refusal;
+six CLI scenarios after recorded red/green cycles: incomplete-source refusal;
 committed WAL snapshot with exact configuration; corrupt-artifact/target-sidecar
 refusal and credential-preserving restore; deliberate staged forward migration,
 failed-migration preservation and original-source/artifact recovery; and private
-destination/configuration preflight refusals. These use synthetic credentials
+destination/configuration preflight refusals; and rejection of applied migrations
+absent from the recorded source commit while allowing unrelated scratch files.
+These use synthetic credentials
 and temporary databases, not the installed portal or a CloudShare provisioning
 flow. Run them with `npm run test:instance-backup` in a disposable environment.
 
