@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 let refusal;
 let phase = 'validation';
 let advanced = false;
+let recoverySource;
 const fail = message => { refusal = message; throw new Error(); };
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: 'pipe', windowsHide: true }).trim();
 const backupCli = fileURLToPath(new URL('./instance-backup.mjs', import.meta.url));
@@ -56,6 +57,7 @@ try {
     backup('verify', artifact);
     const manifest = JSON.parse(readFileSync(join(artifact, 'manifest.json'), 'utf8'));
     if (manifest.source.sha !== base) fail('Backup source does not match the expected base. No source or instance files were changed.');
+    recoverySource = base;
     for (const [saved, current] of [['portal.env', '.env'], ['portal-seed.json', 'config/portal-seed.local.json']]) {
       if (!readFileSync(join(artifact, saved)).equals(readFileSync(current))) fail('Backup configuration does not match the current instance. No source or instance files were changed.');
     }
@@ -71,6 +73,6 @@ try {
   }
 } catch {
   process.stderr.write(`${refusal ?? `Update failed during ${phase}. Inspect the approved source, dependencies and private instance configuration.`}\n`);
-  if (advanced) process.stderr.write('KEEP THE APPLICATION STOPPED. Recover the original backup source SHA, install its locked dependencies, generate its client, restore the original verified artifact with retained backup tooling, then build before starting. Git rollback does not undo database migrations.\n');
+  if (advanced) process.stderr.write(`KEEP THE APPLICATION STOPPED. Recover source ${recoverySource}, install its locked dependencies, generate its client, restore the original verified artifact with retained backup tooling, then build before starting. Git rollback does not undo database migrations.\n`);
   process.exitCode = 1;
 }
