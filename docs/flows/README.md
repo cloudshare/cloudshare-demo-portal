@@ -5,7 +5,7 @@ right-click the desktop **Initialize-Portal.cmd** file and choose **Run as admin
 On Ubuntu, run `/home/sysadmin/initialize-portal.sh` as `sysadmin`. This launcher creates
 the private configuration, database and admin credentials, then starts the existing app.
 Its deployed file removes itself only after initialization and service start succeed.
-See [the initialization-file instructions](../quick-start.md#prepared-vm-launchers).
+See [the Quick Start](../quick-start.md) for initialization and sign-in instructions.
 If the VM is already initialized, skip setup and use the sign-in guide below.
 
 **[Quick start: sign in as an administrator](../quick-start.md)** — find the

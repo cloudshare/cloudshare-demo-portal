@@ -30,7 +30,7 @@ repository scripts remain. Setup/start failure retains the launcher, and deletio
 failure is visible and returns nonzero. These wrappers do not install software, create
 services, change policies, or initialize automatically at boot. The human runs
 them after capture of the uninitialized image. Copy instructions are in the
-[Quick Start](../quick-start.md#prepared-vm-launchers).
+[installation guide](../implementation/two-os-installation.md#prepared-vm-launchers).
 
 The command generates one random master key and two distinct random admin passwords for
 this instance. Secrets live only in ignored private runtime files; terminal output identifies
