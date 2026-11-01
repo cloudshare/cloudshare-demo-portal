@@ -1,8 +1,8 @@
 # Instance backup and restore
 
 Issue #499 defines an offline operator workflow for preserving an existing portal
-instance across a same-OS rebuild. Implementation and rehearsal are in progress;
-the commands below describe the agreed contract, not completed verification.
+instance across a same-OS rebuild. The CLI has passed the Windows fixture checks
+below; full rebuild rehearsal and human acceptance remain pending.
 
 ## Interface and prerequisites
 
@@ -20,6 +20,10 @@ The CLI does not manage services, start HTTP listeners, contact CloudShare, or
 run fresh-instance setup. It supports the canonical #496 file-mode installation:
 `.env`, `prisma/dev.db`, and `config/portal-seed.local.json`. Resolve alternative
 paths, environment override files and conflicting process configuration first.
+Relevant configuration must be self-contained in `.env`: shell-variable
+expansion cannot supply a key or setting absent from the artifact. Tracked
+source changes must be committed so the recorded source SHA identifies recovery
+source accurately. The CLI records that SHA; it does not check out or build it.
 
 Keep artifacts outside the checkout and every public web root or Nginx alias.
 Use a new destination directory; never overwrite an existing backup. Directory
@@ -89,7 +93,16 @@ staging remnants and test data before preparing a delivery image.
 
 ## Evidence
 
-Windows and Ubuntu rehearsal evidence is pending. Record exact source SHA,
+On 2026-11-01 the Windows Alpha disposable fixture runner (Node 24.22.2) passed
+five CLI scenarios after recorded red/green cycles: incomplete-source refusal;
+committed WAL snapshot with exact configuration; corrupt-artifact/target-sidecar
+refusal and credential-preserving restore; deliberate staged forward migration,
+failed-migration preservation and original-source/artifact recovery; and private
+destination/configuration preflight refusals. These use synthetic credentials
+and temporary databases, not the installed portal or a CloudShare provisioning
+flow. Run them with `npm run test:instance-backup` in a disposable environment.
+
+Full Windows and Ubuntu rebuild rehearsal evidence is pending. Record exact source SHA,
 guest identity, artifact transfer/verification, restore/migration outcomes,
 authenticated browser checks, saved Connection decryptability and matched-state
 failure recovery separately for each OS. Distinguish fixture data from live

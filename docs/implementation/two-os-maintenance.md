@@ -95,25 +95,19 @@ maintenance: the enabled Linux services would start again.
 
 ## Matched private backup
 
-After a verified stop, copy `.env` **with its current master key**, SQLite and any
-`-wal`, `-shm`, `-journal` sidecars, source SHA, native startup/Nginx configuration,
-TLS material and #493's documentation artifact/configuration when present. Use a
-new backup directory outside the checkout and every Nginx alias. Protect it as
-secrets: Windows SYSTEM/Administrators only; Linux directory0700/files0600. Do not
-include this backup in a reusable image or public evidence.
+After a verified stop, use the [instance backup workflow](instance-backup-restore.md).
+Its private artifact contains a consistent SQLite snapshot, `.env` **with its
+current master key**, the active `config/portal-seed.local.json`, and integrity/
+source metadata. Do not copy a changing database or treat journal files as a
+standalone backup. This replaces the earlier raw-copy proposal, which omitted
+the active seed JSON. See the workflow's evidence section for rehearsal status.
 
 Windows example for application data, from the checkout:
 
 ```powershell
 $backup = Join-Path $env:USERPROFILE ('portal-maintenance-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ'))
-if (!(Test-Path -LiteralPath 'prisma\dev.db' -PathType Leaf)) { throw 'Main database missing' }
-New-Item -ItemType Directory -Path $backup -ErrorAction Stop | Out-Null
-Invoke-Checked icacls.exe $backup /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
-Copy-Item -LiteralPath .env -Destination (Join-Path $backup 'portal.env') -ErrorAction Stop
-foreach ($name in @('dev.db','dev.db-wal','dev.db-shm','dev.db-journal')) {
-  $file = Join-Path 'prisma' $name
-  if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $backup -ErrorAction Stop }
-}
+Invoke-Checked node.exe scripts/instance-backup.mjs create $backup
+Invoke-Checked node.exe scripts/instance-backup.mjs verify $backup
 ```
 
 Ubuntu example for application data:
@@ -123,20 +117,22 @@ Ubuntu example for application data:
   set -eu
   umask 077
   backup="$HOME/portal-maintenance-$(date -u +%Y%m%dT%H%M%SZ)"
-  [ -f prisma/dev.db ]
-  mkdir -m 700 "$backup"
-  install -m 600 .env "$backup/portal.env"
-  for file in prisma/dev.db prisma/dev.db-wal prisma/dev.db-shm prisma/dev.db-journal; do
-    if [ -f "$file" ]; then install -m 600 "$file" "$backup/"; fi
-  done
-  printf 'Backup directory: %s\n' "$backup"
+  node scripts/instance-backup.mjs create "$backup"
+  node scripts/instance-backup.mjs verify "$backup"
 )
 ```
 
-Check each exit status and verify the main database was copied. Add the listed
-configuration/TLS copies under the same protected backup and record source SHA.
-Retained encrypted database records require the matching `PORTAL_MASTER_KEY`;
-changing that key is not an ordinary maintenance operation.
+Check each exit status, transfer the private artifact OFF the VM, and verify
+the received copy before reverting or rebuilding. Keep it outside the checkout,
+public web roots and reusable delivery images. The CLI protects local files;
+the operator must preserve privacy at the transfer destination.
+
+Native startup/Nginx configuration, TLS material, documentation and workspaces
+are separate operator-managed assets, not payloads in this three-file instance
+backup. Inventory those separately if needed; restore leaves newer OS/service/TLS
+settings unchanged. Source/dependencies/build matching remains the operator's
+responsibility. Never replace the master key or run fresh-instance setup/reset
+to restore an existing database.
 
 ## Update from a private Git bundle
 
