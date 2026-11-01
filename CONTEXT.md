@@ -67,6 +67,15 @@ _Avoid_: manager.
 **Portal**:
 The web application being built — the Certalis portal.
 
+**CloudShare browser persona**:
+The actual CloudShare identity authenticated in a browser's cookie context, distinct from
+a portal Admin role or a browser profile's display name. Keep CloudShare Admin and Participant
+sessions in separate cookie contexts: dedicated Chrome profiles or different browsers are valid;
+incognito/private browsing is only one isolation option. Tabs and windows within the same
+private context share cookies. Never open a Participant login or Sponsored Link in the
+CloudShare Admin cookie context. Verify the actual CloudShare persona before continuing;
+a profile label or portal role alone does not establish it.
+
 **CloudShare Subscription**:
 A CloudShare account **owned by a Customer** (Helios for the demo), containing one or more
 **Projects**. Each Customer brings its own subscription.
