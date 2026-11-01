@@ -136,58 +136,17 @@ to restore an existing database.
 
 ## Update from a private Git bundle
 
-Review the exact target SHA and diff. The verified 2026-10-30 update changed only
-Markdown and needed no rebuild, migration or restart. Never assume a newer main
-commit is documentation-only. A runtime/schema/dependency change needs a reviewed
-maintenance window, stopped services and the matched backup above.
+Use the [pinned instance update workflow](instance-updates.md). It replaces the
+older manual fetch/merge proposal with an explicit preflight/apply CLI and a
+matched source/dependencies/client/database/configuration/build recovery sequence.
+The CLI requires a verified local #499 backup before mutation; any off-VM retention
+uses the operator's own tools and is guidance, not an update execution gate.
 
-Transfer a credential-free bundle, compare its SHA256 to a separately trusted
-value, and run `git bundle verify` inside the checkout. Check advertised refs and
-required base. Do not install personal GitHub credentials on either guest.
-After successful hash verification, replace these example values explicitly:
-
-```powershell
-$bundle = 'C:\Uploads\REPLACE_WITH_APPROVED_BUNDLE.bundle'
-$target = 'REPLACE_WITH_REVIEWED_40_CHARACTER_COMMIT'
-if (Invoke-Checked git.exe status --porcelain) { throw 'Checkout is not clean' }
-Invoke-Checked git.exe bundle verify $bundle
-Invoke-Checked git.exe fetch -- $bundle refs/remotes/origin/main:refs/remotes/origin/main
-Invoke-Checked git.exe merge --ff-only $target
-$actual = Invoke-Checked git.exe rev-parse HEAD
-if ($actual -cne $target) { throw 'Target HEAD mismatch' }
-if (Invoke-Checked git.exe status --porcelain) { throw 'Updated checkout is not clean' }
-```
-
-```sh
-(
-  set -eu
-  bundle=/home/sysadmin/Uploads/REPLACE_WITH_APPROVED_BUNDLE.bundle
-  target=REPLACE_WITH_REVIEWED_40_CHARACTER_COMMIT
-  dirty=$(git status --porcelain)
-  [ -z "$dirty" ]
-  git bundle verify "$bundle"
-  git fetch -- "$bundle" refs/remotes/origin/main:refs/remotes/origin/main
-  git merge --ff-only "$target"
-  actual=$(git rev-parse HEAD)
-  [ "$actual" = "$target" ]
-  dirty=$(git status --porcelain)
-  [ -z "$dirty" ]
-)
-```
-
-Check each exit status; require exact target HEAD and a clean checkout. Stop on
-missing history, dirty state or non-fast-forward; never force/reset it into place.
-Retain `.env`, DB, TLS and native startup configuration. For a runtime update run
-the installation guide's checked `npm ci`, `npm run prisma:generate`,
-`node node_modules/prisma/build/index.js migrate deploy`, and `npm run build`.
-Do not use `migrate dev` or reset to repair a migration. Rebuild/redeploy published
-docs through #493's reviewed procedure when their selected source changes.
-
-On failure retain private output and keep services stopped. Rolling back Git
-alone does not undo migrations: recovery needs matching source/build/dependencies,
-database backup and environment/key. Review that recovery before restoring into
-the stopped installation.
-
+For an application update stop only the owned portal app, following that workflow;
+leave Nginx, TLS and documentation in place. The broader stop/reset procedure in
+this document remains separately scoped. See the update workflow's evidence
+section for the distinction between synthetic native CLI checks and outstanding
+historical migration, running-service and public HTTPS acceptance.
 ## Destructive fixture reset — separate approval
 
 Reset removes Candidates, sessions, Attempts, catalog state and diagnostic
