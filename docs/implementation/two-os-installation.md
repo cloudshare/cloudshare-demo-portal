@@ -11,24 +11,26 @@ Those procedures distinguish static planning from operations actually verified.
 
 ## Current retained layout
 
-The prepared VMs retain the paths below. The dated installation results that follow
+The table records the approved target layout; guest relocation and verification are separate operations. The dated installation results that follow
 remain historical evidence; they do not describe an initialized captured image.
 
 | Purpose and consumer | Windows | Ubuntu |
 | --- | --- | --- |
 | Active portal checkout, consumed by the app task/service; keep `.next` and `node_modules`. Private `.env`, seed JSON and database are created only after manual initialization. | `C:\CloudShareDemoPortal` | `/home/sysadmin/cloudshare-demo-portal` |
 | Installed Node runtime, consumed by startup and initialization; retain the Ubuntu `.local` parent. | `C:\Program Files\nodejs` | `/home/sysadmin/.local/node-v24.22.2-linux-x64/bin` |
-| HTTPS and startup configuration. Keep the entire Windows directory: `run.ps1` is used by both `issue489-next` and `issue489-nginx`, alongside certificates, config, logs and Nginx executable. Ubuntu uses stock Nginx and the app unit. | `C:\CloudShareDemoPortal-nginx` | `/etc/nginx` (site `sites-available/issue489-portal`), `/etc/nginx/issue489-tls`, `/etc/systemd/system/issue489-next.service` |
-| Required Ubuntu startup output and preserved certificate material. Despite its historical name, the app unit still writes `ubuntu-next-private.log` here. | Covered by the Nginx/startup directory above | `/home/sysadmin/issue489-nginx` |
-| Static documentation, served by the Nginx alias. | `C:\CloudSharePortalDocs` | `/var/www/cloudshare-portal-docs` |
-| Optional development workspace; preserved for human editing, not required by the portal runtime. User `.vscode-server` and `.ssh` directories are also preserved for development and SSH access. | `C:\CloudSharePortalWorkspaces\Windows.code-workspace` | `/home/sysadmin/CloudSharePortal.code-workspace` |
+| HTTPS and startup configuration. Keep the entire Windows directory: `run.ps1` is used by both `issue489-next` and `issue489-nginx`, alongside certificates, config, logs and Nginx executable. Ubuntu uses stock Nginx and the app unit. | `C:\CloudShareDemoPortal\runtime\nginx` | `/etc/nginx` (site `sites-available/issue489-portal`), `/etc/nginx/issue489-tls`, `/etc/systemd/system/issue489-next.service` |
+| App output, consumed by the Ubuntu app unit after its log reference is updated. Active TLS stays under `/etc/nginx/issue489-tls`. | Covered by the Nginx/startup directory above | `/home/sysadmin/cloudshare-demo-portal/runtime/logs/next.log` |
+| Static documentation, served by the Nginx alias. | `C:\CloudShareDemoPortal\runtime\docs` | `/var/www/cloudshare-portal-docs` |
+| Optional development workspace; preserved for human editing, not required by the portal runtime. User `.vscode-server` and `.ssh` directories are also preserved for development and SSH access. | `C:\CloudShareDemoPortal\runtime\workspaces\Windows.code-workspace` | `/home/sysadmin/cloudshare-demo-portal/runtime/workspaces/CloudSharePortal.code-workspace` |
 | One-use launcher required before initialization; removes only its deployed copy after successful initialization and service start. Canonical scripts remain in the checkout. | `C:\Users\Public\Desktop\Initialize-Portal.cmd` (right-click **Run as administrator**) | `/home/sysadmin/initialize-portal.sh` |
 | Transfer inbox, not a runtime dependency. Contents may be emptied only after approved cleanup and reference checks. | `C:\Uploads` | `/home/sysadmin/Uploads` |
+
+Use one bounded, temporary operational directory under checkout `runtime/tmp`, then clean it up. The entire checkout-root `runtime/` tree is Git-ignored. The old Ubuntu `/home/sysadmin/issue489-nginx` directory is not declared removed or required by this target layout; its retirement needs separate backup and cleanup authorization after the log move. Its old certificate copies were verified identical to active `/etc` material.
 
 Existing OS files and user profiles remain untouched. This layout is not a cleanup
 authorization or an inventory of temporary evidence files.
 
-## Verified versions and results
+## Historical installation: verified versions and results
 
 | Component | Windows | Linux |
 | --- | --- | --- |

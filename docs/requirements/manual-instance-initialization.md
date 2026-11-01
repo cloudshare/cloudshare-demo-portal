@@ -62,6 +62,19 @@ paths are supported. Custom database and seed paths are refused rather than migr
 Environment override files, symbolic links at owned runtime paths, and SQLite sidecar files
 also require operator resolution before setup; the command does not repair or remove them.
 
+## Prepared VM support layout
+
+The approved layout keeps the application checkout and initializer paths unchanged.
+Repository-root `/runtime/` is Git-ignored: Windows uses `nginx`, `docs`, `workspaces`
+and `tmp`; Ubuntu uses `logs`, `workspaces` and `tmp`. Stock Ubuntu Nginx, TLS,
+systemd and documentation paths remain outside the checkout. Node, Git, VS Code,
+`.local`, `.ssh` and `.vscode-server` stay in their standard locations.
+Future operational checks use one bounded directory under `runtime/tmp` and remove
+their temporary files afterward; they do not create permanent per-issue directories.
+Git CLI tests check representative runtime exclusions and canonical source trackability.
+Moving existing files and updating native consumers requires separate reviewed guest
+operations and verification; this source change performs neither.
+
 ## Failure behavior
 
 Before mutation, inspect an existing database read-only. Any persisted CloudShare Connection

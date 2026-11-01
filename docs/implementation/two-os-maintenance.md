@@ -18,7 +18,7 @@ does not authorize a reset or any other guest changes.
 ## Installation and preconditions
 
 Preserve the installation guide's [current retained layout](two-os-installation.md#current-retained-layout),
-including `/home/sysadmin/issue489-nginx`, which the app unit still uses for output.
+which records the approved relocation targets. Commands below use that target layout; verify the guest relocation and native startup references before running them.
 Historical directory names alone do not establish that a directory is disposable.
 
 | Item | Windows | Ubuntu |
@@ -26,8 +26,15 @@ Historical directory names alone do not establish that a directory is disposable
 | Checkout | `C:\CloudShareDemoPortal` | `/home/sysadmin/cloudshare-demo-portal` |
 | App startup | Scheduled task `issue489-next` | `issue489-next.service` |
 | HTTPS startup | Scheduled task `issue489-nginx` | Stock `nginx.service` |
-| Nginx config | `C:\CloudShareDemoPortal-nginx\conf\nginx.conf` | `/etc/nginx/sites-available/issue489-portal` |
+| Nginx config | `C:\CloudShareDemoPortal\runtime\nginx\conf\nginx.conf` | `/etc/nginx/sites-available/issue489-portal` |
 | Database | Checkout `prisma\dev.db` and sidecars | Checkout `prisma/dev.db` and sidecars |
+| Documentation alias | `C:\CloudShareDemoPortal\runtime\docs` | `/var/www/cloudshare-portal-docs` |
+| Workspace | `C:\CloudShareDemoPortal\runtime\workspaces\Windows.code-workspace` | `/home/sysadmin/cloudshare-demo-portal/runtime/workspaces/CloudSharePortal.code-workspace` |
+| App startup/logs | Checkout `runtime\nginx\run.ps1` used by both scheduled tasks | `/etc/systemd/system/issue489-next.service`, output to checkout `runtime/logs/next.log` |
+
+Keep operational temporary files within one bounded checkout `runtime/tmp` directory
+and clean them up after the operation. Do not relocate standard OS/tooling directories
+or treat the old Ubuntu log/certificate directory as authorized for deletion.
 
 Use elevated PowerShell on Windows. Define `Invoke-Checked` from the installation
 guide's [source-transfer section](two-os-installation.md#transfer-the-private-source)
@@ -60,7 +67,7 @@ configured prefix, and stop the tasks:
 ```powershell
 Disable-ScheduledTask -TaskName issue489-nginx | Out-Null
 Disable-ScheduledTask -TaskName issue489-next | Out-Null
-Invoke-Checked 'C:\CloudShareDemoPortal-nginx\nginx-1.31.8\nginx.exe' -p 'C:/CloudShareDemoPortal-nginx/' -c conf/nginx.conf -s quit
+Invoke-Checked 'C:\CloudShareDemoPortal\runtime\nginx\nginx-1.31.8\nginx.exe' -p 'C:/CloudShareDemoPortal/runtime/nginx/' -c conf/nginx.conf -s quit
 Stop-ScheduledTask -TaskName issue489-next
 Stop-ScheduledTask -TaskName issue489-nginx
 Get-NetTCPConnection -State Listen | Where-Object LocalPort -in @(80,443,3000)

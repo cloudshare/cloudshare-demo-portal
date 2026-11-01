@@ -22,6 +22,9 @@ next-env.d.ts
 # production
 /build
 
+# Per-machine services, private TLS, generated docs, workspaces and temporary operations.
+/runtime/
+
 # typescript
 *.tsbuildinfo
 
