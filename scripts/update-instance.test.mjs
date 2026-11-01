@@ -42,7 +42,7 @@ test('an artifact hash mismatch refuses the update before changing source or pri
   }
 });
 
-test('a pinned update prepares the release while preserving the original account, key, seed and saved Connection', async () => {
+test('pinned updates preserve matched state and a failed next build supports explicit original-source recovery', async () => {
   const allocated = mkdtempSync(join(tmpdir(), 'portal-update-test-'));
   const root = join(allocated, 'installation');
   const artifact = join(allocated, 'backup');
@@ -113,6 +113,42 @@ test('a pinned update prepares the release while preserving the original account
       assert.equal(secrets.decrypt(current.prepare('SELECT apiKeyCiphertext FROM CloudShareConnection WHERE id=?').get('connection').apiKeyCiphertext), 'saved-api-key');
     } finally { current.close(); }
     assert.doesNotMatch(updated.stdout + updated.stderr, /saved-api-key|preserved-password|fixture-password/);
+    const recovery = join(allocated, 'recovery');
+    const recoverySaved = invoke(backupCli, ['create', recovery]);
+    assert.equal(recoverySaved.status, 0, recoverySaved.stderr);
+    writeFileSync(join(root, 'build.cjs'), "process.stderr.write('fixture-password must stay private');process.exit(7);\n");
+    commit('Deliberately failed build');
+    const broken = git(root, 'rev-parse', 'HEAD');
+    const brokenBundle = join(allocated, 'broken.bundle');
+    git(root, 'bundle', 'create', brokenBundle, 'HEAD');
+    git(root, 'checkout', '--detach', target);
+    const brokenHash = createHash('sha256').update(readFileSync(brokenBundle)).digest('hex');
+    const failed = invoke(cli, ['apply', brokenBundle, brokenHash, target, broken, recovery, '--app-stopped']);
+    assert.equal(failed.status, 1);
+    assert.match(failed.stderr, /production build/);
+    assert.match(failed.stderr, /KEEP THE APPLICATION STOPPED/);
+    assert.match(failed.stderr, new RegExp(target), 'failure identifies the exact source paired with the recovery artifact');
+    assert.doesNotMatch(failed.stdout + failed.stderr, /fixture-password|saved-api-key|preserved-password/);
+    assert.equal(git(root, 'rev-parse', 'HEAD'), broken);
+    // The operator follows this sequence; update never starts a service or rolls back automatically.
+    git(root, 'checkout', '--detach', target);
+    const npm = args => execFileSync(process.platform === 'win32' ? 'cmd.exe' : 'npm',
+      process.platform === 'win32' ? ['/d', '/s', '/c', `npm.cmd ${args.join(' ')}`] : args,
+      { cwd: root, stdio: 'pipe', windowsHide: true, timeout: 120_000 });
+    npm(['ci']);
+    npm(['run', 'prisma:generate']);
+    const restored = invoke(backupCli, ['restore', recovery]);
+    assert.equal(restored.status, 0, restored.stderr);
+    npm(['run', 'build']);
+    assert.equal(git(root, 'rev-parse', 'HEAD'), target);
+    assert.equal(readFileSync(join(root, '.next', 'release'), 'utf8'), 'updated');
+    assert.equal(readFileSync(join(root, '.env'), 'utf8'), env);
+    assert.equal(readFileSync(join(root, 'config', 'portal-seed.local.json'), 'utf8'), seed);
+    const recovered = new DatabaseSync(join(root, 'prisma', 'dev.db'), { readOnly: true });
+    try {
+      assert.equal(await verifyPassword('preserved-password', recovered.prepare('SELECT passwordHash FROM User WHERE id=?').get('user').passwordHash), true);
+      assert.equal(secrets.decrypt(recovered.prepare('SELECT apiKeyCiphertext FROM CloudShareConnection WHERE id=?').get('connection').apiKeyCiphertext), 'saved-api-key');
+    } finally { recovered.close(); }
   } finally {
     rmSync(allocated, { recursive: true, force: true, maxRetries: 3 });
   }
