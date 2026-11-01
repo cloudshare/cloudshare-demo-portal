@@ -35,21 +35,38 @@ For Windows or Linux VM installation, see the
 [two OS installation rehearsal](docs/implementation/two-os-installation.md) for
 completed build steps and the remaining runtime verification work.
 
-No CloudShare credentials are needed. `fixture` mode (the default) runs entirely on in-memory simulators.
+Use Node.js 24. No CloudShare credentials are needed for `fixture` mode, which
+simulates provider calls while retaining portal data in local SQLite.
 
 ```bash
 # 1. Install dependencies
-npm install
+npm ci
 
-# 2. Copy the example env file — defaults are fine for fixture mode
-cp .env.example .env
+# 2. Generate the Prisma client
+npm run prisma:generate
 
-# 3. Run the database migration (creates dev.db)
-npm run prisma:migrate
+# 3. Initialize this new instance with private credentials and a fresh database
+npm run setup:instance
 
 # 4. Start the dev server
 npm run dev
 ```
+
+Each new instance owner must run setup before its first portal sign-in. Read the
+generated admin credentials privately in `config/portal-seed.local.json`; the
+master key is in `.env`. Do not copy initialized runtime files into a reusable
+image. Setup refuses existing instance data unless `--reset` is explicitly
+requested, and always refuses saved CloudShare connections. Reset deletes portal
+accounts/history and regenerates the key and both admin passwords: stop the app
+and take an external private backup first. See the
+[manual setup and sign-in guide](docs/quick-start.md).
+
+On prepared VMs, the owner can instead right-click `Initialize-Portal.cmd` on
+the Windows shared desktop and choose **Run as administrator**, or run `/home/sysadmin/initialize-portal.sh` on Ubuntu
+after image capture. These wrappers run normal setup and start the existing
+portal task/service only on success. The guide includes exact copy instructions;
+the deployed copy removes itself after setup and service start both succeed.
+The canonical scripts are retained in `scripts/`.
 
 Open **http://localhost:3000/login** for the shared portal login. Anonymous visitors can choose
 the **Certification demo** or **Sales Trial demo** registration path there.
@@ -203,7 +220,10 @@ lifecycle, schema, authentication, or diagnostics-body contract changes in this 
 
 ### Seeded admin config
 
-Preferred local setup:
+The manual initializer above generates the file-mode seed configuration. Its
+two private passwords are instance-specific; keep that file private and do not
+rerun setup during ordinary sign-in. The existing seed configuration contract
+also supports installations configured manually:
 
 1. Copy `config/portal-seed.example.json` to `config/portal-seed.local.json`.
 2. Fill in the Helios admin login, instructor, optional CloudShare Connection values, and the Certalis Sales Admin login there. To author live Sales Items, set `certalisSalesShareConnection` to the same `{ apiId, apiKey, webhookSecret }` shape; it is encrypted and stored against Certalis, never shared with Helios. Choose non-empty passwords (at least eight characters); the committed template deliberately contains only unmistakable placeholder values. Candidates register through the portal and are not configured in this seed file.

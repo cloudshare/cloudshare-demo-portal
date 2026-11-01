@@ -67,6 +67,15 @@ _Avoid_: manager.
 **Portal**:
 The web application being built — the Certalis portal.
 
+**CloudShare browser persona**:
+The actual CloudShare identity authenticated in a browser's cookie context, distinct from
+a portal Admin role or a browser profile's display name. Keep CloudShare Admin and Participant
+sessions in separate cookie contexts: dedicated Chrome profiles or different browsers are valid;
+incognito/private browsing is only one isolation option. Tabs and windows within the same
+private context share cookies. Never open a Participant login or Sponsored Link in the
+CloudShare Admin cookie context. Verify the actual CloudShare persona before continuing;
+a profile label or portal role alone does not establish it.
+
 **CloudShare Subscription**:
 A CloudShare account **owned by a Customer** (Helios for the demo), containing one or more
 **Projects**. Each Customer brings its own subscription.
@@ -229,13 +238,26 @@ Subscriptions, but the portal discovers and presents Blueprints through the sele
 (v3 `GET /api/v3/projects/{projectId}/blueprints`).
 
 **Snapshot**:
-A saved state of an environment's VMs and network configuration. Up to five per Blueprint
-(first-in-first-out); one is the **default** (often the latest unless a CloudShare instructor/project
+A saved state of an environment's VMs and network configuration. A Blueprint retains up to five
+Snapshots in first-in-first-out order. Creating a sixth automatically removes the oldest Snapshot,
+unless that Snapshot is the **default**, in which case the next-oldest is removed instead. The
+default is protected from automatic eviction; manually deleting history first is not required.
+This retention rule was confirmed by the owner on 2026-11-01, not newly live-verified here.
+One Snapshot is the **default** (often the latest unless a CloudShare instructor/project
 manager changes it) and is what provisions an environment for **experience-based** launches. The
 portal models Snapshot discovery as part of selected Project + Blueprint detail, including the
 default-Snapshot signal, not as a global top-level resource list. The portal does **not** choose an
 arbitrary non-default Snapshot when launching an Exam through a CloudShare Experience; any such
 change must happen by changing the Blueprint's default inside CloudShare first.
+
+**Authoring image workflow**:
+The original authoring VMs must remain the current, clean reusable baseline. Test in the
+build/authoring environment, identify the required correction, revert to a clean baseline,
+apply the reviewed correction to that clean state, and capture a new Snapshot. Validate an
+environment restored from that new Snapshot, including initialization. A fix applied only
+to a test clone does not repair the authoring source for future builds. Never capture
+initialized portal configuration or databases, temporary QA/test artifacts, or private
+content visible in editors or terminals. Keep the authoring baseline clean for the next build.
 
 **Region**:
 A CloudShare data-centre location. In CloudShare v3 this is effectively platform-global:

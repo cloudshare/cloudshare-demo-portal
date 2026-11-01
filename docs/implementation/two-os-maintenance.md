@@ -17,6 +17,13 @@ does not authorize a reset or any other guest changes.
 
 ## Installation and preconditions
 
+Preserve the installation guide's [current retained layout](two-os-installation.md#current-retained-layout),
+which distinguishes Ubuntu's verified relocation from deferred Windows consolidation.
+Windows commands below use the configured original paths. Independently verify Windows
+recovery and native startup references before running them; the failed cutover's
+rollback report has not yet been independently confirmed.
+Historical directory names alone do not establish that a directory is disposable.
+
 | Item | Windows | Ubuntu |
 |---|---|---|
 | Checkout | `C:\CloudShareDemoPortal` | `/home/sysadmin/cloudshare-demo-portal` |
@@ -24,6 +31,13 @@ does not authorize a reset or any other guest changes.
 | HTTPS startup | Scheduled task `issue489-nginx` | Stock `nginx.service` |
 | Nginx config | `C:\CloudShareDemoPortal-nginx\conf\nginx.conf` | `/etc/nginx/sites-available/issue489-portal` |
 | Database | Checkout `prisma\dev.db` and sidecars | Checkout `prisma/dev.db` and sidecars |
+| Documentation alias | `C:\CloudSharePortalDocs` | `/var/www/cloudshare-portal-docs` |
+| Workspace | `C:\CloudSharePortalWorkspaces\Windows.code-workspace` | `/home/sysadmin/cloudshare-demo-portal/runtime/workspaces/CloudSharePortal.code-workspace` |
+| App startup/logs | `C:\CloudShareDemoPortal-nginx\run.ps1` used by both scheduled tasks | `/etc/systemd/system/issue489-next.service`, output to checkout `runtime/logs/next.log` |
+
+Keep operational temporary files within one bounded checkout `runtime/tmp` directory
+and clean them up after the operation. Do not relocate standard OS/tooling directories
+or treat the old Ubuntu log/certificate directory as authorized for deletion.
 
 Use elevated PowerShell on Windows. Define `Invoke-Checked` from the installation
 guide's [source-transfer section](two-os-installation.md#transfer-the-private-source)

@@ -9,7 +9,170 @@ For later operations, see the [stop/reset/update runbook](two-os-maintenance.md)
 and [private Blueprint capture plan](../discovery/2026-10-31-private-blueprint-capture-plan.md).
 Those procedures distinguish static planning from operations actually verified.
 
-## Verified versions and results
+## Current retained layout
+
+Ubuntu's relocated log/workspace layout was independently verified on 2026-11-01
+at source `a128a21e`: the unit references the moved log, the old log is absent,
+all 14 documentation files match the deployed archive, and Nginx owns port 443.
+The app remains inactive with port 3000 and instance files absent.
+
+Windows consolidation is deferred. Its final helper reported a native Nginx quit
+failure (exit 1) before moves and reported successful rollback. Independent recovery
+verification is pending because the subsequent read-only request returned HTTP 500
+without an execution ID. Windows paths below are the configured/expected original
+paths, not independently reverified recovery state. The approved Windows targets
+under checkout `runtime/nginx`, `runtime/docs` and `runtime/workspaces` remain deferred.
+The dated installation results below remain historical evidence.
+
+| Purpose and consumer | Windows | Ubuntu |
+| --- | --- | --- |
+| Active portal checkout, consumed by the app task/service; keep `.next` and `node_modules`. Private `.env`, seed JSON and database are created only after manual initialization. | `C:\CloudShareDemoPortal` | `/home/sysadmin/cloudshare-demo-portal` |
+| Installed Node runtime, consumed by startup and initialization; retain the Ubuntu `.local` parent. | `C:\Program Files\nodejs` | `/home/sysadmin/.local/node-v24.22.2-linux-x64/bin` |
+| HTTPS and startup configuration. Keep the entire Windows directory: `run.ps1` is used by both `issue489-next` and `issue489-nginx`, alongside certificates, config, logs and Nginx executable. Ubuntu uses stock Nginx and the app unit. | `C:\CloudShareDemoPortal-nginx` | `/etc/nginx` (site `sites-available/issue489-portal`), `/etc/nginx/issue489-tls`, `/etc/systemd/system/issue489-next.service` |
+| App output, consumed by the updated Ubuntu app unit. Active TLS stays under `/etc/nginx/issue489-tls`. | Covered by the Nginx/startup directory above | `/home/sysadmin/cloudshare-demo-portal/runtime/logs/next.log` |
+| Static documentation, served by the Nginx alias. | `C:\CloudSharePortalDocs` | `/var/www/cloudshare-portal-docs` |
+| Optional development workspace; preserved for human editing, not required by the portal runtime. User `.vscode-server` and `.ssh` directories are also preserved for development and SSH access. | `C:\CloudSharePortalWorkspaces\Windows.code-workspace` | `/home/sysadmin/cloudshare-demo-portal/runtime/workspaces/CloudSharePortal.code-workspace` |
+| One-use launcher required before initialization; removes only its deployed copy after successful initialization and service start. Canonical scripts remain in the checkout. | `C:\Users\Public\Desktop\Initialize-Portal.cmd` (right-click **Run as administrator**) | `/home/sysadmin/initialize-portal.sh` |
+| Transfer inbox, not a runtime dependency. Contents may be emptied only after approved cleanup and reference checks. | `C:\Uploads` | `/home/sysadmin/Uploads` |
+
+Use one bounded, temporary operational directory under checkout `runtime/tmp`, then clean it up. The entire checkout-root `runtime/` tree is Git-ignored. The old Ubuntu `/home/sysadmin/issue489-nginx` directory remains present; its retirement needs separate backup and cleanup authorization. Its old certificate copies were verified identical to active `/etc` material.
+
+Existing OS files and user profiles remain untouched. This layout is not a cleanup
+authorization or an inventory of temporary evidence files.
+
+## Manual instance initialization
+
+These are current operator procedures. The original installation record below remains dated historical evidence.
+
+The owner of each new instance must run setup before its first portal sign-in.
+This means the person preparing that instance, not every Candidate or admin who
+later logs in. Setup creates the portal app's data and credentials; an explicit
+reset replaces them. It does not reset the VM, install software, or change TLS,
+SSH, workspaces or service configuration.
+
+Use Node.js 24 and the installed dependencies in the VM checkout:
+`C:\CloudShareDemoPortal` on Windows or
+`/home/sysadmin/cloudshare-demo-portal` on Ubuntu. Complete the
+[installation prerequisites](#install-the-prerequisites) first,
+including `npm ci` and `npm run prisma:generate`. Use this setup command in place
+of manually copying private seed credentials or running an initial migration. When
+running the CLI directly, stop the portal app first using its existing startup
+procedure; keep Nginx and the documentation site in place. The CLI does not stop
+or start services. The prepared launchers below handle the app reload themselves.
+
+### Prepared VM launchers
+
+After the owner has captured the uninitialized VM image, initialize each instance
+manually. On Windows, right-click **Initialize-Portal.cmd** on the shared desktop
+and choose **Run as administrator**, as required for portal maintenance.
+On Ubuntu, run `/home/sysadmin/initialize-portal.sh` in a terminal as `sysadmin`.
+Each launcher runs normal setup, then starts or restarts the existing portal app
+so it loads the generated configuration, even if already running. No manual stop
+is required before using a prepared launcher. Setup failure leaves the service alone.
+Neither launcher passes `--reset` or creates a service.
+Windows keeps its window open so you can read the result. Ubuntu may request your
+normal `sudo` authorization to restart the existing service.
+After setup and service start both succeed, the launcher removes only its deployed
+copy at the documented desktop/home path. It remains on either failure; the canonical
+repository scripts always remain. A removal failure is reported with a nonzero exit.
+
+To reproduce the launcher files from the canonical repository scripts, copy them
+once using the commands below. An existing destination must be inspected rather
+than overwritten. These copy commands do not initialize or start the portal.
+
+Windows PowerShell:
+
+```powershell
+[IO.File]::Copy('C:\CloudShareDemoPortal\scripts\Initialize-Portal.cmd', 'C:\Users\Public\Desktop\Initialize-Portal.cmd', $false)
+```
+
+Ubuntu, as `sysadmin`:
+
+```sh
+(umask 077; set -C; cat /home/sysadmin/cloudshare-demo-portal/scripts/initialize-portal.sh > /home/sysadmin/initialize-portal.sh) && chmod 700 /home/sysadmin/initialize-portal.sh
+```
+
+If initialization fails, the launcher does not start the app. If only service
+startup fails, initialization has already succeeded: inspect the existing task or
+service and start it through its normal procedure; do not initialize again.
+
+### Direct CLI setup
+
+In a terminal opened in that checkout, run:
+
+```sh
+npm run setup:instance
+```
+
+Setup creates a fresh portal database with the two Customer/admin defaults,
+generates a new private master key and two private admin passwords, and writes
+the supported private configuration. It prints no password or key values.
+The master key is in `.env`; admin credentials are in
+`config/portal-seed.local.json`. Read them privately in VS Code inside the same
+VM. Runtime files contain that instance's values and must remain uncommitted.
+
+If setup reports existing instance data, it stops without resetting it. An
+inherited initialized database is still existing data: no copied marker causes
+setup to silently keep another instance's credentials. For an approved fresh
+baseline, first back up the database and matching private configuration to a
+protected location **outside the VM and any future image**, then run:
+
+```sh
+npm run setup:instance -- --reset
+```
+
+**This deletes the existing portal accounts and history and generates a new key
+and both admin passwords.** It is not ordinary sign-in or password recovery.
+Saved CloudShare connections cause setup to refuse the reset; inspect the
+installation with its owner rather than deleting provider state or changing a
+master key independently. Stop on any error and inspect the safe explanation.
+Do not retry a reset as a generic repair.
+
+After successful direct CLI setup, start the portal through its existing startup procedure,
+then sign in with each new admin account using the [Quick Start](../quick-start.md). Ordinary
+sign-ins do not rerun setup. The existing lazy seed behavior reapplies configured
+admin credentials once per app process, so keep the private seed file consistent
+with this instance.
+
+### Existing seed-source variants
+
+1. Inside the VM, open its checkout in VS Code: `C:\CloudShareDemoPortal` on Windows
+   or `/home/sysadmin/cloudshare-demo-portal` on Ubuntu. Inspect `.env` privately
+   for `PORTAL_SEED_SOURCE`.
+2. For `env`, read the credential fields below in `.env`. For `file`, read the JSON
+   named by `PORTAL_SEED_CONFIG_PATH` (default `./config/portal-seed.local.json`,
+   relative to the checkout). For `off`, ask the installation owner for existing
+   credentials; do not turn seeding on to reset them.
+3. Open `/login` on this VM's deployed hostname, for example
+   `https://<this-VM-hostname>/login`. Sign in with the desired admin.
+
+Do not copy passwords into chat, screenshots, documentation or another VM.
+
+| Administrator | Credentials in `env` / JSON `file` | Sign-in and landing |
+|---|---|---|
+| Helios CX Certification admin | `HELIOS_ADMIN_EMAIL`, `HELIOS_ADMIN_PASSWORD` / `heliosAdminEmail`, `heliosAdminPassword` | `/login`, then `/admin` |
+| Certalis Sales admin | `CERTALIS_SALES_ADMIN_EMAIL`, `CERTALIS_SALES_ADMIN_PASSWORD` / `certalisSalesAdminEmail`, `certalisSalesAdminPassword` | `/login`, then `/sales` |
+
+The Certalis account administers the Sales Customer workspace; it is not a
+provider-wide super-admin console. Sign out before switching accounts. Public
+registration creates participant accounts, not administrators.
+These are portal accounts, separate from CloudShare API credentials. Setup does
+not generate CloudShare API keys; each Customer supplies those separately when
+connecting CloudShare.
+
+If configured credentials fail, inspect with the installation owner rather than
+reseed, edit passwords or assume the other VM's credentials apply.
+
+### Preparing a reusable image
+
+A reusable source/image must contain no initialized private `.env`, local seed
+credentials, runtime database or private backups. Git ignore rules do not exclude
+files from a VM filesystem copy. Preparing and capturing an image is a separate,
+owner-approved operation; running setup prepares the current instance, not an
+image safe to copy with its new credentials still present. Each new instance's
+owner must run the manual setup above. No automatic first-boot hook is installed.
+
+## Historical installation: verified versions and results
 
 | Component | Windows | Linux |
 | --- | --- | --- |
