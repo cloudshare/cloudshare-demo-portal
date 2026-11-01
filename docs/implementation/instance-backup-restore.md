@@ -53,13 +53,19 @@ decryption of stored CloudShare Connections.
 
 Source, dependencies, generated Prisma client and build output are excluded.
 The source SHA identifies the matching source; acquiring and preparing that
-source is the operator's responsibility and the future #500 update workflow.
+source is the operator's responsibility; the [pinned update workflow](instance-updates.md)
+covers source/dependency/client/build preparation and explicit matched recovery.
 Native startup configuration, Nginx, TLS keys/certificates, OS settings,
 documentation artifacts, workspaces and logs are also excluded. Inventory and
 retain those separately when needed; restore does not overwrite newer machine
 configuration. Cross-OS restoration is not claimed.
 
 ## Off-VM retention and restore
+
+For an in-place application update, a verified matched local backup is the
+prerequisite. Off-VM retention uses the operator's own storage and transfer tools
+and is guidance, not an update execution gate. The rebuild/revert procedure below
+still requires retention outside anything that will be replaced.
 
 1. Create and verify the private artifact after stopping the source instance.
 2. Use your own storage and transfer tools to retain it **outside the VM**.
