@@ -250,6 +250,15 @@ default-Snapshot signal, not as a global top-level resource list. The portal doe
 arbitrary non-default Snapshot when launching an Exam through a CloudShare Experience; any such
 change must happen by changing the Blueprint's default inside CloudShare first.
 
+**Authoring image workflow**:
+The original authoring VMs must remain the current, clean reusable baseline. Test in the
+build/authoring environment, identify the required correction, revert to a clean baseline,
+apply the reviewed correction to that clean state, and capture a new Snapshot. Validate an
+environment restored from that new Snapshot, including initialization. A fix applied only
+to a test clone does not repair the authoring source for future builds. Never capture
+initialized portal configuration or databases, temporary QA/test artifacts, or private
+content visible in editors or terminals. Keep the authoring baseline clean for the next build.
+
 **Region**:
 A CloudShare data-centre location. In CloudShare v3 this is effectively platform-global:
 `GET /api/v3/regions` currently returns the same shared Region set regardless of Project. The
