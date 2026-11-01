@@ -1,8 +1,13 @@
 # Instance backup and restore
 
 Issue #499 defines an offline operator workflow for preserving an existing portal
-instance across a same-OS rebuild. The CLI has passed the Windows fixture checks
-below; full rebuild rehearsal and human acceptance remain pending.
+instance across a same-OS rebuild. The CLI has passed native fixture checks on
+Windows and Ubuntu; those checks do not claim a live rebuild rehearsal.
+
+The portal creates and verifies the local backup. The operator chooses their
+own storage and upload mechanism, such as HTTPS to their own S3 bucket. Upload,
+download, Cloud Folders, storage credentials and storage services are outside
+this workflow; no participant Experience sharing is required.
 
 ## Interface and prerequisites
 
@@ -57,8 +62,8 @@ configuration. Cross-OS restoration is not claimed.
 ## Off-VM retention and restore
 
 1. Create and verify the private artifact after stopping the source instance.
-2. Transfer it through the approved private transport to storage **outside the
-   VM**. Preserve restricted permissions and verify the received copy. Confirm
+2. Use your own storage and transfer tools to retain it **outside the VM**.
+   Preserve restricted permissions and verify the received copy. Confirm
    that copy exists before reverting or rebuilding the VM.
 3. Prepare the selected source, dependencies, generated client and build in the
    clean same-OS target. Keep native services stopped. Retain a verified off-VM
@@ -106,9 +111,9 @@ These use synthetic credentials
 and temporary databases, not the installed portal or a CloudShare provisioning
 flow. Run them with `npm run test:instance-backup` in a disposable environment.
 
-Full Windows and Ubuntu rebuild rehearsal evidence is pending. Record exact source SHA,
-guest identity, artifact transfer/verification, restore/migration outcomes,
-authenticated browser checks, saved Connection decryptability and matched-state
-failure recovery separately for each OS. Distinguish fixture data from live
-credentials and provider calls. No CloudShare provisioning is part of this
-workflow.
+The same six CLI scenarios also passed on Ubuntu with Node 24.22.2. These native
+fixtures validate backup integrity and restore behavior; no live rebuild or
+off-VM transfer is claimed. Storage/upload integration and a Cloud Folders
+transfer rehearsal are not acceptance requirements. Operators must still retain
+and verify their own off-VM copy before choosing to rebuild a real instance.
+No CloudShare provisioning is part of this workflow.
