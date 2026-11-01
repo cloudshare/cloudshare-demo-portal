@@ -42,7 +42,8 @@ try {
   if (git('rev-parse', 'FETCH_HEAD^{commit}') !== target) fail('Imported bundle target does not match the pinned commit.');
   if (git('merge-base', base, target) !== base) fail('Pinned target is not a fast-forward of the installed source. No source or instance files were changed.');
   const paths = git('ls-tree', '-r', '--name-only', target).split('\n');
-  if (paths.some(path => /^(?:\.env(?:$|\.(?!example$))|config\/portal-seed\.local\.json$|prisma\/dev\.db(?:$|-)|runtime(?:\/|$)|node_modules(?:\/|$)|\.next(?:\/|$))/.test(path))) {
+  if (paths.some(path => !['.env.example', '.env.e2e.example'].includes(path) &&
+    /^(?:\.env(?:$|\.)|config\/portal-seed\.local\.json$|prisma\/dev\.db(?:$|-)|runtime(?:\/|$)|node_modules(?:\/|$)|\.next(?:\/|$))/.test(path))) {
     fail('Target source tracks private instance or native runtime paths. No source or instance files were changed.');
   }
   if (command === 'preflight') {

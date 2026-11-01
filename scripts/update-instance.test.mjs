@@ -196,13 +196,14 @@ test('preflight refuses a wrong base, dirty tracked source and a divergent relea
     git(root, 'bundle', 'create', privateBundle, 'HEAD');
     git(root, 'checkout', '--detach', target);
     const privateHash = createHash('sha256').update(readFileSync(privateBundle)).digest('hex');
+    const sourceBeforeRefusal = readFileSync(join(root, 'release.txt'));
     const refused = spawnSync(process.execPath, [cli, 'preflight', privateBundle, privateHash, target, privateTarget],
       { cwd: root, encoding: 'utf8', timeout: 30_000 });
     assert.equal(refused.status, 1);
     assert.match(refused.stderr, /tracks private instance/);
     assert.equal(git(root, 'rev-parse', 'HEAD'), target);
     assert.equal(existsSync(join(root, '.env.local')), false);
-    assert.equal(readFileSync(join(root, 'release.txt'), 'utf8'), 'target release\n');
+    assert.deepEqual(readFileSync(join(root, 'release.txt')), sourceBeforeRefusal);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
