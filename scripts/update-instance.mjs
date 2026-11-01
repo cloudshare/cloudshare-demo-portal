@@ -60,8 +60,8 @@ try {
       if (!readFileSync(join(artifact, saved)).equals(readFileSync(current))) fail('Backup configuration does not match the current instance. No source or instance files were changed.');
     }
     phase = 'source advance';
-    git('merge', '--ff-only', target);
     advanced = true;
+    git('merge', '--ff-only', target);
     if (git('rev-parse', 'HEAD') !== target) fail('Source advance did not reach the pinned target.');
     phase = 'locked dependency installation'; npm('install');
     phase = 'Prisma client generation'; npm('generate');
