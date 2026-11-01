@@ -65,8 +65,13 @@ also require operator resolution before setup; the command does not repair or re
 ## Prepared VM support layout
 
 The approved layout keeps the application checkout and initializer paths unchanged.
-Repository-root `/runtime/` is Git-ignored: Windows uses `nginx`, `docs`, `workspaces`
-and `tmp`; Ubuntu uses `logs`, `workspaces` and `tmp`. Stock Ubuntu Nginx, TLS,
+Repository-root `/runtime/` is Git-ignored: Windows targets `nginx`, `docs`, `workspaces`
+and `tmp`; Ubuntu uses `logs`, `workspaces` and `tmp`. Ubuntu's log/workspace move
+and updated unit reference were independently verified on 2026-11-01 at `a128a21e`,
+with the app stopped and uninitialized. Windows consolidation is deferred after a
+native Nginx quit failure before moves; its helper reported rollback, but independent
+recovery verification remains pending. Its configured original support paths remain
+documented in the installation guide. Stock Ubuntu Nginx, TLS,
 systemd and documentation paths remain outside the checkout. Node, Git, VS Code,
 `.local`, `.ssh` and `.vscode-server` stay in their standard locations.
 Future operational checks use one bounded directory under `runtime/tmp` and remove
