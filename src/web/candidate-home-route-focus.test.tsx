@@ -43,6 +43,7 @@ describe("CandidateHome route-backed task flow", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     process.env.TZ = originalTimezone;
     vi.unstubAllGlobals();
     Object.defineProperty(window, "fetch", {
@@ -107,6 +108,7 @@ describe("CandidateHome route-backed task flow", () => {
   });
 
   it("keeps focus on the task control and announces route-backed task changes", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-23T16:00:00.000Z"));
     const user = userEvent.setup();
     const browserFetch = vi.fn((input: RequestInfo | URL) => {
       switch (String(input)) {
@@ -184,6 +186,7 @@ describe("CandidateHome route-backed task flow", () => {
   });
 
   it("explains a scheduled current attempt without making the destination heading focusable", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-23T16:00:00.000Z"));
     const browserFetch = vi.fn((input: RequestInfo | URL) => input === "/api/candidate/exams"
       ? Promise.resolve(json({ exams: [{ id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, storageLeaseMinutes: 2880, openPeriodMinutes: 120, scoreRetrievalEnabled: true, individualSchedulingEnabled: true, availableCohortSessions: [] }], attempts: [{ id: "attempt-scheduled", examId: "exam-1", examTitle: "Helios Fundamentals", scheduledFor: "2026-10-23T16:00:00.000Z", status: "scheduled" }] }))
       : Promise.resolve(new Response(null, { status: 200 })));
@@ -256,6 +259,7 @@ describe("CandidateHome route-backed task flow", () => {
   });
 
   it("renders every current Exam Attempt as a complete card with its own action target", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-23T16:00:00.000Z"));
     const user = userEvent.setup();
     const browserFetch = vi.fn((input: RequestInfo | URL) => String(input) === "/api/candidate/exams"
       ? Promise.resolve(json({
@@ -455,7 +459,9 @@ describe("CandidateHome route-backed task flow", () => {
   });
 
   it("keeps current cards in place when background refresh changes their statuses", async () => {
+    // Keep the dated attempts inside their open windows throughout the refresh.
     vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-23T16:00:00.000Z"));
     let dashboardCalls = 0;
     const exams = [
       { id: "exam-alpha", title: "Alpha Lab", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, storageLeaseMinutes: 1440, scoreRetrievalEnabled: false, individualSchedulingEnabled: true, availableCohortSessions: [] },
