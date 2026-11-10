@@ -6,7 +6,7 @@ GHSA-ggr8-5vv4-36mx / CVE-2026-40345 affects deepmerge-ts below 8.0.0 (high, CVS
 
 Compatibility risk: v8 changes Map merging and deepmergeInto semantics. Validate clean installation, dependency resolution, Prisma generation/schema validation/config loading, lint, typecheck, existing tests, production build and a disposable database-backed portal smoke test. Do not run migrations or smoke tests against the shared database.
 
-PR #498 changes Vite in the same manifest/lockfile; coordinate ordering and preserve its independent scope. This alert is not GitHub issue #35; do not use an issue-closing keyword with that number.
+PR #498 is merged; this branch includes its Vite 6.4.5 update from main and preserves that independent scope. This alert is not GitHub issue #35; do not use an issue-closing keyword with that number.
 
 The shared checkout and port 3000 must remain untouched. No merge is authorized. Exact validation and review evidence will be recorded in the PR.
 
