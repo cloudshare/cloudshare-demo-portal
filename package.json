@@ -55,6 +55,9 @@
     "unrs-resolver@1.12.2": true
   },
   "overrides": {
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.0"
+    },
     "next": {
       "postcss": "8.5.23"
     }
