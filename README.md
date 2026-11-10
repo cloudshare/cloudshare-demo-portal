@@ -257,6 +257,7 @@ Set `PORTAL_SEED_SOURCE=off` to disable demo seeding entirely.
 ```bash
 npm run dev          # Next.js dev server with hot reload
 npm test             # Vitest unit tests
+npm run test:instance-backup # Node 24 offline CLI tests in disposable temporary instances
 npm run test:e2e:live # Live CloudShare E2E checks; requires .env.e2e.local
 npm run test:watch   # Watch mode
 npm run typecheck    # tsc --noEmit

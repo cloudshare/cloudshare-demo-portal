@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { normalizeSeedAdmin, normalizeSeedConnection } from "./portal-seeding";
+import { seedFileSchema } from "./seed-file-schema";
 
 /**
  * Typed runtime configuration for the portal, organised into two categories:
@@ -57,31 +58,6 @@ const envSchema = z.object({
 
 export type PortalMode = z.infer<typeof envSchema>["PORTAL_MODE"];
 export type PortalSeedSource = z.infer<typeof envSchema>["PORTAL_SEED_SOURCE"];
-
-const seedConnectionSchema = z
-  .object({
-    apiId: z.string().optional(),
-    apiKey: z.string().optional(),
-    webhookSecret: z.string().optional(),
-  })
-  .nullable()
-  .default(null);
-
-const seedFileSchema = z.object({
-  heliosAdminEmail: z.string().email(),
-  heliosAdminPassword: z.string().min(8),
-  heliosCloudShareConnection: seedConnectionSchema,
-  // Certalis uses the same encrypted, per-Customer connection path as Helios.
-  // Accept the original local-seed spelling as an alias during the Sales rollout.
-  certalisSalesCloudShareConnection: seedConnectionSchema.optional(),
-  certalisSalesShareConnection: seedConnectionSchema.optional(),
-  heliosInstructor: z.object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-  }),
-  certalisSalesAdminEmail: z.string().email().optional().default("sales-admin@certalis.demo"),
-  certalisSalesAdminPassword: z.string().min(8),
-});
 
 export interface Config {
   readonly secrets: {
