@@ -240,9 +240,10 @@ Subscriptions, but the portal discovers and presents Blueprints through the sele
 **Snapshot**:
 A saved state of an environment's VMs and network configuration. A Blueprint retains up to five
 Snapshots in first-in-first-out order. At five Snapshots, creating another replaces the oldest,
-unless the oldest is the **default**. The default is protected; the replacement behavior when it
-is oldest is not specified here. This retention convention was reconfirmed by the owner on
-2026-11-17, not newly live-verified here.
+unless the oldest is the **default**. The default is protected; replacement behavior when it is
+oldest remains unspecified and unverified. The owner reconfirmed this convention on 2026-11-17;
+a build capture that day replaced the oldest non-default Snapshot (v2), retained the other four,
+and left the current default (v6) unchanged.
 One Snapshot is the **default** (often the latest unless a CloudShare instructor/project
 manager changes it) and is what provisions an environment for **experience-based** launches. The
 portal models Snapshot discovery as part of selected Project + Blueprint detail, including the
