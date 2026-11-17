@@ -31,6 +31,8 @@ function instance(root) {
     heliosInstructor: { id: 'fixture', name: 'Fixture Instructor' }, heliosCloudShareConnection: null });
   writeFileSync(join(root, '.env'), env);
   writeFileSync(join(root, 'config', 'portal-seed.local.json'), seed);
+  // Prisma's Windows engine requires the SQLite file to exist before migrate deploy.
+  new DatabaseSync(join(root, 'prisma', 'dev.db')).close();
   execFileSync(process.execPath, [require.resolve('prisma/build/index.js'), 'migrate', 'deploy', '--schema', join(root, 'prisma', 'schema.prisma')], {
     cwd: root, env: { ...process.env, DATABASE_URL: `file:${join(root, 'prisma', 'dev.db').replaceAll('\\', '/')}` }, stdio: 'pipe', timeout: 60_000,
   });

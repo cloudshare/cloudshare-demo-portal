@@ -1,5 +1,7 @@
 # Install the portal on Windows and Linux
 
+> **Current launcher workflow:** see [explicit current-main maintenance](current-main-maintenance.md). The persistent launchers now initialize or update; earlier one-use/private-bundle procedures below are historical or direct-CLI alternatives.
+
 This procedure installs a private copy of the portal with a fresh SQLite database
 and local fixture accounts. It covers the steps verified on Windows Server 2025
 and Ubuntu 26.04 LTS on 2026-10-30. Configure public HTTPS and persistent startup

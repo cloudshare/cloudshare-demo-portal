@@ -1,5 +1,7 @@
 # Update an existing private installation
 
+> **Current launcher workflow:** see [explicit current-main maintenance](current-main-maintenance.md). The persistent launchers now initialize or update; earlier one-use/private-bundle procedures below are historical or direct-CLI alternatives.
+
 This is an explicit operator workflow for the existing Windows and Ubuntu
 installations. It updates source, dependencies, generated client and production
 build while preserving the matched database, original `.env`/encryption key and
