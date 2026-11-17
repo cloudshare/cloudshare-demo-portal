@@ -239,10 +239,10 @@ Subscriptions, but the portal discovers and presents Blueprints through the sele
 
 **Snapshot**:
 A saved state of an environment's VMs and network configuration. A Blueprint retains up to five
-Snapshots in first-in-first-out order. Creating a sixth automatically removes the oldest Snapshot,
-unless that Snapshot is the **default**, in which case the next-oldest is removed instead. The
-default is protected from automatic eviction; manually deleting history first is not required.
-This retention rule was confirmed by the owner on 2026-11-01, not newly live-verified here.
+Snapshots in first-in-first-out order. At five Snapshots, creating another replaces the oldest,
+unless the oldest is the **default**. The default is protected; the replacement behavior when it
+is oldest is not specified here. This retention convention was reconfirmed by the owner on
+2026-11-17, not newly live-verified here.
 One Snapshot is the **default** (often the latest unless a CloudShare instructor/project
 manager changes it) and is what provisions an environment for **experience-based** launches. The
 portal models Snapshot discovery as part of selected Project + Blueprint detail, including the
@@ -251,6 +251,9 @@ arbitrary non-default Snapshot when launching an Exam through a CloudShare Exper
 change must happen by changing the Blueprint's default inside CloudShare first.
 
 **Authoring image workflow**:
+Iterative development reuses the existing Blueprint, capturing successive Snapshots under the
+normal FIFO retention convention above. Preserve the current default unless changing it is
+explicitly approved.
 The original authoring VMs must remain the current, clean reusable baseline. Test in the
 build/authoring environment, identify the required correction, revert to a clean baseline,
 apply the reviewed correction to that clean state, and capture a new Snapshot. Validate an
