@@ -94,6 +94,13 @@ owned runtime files. A missing prerequisite or failed migration leaves the old r
 untouched. No generic backup or multi-file transaction framework is introduced. The operator's
 external backup is the recovery source for interruption during final file replacement.
 
+Windows private-file protection has a bounded 30-second allowance for each PowerShell
+helper invocation. The earlier ten-second limit could expire after the database was
+successfully seeded, incorrectly reporting a seeding failure. Staging and final private-file
+protection now have distinct failure phases; a protection failure still prevents replacement
+and does not bypass the required ACLs. This is an offline setup issue, not a CloudShare
+credential or live seeding failure.
+
 ## Verification contract
 
 The approved public test seam is the CLI subprocess with disposable real files and SQLite,

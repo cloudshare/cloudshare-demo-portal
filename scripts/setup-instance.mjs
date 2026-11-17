@@ -27,7 +27,8 @@ function protectWindowsFiles(paths) {
     }
   `;
   execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')], {
-    env: { ...process.env, PORTAL_SETUP_PRIVATE_PATHS: JSON.stringify(paths) }, stdio: 'pipe', windowsHide: true, timeout: 10_000,
+    // Windows PowerShell startup can exceed ten seconds even for this small ACL operation.
+    env: { ...process.env, PORTAL_SETUP_PRIVATE_PATHS: JSON.stringify(paths) }, stdio: 'pipe', windowsHide: true, timeout: 30_000,
   });
 }
 function parseForNext(contents) {
@@ -126,6 +127,7 @@ try {
   const { createPortalUserRepository } = await import('../src/persistence/portal-auth-repository.ts');
   const prismaCli = require.resolve('prisma/build/index.js');
   stage = mkdtempSync(join(root, '.setup-instance-'));
+  phase = 'staging protection';
   protectWindowsFiles([stage]);
   const stagedDb = join(stage, 'instance.db');
   const stagedDatabaseUrl = `file:${stagedDb.replaceAll('\\', '/')}`;
@@ -163,6 +165,7 @@ try {
     if (key in env && !['PORTAL_MASTER_KEY', 'PORTAL_SEED_SOURCE', 'PORTAL_SEED_CONFIG_PATH', 'DATABASE_URL'].includes(key) && after[key] !== value) throw new Error();
   }
   writeFileSync(join(stage, 'env'), encodedEnv, { mode: 0o600 });
+  phase = 'private-file protection';
   protectWindowsFiles([stagedDb, join(stage, 'seed.json'), join(stage, 'env')]);
   mkdirSync(join(root, 'config'), { recursive: true });
   replacing = true;
