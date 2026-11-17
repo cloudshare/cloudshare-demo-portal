@@ -17,7 +17,7 @@ for (const windows of [true, false]) for (const failure of ['none', 'download', 
       source = source.replace('C:\\Program Files\\Git\\cmd', bin);
       const events = join(root, 'events');
       const fixture = join(root, 'download.cjs');
-      writeFileSync(fixture, `const fs=require('node:fs'),p=require('node:path');const a=process.argv.slice(2);if(a.slice(0,-1).join(' ')!=='clone --single-branch --branch main -- https://github.com/cloudshare/cloudshare-demo-portal.git')process.exit(91);if(process.env.FAILURE==='download')process.exit(23);const d=a.at(-1);fs.mkdirSync(p.join(d,'scripts'),{recursive:true});fs.writeFileSync(p.join(d,'scripts','maintain-instance.mjs'),"import fs from 'node:fs';fs.writeFileSync(process.env.EVENTS, 'maintenance');process.exit(process.env.FAILURE==='maintenance'?29:0);");`);
+      writeFileSync(fixture, `process.stderr.write('Cloning into fixture...');const fs=require('node:fs'),p=require('node:path');const a=process.argv.slice(2);if(a.slice(0,-1).join(' ')!=='clone --single-branch --branch main -- https://github.com/cloudshare/cloudshare-demo-portal.git')process.exit(91);if(process.env.FAILURE==='download')process.exit(23);const d=a.at(-1);fs.mkdirSync(p.join(d,'scripts'),{recursive:true});fs.writeFileSync(p.join(d,'scripts','maintain-instance.mjs'),"import fs from 'node:fs';fs.writeFileSync(process.env.EVENTS, 'maintenance');process.exit(process.env.FAILURE==='maintenance'?29:0);");`);
       writeFileSync(join(bin, windows ? 'git.cmd' : 'git'), windows
         ? `@echo off\r\n"${process.execPath}" "${fixture}" %*\r\nexit /b %errorlevel%\r\n`
         : `#!/bin/sh\nexec '${process.execPath}' '${fixture}' "$@"\n`, { mode: 0o700 });

@@ -32,7 +32,7 @@ test('fresh maintenance initializes, builds docs and starts; later update preser
   mkdirSync(tools); mkdirSync(bin);
   try {
     for (const entry of ['scripts', 'src', 'prisma', 'docs', '.env.example']) cpSync(join(repo, entry), join(tools, entry), { recursive: true, filter: path => !/\.db(?:-|$)/.test(path) });
-    writeFileSync(join(tools, '.gitignore'), 'node_modules/\n.env\nconfig/*.local.json\nprisma/*.db*\n.next/\nbuild/\nruntime/\n');
+    writeFileSync(join(tools, '.gitignore'), 'node_modules\n.env\nconfig/*.local.json\nprisma/*.db*\n.next/\nbuild/\nruntime/\n');
     writeFileSync(join(tools, 'package.json'), '{"name":"fixture","version":"1.0.0"}');
     writeFileSync(join(tools, 'package-lock.json'), '{"name":"fixture","lockfileVersion":3,"packages":{}}');
     const docs = join(allocated, 'docs'); mkdirSync(docs); writeFileSync(join(docs, 'overview.html'), 'preserved native page');

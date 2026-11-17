@@ -10,7 +10,16 @@ let phase = 'prerequisites';
 let stopped = false;
 const run = (cwd, command, args, timeout = 120000) => execFileSync(command, args, { cwd, stdio: 'pipe', encoding: 'utf8', windowsHide: true, timeout, maxBuffer: 10 * 1024 * 1024 });
 const git = (cwd, ...args) => run(cwd, 'git', args).trim();
-const cli = (root, script, args) => run(root, process.execPath, [join(tools, 'scripts', script), ...args], 900000);
+function cli(root, script, args) {
+  try {
+    return run(root, process.execPath, ['--disable-warning=ExperimentalWarning', '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', join(tools, 'scripts', script), ...args], 900000);
+  } catch (error) {
+    // These first-party CLIs deliberately catch failures and emit safe refusals.
+    // Never forward npm, Git, provider, or native-service subprocess output.
+    if (error.status === 1 && error.stderr?.trim()) refusal = error.stderr.trim();
+    throw error;
+  }
+}
 const npm = (root, command) => run(root, process.platform === 'win32' ? 'cmd.exe' : 'npm', process.platform === 'win32' ? ['/d', '/s', '/c', `npm.cmd ${command}`] : command.split(' '), 900000);
 const refuse = message => { refusal = message; throw Error(); };
 function native(root, action) {
