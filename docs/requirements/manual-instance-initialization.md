@@ -1,5 +1,7 @@
 # Manual per-instance initialization
 
+> **Current launcher workflow:** see [explicit current-main maintenance](../implementation/current-main-maintenance.md). The persistent launchers now initialize or update; earlier one-use/private-bundle procedures below are historical or direct-CLI alternatives.
+
 Issue #496: Add manual per-instance initialization and safely rotate the demo VM master keys.
 The approved application-only fresh baseline is recorded in
 [the issue decision](https://github.com/cloudshare/cloudshare-demo-portal/issues/496#issuecomment-6548197760).

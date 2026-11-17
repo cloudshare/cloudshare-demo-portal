@@ -21,7 +21,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "dev:tunnel": "node scripts/dev-with-tunnel.mjs",
-    "test:launcher": "node --test scripts/dev-with-tunnel.test.mjs"
+    "test:launcher": "node --test scripts/dev-with-tunnel.test.mjs",
+    "test:instance-maintenance": "node --test scripts/maintain-instance.test.mjs scripts/instance-launchers.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.1.0",

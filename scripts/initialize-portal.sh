@@ -1,29 +1,11 @@
 #!/bin/bash
-set -u
-export PATH=/home/sysadmin/.local/node-v24.22.2-linux-x64/bin:/usr/bin:/bin
-launcher_path=$(realpath -- "${BASH_SOURCE[0]}") || exit 1
-if ! cd /home/sysadmin/cloudshare-demo-portal; then
-  printf '%s\n' 'ERROR: The portal checkout is unavailable. Nothing was initialized.' >&2
+set -eu
+umask 077
+export PATH=/home/sysadmin/.local/node-v24.22.2-linux-x64/bin:$PATH
+printf '%s\n' 'Preparing the latest portal release. Existing data will be preserved.'
+tools=$(mktemp -d "$HOME/.portal-maintenance-XXXXXXXX")
+if ! git clone --single-branch --branch main -- https://github.com/cloudshare/cloudshare-demo-portal.git "$tools" 2>/dev/null; then
+  printf '%s\n' 'ERROR: Download failed; installed portal unchanged.' >&2
   exit 1
 fi
-printf '%s\n' 'Initializing this portal instance...'
-npm run setup:instance
-result=$?
-if [ "$result" -ne 0 ]; then
-  printf '%s\n' 'ERROR: Initialization failed. The portal service was not started.' >&2
-  exit "$result"
-fi
-printf '%s\n' 'Initialization succeeded. Starting the existing portal service...'
-sudo systemctl restart issue489-next.service
-result=$?
-if [ "$result" -ne 0 ]; then
-  printf '%s\n' 'ERROR: The portal service could not be started. Initialization already succeeded; do not initialize again.' >&2
-  exit "$result"
-fi
-printf '%s\n' "Portal start requested. Open this VM's portal and use its private admin credentials."
-if [ "$launcher_path" = "/home/sysadmin/initialize-portal.sh" ]; then
-  if ! rm -- "$launcher_path"; then
-    printf '%s\n' 'ERROR: Initialization and service start succeeded, but the launcher could not be removed.' >&2
-    exit 1
-  fi
-fi
+node "$tools/scripts/maintain-instance.mjs" /home/sysadmin/cloudshare-demo-portal
