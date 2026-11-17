@@ -17,7 +17,8 @@ const pages = [
   ['docs/flows/sales-sessions.md', 'sales-sessions', 'Sales sessions'],
   ['docs/flows/sales-trial.md', 'sales-trial', 'Sales Trial'],
   ['docs/flows/trial-administration.md', 'trial-administration', 'Trial administration'],
-  ['docs/implementation/two-os-installation.md', 'installation', 'Installation (dated guide)'],
+  ['docs/implementation/two-os-installation.md', 'installation', 'Installation'],
+  ['docs/implementation/current-main-maintenance.md', 'maintenance', 'Initialize / update'],
 ];
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 if (process.argv.length !== 2) throw new Error('build:docs accepts no arguments.');

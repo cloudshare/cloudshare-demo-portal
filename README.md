@@ -31,9 +31,21 @@ separates implemented behavior from live verification.
 
 ## Quick start
 
-For Windows or Linux VM installation, see the
-[two OS installation rehearsal](docs/implementation/two-os-installation.md) for
-completed build steps and the remaining runtime verification work.
+For a prepared VM, use the [initialization and sign-in guide](docs/quick-start.md).
+On Windows, right-click **Initialize-Portal.cmd** on the shared desktop and choose
+**Run as administrator**. On Ubuntu, run `/home/sysadmin/initialize-portal.sh` as
+`sysadmin`. The persistent launcher needs Node 24, Git, npm registry access and
+public GitHub access. It downloads one exact release from current public `main`,
+initializes a fresh instance or updates existing data in place, builds the app and
+documentation, and starts the existing app. It remains available after success.
+
+Read admin credentials privately in `config/portal-seed.local.json` using VS Code;
+the matching master key stays in `.env`. On failure, stop at the reported phase
+and follow [maintenance and recovery](docs/implementation/current-main-maintenance.md);
+never reset as a generic repair. The [installation guide](docs/implementation/two-os-installation.md)
+separates current operator instructions from dated installation evidence.
+
+### Local development checkout
 
 Use Node.js 24. No CloudShare credentials are needed for `fixture` mode, which
 simulates provider calls while retaining portal data in local SQLite.
@@ -60,13 +72,6 @@ requested, and always refuses saved CloudShare connections. Reset deletes portal
 accounts/history and regenerates the key and both admin passwords: stop the app
 and take an external private backup first. See the
 [manual setup and sign-in guide](docs/quick-start.md).
-
-On prepared VMs, the owner can instead right-click `Initialize-Portal.cmd` on
-the Windows shared desktop and choose **Run as administrator**, or run `/home/sysadmin/initialize-portal.sh` on Ubuntu
-after image capture. These wrappers run normal setup and start the existing
-portal task/service only on success. The guide includes exact copy instructions;
-the deployed copy removes itself after setup and service start both succeed.
-The canonical scripts are retained in `scripts/`.
 
 Open **http://localhost:3000/login** for the shared portal login. Anonymous visitors can choose
 the **Certification demo** or **Sales Trial demo** registration path there.

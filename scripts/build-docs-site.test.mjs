@@ -8,7 +8,7 @@ import test from 'node:test';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pages = ['quick-start', 'index', 'authentication', 'certification-admin', 'certification-candidate',
   'coverage', 'endpoints', 'operations', 'sales-configuration', 'sales-sessions',
-  'sales-trial', 'trial-administration', 'installation'];
+  'sales-trial', 'trial-administration', 'installation', 'maintenance'];
 
 function fixture(t) {
   mkdirSync(path.join(root, 'build'), { recursive: true });
@@ -24,6 +24,7 @@ function fixture(t) {
   cpSync(path.join(root, 'docs/quick-start.md'), path.join(dir, 'docs/quick-start.md'));
   mkdirSync(path.join(dir, 'docs/implementation'), { recursive: true });
   cpSync(path.join(root, 'docs/implementation/two-os-installation.md'), path.join(dir, 'docs/implementation/two-os-installation.md'));
+  cpSync(path.join(root, 'docs/implementation/current-main-maintenance.md'), path.join(dir, 'docs/implementation/current-main-maintenance.md'));
   return { dir, build: () => execFileSync(process.execPath, ['scripts/build-docs-site.mjs'], { cwd: dir, encoding: 'utf8', stdio: 'pipe' }),
     read: name => readFileSync(path.join(dir, 'build/docs-site', name), 'utf8') };
 }
@@ -47,8 +48,20 @@ test('CLI publishes exactly the reviewed pages with working navigation, tables a
     for (const [, href] of body.matchAll(/href="([^"#]+)(?:#[^"]*)?"/g)) {
       if (!/^https?:/.test(href) && href !== '/login') assert.ok(readdirSync(path.join(f.dir, 'build/docs-site')).includes(href), href);
     }
-    assert.doesNotMatch(body, /<script\b|<img\b|href="[^\"]*\.md(?:#|\")/);
+    assert.doesNotMatch(body, /<script\b|<img\b/);
   }
+});
+
+test('operator can navigate from quick start to the published maintenance and recovery guidance', t => {
+  const f = fixture(t);
+  f.build();
+  assert.match(f.read('quick-start.html'), /<a href="maintenance.html">Initialize or update from current main<\/a>/);
+  const maintenance = f.read('maintenance.html');
+  assert.match(maintenance, /<h1[^>]*>Initialize or update from current main<\/h1>/);
+  assert.match(maintenance, /<strong>Run as administrator<\/strong>/);
+  assert.match(maintenance, /<code>sysadmin<\/code>/);
+  assert.match(maintenance, /href="https:\/\/github.com\/cloudshare\/cloudshare-demo-portal\/blob\/main\/docs\/implementation\/instance-updates.md#explicit-recovery-after-failure"/);
+  assert.match(f.read('installation.html'), /href="maintenance.html"/);
 });
 
 test('unselected files and unsafe Markdown never become published content or active URLs', t => {

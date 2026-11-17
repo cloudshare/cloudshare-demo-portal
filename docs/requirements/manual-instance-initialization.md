@@ -1,6 +1,10 @@
 # Manual per-instance initialization
 
-> **Current launcher workflow:** see [explicit current-main maintenance](../implementation/current-main-maintenance.md). The persistent launchers now initialize or update; earlier one-use/private-bundle procedures below are historical or direct-CLI alternatives.
+> **Historical requirements for #496:** the original one-use launcher, self-removal
+> and launcher verification behavior recorded below were superseded by #512/#513.
+> Current prepared-VM instructions are in [explicit current-main maintenance](../implementation/current-main-maintenance.md)
+> and its [requirements](current-main-instance-maintenance.md). The direct setup CLI
+> contract remains relevant; the historical launcher text is not a current operator procedure.
 
 Issue #496: Add manual per-instance initialization and safely rotate the demo VM master keys.
 The approved application-only fresh baseline is recorded in
@@ -14,7 +18,7 @@ Run `npm run setup:instance -- --reset` to replace an existing application basel
 Stop the application first and make an external backup before reset. Backup/export and
 deployment to the two demo VMs are separately reviewed operational steps.
 
-The explicit prepared-VM entry points are `scripts/Initialize-Portal.cmd`, copied
+The **original, now-retired launcher behavior** used `scripts/Initialize-Portal.cmd`, copied
 to `C:\Users\Public\Desktop\Initialize-Portal.cmd`, and
 `scripts/initialize-portal.sh`, copied executable to `/home/sysadmin/initialize-portal.sh`.
 On Windows, the operator right-clicks the desktop file and chooses **Run as administrator**;
