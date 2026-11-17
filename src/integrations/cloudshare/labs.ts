@@ -292,6 +292,8 @@ export function createCloudShareLabProvisioner(
           Start: input.scheduledFor.toISOString(),
           End: input.endsAt.toISOString(),
           Type: "instructorLed",
+          RegistrationType: "registeredStudentsOnly",
+          MaxStudents: 1,
           ProjectId: input.projectId,
           TeamId: teamId,
           BlueprintIds: [input.blueprintId],
@@ -478,6 +480,9 @@ export function createCloudShareLabProvisioner(
         body:
           input.trainingId !== undefined
             ? {
+                // Required by the training sponsored-link contract for registered-only admission.
+                // Delivery still registers the Participant before requesting this link.
+                preRegisteredStudent: true,
                 email: input.email,
                 firstName: input.firstName,
                 lastName: input.lastName,

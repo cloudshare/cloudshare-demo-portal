@@ -326,6 +326,9 @@ export async function scheduleExamAttemptRuntime(
           error: isCloudShareRateLimitError(error.context.cause)
             ? CLOUDSHARE_429_CANDIDATE_MESSAGE
             : "CloudShare provisioning failed for the scheduled exam.",
+          examId: exam.id,
+          examTitle: exam.title,
+          examAttemptId: error.context.attemptId,
           correlationId,
         },
       };

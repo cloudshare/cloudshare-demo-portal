@@ -701,6 +701,9 @@ describe("candidate scheduling handlers", () => {
     expect(response.status).toBe(502);
     expect(response.body).toEqual({
       error: "CloudShare provisioning failed for the scheduled exam.",
+      examId: "exam-1",
+      examTitle: "Helios CloudShare Fundamentals",
+      examAttemptId: "attempt-1",
       correlationId: "corr-2",
     });
     await expect(attempts.findById("attempt-1")).resolves.toBeNull();
