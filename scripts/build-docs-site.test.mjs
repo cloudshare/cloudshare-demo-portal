@@ -35,7 +35,7 @@ test('CLI publishes exactly the reviewed pages with working navigation, tables a
   const html = f.read('index.html');
   assert.match(html, /<nav aria-label="Documentation"><a href="quick-start.html">Quick start<\/a>/);
   assert.match(html, /<strong><a href="quick-start.html">Quick start: sign in as an administrator<\/a><\/strong>/);
-  assert.match(f.read('quick-start.html'), /<h1[^>]*>Quick start: sign in as an administrator<\/h1>/);
+  assert.match(f.read('quick-start.html'), /<h1[^>]*>Quick start: initialize and sign in<\/h1>/);
   assert.match(f.read('quick-start.html'), /<code>certalisSalesAdminPassword<\/code>/);
   assert.match(html, /<table>/);
   assert.match(html, /<code class="language-mermaid">/);
