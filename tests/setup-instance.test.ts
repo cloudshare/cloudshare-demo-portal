@@ -36,6 +36,11 @@ function setup(...args: string[]) {
   ], { cwd: root, encoding: "utf8", timeout: 60_000 });
 }
 
+function expectSetupSuccess(...args: string[]) {
+  const result = setup(...args);
+  expect(result.status, result.error?.message ?? result.stderr).toBe(0);
+}
+
 function config() {
   const env = parseEnv(readFileSync(join(root, ".env"), "utf8"));
   return loadConfig({ ...env, PORTAL_SEED_CONFIG_PATH: resolve(root, env.PORTAL_SEED_CONFIG_PATH!) });
@@ -70,7 +75,7 @@ describe("manual instance setup CLI", () => {
   }, 90_000);
 
   it("refuses implicit reruns without changing the existing private files or database", () => {
-    expect(setup().status).toBe(0);
+    expectSetupSuccess();
     const paths = [".env", "config/portal-seed.local.json", "prisma/dev.db"];
     const before = paths.map(path => readFileSync(join(root, path)));
     const result = setup();
@@ -80,7 +85,7 @@ describe("manual instance setup CLI", () => {
   }, 90_000);
 
   it("explicitly resets history and credentials while preserving runtime settings and configured identities", async () => {
-    expect(setup().status).toBe(0);
+    expectSetupSuccess();
     const old = config();
     const seedPath = join(root, "config", "portal-seed.local.json");
     const seed = JSON.parse(readFileSync(seedPath, "utf8"));
@@ -117,7 +122,7 @@ describe("manual instance setup CLI", () => {
   }, 90_000);
 
   it("refuses to replace a key protecting any stored CloudShare Connection, even with reset", async () => {
-    expect(setup().status).toBe(0);
+    expectSetupSuccess();
     prisma = new PrismaClient({ datasources: { db: { url: `file:${join(root, "prisma", "dev.db")}` } } });
     const customer = await createPortalUserRepository(prisma).findCustomerBySlug("helios-cx");
     await prisma.cloudShareConnection.create({ data: {
@@ -139,7 +144,7 @@ describe("manual instance setup CLI", () => {
     ["custom database", '\nDATABASE_URL=file:./custom.db\n'],
     ["custom seed file", '\nPORTAL_SEED_CONFIG_PATH=./config/custom.local.json\n'],
   ])("refuses unsupported %s paths instead of stranding existing configuration", (_label, setting) => {
-    expect(setup().status).toBe(0);
+    expectSetupSuccess();
     const envPath = join(root, ".env");
     writeFileSync(envPath, readFileSync(envPath, "utf8") + setting);
     const paths = [".env", "config/portal-seed.local.json", "prisma/dev.db"];
@@ -151,7 +156,7 @@ describe("manual instance setup CLI", () => {
   }, 90_000);
 
   it("leaves the old runtime files intact when a committed migration cannot run", () => {
-    expect(setup().status).toBe(0);
+    expectSetupSuccess();
     const paths = [".env", "config/portal-seed.local.json", "prisma/dev.db"];
     const before = paths.map(path => readFileSync(join(root, path)));
     const migrations = join(root, "prisma", "migrations");
@@ -166,7 +171,7 @@ describe("manual instance setup CLI", () => {
   }, 90_000);
 
   it.each(["override", "missing prerequisite", "invalid admin", "invalid database"])("refuses %s without replacing the old files", (scenario) => {
-    expect(setup().status).toBe(0);
+    expectSetupSuccess();
     if (scenario === "override") writeFileSync(join(root, ".env.local"), "PORTAL_MASTER_KEY=old-private-override");
     if (scenario === "missing prerequisite") rmSync(join(root, "prisma", "schema.prisma"));
     if (scenario === "invalid admin") {
@@ -185,7 +190,7 @@ describe("manual instance setup CLI", () => {
   }, 90_000);
 
   it("preserves Windows path values as read by the actual Next environment loader", () => {
-    expect(setup().status).toBe(0);
+    expectSetupSuccess();
     const envPath = join(root, ".env");
     writeFileSync(envPath, readFileSync(envPath, "utf8") + '\nREPORTS_DIR=C:\\reports\n');
     const loadReports = () => {
@@ -198,27 +203,17 @@ describe("manual instance setup CLI", () => {
       return JSON.parse(result.stdout);
     };
     expect(loadReports()).toBe("C:\\reports");
-    expect(setup("--reset").status).toBe(0);
+    expectSetupSuccess("--reset");
     expect(loadReports()).toBe("C:\\reports");
   }, 90_000);
 
   it.skipIf(process.platform !== "win32")("keeps replacement private files restricted to the operator, SYSTEM and Administrators", () => {
-    expect(setup().status).toBe(0);
+    expectSetupSuccess();
     const privatePaths = [".env", "config/portal-seed.local.json", "prisma/dev.db"].map(path => join(root, path));
     const aclScript = (script: string) => spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], {
       env: { ...process.env, PORTAL_TEST_ACL_PATHS: JSON.stringify(privatePaths) }, encoding: "utf8", windowsHide: true,
     });
-    const restrict = aclScript(`
-      $ErrorActionPreference = 'Stop'
-      $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-      foreach ($path in (ConvertFrom-Json $env:PORTAL_TEST_ACL_PATHS)) {
-        & icacls.exe $path /inheritance:r /grant:r "*$($sid):(F)" '*S-1-5-18:(F)' '*S-1-5-32-544:(F)' | Out-Null
-        if ($LASTEXITCODE -ne 0) { exit 1 }
-      }
-    `);
-    expect(restrict.status).toBe(0);
-    expect(setup("--reset").status).toBe(0);
-    const query = aclScript(`
+    const queryPrivatePermissions = () => aclScript(`
       $ErrorActionPreference = 'Stop'
       $allowed = @(@([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544') | Select-Object -Unique)
       foreach ($path in (ConvertFrom-Json $env:PORTAL_TEST_ACL_PATHS)) {
@@ -234,6 +229,11 @@ describe("manual instance setup CLI", () => {
         }
       }
     `);
-    expect(query.status).toBe(0);
+    // Initial setup must finish private-file protection, not only seed the database.
+    const initial = queryPrivatePermissions();
+    expect(initial.status, initial.stderr).toBe(0);
+    expectSetupSuccess("--reset");
+    const replacement = queryPrivatePermissions();
+    expect(replacement.status, replacement.stderr).toBe(0);
   }, 90_000);
 });
