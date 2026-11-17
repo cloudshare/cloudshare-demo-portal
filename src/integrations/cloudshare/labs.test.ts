@@ -52,6 +52,8 @@ describe("cloudShareLabProvisioner — request shape", () => {
           Start: "2026-06-15T16:00:00.000Z",
           End: "2026-06-15T17:30:00.000Z",
           Type: "instructorLed",
+          RegistrationType: "registeredStudentsOnly",
+          MaxStudents: 1,
           ProjectId: "project-1",
           TeamId: "TM-team-1",
           BlueprintIds: ["bp-1"],
@@ -94,6 +96,8 @@ describe("cloudShareLabProvisioner — request shape", () => {
       Start: "2026-06-15T16:00:00.000Z",
       End: "2026-06-15T17:30:00.000Z",
       Type: "instructorLed",
+      RegistrationType: "registeredStudentsOnly",
+      MaxStudents: 1,
       ProjectId: "project-1",
       TeamId: "TM-team-1",
       BlueprintIds: ["bp-1"],
@@ -176,6 +180,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       email: "candidate@helioscx.demo",
       firstName: "Candidate",
       lastName: "Demo",
+      preRegisteredStudent: true,
     });
     expect(link.loginUrl).toContain("classic.cloudshare.com");
   });

@@ -237,3 +237,21 @@ exact-head reviews and merge. After viewer closure, two guarded cleanup Suspend 
 3025/3026 are free. The migration record preserves manifests, timestamps and historical ledgers.
 That observation preceded final review. PR #476 subsequently merged as `3f324b2a` after clean
 exact-head reviews at `5eff112c`; issue #473 is closed. See the closeout ledger for complete SHAs.
+
+## Certification registered-only admission (#508, 2026-11-17)
+
+The July Experience export documents `registrationType: registeredStudentsOnly` and
+`maxStudents` on training creation. Individual Exam Delivery now sends both explicitly,
+with capacity exactly one; Cohort creation already sends registered-only admission and
+retains its shared-session capacity behavior (no Individual limit).
+
+`POST /trainings/{experienceId}/sponsored-link` uses `ExperienceSponsoredLinkRequest`:
+the schema names the flag **`preRegisteredStudent`**, despite operation prose calling it
+`preRegisterStudent`. Its description says it is required for registered-only admission.
+The training adapter sends `preRegisteredStudent: true`. Individual and Cohort delivery
+still await explicit Add Participant success before issuing a link; the flag does not
+replace that registration step. Sales/Trial semantics are unchanged.
+
+Offline request-shape and registration-failure tests cover these settings. Live verification
+of already-registered entry at capacity one and rejection of ordinary unregistered access
+is required separately; do not infer either result from the schema or mocked tests.

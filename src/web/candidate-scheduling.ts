@@ -152,10 +152,20 @@ function readError(json: unknown, fallback: string): string {
         return `Another attempt for this Exam is still active or available. You can schedule this Exam again after ${nextAvailableLabel}.`;
       }
     }
-    const correlationId = (json as { correlationId?: unknown }).correlationId;
-    return typeof correlationId === "string" && correlationId.length > 0
-      ? `${error} Reference ID: ${correlationId}.`
-      : error;
+    const context = json as { examTitle?: unknown; examId?: unknown; examAttemptId?: unknown; correlationId?: unknown };
+    const details = [error];
+    if (typeof context.examTitle === "string" && context.examTitle) {
+      details.push(`Exam: ${context.examTitle}.`);
+    } else if (typeof context.examId === "string" && context.examId) {
+      details.push(`Exam ID: ${context.examId}.`);
+    }
+    if (typeof context.examAttemptId === "string" && context.examAttemptId) {
+      details.push(`Exam attempt ID: ${context.examAttemptId}.`);
+    }
+    if (typeof context.correlationId === "string" && context.correlationId) {
+      details.push(`Reference ID: ${context.correlationId}.`);
+    }
+    return details.join(" ");
   }
   return fallback;
 }

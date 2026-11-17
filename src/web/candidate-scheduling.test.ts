@@ -186,6 +186,15 @@ describe("candidate scheduling client", () => {
     );
   });
 
+  it("labels the Exam and attempt separately from the support correlation", async () => {
+    await expect(scheduleCandidateExam(vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: "Provisioning failed.", examTitle: "Fundamentals", examId: "exam-1", examAttemptId: "attempt-1", correlationId: "corr-1" }),
+    }), { examId: "exam-1", scheduledFor: "2026-06-15T16:00:00.000Z" })).rejects.toThrow(
+      "Provisioning failed. Exam: Fundamentals. Exam attempt ID: attempt-1. Reference ID: corr-1.",
+    );
+  });
+
   it("surfaces overlapping-attempt scheduling copy with the next available time", async () => {
     await expect(
       scheduleCandidateExam(
