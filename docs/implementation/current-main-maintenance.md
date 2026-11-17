@@ -6,9 +6,9 @@ later updates. Run them explicitly when you want the latest merged release.
 They remain available after success. Existing environments need a one-time copy
 of these reviewed launchers; taking a new image does not update earlier clones.
 
-Windows: right-click the desktop launcher and choose **Run as administrator**.
-Ubuntu: run the launcher as `sysadmin`; normal sudo authorization may be required.
-Node 24, Git, npm registry and public GitHub access are prerequisites. The source
+**Windows:** right-click the desktop launcher and choose **Run as administrator**.
+**Ubuntu:** run the launcher as `sysadmin`; normal sudo authorization may be required.
+Node 24, Git, npm registry access and public GitHub access are prerequisites. The source
 repository is public; no GitHub credential needs to be installed in the image.
 
 Each invocation clones fixed repository `main` into a separate `.portal-maintenance-*`
@@ -29,8 +29,9 @@ private data and credentials, a production build and freshly built documentation
 An existing instance gets a verified private backup and the existing staged
 migration/update workflow, preserving its encryption key, seed configuration,
 credentials and database. The app is started only after builds and documentation
-publication succeed. Read generated credentials privately in the VM; do not copy
-them into logs or screenshots.
+publication succeed. Read generated admin credentials privately in
+`config/portal-seed.local.json` inside this VM's checkout using VS Code. The matching
+master key is in `.env`. Do not copy these values into logs or screenshots.
 
 ## Failure and recovery
 
@@ -41,7 +42,7 @@ Retain them until the running portal is accepted; arrange private off-VM retenti
 with your own transfer tools. They must not be included in a reusable image.
 
 For an update failure after backup, follow the matched original-source and backup
-recovery procedure in [instance updates](instance-updates.md#explicit-recovery-after-failure).
+recovery procedure in [instance updates](https://github.com/cloudshare/cloudshare-demo-portal/blob/main/docs/implementation/instance-updates.md#explicit-recovery-after-failure).
 The retained tooling checkout contains the recovery CLI and its dependencies.
 Windows recovery must re-enable the `issue489-next` task before starting it after
 successful recovery. If stopping failed, inspect the task and owned listener;

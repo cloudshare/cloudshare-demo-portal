@@ -1,7 +1,25 @@
 # Quick start: initialize and sign in
 
-On a fresh prepared VM, run initialization once before signing in. On Windows, right-click **Initialize-Portal.cmd** on the desktop and choose **Run as administrator**. On Ubuntu, run `~/initialize-portal.sh` as `sysadmin`. Wait for the success message before continuing. If this VM is already initialized, sign in normally. Run the persistent launcher again only when you explicitly want to update to current main; it preserves existing instance data.
+On a fresh prepared VM, run the persistent launcher before the first portal sign-in:
 
-In VS Code, open `config/portal-seed.local.json` inside this VM's repository. It contains the generated Helios Certification and Certalis Sales administrator email addresses and passwords. Use those values for the account you want to sign in to.
+- **Windows:** right-click **Initialize-Portal.cmd** on the shared desktop and choose **Run as administrator**.
+- **Ubuntu:** run `/home/sysadmin/initialize-portal.sh` in a terminal as `sysadmin`; normal sudo authorization may be required.
 
-Open the same VM's portal at `/login` and sign in. Sign out before switching between the Helios and Certalis accounts. Windows and Ubuntu have independent accounts and credentials. For operator procedures, see the [installation guide](implementation/two-os-installation.md#manual-instance-initialization).
+The launcher needs Node 24, Git, npm registry access and public GitHub access. It downloads
+one exact release from current public `main`, initializes fresh private instance data,
+builds the portal and documentation, then starts the existing app. Wait for successful
+completion and verify the portal opens. The launcher remains available: run it again only
+when you want to update an existing instance, preserving its configuration, credentials
+and database. Ordinary sign-in does not require another launcher run.
+
+In VS Code, open `config/portal-seed.local.json` inside this VM's repository. It contains
+the generated Helios Certification and Certalis Sales administrator email addresses and
+passwords. Use those values for the account you want to sign in to. Keep the matching
+master key in `.env` private; do not copy credentials into chat or screenshots.
+
+Open the same VM's portal at `/login` and sign in. Sign out before switching between the
+Helios and Certalis accounts. Windows and Ubuntu have independent accounts and credentials.
+If the launcher fails, stop at the reported phase and do not reset the instance as a repair.
+See [Initialize or update from current main](implementation/current-main-maintenance.md)
+for prerequisites, preservation and recovery, and the [installation guide](implementation/two-os-installation.md#prepared-vm-launchers)
+for launcher locations and copying instructions.

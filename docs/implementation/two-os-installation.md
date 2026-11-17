@@ -1,17 +1,22 @@
 # Install the portal on Windows and Linux
 
-> **Current launcher workflow:** see [explicit current-main maintenance](current-main-maintenance.md). The persistent launchers now initialize or update; earlier one-use/private-bundle procedures below are historical or direct-CLI alternatives.
+For a prepared VM, follow [explicit current-main maintenance](current-main-maintenance.md)
+and the current launcher instructions below. The persistent launcher initializes a fresh
+instance or updates an existing one while preserving its private data.
 
-This procedure installs a private copy of the portal with a fresh SQLite database
-and local fixture accounts. It covers the steps verified on Windows Server 2025
-and Ubuntu 26.04 LTS on 2026-10-30. Configure public HTTPS and persistent startup
-separately before using the installation through CloudShare Web Access.
+The historical installation record later in this guide covers Windows Server 2025
+and Ubuntu 26.04 LTS verification from 2026-10-30 onward. Its private-bundle transfer
+and manual provisioning steps describe that rehearsal; the repository is now public.
+The launcher uses already-installed OS runtimes, HTTPS and native app services.
 
 For later operations, see the [stop/reset/update runbook](two-os-maintenance.md)
 and [private Blueprint capture plan](../discovery/2026-10-31-private-blueprint-capture-plan.md).
 Those procedures distinguish static planning from operations actually verified.
 
 ## Current retained layout
+
+These are the existing paths used by the prepared launchers. The dated relocation
+notes below preserve historical evidence and do not assert a new guest inventory.
 
 Ubuntu's relocated log/workspace layout was independently verified on 2026-11-01
 at source `a128a21e`: the unit references the moved log, the old log is absent,
@@ -34,10 +39,10 @@ The dated installation results below remain historical evidence.
 | App output, consumed by the updated Ubuntu app unit. Active TLS stays under `/etc/nginx/issue489-tls`. | Covered by the Nginx/startup directory above | `/home/sysadmin/cloudshare-demo-portal/runtime/logs/next.log` |
 | Static documentation, served by the Nginx alias. | `C:\CloudSharePortalDocs` | `/var/www/cloudshare-portal-docs` |
 | Optional development workspace; preserved for human editing, not required by the portal runtime. User `.vscode-server` and `.ssh` directories are also preserved for development and SSH access. | `C:\CloudSharePortalWorkspaces\Windows.code-workspace` | `/home/sysadmin/cloudshare-demo-portal/runtime/workspaces/CloudSharePortal.code-workspace` |
-| One-use launcher required before initialization; removes only its deployed copy after successful initialization and service start. Canonical scripts remain in the checkout. | `C:\Users\Public\Desktop\Initialize-Portal.cmd` (right-click **Run as administrator**) | `/home/sysadmin/initialize-portal.sh` |
+| Persistent launcher for first initialization and later data-preserving updates; remains available after success. | `C:\Users\Public\Desktop\Initialize-Portal.cmd` (right-click **Run as administrator**) | `/home/sysadmin/initialize-portal.sh` (run as `sysadmin`) |
 | Transfer inbox, not a runtime dependency. Contents may be emptied only after approved cleanup and reference checks. | `C:\Uploads` | `/home/sysadmin/Uploads` |
 
-Use one bounded, temporary operational directory under checkout `runtime/tmp`, then clean it up. The entire checkout-root `runtime/` tree is Git-ignored. The old Ubuntu `/home/sysadmin/issue489-nginx` directory remains present; its retirement needs separate backup and cleanup authorization. Its old certificate copies were verified identical to active `/etc` material.
+Use one bounded directory under checkout `runtime/tmp` for ad hoc operational checks, then clean it up. The entire checkout-root `runtime/` tree is Git-ignored. The maintenance launcher instead retains its tooling and recovery backup outside the active checkout so they survive source recovery. The historical inventory also recorded the old Ubuntu `/home/sysadmin/issue489-nginx` directory; its retirement needs separate backup and cleanup authorization. Its old certificate copies were verified identical to active `/etc` material.
 
 Existing OS files and user profiles remain untouched. This layout is not a cleanup
 authorization or an inventory of temporary evidence files.
@@ -46,40 +51,38 @@ authorization or an inventory of temporary evidence files.
 
 These are current operator procedures. The original installation record below remains dated historical evidence.
 
-The owner of each new instance must run setup before its first portal sign-in.
-This means the person preparing that instance, not every Candidate or admin who
-later logs in. Setup creates the portal app's data and credentials; an explicit
-reset replaces them. It does not reset the VM, install software, or change TLS,
-SSH, workspaces or service configuration.
+The owner of each fresh instance runs its launcher before the first portal sign-in.
+Ordinary Candidate/admin sign-in does not rerun it. Later explicit invocations update
+the instance while preserving its private configuration, credentials and database.
+The prepared VM must already have Node 24, Git, HTTPS and its native app task/service;
+it also needs npm registry access and public GitHub access. The launcher installs
+the release's locked dependencies and generates its Prisma client itself.
 
-Use Node.js 24 and the installed dependencies in the VM checkout:
-`C:\CloudShareDemoPortal` on Windows or
-`/home/sysadmin/cloudshare-demo-portal` on Ubuntu. Complete the
-[installation prerequisites](#install-the-prerequisites) first,
-including `npm ci` and `npm run prisma:generate`. Use this setup command in place
-of manually copying private seed credentials or running an initial migration. When
-running the CLI directly, stop the portal app first using its existing startup
-procedure; keep Nginx and the documentation site in place. The CLI does not stop
-or start services. The prepared launchers below handle the app reload themselves.
+The direct setup CLI remains available for local/operator use below. Unlike the
+launcher, that CLI does not download source, install dependencies, build the app
+or manage services. Its explicit reset option is destructive and is never part of
+normal launcher initialization/update or failure recovery.
 
 ### Prepared VM launchers
 
-After the owner has captured the uninitialized VM image, initialize each instance
-manually. On Windows, right-click **Initialize-Portal.cmd** on the shared desktop
+After capture of the uninitialized VM image, initialize a provisioned instance
+explicitly. On Windows, right-click **Initialize-Portal.cmd** on the shared desktop
 and choose **Run as administrator**, as required for portal maintenance.
 On Ubuntu, run `/home/sysadmin/initialize-portal.sh` in a terminal as `sysadmin`.
-Each launcher runs normal setup, then starts or restarts the existing portal app
-so it loads the generated configuration, even if already running. No manual stop
-is required before using a prepared launcher. Setup failure leaves the service alone.
-Neither launcher passes `--reset` or creates a service.
-Windows keeps its window open so you can read the result. Ubuntu may request your
-normal `sudo` authorization to restart the existing service.
-After setup and service start both succeed, the launcher removes only its deployed
-copy at the documented desktop/home path. It remains on either failure; the canonical
-repository scripts always remain. A removal failure is reported with a nonzero exit.
+Each launcher downloads current public `main` into separate retained tooling and
+uses that one exact release throughout. It stops the existing app before changing
+installed source or data. Fresh initialization creates private instance data;
+updates use a verified backup and supported migrations, preserving existing data.
+The app starts only after the production build and documentation publication succeed.
+The launcher remains available after success; it never passes `--reset`, creates a
+service, or runs automatically at boot. Windows keeps its window open so you can
+read the result. Ubuntu may request normal `sudo` authorization for service control
+and documentation publication.
 
-To reproduce the launcher files from the canonical repository scripts, copy them
-once using the commands below. An existing destination must be inspected rather
+To install the current launchers from a reviewed release containing the persistent
+workflow, copy its canonical scripts once using the commands below. An older VM
+checkout can still contain the retired one-use scripts; verify the source release
+before copying. An existing destination must be inspected rather
 than overwritten. These copy commands do not initialize or start the portal.
 
 Windows PowerShell:
@@ -94,13 +97,18 @@ Ubuntu, as `sysadmin`:
 (umask 077; set -C; cat /home/sysadmin/cloudshare-demo-portal/scripts/initialize-portal.sh > /home/sysadmin/initialize-portal.sh) && chmod 700 /home/sysadmin/initialize-portal.sh
 ```
 
-If initialization fails, the launcher does not start the app. If only service
-startup fails, initialization has already succeeded: inspect the existing task or
-service and start it through its normal procedure; do not initialize again.
+On failure, stop at the reported phase and follow the
+[maintenance recovery guidance](current-main-maintenance.md#failure-and-recovery).
+Download failure leaves the installation unchanged. Later failures may leave the
+app stopped; retain its tooling and backup. If setup succeeded before a fresh build
+failed, the next invocation treats the instance as initialized and preserves it.
+Never reset as a generic repair.
 
 ### Direct CLI setup
 
-In a terminal opened in that checkout, run:
+For direct CLI use, install dependencies (`npm ci`), generate the client
+(`npm run prisma:generate`) and stop the app first. Keep Nginx and the documentation
+site in place. In a terminal opened in that checkout, run:
 
 ```sh
 npm run setup:instance
@@ -172,9 +180,14 @@ credentials, runtime database or private backups. Git ignore rules do not exclud
 files from a VM filesystem copy. Preparing and capturing an image is a separate,
 owner-approved operation; running setup prepares the current instance, not an
 image safe to copy with its new credentials still present. Each new instance's
-owner must run the manual setup above. No automatic first-boot hook is installed.
+owner must explicitly run the persistent launcher above. No automatic first-boot hook is installed.
 
 ## Historical installation: verified versions and results
+
+**Historical record:** all remaining sections describe the original installation
+and its dated verification. They are preserved as evidence, including then-private
+source transfer and then-pending checks. Use the current launcher guidance above
+for prepared instances; do not repeat historical provisioning as an update recipe.
 
 | Component | Windows | Linux |
 | --- | --- | --- |
