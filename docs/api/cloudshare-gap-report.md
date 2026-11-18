@@ -2439,6 +2439,24 @@ close #411 or change BAC-29261's provider-owned status.
 
 ---
 
+## GAP-37 — Supported VM network adapter details
+
+| Field | Detail |
+|---|---|
+| **Tracking** | [BAC-30682](https://cloudshare.atlassian.net/browse/BAC-30682), under [BAC-25362](https://cloudshare.atlassian.net/browse/BAC-25362) |
+| **Raised by** | Exclusive Networks |
+| **Verified live** | Customer request and existing Postman result recorded. No new live verification. |
+
+The private v3 Postman request `GET {{BaseURLv3}}/envs/actions/machines?eid={{envID}}` exposed the VM MAC address in testing. The request is used by Vanity URLs and is tracked in [BAC-23570](https://cloudshare.atlassian.net/browse/BAC-23570).
+
+Provide a supported, read-only v4 API that returns each VM NIC's MAC address, local IP and subnet, assigned CloudShare network and subnet, and effective default gateway where observable.
+
+Expose the CloudShare-assigned MAC address, IP, subnet and gateway through the in-guest Metadata API for the calling VM. Make the same assigned values available as variables in Guided Journeys and on the environment Overview page. Document how to select the adapter on a VM with multiple NICs and distinguish CloudShare-assigned settings from guest-observed values.
+
+Related: [BAC-22832](https://cloudshare.atlassian.net/browse/BAC-22832) (VM adapters), [BAC-22829](https://cloudshare.atlassian.net/browse/BAC-22829) (environment networks), [BAC-22831](https://cloudshare.atlassian.net/browse/BAC-22831) (subnet and gateway settings).
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
@@ -2466,5 +2484,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-10-29 (added GAP-36 remote-access-file coverage; existing GAP statuses unchanged).
+*Last updated: 2026-11-18 (added GAP-37 on VM network adapter details).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
