@@ -5,8 +5,31 @@
 > This file is a quick orientation; where it differs from those documents, **they win.**
 > The earlier Genesys/Kryterion "proctoring" framing is **retired** (see the 2026-06-13
 > `grill-with-docs` re-scope, `docs/discovery/2026-06-13-grill-with-docs-synthesis.md`).
-> The Matt Pocock skills v1.1 are available here too — use the current flow:
+> The pinned Matt Pocock skills v1.3.1 source is in `.agents/skills` (see its README for discovery) — use the current flow:
 > Grilling/Wayfinder -> `/to-spec` -> `/to-tickets` -> `/implement` -> `/code-review`.
+
+## Agent skills
+
+`AGENTS.md` is the authoritative agent-policy entry point; `CLAUDE.md` imports it.
+
+### Issue tracker
+
+Use this repository's existing GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage roles, retaining other labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` and `docs/decisions/` remain canonical. See `docs/agents/domain.md`.
+
+### Optional CloudShare Home references
+
+For cross-project planning, consult `D:/Code_projects/CloudShare/cloudshare-home/build-cycle.md`
+when available; this repository owns implementation, review, QA and merge gates. For new API work
+or an explicitly selected shared Accelerate test, read `docs/api/cloudshare-api-reference.md`.
+Home is optional local reference material, not a prerequisite for a portable checkout.
 
 ## Project purpose
 

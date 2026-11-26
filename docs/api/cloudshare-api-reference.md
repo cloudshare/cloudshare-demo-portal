@@ -1,5 +1,34 @@
 # CloudShare API Reference Sources
 
+## New work and optional CloudShare Home reference (2026-11-23)
+
+For new endpoint/schema work, prefer the 23 November 2026 Experience v4, Infrastructure v4,
+OAuth v4 and Classic v3 exports listed in
+`D:/Code_projects/CloudShare/cloudshare-home/cloudshare/api/README.md`, when that optional local
+checkout is available. Read the appropriate bundle and this repository's dated behavioural evidence.
+If Home is unavailable, retain the checked-in exports below as dated references and obtain an
+approved current contract before assuming newer API behaviour. Keep all checked-in snapshots and
+untracked local evidence intact; historical exports underpin reproducible findings.
+
+### Explicit shared Accelerate live-test selection
+
+Only when a shared Accelerate test is explicitly selected, follow Home's credential guide: read its
+ignored `private/cloudshare-api.local.json` locally, select exactly one top-level `users` entry whose
+`name` contains `Accelerate` case-insensitively, and require populated `apiId` and `apiKey`. Map that
+pair to `CLOUDSHARE_E2E_API_ID` and `CLOUDSHARE_E2E_API_KEY` for the selected test process or a
+temporary ignored `.env.e2e.local`. Keep values out of Git, chat and evidence; restore prior local
+configuration afterward. If the source is unavailable, use the approved secret store.
+
+This is an opt-in operator mapping, not an automatic credential fallback. The existing
+`tests/live-cloudshare-ping.e2e.test.ts` precedence stays unchanged: process variables override
+`.env.e2e.local` for the same key; each credential then resolves from `CLOUDSHARE_E2E_*`,
+`HELIOS_SEED_CLOUDSHARE_*`, and the seed connection in that order. Seed lookup uses
+`PORTAL_SEED_CONFIG_PATH` (process environment over `.env`) when configured, otherwise the existing
+local and legacy primary-checkout seed paths. Preserve existing env/seed values and webhook-secret
+selection. Other live tests retain their own configuration; do not assume this mapping selects their
+assets or credentials. Portal runtime connections remain encrypted, per-Customer
+`CloudShareConnection` records (ADR-001), independent of this local test selection.
+
 ## Deliberate Trial guest credentials (#487, 2026-10-29)
 
 The Infrastructure export documents `GET /v4/environments/{envId}/vms/{vmId}` and nullable
