@@ -5,12 +5,21 @@
 > This file is a quick orientation; where it differs from those documents, **they win.**
 > The earlier Genesys/Kryterion "proctoring" framing is **retired** (see the 2026-06-13
 > `grill-with-docs` re-scope, `docs/discovery/2026-06-13-grill-with-docs-synthesis.md`).
-> The pinned Matt Pocock skills v1.3.1 source is in `.agents/skills` (see its README for discovery) — use the current flow:
+> Use the shared user-level engineering skills — follow the current flow:
 > Grilling/Wayfinder -> `/to-spec` -> `/to-tickets` -> `/implement` -> `/code-review`.
 
 ## Agent skills
 
 `AGENTS.md` is the authoritative agent-policy entry point; `CLAUDE.md` imports it.
+
+Use the shared user-level skills installation for engineering workflows. Expose the common
+installation through `~/.agents/skills` (or the tool's user-level skills setup) and update that
+source once for all projects. Keep repository-specific policy in this file and `docs/agents/`.
+
+Check the session's available-skills catalog for automatic discovery. Explicit-only skills may
+be absent from that catalog and still be selectable through their shared entry in the Desktop
+skill picker. Report a provisioning gap only when a required shared skill is unavailable; keep
+skill installation and updates at user level rather than adding repository-local copies or pins.
 
 ### Issue tracker
 

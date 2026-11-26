@@ -1,4 +1,1 @@
 docs/api/assets/cloudshare-api-v3-2026-10-29.json -text
-
-# Preserve pinned upstream skill bytes across Windows and Linux checkouts.
-/.agents/skills/** -text
