@@ -12,13 +12,14 @@
 
 `AGENTS.md` is the authoritative agent-policy entry point; `CLAUDE.md` imports it.
 
-Use the shared user-level skills installation for engineering workflows. On this Windows host,
-`C:/Users/swins/.agents/skills` is a junction to `D:/skills/.agents/skills`; update that shared
-source once for all projects. Other machines should expose their common skills installation through
-user-level discovery. Keep repository-specific policy in this file and `docs/agents/`.
+Use the shared user-level skills installation for engineering workflows. Expose the common
+installation through `~/.agents/skills` (or the tool's user-level skills setup) and update that
+source once for all projects. Keep repository-specific policy in this file and `docs/agents/`.
 
-Check the session's available-skills catalog for discovery. If a required skill is absent, report
-the missing shared skill rather than introducing a repository-local copy or version pin.
+Check the session's available-skills catalog for automatic discovery. Explicit-only skills may
+be absent from that catalog and still be selectable through their shared entry in the Desktop
+skill picker. Report a provisioning gap only when a required shared skill is unavailable; keep
+skill installation and updates at user level rather than adding repository-local copies or pins.
 
 ### Issue tracker
 

@@ -313,7 +313,8 @@ treated as personal workflow artifacts and are intentionally kept out of the tra
 
 ### Agent workflow
 
-This repo follows Matt Pocock skills v1.1 for planning and implementation:
+This repo uses the shared user-level engineering skills for planning and implementation; see
+[AGENTS.md](AGENTS.md#agent-skills) for discovery and setup:
 
 ```text
 Grilling/Wayfinder -> Spec -> Tickets -> Implement -> Code Review
