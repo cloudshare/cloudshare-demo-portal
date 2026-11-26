@@ -14,7 +14,8 @@ untracked local evidence intact; historical exports underpin reproducible findin
 
 Only when a shared Accelerate test is explicitly selected, follow Home's credential guide: read its
 ignored `private/cloudshare-api.local.json` locally, select exactly one top-level `users` entry whose
-`name` contains `Accelerate` case-insensitively, and require populated `apiId` and `apiKey`. Map that
+`name` contains `Accelerate` case-insensitively; reject zero or multiple matches and require
+populated `apiId` and `apiKey`. Map that
 pair to `CLOUDSHARE_E2E_API_ID` and `CLOUDSHARE_E2E_API_KEY` for the selected test process or a
 temporary ignored `.env.e2e.local`. Keep values out of Git, chat and evidence; restore prior local
 configuration afterward. If the source is unavailable, use the approved secret store.

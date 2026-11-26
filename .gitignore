@@ -37,6 +37,8 @@
 !.agents/skills/wayfinder/
 !.agents/skills/wizard/
 !.agents/skills/writing-for-agents/
+# Baseline files are tracked; keep new local descendants ignored.
+/.agents/skills/*/*
 create-issues.sh
 update-issue-rules.sh
 
