@@ -536,7 +536,11 @@ describe("SalesWorkspace interaction", () => {
     const template = screen.getByRole("textbox", { name: "Session name template" });
     fireEvent.change(template, { target: { value: "Edited {revision}" } });
     finish(new Response("<html>Bad Gateway</html>", { status: 502 }));
-    expect((await screen.findByRole("alert")).textContent).toContain("Could not load the default Session name template");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Could not load the default Session name template");
+    expect(alert.querySelector("strong")?.textContent).toBe("Warning:");
+    expect(alert.style.background).not.toBe("");
+    expect(alert.style.border).not.toBe("");
     expect(template).toHaveProperty("value", "Edited {revision}");
   });
 
