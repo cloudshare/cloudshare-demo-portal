@@ -1,27 +1,22 @@
 "use client";
 
+import { z } from "zod";
+import { alertPanelStyle } from "./card-styles";
 import { SalesParticipantExtension } from "./sales-participant-extension";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./sales-session-workspace.module.css";
 import { primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
-import type { SalesParticipantWorkspaceRow } from "@/domain/sales-participant-workspace";
+import type { SalesParticipantWorkspacePage, SalesParticipantWorkspaceRow } from "@/domain/sales-participant-workspace";
 import type { InvitationOutcome, InvitationSafeReason } from "@/domain/sales-participant-workspace";
 import type { SalesParticipantLaunchOperationKind, SalesParticipantLaunchOutcome } from "@/domain/sales-participant-launch-operation";
 import { classifyParticipantAddRecovery, participantAddRecovery } from "@/domain/participant-add-recovery";
 import {
+  invitationOutcomes,
   pruneParticipantSelection,
   reduceParticipantSelection,
   type ParticipantSelectionState,
 } from "@/domain/sales-participant-workspace";
 
-type ParticipantPage = {
-  readonly participants: readonly SalesParticipantWorkspaceRow[];
-  readonly total: number;
-  readonly offset: number;
-  readonly limit: number;
-  readonly hasMore: boolean;
-  readonly eligibleContacts?: readonly { readonly id: string; readonly name: string; readonly email: string }[];
-};
 type Action = "invite" | "resend" | "generate_launch" | "revoke_launch";
 type ParticipantAddPerson = { kind: "existingContact"; contactId: string } | { kind: "adHoc"; firstName: string; lastName: string; email: string };
 
@@ -33,7 +28,8 @@ export function SalesParticipantWorkspace(props: {
   readonly request: (url: string, init?: RequestInit) => Promise<Response>;
 }) {
   const { sessionId, active, request } = props;
-  const [page, setPage] = useState<ParticipantPage | null>(null);
+  const [lastGood, setLastGood] = useState<{ url: string; page: SalesParticipantWorkspacePage } | null>(null);
+  const [retry, setRetry] = useState(0);
   const [loadFailed, setLoadFailed] = useState(false);
   const initial = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
   const [query, setQuery] = useState(initial?.get("participantQuery") ?? "");
@@ -68,6 +64,7 @@ export function SalesParticipantWorkspace(props: {
   const logicalFocus = useRef<"row" | "inspector">(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("participantFocus") === "inspector" ? "inspector" : "row");
   const pageReadGeneration = useRef(0);
   const href = useCallback(() => `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants?${query ? `query=${encodeURIComponent(query)}&` : ""}offset=${offset}&limit=25`, [offset, query, sessionId]);
+  const page = lastGood?.url === href() ? lastGood.page : null;
   const activeParticipant = page?.participants.find((row) => row.id === selection.activeId) ?? null;
 
   useEffect(() => {
@@ -117,11 +114,10 @@ export function SalesParticipantWorkspace(props: {
     const readGeneration = ++pageReadGeneration.current;
     void request(href(), { cache: "no-store" }).then(async (response) => {
       if (disposed || pageReadGeneration.current !== readGeneration) return;
-      const body = (await response.json()) as ParticipantPage;
+      const body = await readParticipantPage(response);
       if (disposed || pageReadGeneration.current !== readGeneration) return;
-      if (!response.ok || !Array.isArray(body.participants)) { setLoadFailed(true); setPage(null); setFeedback((current) => ({ ...current, _announcement: "Participant roster could not be loaded; retry or open Support." })); return; }
       setLoadFailed(false);
-      setPage(body);
+      setLastGood({ url: href(), page: body });
       setSelection((current) => {
         const pageIds = body.participants.map((row) => row.id);
         const inspectorTargetMissing = inspectorOpen && Boolean(current.activeId) && !pageIds.includes(current.activeId as string);
@@ -140,9 +136,11 @@ export function SalesParticipantWorkspace(props: {
         }
         return next;
       });
-    }).catch(() => { if (!disposed && pageReadGeneration.current === readGeneration) { setLoadFailed(true); setPage(null); setFeedback((messages) => ({ ...messages, _announcement: "Participant roster could not be loaded; retry or open Support." })); } });
+    }).catch(() => {
+      if (!disposed && pageReadGeneration.current === readGeneration) setLoadFailed(true);
+    });
     return () => { disposed = true; pageReadGeneration.current += 1; };
-  }, [active, href, inspectorOpen, offset, query, request, props.cancelled]);
+  }, [active, href, inspectorOpen, offset, query, request, retry, props.cancelled]);
   useEffect(() => {
     if (!inspectorOpen || !selection.activeId || !page || page.participants.some((participant) => participant.id === selection.activeId)) return;
     const missingId = selection.activeId;
@@ -190,13 +188,15 @@ export function SalesParticipantWorkspace(props: {
     const readGeneration = ++pageReadGeneration.current;
     try {
       const response = await request(href(), { cache: "no-store" });
-      const next = await readJsonObject(response);
+      const next = await readParticipantPage(response);
       if (pageReadGeneration.current !== readGeneration) return false;
-      if (response.ok && Array.isArray(next?.participants)) { setPage(next as ParticipantPage); return true; }
+      setLastGood({ url: href(), page: next });
+      setLoadFailed(false);
+      return true;
     } catch {
-      // Action feedback is more useful than replacing it with a secondary reread failure.
+      if (pageReadGeneration.current === readGeneration) setLoadFailed(true);
+      return false;
     }
-    return false;
   };
   const startNewRegistrationTarget = () => {
     registrationGeneration.current += 1;
@@ -357,10 +357,14 @@ export function SalesParticipantWorkspace(props: {
       <div className={styles.panelHeading}><div><h2 ref={headingRef} tabIndex={-1}>Participants</h2><p>Bounded Participant workspace page.</p></div><span className={styles.count}>{page?.total ?? 0} participants · {selection.selectedIds.length} selected</span></div>
       <label htmlFor="participant-query">Search Participants</label>
       <input id="participant-query" value={query} onChange={(event) => { historyMode.current = "push"; setQuery(event.target.value); setOffset(0); }} placeholder="Search name or email" />
+      {loadFailed ? <div role="alert" style={alertPanelStyle.warning}>
+        <strong>Warning:</strong> Participant roster could not be loaded. {page ? "Showing the last loaded page. " : ""}
+        <button type="button" onClick={() => setRetry((attempt) => attempt + 1)}>Retry roster</button> � <a href="/sales?tab=support">Open Support</a>
+      </div> : null}
       {feedback._announcement ? <p role="alert" aria-live="polite">{feedback._announcement}</p> : null}
       {page && !props.cancelled ? <div className={styles.empty}><strong>Add Participant</strong><p>Registration does not send a CloudShare invitation.</p><label><input type="radio" checked={addMode === "existingContact"} disabled={registrationBusy} onChange={() => { startNewRegistrationTarget(); setAddMode("existingContact"); }} /> Existing Opportunity Contact</label>{addMode === "existingContact" ? <><select aria-label="Eligible Opportunity Contact" disabled={registrationBusy || !page.eligibleContacts?.length} value={registrationId} onChange={(event) => { startNewRegistrationTarget(); setRegistrationId(event.target.value); }}><option value="">{page.eligibleContacts?.length ? "Select a Contact" : "No eligible Contacts"}</option>{page.eligibleContacts?.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {contact.email}</option>)}</select></> : null}<label><input type="radio" checked={addMode === "adHoc"} disabled={registrationBusy} onChange={() => { startNewRegistrationTarget(); setAddMode("adHoc"); }} /> New person</label>{addMode === "adHoc" ? <><input aria-label="First name" placeholder="First name" disabled={registrationBusy} value={adHoc.firstName} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, firstName: event.target.value }); }} /><input aria-label="Last name" placeholder="Last name" disabled={registrationBusy} value={adHoc.lastName} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, lastName: event.target.value }); }} /><input aria-label="Email" type="email" placeholder="Email" disabled={registrationBusy} value={adHoc.email} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, email: event.target.value }); }} /></> : null}<button type="button" disabled={registrationBusy || registrationOutcome !== null || (addMode === "existingContact" ? !registrationId : !adHoc.firstName.trim() || !adHoc.lastName.trim() || !adHoc.email.trim())} onClick={() => void registerSelected()}>Add participant</button>{registrationFeedback ? <p role="status">{registrationFeedback}</p> : null}{registrationOutcome ? <p>Correlation ID: <code>{registrationOutcome.correlationId ?? "unavailable"}</code> · <a href={`/sales?tab=support${registrationOutcome.correlationId ? `&correlationId=${encodeURIComponent(registrationOutcome.correlationId)}` : ""}`}>Support diagnostics</a>{registrationOutcome.retryable ? <button type="button" onClick={retryParticipantNow}>{registrationOutcome.nextAction === "retry" ? "Retry participant add now" : "Retry participant add"}</button> : <button type="button" onClick={reconcileParticipantNow}>{registrationOutcome.nextAction === "reconcile" ? "Check CloudShare status now" : "Check CloudShare status"}</button>}</p> : null}</div> : null}
       {active && page && !props.cancelled ? <SalesParticipantExtension key={sessionId} sessionId={sessionId} rows={page.participants} request={request} onRefreshed={rereadWorkspace} onAccessConfirmed={props.onAccessConfirmed} /> : null}
-      {loadFailed ? null : page?.participants.length ? <div className={styles.tableWrap} role="region" aria-label="Scrollable Participant roster" tabIndex={0}><table aria-label="Participant roster" className={styles.roster}><thead><tr><th>Participant</th><th>Invitation</th><th>Participation</th><th>Participant Environment</th><th>Environment source</th></tr></thead><tbody>{page.participants.map((participant) => { const selected = selection.selectedIds.includes(participant.id); const current = selection.activeId === participant.id; const pageIds = page.participants.map((row) => row.id); return <React.Fragment key={participant.id}><tr aria-selected={selected} data-participant-id={participant.id} data-active={current ? "true" : undefined} data-selected={selected ? "true" : undefined} tabIndex={current ? 0 : -1} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; clearedInspectorTarget.current = false; historyMode.current = "push"; setSelection((state) => reduceParticipantSelection(state, { type: "click", id: participant.id, additive: event.ctrlKey || event.metaKey, range: event.shiftKey, pageIds })); }} onKeyDown={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; clearedInspectorTarget.current = false; historyMode.current = "push"; if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "move", direction: event.key === "ArrowDown" ? "next" : "previous", pageIds })); } else if (event.key === " ") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "toggle", id: participant.id, range: event.shiftKey, pageIds })); } else if (event.key === "Enter") { event.preventDefault(); openInspector(participant.id, event.currentTarget); } }}><th scope="row"><strong>{participant.name}</strong><span>{participant.email}</span><button type="button" aria-expanded={current && inspectorOpen} onClick={(event) => current && inspectorOpen ? closeInspector() : openInspector(participant.id, event.currentTarget)}>{current && inspectorOpen ? "Close" : "Inspect"}</button></th><td><span className={styles.inlineBadge}>{participant.invitationStatus === "sent" ? "Sent" : "Not sent"}</span></td><td><span className={styles.inlineBadge}>{participant.sessionCancelled ? "Access blocked" : participant.participationStatus === "inProgress" ? "In progress" : participant.participationStatus === "concluded" ? "Concluded" : "Pending"}</span></td><td>{participant.environment.value ?? "Not observed"}</td><td>{humanEnvironmentSource(participant.environment)}</td></tr>{current && inspectorOpen && activeParticipant ? <tr><td colSpan={5}>{<ParticipantInspector participant={activeParticipant} sessionId={sessionId} inspectorRef={inspectorRef} feedback={feedback[activeParticipant.id]} generatedLaunchUrl={generatedLaunch?.participantId === activeParticipant.id && generatedLaunch.sessionId === sessionId ? generatedLaunch.url : null} onClose={closeInspector} onAction={runAction} />}</td></tr> : null}</React.Fragment>; })}</tbody></table></div> : page && page.total === 0 && !query && offset === 0 ? <div className={styles.empty}><p>No Participants are registered for this Sales Session.</p></div> : <p className={styles.empty}>No Participants match this page or search.</p>}
+      {loadFailed && !page ? null : page?.participants.length ? <div className={styles.tableWrap} role="region" aria-label="Scrollable Participant roster" tabIndex={0}><table aria-label="Participant roster" className={styles.roster}><thead><tr><th>Participant</th><th>Invitation</th><th>Participation</th><th>Participant Environment</th><th>Environment source</th></tr></thead><tbody>{page.participants.map((participant) => { const selected = selection.selectedIds.includes(participant.id); const current = selection.activeId === participant.id; const pageIds = page.participants.map((row) => row.id); return <React.Fragment key={participant.id}><tr aria-selected={selected} data-participant-id={participant.id} data-active={current ? "true" : undefined} data-selected={selected ? "true" : undefined} tabIndex={current ? 0 : -1} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; clearedInspectorTarget.current = false; historyMode.current = "push"; setSelection((state) => reduceParticipantSelection(state, { type: "click", id: participant.id, additive: event.ctrlKey || event.metaKey, range: event.shiftKey, pageIds })); }} onKeyDown={(event) => { if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return; clearedInspectorTarget.current = false; historyMode.current = "push"; if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "move", direction: event.key === "ArrowDown" ? "next" : "previous", pageIds })); } else if (event.key === " ") { event.preventDefault(); setSelection((state) => reduceParticipantSelection(state, { type: "toggle", id: participant.id, range: event.shiftKey, pageIds })); } else if (event.key === "Enter") { event.preventDefault(); openInspector(participant.id, event.currentTarget); } }}><th scope="row"><strong>{participant.name}</strong><span>{participant.email}</span><button type="button" aria-expanded={current && inspectorOpen} onClick={(event) => current && inspectorOpen ? closeInspector() : openInspector(participant.id, event.currentTarget)}>{current && inspectorOpen ? "Close" : "Inspect"}</button></th><td><span className={styles.inlineBadge}>{participant.invitationStatus === "sent" ? "Sent" : "Not sent"}</span></td><td><span className={styles.inlineBadge}>{participant.sessionCancelled ? "Access blocked" : participant.participationStatus === "inProgress" ? "In progress" : participant.participationStatus === "concluded" ? "Concluded" : "Pending"}</span></td><td>{participant.environment.value ?? "Not observed"}</td><td>{humanEnvironmentSource(participant.environment)}</td></tr>{current && inspectorOpen && activeParticipant ? <tr><td colSpan={5}>{<ParticipantInspector participant={activeParticipant} sessionId={sessionId} inspectorRef={inspectorRef} feedback={feedback[activeParticipant.id]} generatedLaunchUrl={generatedLaunch?.participantId === activeParticipant.id && generatedLaunch.sessionId === sessionId ? generatedLaunch.url : null} onClose={closeInspector} onAction={runAction} />}</td></tr> : null}</React.Fragment>; })}</tbody></table></div> : page && page.total === 0 && !query && offset === 0 ? <div className={styles.empty}><p>No Participants are registered for this Sales Session.</p></div> : <p className={styles.empty}>No Participants match this page or search.</p>}
       {offset > 0 ? <button type="button" onClick={() => { historyMode.current = "push"; setOffset(Math.max(0, offset - 25)); }}>Previous</button> : null}{page?.hasMore ? <button type="button" onClick={() => { historyMode.current = "push"; setOffset(offset + 25); }}>Next</button> : null}
     </section>
     {revokeTarget ? <div role="dialog" aria-modal="true" aria-label="Confirm revoke launch link" className={styles.panel} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setRevokeTarget(null); queueMicrotask(() => originRef.current?.focus()); } if (event.key === "Tab") { const buttons = Array.from(event.currentTarget.querySelectorAll("button")); const index = buttons.indexOf(document.activeElement as HTMLButtonElement); const next = buttons[(index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length]; event.preventDefault(); next?.focus(); } }}><p>Revoke the launch link for {revokeTarget.name}?</p><button autoFocus type="button" onClick={() => void confirmRevoke()}>Revoke</button><button type="button" onClick={() => { setRevokeTarget(null); queueMicrotask(() => originRef.current?.focus()); }}>Cancel</button></div> : null}
@@ -452,6 +456,50 @@ const launchOutcomeCopy: Record<SalesParticipantLaunchOutcome, string> = {
 const launchReasonCopy: Record<"persistence_failure", string> = {
   persistence_failure: "Certalis could not save the launch operation.",
 };
+
+const actions = ["invite", "resend", "generate_launch", "revoke_launch", "open_diagnostics"] as const;
+const nullableText = z.string().nullable();
+const availability = z.object({
+  available: z.boolean(),
+  reason: z.enum(["participant_concluded", "session_ended", "session_cancelled", "invitation_already_sent",
+    "invitation_not_sent", "invitation_command_pending", "participant_correlation_unavailable",
+    "native_invitations_unavailable", "no_active_launch", "available_to_attempt", "unavailable_for_state"]),
+});
+const environmentBase = z.object({ dimension: z.literal("cloudshare_environment") });
+const observedEnvironment = environmentBase.extend({ observedAt: z.string() });
+const rosterEnvironmentValues = ["Ready", "Suspended", "Archived", "Deleted", "Preparing", "Creation Failed"] as const;
+const environment = z.discriminatedUnion("source", [
+  environmentBase.extend({ source: z.enum(["not_assigned", "not_observed"]), value: z.null() }),
+  environmentBase.extend({ source: z.literal("confirmed_session_cancellation"), value: z.literal("Archived"), confirmedAt: z.string() }),
+  observedEnvironment.extend({ source: z.literal("cloudshare_v4_environment"), value: nullableText }),
+  observedEnvironment.extend({ source: z.literal("cloudshare_v3_environment"), value: z.enum([...rosterEnvironmentValues, "Taking a Snapshot"]) }),
+  observedEnvironment.extend({ source: z.literal("cloudshare_v4_sales_participant_roster"), value: z.enum([...rosterEnvironmentValues,
+    "Future allocation scheduled", "Allocation scheduled (not running)", "Publishing", "In grace", "Stopping", "Editing networks"]) }),
+]);
+const invitationOutcome = z.enum(invitationOutcomes).nullable();
+const invitationReason = z.enum(["not_dispatched", "provider_rejected", "ambiguous_after_dispatch", "confirmation_required", "failed_retryable", "stale_revision", "blocked_by_fence"]).nullish();
+const participantPageSchema = z.object({
+  participants: z.array(z.object({
+    id: z.string(), participantRevision: z.string(), name: z.string(), email: z.string(),
+    invitationStatus: z.enum(["sent", "notSent"]), participationStatus: z.enum(["pending", "inProgress", "concluded"]),
+    sessionEndsAt: z.string(), sessionCancelled: z.boolean().optional(),
+    nativeInvitationsEnabled: z.boolean(), providerCorrelation: z.boolean(), activeLaunchCapability: z.boolean(),
+    currentCommandId: nullableText, invitationOutcome, invitationReason, invitationCorrelationId: nullableText.optional(),
+    latestInvitationOutcome: invitationOutcome.optional(), latestInvitationReason: invitationReason,
+    latestInvitationCorrelationId: nullableText.optional(),
+    launchOperation: z.object({ operation: z.enum(["generate", "revoke"]), outcome: z.enum(["success", "failure"]),
+      reason: z.literal("persistence_failure").nullable(), correlationId: nullableText }).nullable(),
+    environment, environmentAttention: z.object({ reason: z.string(), source: z.string() }).nullable(),
+    actionAvailability: z.record(z.enum(actions), availability), primaryAction: z.enum(actions).nullable(),
+  })),
+  total: z.int().nonnegative(), offset: z.int().nonnegative(), limit: z.int().positive(), hasMore: z.boolean(),
+  eligibleContacts: z.array(z.object({ id: z.string(), name: z.string(), email: z.string() })).optional(),
+});
+
+async function readParticipantPage(response: Response): Promise<SalesParticipantWorkspacePage> {
+  if (!response.ok) throw new Error("Participant roster request failed");
+  return participantPageSchema.parse(await response.json());
+}
 
 function humanEnvironmentSource(environment: SalesParticipantWorkspaceRow["environment"]): string {
   if (environment.source === "confirmed_session_cancellation") return `Cancellation confirmation saved ${explicitUtcTime(environment.confirmedAt)}`;

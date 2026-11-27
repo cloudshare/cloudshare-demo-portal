@@ -8,7 +8,7 @@ import { SalesParticipantWorkspace } from "./sales-participant-workspace";
 // Extension entry and its real workspace integration are covered in sales-participant-extension.test.tsx.
 vi.mock("./sales-participant-extension", () => ({ SalesParticipantExtension: () => null }));
 
-const participant = { id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", participantRevision: "2026-07-24T08:00:00.000Z", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" }, primaryAction: "generate_launch", actionAvailability: { invite: { available: true, reason: "available_to_attempt" }, resend: { available: true, reason: "available_to_attempt" }, generate_launch: { available: true, reason: "available_to_attempt" }, revoke_launch: { available: true, reason: "available_to_attempt" }, open_diagnostics: { available: false, reason: "unavailable_for_state" } } } as const;
+const participant = { sessionEndsAt: "2099-01-01T00:00:00Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null, id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", participantRevision: "2026-07-24T08:00:00.000Z", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" }, primaryAction: "generate_launch", actionAvailability: { invite: { available: true, reason: "available_to_attempt" }, resend: { available: true, reason: "available_to_attempt" }, generate_launch: { available: true, reason: "available_to_attempt" }, revoke_launch: { available: true, reason: "available_to_attempt" }, open_diagnostics: { available: false, reason: "unavailable_for_state" } } } as const;
 const page = { participants: [participant], total: 1, offset: 0, limit: 25, hasMore: false };
 
 describe("SalesParticipantWorkspace", () => {
@@ -404,6 +404,57 @@ describe("SalesParticipantWorkspace", () => {
     await waitFor(() => expect(screen.queryByRole("complementary", { name: "Participant inspector" })).toBeNull());
     await waitFor(() => expect(new URL(window.location.href).searchParams.get("participantActive")).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Participants" })));
+  });
+  it.each([
+    { ...page, participants: [{ ...participant, environment: undefined }] },
+    { ...page, participants: [{ ...participant, actionAvailability: {} }] },
+    { ...page, hasMore: "false" },
+  ])("rejects a malformed roster before rendering and retries the read", async (invalidPage) => {
+    const request = vi.fn().mockResolvedValueOnce(Response.json(invalidPage))
+      .mockResolvedValueOnce(Response.json(page));
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("could not be loaded");
+    expect(screen.queryByRole("table", { name: "Participant roster" })).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Retry roster" }));
+    expect(await screen.findByRole("row", { name: /Ada Lovelace/ })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("hides the previous search results when the next query returns a malformed roster", async () => {
+    const request = vi.fn(async (url: string) => Response.json(url.includes("query=")
+      ? { ...page, eligibleContacts: [null] }
+      : page));
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    expect(await screen.findByRole("row", { name: /Ada Lovelace/ })).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Search Participants" }), { target: { value: "Grace" } });
+    expect((await screen.findByRole("alert")).textContent).toContain("could not be loaded");
+    expect(screen.queryByRole("row", { name: /Ada Lovelace/ })).toBeNull();
+  });
+  it("keeps the last valid roster and action result when a post-action reread is malformed", async () => {
+    let actionCompleted = false;
+    let recover = false;
+    const request = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        actionCompleted = true;
+        return Response.json({ outcome: "completed", correlationId: "corr-reread" });
+      }
+      if (!actionCompleted) return Response.json(page);
+      const row = recover ? { ...participant, name: "Updated Ada" }
+        : { ...participant, name: "Invalid row", environment: null };
+      return Response.json({ ...page, participants: [row] });
+    });
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Resend" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("could not be loaded");
+    expect(screen.getByRole("row", { name: /Ada Lovelace/ })).toBeTruthy();
+    expect(screen.getByText("Completed. Correlation corr-reread.")).toBeTruthy();
+    expect(screen.queryByText("Invalid row")).toBeNull();
+    recover = true;
+    await user.click(screen.getByRole("button", { name: "Retry roster" }));
+    expect(await screen.findByRole("row", { name: /Updated Ada/ })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(request.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
   });
   it("shows a visible status when the bounded roster fetch fails", async () => {
     render(<SalesParticipantWorkspace sessionId="s1" active request={async () => { throw new Error("network down"); }} />);

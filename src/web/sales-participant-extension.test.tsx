@@ -45,7 +45,7 @@ it("defaults to all eligible Participants across pages and sends a narrowed deli
   expect(await screen.findByText(/Extension completed/)).toBeTruthy();
 });
 
-const participant = { id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", participantRevision: "2026-07-24T08:00:00.000Z", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" }, primaryAction: "generate_launch", actionAvailability: { invite: { available: true, reason: "available_to_attempt" }, resend: { available: true, reason: "available_to_attempt" }, generate_launch: { available: true, reason: "available_to_attempt" }, revoke_launch: { available: true, reason: "available_to_attempt" }, open_diagnostics: { available: false, reason: "unavailable_for_state" } } } as const;
+const participant = { sessionEndsAt: "2026-07-24T10:00:00.000Z", nativeInvitationsEnabled: true, providerCorrelation: true, activeLaunchCapability: false, currentCommandId: null, invitationOutcome: null, launchOperation: null, environmentAttention: null, id: "p1", name: "Ada Lovelace", email: "ada@example.test", invitationStatus: "sent", participationStatus: "pending", participantRevision: "2026-07-24T08:00:00.000Z", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-24T08:00:00.000Z" }, primaryAction: "generate_launch", actionAvailability: { invite: { available: true, reason: "available_to_attempt" }, resend: { available: true, reason: "available_to_attempt" }, generate_launch: { available: true, reason: "available_to_attempt" }, revoke_launch: { available: true, reason: "available_to_attempt" }, open_diagnostics: { available: false, reason: "unavailable_for_state" } } } as const;
 const page = { participants: [participant], total: 1, offset: 0, limit: 25, hasMore: false };
 
 it("refreshes eligibility on normal workspace entry, rereads a bounded page, and preserves Inspect/Close", async () => {
@@ -56,7 +56,7 @@ it("refreshes eligibility on normal workspace entry, rereads a bounded page, and
     if (url.endsWith("/extend")) return Response.json(init?.method === "POST" ? { commandId: "cmd", selection: { mode: "all", excludedIds: [] }, outcome: "completed", finished: true, targets: [] } : null);
     expect(url).toMatch(/participants\?offset=0&limit=25$/);
     reads += 1;
-    return Response.json({ ...page, participants: [{ ...participant, participationStatus: refreshed ? "inProgress" : "pending", environment: { ...participant.environment, value: refreshed ? "Ready" : "Not observed" } }] });
+    return Response.json({ ...page, participants: [{ ...participant, participationStatus: refreshed ? "inProgress" : "pending", environment: refreshed ? participant.environment : { dimension: "cloudshare_environment", source: "not_observed", value: null } }] });
   });
   render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
   const checkbox = await screen.findByRole("checkbox", { name: "Extend Ada Lovelace" });
