@@ -1,3 +1,4 @@
+import type { ExamAttemptStatus } from "@/domain/exam-attempt";
 import {
   buildScheduledAttemptViews,
   type CandidateScheduledAttemptView,
@@ -8,8 +9,6 @@ import type { CandidateTaskView } from "../auth/candidate-route-shape";
 export { isValidCandidateIdentifier } from "../auth/candidate-route-shape";
 export type { CandidateTaskView } from "../auth/candidate-route-shape";
 import { isCandidateLabHistoryPresentation } from "./candidate-lab-state";
-
-type CandidateAttemptStatus = CandidateDashboardData["attempts"][number]["status"];
 
 export interface CandidateTaskRoute {
   readonly task: CandidateTaskView | null;
@@ -243,7 +242,7 @@ function compareCandidateExamsByIdForFallback(
 }
 
 export function getCandidateTaskForAttemptStatus(
-  status: CandidateAttemptStatus,
+  status: ExamAttemptStatus,
   openPeriodClosed = false,
 ): CandidateTaskView {
   return isCandidateLabHistoryPresentation(status, openPeriodClosed) ? "history" : "current";

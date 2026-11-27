@@ -1,16 +1,20 @@
-export type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
+import { z } from "zod";
+import type { ExamAttemptStatus } from "@/domain/exam-attempt";
 
-export type CandidateLabStatus = {
-  examAttemptId: string;
-  examTitle: string;
-  timeLimitMinutes: number;
-  openPeriodMinutes?: number;
-  scoreRetrievalEnabled?: boolean;
-  status: AttemptStatus;
-  scheduledFor: string | null;
-  openPeriodEndsAt?: string | null;
-  openPeriodClosed?: boolean;
-};
+const candidateLabStatusSchema = z.object({
+  examAttemptId: z.string(),
+  examTitle: z.string(),
+  timeLimitMinutes: z.number(),
+  openPeriodMinutes: z.number().optional(),
+  scoreRetrievalEnabled: z.boolean().optional(),
+  status: z.enum(["booked", "scheduled", "ready", "in_progress", "suspended", "completed", "expired"] satisfies ExamAttemptStatus[]),
+  scheduledFor: z.string().nullable(),
+  openPeriodEndsAt: z.string().nullable().optional(),
+  openPeriodClosed: z.boolean().optional(),
+});
+
+export type CandidateLabStatus = z.infer<typeof candidateLabStatusSchema>;
+export type AttemptStatus = CandidateLabStatus["status"];
 
 interface JsonResponse {
   readonly ok: boolean;
@@ -28,17 +32,19 @@ export async function loadCandidateLabStatus(
     `/api/exam/status?examAttemptId=${encodeURIComponent(examAttemptId)}`,
     { cache: "no-store" },
   );
-  const json = await response.json().catch(() => ({}));
+  const json = await response.json().catch(() => null);
   if (!response.ok) {
     if (response.status === 401) {
       throw new PortalSessionExpiredError();
     }
     throw new Error(readError(json, "Failed to load exam details."));
   }
-  return json as CandidateLabStatus;
+  const status = candidateLabStatusSchema.safeParse(json);
+  if (!status.success) throw new Error("Failed to load exam details.");
+  return status.data;
 }
 
-export function readHeartbeatAttemptStatus(payload: unknown): AttemptStatus | null {
+export function readHeartbeatAttemptStatus(payload: unknown) {
   if (typeof payload !== "object" || payload === null) {
     return null;
   }
