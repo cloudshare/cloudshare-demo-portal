@@ -64,7 +64,6 @@ export function SalesParticipantExtension({ sessionId, rows, request, onRefreshe
         if (generation.current !== current) return;
         if (!refreshed) setMessage("Extension result is saved, but the Participant page could not be reread. Reopen Participants to read it again.");
       } else {
-        command.current = null;
         setMessage(body.error ?? "Extension preflight failed. Open Support before trying again.");
       }
     } catch {

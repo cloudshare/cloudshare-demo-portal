@@ -16,6 +16,8 @@ The canonical bounded Participant workspace offers one deliberate extension acti
 
 ## Sequencing and provider authority
 
+If a result check returns an error for an unfinished command, the Participant workspace displays the error and keeps **Check extension result** available. The next check submits the original command ID and selection with `reconcile: true`.
+
 The operation requires a complete v4 roster and independently unique provider ID, local Participant custom property, and Opportunity Contact custom property, with matching scoped Contact/email. Its GAP-32 resolution chain traverses the Customer's v4 owner-email Environment pages, verifies exactly one normalized owner/Session Item Project match, then reads exact opaque-ID v4 detail. A numeric roster reference does not map directly to that opaque ID, and live Environment listing does not prove complete history. Missing, duplicate, changed or ineligible bindings fail closed.
 
 Admission captures the immutable Session/Experience/timezone, selection and per-target local revision, provider Participant, Contact/email/Project, opaque Environment and pre-expiry. SQLite unique constraints fence the Session, Participant and Environment across commands. Revision-checked state writes persist each target's dispatch point before its bodyless v4 `POST /environments/{id}/extend`. Empty204 acknowledges dispatch only. Failures after that point remain ambiguous unless a read confirms a later actual expiry; no timeout, 5xx, or generic error authorizes replay. Preflight failures remain explicitly unattempted and retryable.
