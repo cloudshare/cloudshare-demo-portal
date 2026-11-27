@@ -6,6 +6,30 @@ import { afterEach, expect, it, vi } from "vitest";
 import { SalesParticipantWorkspace } from "./sales-participant-workspace";
 import { SalesParticipantExtension } from "./sales-participant-extension";
 afterEach(cleanup);
+it("checks the same unfinished command again after a disconnected CloudShare error", async () => {
+  const identity = { commandId: "53511ba4-29af-48e5-9f9d-a6619c4c0db7", selection: { mode: "selected", participantIds: ["p1"] } };
+  const pending = { ...identity, outcome: "needs_attention", finished: false, targets: [] };
+  const error = "Connect CloudShare before extending Participants.";
+  const request = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValueOnce(Response.json({ outcome: "refreshed" }))
+    .mockResolvedValueOnce(Response.json(pending))
+    .mockResolvedValueOnce(Response.json({ error }, { status: 409 }))
+    .mockResolvedValueOnce(Response.json({ ...pending, outcome: "completed", finished: true }));
+  render(<SalesParticipantExtension sessionId="s1" request={request} onRefreshed={async () => true} rows={[]} />);
+  const user = userEvent.setup();
+  const check = () => screen.getByRole("button", { name: "Check extension result" });
+  await screen.findByRole("button", { name: "Check extension result" });
+  await user.click(check());
+  await screen.findByText(error);
+  expect((screen.getByRole("button", { name: "Extend selected Participants" }) as HTMLButtonElement).disabled).toBe(true);
+  await user.click(check());
+  const checks = request.mock.calls.filter(([url, init]) => url.endsWith("/extend") && init?.method === "POST");
+  const reconcile = { ...identity, reconcile: true };
+  expect(checks.map(([, init]) => JSON.parse(init!.body as string))).toEqual([reconcile, reconcile]);
+  await screen.findByText("Extension completed.");
+  expect(screen.queryByRole("button", { name: "Check extension result" })).toBeNull();
+});
+
 it("defaults to all eligible Participants across pages and sends a narrowed deliberate selection", async () => {
   const request = vi.fn(async (_url: string, init?: RequestInit) => new Response(JSON.stringify(_url.endsWith("/refresh") ? { outcome: "refreshed" } : init?.method === "POST" ? { commandId: "command1", outcome: "completed", finished: true, targets: [{ participantId: "p1", outcome: "confirmed", confirmedExpiry: "2026-09-21T10:00:00Z" }], sessionEnd: "2026-09-21T10:00", timeZone: "UTC" } : null)));
   render(<SalesParticipantExtension sessionId="s1" request={request} onRefreshed={async () => true} rows={[{ id: "p1", name: "Ada", participationStatus: "inProgress", environment: { value: "Ready" } }, { id: "p2", name: "Grace", participationStatus: "inProgress", environment: { value: "Suspended" } }] as never} />);
