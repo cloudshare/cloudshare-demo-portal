@@ -429,6 +429,23 @@ describe("SalesParticipantWorkspace", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("could not be loaded");
     expect(screen.queryByRole("row", { name: /Ada Lovelace/ })).toBeNull();
   });
+  it("keeps the new search results when an action from the previous search finishes", async () => {
+    let finishAction!: (response: Response) => void;
+    const pendingAction = new Promise<Response>((resolve) => { finishAction = resolve; });
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") return pendingAction;
+      if (url.includes("query=")) return Response.json({ ...page, participants: [{ ...participant, id: "p2", name: "Grace Hopper" }] });
+      return Response.json(page);
+    });
+    const user = userEvent.setup();
+    render(<SalesParticipantWorkspace sessionId="s1" active request={request} />);
+    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("button", { name: "Resend" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Search Participants" }), { target: { value: "Grace" } });
+    expect(await screen.findByRole("row", { name: /Grace Hopper/ })).toBeTruthy();
+    await act(async () => finishAction(Response.json({ outcome: "completed" })));
+    expect(screen.getByRole("row", { name: /Grace Hopper/ })).toBeTruthy();
+  });
   it("keeps the last valid roster and action result when a post-action reread is malformed", async () => {
     let actionCompleted = false;
     let recover = false;

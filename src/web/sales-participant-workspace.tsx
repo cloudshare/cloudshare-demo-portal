@@ -63,6 +63,7 @@ export function SalesParticipantWorkspace(props: {
   const lastUrl = useRef<string | null>(null);
   const logicalFocus = useRef<"row" | "inspector">(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("participantFocus") === "inspector" ? "inspector" : "row");
   const pageReadGeneration = useRef(0);
+  const activeRosterUrl = useRef<string | null>(null);
   const href = useCallback(() => `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/participants?${query ? `query=${encodeURIComponent(query)}&` : ""}offset=${offset}&limit=25`, [offset, query, sessionId]);
   const page = lastGood?.url === href() ? lastGood.page : null;
   const activeParticipant = page?.participants.find((row) => row.id === selection.activeId) ?? null;
@@ -111,6 +112,7 @@ export function SalesParticipantWorkspace(props: {
   useEffect(() => {
     if (!active) return;
     let disposed = false;
+    activeRosterUrl.current = href();
     const readGeneration = ++pageReadGeneration.current;
     void request(href(), { cache: "no-store" }).then(async (response) => {
       if (disposed || pageReadGeneration.current !== readGeneration) return;
@@ -139,7 +141,7 @@ export function SalesParticipantWorkspace(props: {
     }).catch(() => {
       if (!disposed && pageReadGeneration.current === readGeneration) setLoadFailed(true);
     });
-    return () => { disposed = true; pageReadGeneration.current += 1; };
+    return () => { disposed = true; activeRosterUrl.current = null; pageReadGeneration.current += 1; };
   }, [active, href, inspectorOpen, offset, query, request, retry, props.cancelled]);
   useEffect(() => {
     if (!inspectorOpen || !selection.activeId || !page || page.participants.some((participant) => participant.id === selection.activeId)) return;
@@ -185,6 +187,7 @@ export function SalesParticipantWorkspace(props: {
   };
 
   const rereadWorkspace = async () => {
+    if (activeRosterUrl.current !== href()) return false;
     const readGeneration = ++pageReadGeneration.current;
     try {
       const response = await request(href(), { cache: "no-store" });
@@ -359,7 +362,7 @@ export function SalesParticipantWorkspace(props: {
       <input id="participant-query" value={query} onChange={(event) => { historyMode.current = "push"; setQuery(event.target.value); setOffset(0); }} placeholder="Search name or email" />
       {loadFailed ? <div role="alert" style={alertPanelStyle.warning}>
         <strong>Warning:</strong> Participant roster could not be loaded. {page ? "Showing the last loaded page. " : ""}
-        <button type="button" onClick={() => setRetry((attempt) => attempt + 1)}>Retry roster</button> � <a href="/sales?tab=support">Open Support</a>
+        <button type="button" onClick={() => setRetry((attempt) => attempt + 1)}>Retry roster</button> &middot; <a href="/sales?tab=support">Open Support</a>
       </div> : null}
       {feedback._announcement ? <p role="alert" aria-live="polite">{feedback._announcement}</p> : null}
       {page && !props.cancelled ? <div className={styles.empty}><strong>Add Participant</strong><p>Registration does not send a CloudShare invitation.</p><label><input type="radio" checked={addMode === "existingContact"} disabled={registrationBusy} onChange={() => { startNewRegistrationTarget(); setAddMode("existingContact"); }} /> Existing Opportunity Contact</label>{addMode === "existingContact" ? <><select aria-label="Eligible Opportunity Contact" disabled={registrationBusy || !page.eligibleContacts?.length} value={registrationId} onChange={(event) => { startNewRegistrationTarget(); setRegistrationId(event.target.value); }}><option value="">{page.eligibleContacts?.length ? "Select a Contact" : "No eligible Contacts"}</option>{page.eligibleContacts?.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {contact.email}</option>)}</select></> : null}<label><input type="radio" checked={addMode === "adHoc"} disabled={registrationBusy} onChange={() => { startNewRegistrationTarget(); setAddMode("adHoc"); }} /> New person</label>{addMode === "adHoc" ? <><input aria-label="First name" placeholder="First name" disabled={registrationBusy} value={adHoc.firstName} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, firstName: event.target.value }); }} /><input aria-label="Last name" placeholder="Last name" disabled={registrationBusy} value={adHoc.lastName} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, lastName: event.target.value }); }} /><input aria-label="Email" type="email" placeholder="Email" disabled={registrationBusy} value={adHoc.email} onChange={(event) => { startNewRegistrationTarget(); setAdHoc({ ...adHoc, email: event.target.value }); }} /></> : null}<button type="button" disabled={registrationBusy || registrationOutcome !== null || (addMode === "existingContact" ? !registrationId : !adHoc.firstName.trim() || !adHoc.lastName.trim() || !adHoc.email.trim())} onClick={() => void registerSelected()}>Add participant</button>{registrationFeedback ? <p role="status">{registrationFeedback}</p> : null}{registrationOutcome ? <p>Correlation ID: <code>{registrationOutcome.correlationId ?? "unavailable"}</code> · <a href={`/sales?tab=support${registrationOutcome.correlationId ? `&correlationId=${encodeURIComponent(registrationOutcome.correlationId)}` : ""}`}>Support diagnostics</a>{registrationOutcome.retryable ? <button type="button" onClick={retryParticipantNow}>{registrationOutcome.nextAction === "retry" ? "Retry participant add now" : "Retry participant add"}</button> : <button type="button" onClick={reconcileParticipantNow}>{registrationOutcome.nextAction === "reconcile" ? "Check CloudShare status now" : "Check CloudShare status"}</button>}</p> : null}</div> : null}
