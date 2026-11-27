@@ -1,4 +1,4 @@
-import type { CandidateDashboardData } from "./candidate-scheduling";
+import type { ExamAttemptStatus } from "@/domain/exam-attempt";
 import { formatCandidateScheduledForLabel } from "./candidate-date-format";
 
 export type CandidateLabSummaryItem = {
@@ -24,7 +24,7 @@ export type CandidateLabPresentation = {
 };
 
 export function formatCandidateAttemptStatus(
-  status: CandidateDashboardData["attempts"][number]["status"],
+  status: ExamAttemptStatus,
 ): string {
   switch (status) {
     case "in_progress":
@@ -45,14 +45,14 @@ export function formatCandidateAttemptStatus(
 }
 
 export function isCandidateLabHistoryPresentation(
-  status: CandidateDashboardData["attempts"][number]["status"],
+  status: ExamAttemptStatus,
   openPeriodClosed = false,
 ): boolean {
   return status === "completed" || status === "expired" || (openPeriodClosed && (status === "in_progress" || status === "suspended"));
 }
 
 export function getCandidateLabPresentation(input: {
-  readonly status: CandidateDashboardData["attempts"][number]["status"];
+  readonly status: ExamAttemptStatus;
   readonly examAttemptId: string;
   readonly examTitle: string;
   readonly timeLimitMinutes: number;
@@ -120,7 +120,7 @@ function buildCandidateLabSummaryItems(input: {
 }
 
 function getCandidateLabActionCopy(
-  status: CandidateDashboardData["attempts"][number]["status"],
+  status: ExamAttemptStatus,
   openPeriodClosed = false,
 ): Pick<CandidateLabPresentation, "actionTitle" | "actionDetail"> {
   if (openPeriodClosed) {

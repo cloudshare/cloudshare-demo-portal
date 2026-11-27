@@ -10,6 +10,39 @@ import {
 } from "./lab-launcher-client";
 
 describe("lab launcher client helpers", () => {
+  const minimalStatus = {
+    examAttemptId: "attempt-1",
+    examTitle: "Foundations",
+    timeLimitMinutes: 60,
+    scheduledFor: null,
+    status: "ready",
+  };
+
+  it("rejects malformed JSON through the exam details load-error path", async () => {
+    const fetchImpl = async () => new Response("{");
+    await expect(loadCandidateLabStatus(fetchImpl, "attempt-1")).rejects.toThrow("Failed to load exam details.");
+  });
+
+  it.each([
+    ["missing title", { ...minimalStatus, examTitle: undefined }],
+    ["missing scheduledFor", { ...minimalStatus, scheduledFor: undefined }],
+    ["unknown status", { ...minimalStatus, status: "unrecognized" }],
+    ["non-numeric time limit", { ...minimalStatus, timeLimitMinutes: "60" }],
+    ["invalid optional flag", { ...minimalStatus, openPeriodClosed: "false" }],
+    ["invalid optional end time", { ...minimalStatus, openPeriodEndsAt: 42 }],
+  ])("rejects %s before returning status to the launcher", async (_label, body) => {
+    const fetchImpl = async () => Response.json(body);
+    await expect(loadCandidateLabStatus(fetchImpl, "attempt-1")).rejects.toThrow("Failed to load exam details.");
+  });
+
+  it.each(["booked", "scheduled", "ready", "in_progress", "suspended", "completed", "expired"])(
+    "accepts a minimal %s response with optional fields omitted",
+    async (status) => {
+      const body = { ...minimalStatus, status };
+      await expect(loadCandidateLabStatus(async () => Response.json(body), "attempt-1")).resolves.toEqual(body);
+    },
+  );
+
   it("classifies a protected lab read 401 as expiry instead of an inline action error", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: false,

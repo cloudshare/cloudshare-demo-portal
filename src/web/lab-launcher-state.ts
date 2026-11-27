@@ -12,7 +12,7 @@ export type LaunchState =
   | "blocked"
   | "error";
 
-export type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
+export type AttemptStatus = CandidateLabStatus["status"];
 export type RecoveryAction = "enter" | "resume" | "reopen";
 export type LaunchAction = "enter" | "resume";
 export type LauncherPresentation = {
