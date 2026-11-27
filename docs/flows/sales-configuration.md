@@ -33,6 +33,8 @@ flowchart LR
 
 Invalid input or cross-Customer references fail before writes. Archiving is not a way to cancel a live session: use the [session lifecycle](sales-sessions.md). The [complete route index](endpoints.md) lists each record route separately.
 
+The Session creation form shows an alert if its saved naming configuration cannot be loaded, including connection failures, unsuccessful responses, or unusable templates. It keeps the current template available for review; a delayed successful load also preserves a restored draft or edits made while loading. Saving the default remains an explicit action.
+
 ## Item authoring and control population
 
 | Order | Browser → Portal | Internal/provider sequence |

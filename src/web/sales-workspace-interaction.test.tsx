@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -210,6 +210,7 @@ describe("SalesWorkspace interaction", () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
+      if (path === "/api/sales/session-configuration") return json({ template: "{account} - {opportunity} ({revision}) - {item}" });
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ error: "Active Sales records are temporarily unavailable." }, 502);
       if (path === "/api/sales/items") return json({ activeItems: [] });
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
@@ -527,12 +528,49 @@ describe("SalesWorkspace interaction", () => {
     expect(await screen.findByRole("option", { name: "Acme - Opportunity 21" })).not.toBeNull();
   });
 
+  it("shows a naming configuration load failure for an HTML 502 and preserves an in-flight edit", async () => {
+    let finish!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => { finish = resolve; });
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input) === "/api/sales/session-configuration" ? pending : json({}));
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
+    const template = screen.getByRole("textbox", { name: "Session name template" });
+    fireEvent.change(template, { target: { value: "Edited {revision}" } });
+    finish(new Response("<html>Bad Gateway</html>", { status: 502 }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not load the default Session name template");
+    expect(template).toHaveProperty("value", "Edited {revision}");
+  });
+
+  it.each([
+    ["network failure", () => Promise.reject(new TypeError("Failed to fetch"))],
+    ["invalid JSON", () => Promise.resolve(new Response("<html>Not JSON</html>"))],
+    ["missing template", () => Promise.resolve(json({}))],
+    ["non-string template", () => Promise.resolve(json({ template: 42 }))],
+    ["unsupported template", () => Promise.resolve(json({ template: "{unknown} {revision}" }))],
+  ])("keeps the local naming template and shows feedback after %s", async (_scenario, response) => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input) === "/api/sales/session-configuration" ? response() : json({}));
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not load the default Session name template");
+    expect(screen.getByRole("textbox", { name: "Session name template" })).toHaveProperty("value", "{account} - {opportunity} ({revision}) - {item}");
+  });
+
+  it.each([false, true])("loads a saved naming template without replacing an in-flight edit (edited: %s)", async (edited) => {
+    let finish!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => { finish = resolve; });
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input) === "/api/sales/session-configuration" ? pending : json({}));
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
+    const template = screen.getByRole("textbox", { name: "Session name template" });
+    if (edited) fireEvent.change(template, { target: { value: "Edited {revision}" } });
+    await act(async () => { finish(json({ template: "Saved {revision}" })); });
+    expect(template).toHaveProperty("value", edited ? "Edited {revision}" : "Saved {revision}");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("shows support diagnostics when saving the default Session name template fails", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
       if (path === "/api/sales/session-configuration" && init?.method === "PUT") return json({ error: "The default template could not be saved.", correlationId: "corr-template-1" }, 502);
-      if (path === "/api/sales/session-configuration") return json({});
+      if (path === "/api/sales/session-configuration") return json({ template: "{account} - {opportunity} ({revision}) - {item}" });
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       if (path === "/api/sales/items") return json({ activeItems: [] });
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
@@ -700,6 +738,7 @@ describe("SalesWorkspace interaction", () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
+      if (path === "/api/sales/session-configuration") return json({ template: "{account} - {opportunity} ({revision}) - {item}" });
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", label: "Acme - Acme evaluation" }], total: 1 });
       if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
       if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
@@ -723,6 +762,7 @@ describe("SalesWorkspace interaction", () => {
     const user = userEvent.setup(); let attempts = 0;
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
+      if (path === "/api/sales/session-configuration") return json({ template: "{account} - {opportunity} ({revision}) - {item}" });
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", label: "Acme - Acme evaluation" }], total: 1 });
       if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
       if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "qa-sales-admin@certalis.test", displayName: "QA Sales Admin" }] });
