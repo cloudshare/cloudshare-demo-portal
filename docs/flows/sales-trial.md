@@ -87,6 +87,8 @@ An unpublished Offering closes admission but can remain accessible to an existin
 
 After opening the trial, the card can check remote-desktop availability. Each request repeats authorization and current provider checks; an opaque VM selector is a reference, never permission.
 
+If one desktop is ready while another is still preparing, use **Refresh desktops** to check again. Closing and reopening the dialog keeps the last result without another request. When no desktop is ready, **Retry desktops** remains the explicit retry action; an in-progress check is not repeated.
+
 | Order | Portal request and downstream calls | Result / enablement |
 |---|---|---|
 | 1 | `GET /api/sales-trial/offerings/{offeringId}/rdp` | Require this user's active enrollment, prior launch, bound participant, eligible Offering and Connection/Item. |

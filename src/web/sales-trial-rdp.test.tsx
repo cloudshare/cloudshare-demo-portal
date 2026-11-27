@@ -50,6 +50,27 @@ it.each(["preparing", "failure"])("%s metadata requires explicit Retry, never au
  expect(fetchImpl).toHaveBeenCalledTimes(2);
  expect(screen.queryByRole("button", { name: "Retry desktops" })).toBeNull();
 });
+it("refreshes a mixed ready and preparing roster explicitly so both desktops become selectable", async () => {
+ let resolve: (value: unknown) => void = () => undefined;
+ const fetchImpl = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: "ready", machines: [{ name: "Desktop A", selector: "a", state: "ready" }, { name: "Desktop B", selector: "b", state: "preparing" }] }) }).mockReturnValueOnce(new Promise(done => { resolve = done; }));
+ render(<SalesTrialRdp offeringId="offering" fetchImpl={fetchImpl} />);
+ openDialog(); await select();
+ expect(screen.queryByRole("button", { name: "Select desktop Desktop B" })).toBeNull();
+ fireEvent.click(screen.getByRole("button", { name: "Close remote desktops" })); openDialog();
+ expect(fetchImpl).toHaveBeenCalledTimes(1);
+ fireEvent.click(screen.getByRole("button", { name: "Refresh desktops" }));
+ expect(fetchImpl).toHaveBeenCalledTimes(2);
+ expect(screen.getByRole("status").textContent).toBe("Checking desktops...");
+ fireEvent.click(screen.getByRole("button", { name: "Close remote desktops" })); openDialog();
+ expect(fetchImpl).toHaveBeenCalledTimes(2);
+ await act(async () => { resolve(ready); });
+ await select();
+ expect(screen.getByRole("link", { name: "Download RDP for Desktop A" }).getAttribute("href")).toBe("/api/sales-trial/offerings/offering/rdp/a");
+ await select("Desktop B");
+ expect(screen.getByRole("link", { name: "Download RDP for Desktop B" }).getAttribute("href")).toBe("/api/sales-trial/offerings/offering/rdp/b");
+ expect(screen.queryByRole("button", { name: "Refresh desktops" })).toBeNull();
+ expect(fetchImpl).toHaveBeenCalledTimes(2);
+});
 it("does not repeat an in-flight metadata request on reopen", async () => {
  let resolve: (value: unknown) => void = () => undefined;
  const fetchImpl = vi.fn().mockReturnValue(new Promise(done => { resolve = done; }));

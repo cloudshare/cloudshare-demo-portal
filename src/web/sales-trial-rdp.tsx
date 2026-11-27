@@ -10,10 +10,11 @@ export function SalesTrialRdp({ offeringId, title = "Trial", active = true, fetc
  const trigger = useRef<HTMLButtonElement>(null);
  const attempted = useRef(false);
  const [selected, setSelected] = useState<string | null>(null);
+ const hasPreparingDesktop = status?.machines?.some(vm => vm.state === "preparing") ?? false;
  useEffect(() => { if (!active) { setDialogOpen(false); setSelected(null); } }, [active]);
  function closeDialog() { setDialogOpen(false); setSelected(null); queueMicrotask(() => trigger.current?.focus()); }
  async function check() {
-  if (loading || status?.state === "ready") return;
+  if (loading || (status?.state === "ready" && !hasPreparingDesktop)) return;
   attempted.current = true;
   setStatus(null);
   setSelected(null);
@@ -32,7 +33,7 @@ export function SalesTrialRdp({ offeringId, title = "Trial", active = true, fetc
   <button ref={trigger} type="button" style={actionStyle} onClick={() => { setDialogOpen(true); if (!attempted.current) void check(); }}>Remote desktops</button>
   {dialogOpen && <RemoteDesktopDialog title={title} onDismiss={closeDialog}>
    {loading && <p role="status" style={copyStyle}>Checking desktops...</p>}
-   {!loading && status && status.state !== "ready" && <button type="button" style={textActionStyle} onClick={() => void check()}>Retry desktops</button>}
+   {!loading && status && (status.state !== "ready" || hasPreparingDesktop) && <button type="button" style={textActionStyle} onClick={() => void check()}>{status.state === "ready" ? "Refresh desktops" : "Retry desktops"}</button>}
    {status?.message && <p style={copyStyle}>{status.message}</p>}
    <div style={workspaceStyle}>
     <div role="region" aria-label="Desktops" tabIndex={0} style={desktopListStyle}>
