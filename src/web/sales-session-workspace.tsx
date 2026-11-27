@@ -13,7 +13,8 @@ import { useContext } from "react";
 import { SalesWorkspaceExpiryContext } from "./sales-workspace-chrome";
 import { statusBadgeStyle } from "./status-badge";
 import styles from "./sales-session-workspace.module.css";
-import type { SalesSessionWorkspaceResponse } from "@/domain/sales-session-workspace";
+import { z } from "zod";
+import { alertPanelStyle } from "./card-styles";
 import type { SalesSessionVerifyResponse } from "@/api/sales-session-reconciliation";
 import { SalesSessionCancellation } from "./sales-session-cancellation";
 import { SalesParticipantWorkspace } from "./sales-participant-workspace";
@@ -23,6 +24,36 @@ type DiagnosticRecord = {
   readonly correlationId: string;
   readonly occurredAt: string;
 };
+
+// Parse the fields this view consumes. Older responses can omit grouped Activity.
+const workspaceSchema = z.object({
+  summary: z.object({
+    id: z.string(), sessionName: z.string(), revision: z.number(),
+    start: z.string(), end: z.string(), timeZone: z.string(),
+    operation: z.object({ value: z.enum(["correlated", "needs_attention", "provisioning"]), reason: z.string().optional() }),
+    experience: z.object({ value: z.string(), source: z.string(), freshness: z.string(), observedAt: z.string().optional() }),
+  }),
+  details: z.object({
+    accountName: z.string(), opportunityName: z.string(), itemName: z.string(), invitationMode: z.string(),
+  }),
+  activityGroups: z.array(z.object({
+    workflowId: z.string(), summary: z.string(), outcome: z.enum(["success", "failure", "mixed", "incomplete"]),
+    actor: z.string(), firstAt: z.string(), lastAt: z.string(), correlationId: z.string().optional(),
+  })).optional(),
+  activityHistory: z.object({ complete: z.boolean() }).optional(),
+});
+
+async function readWorkspace(response: Response, sessionId: string, fallbackError: string) {
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const failure = z.object({ error: z.string() }).safeParse(body);
+    throw new Error(failure.success ? failure.data.error : fallbackError);
+  }
+  const result = workspaceSchema.safeParse(body);
+  if (!result.success || result.data.summary.id !== sessionId)
+    throw new Error("The Sales Session workspace response was incomplete or invalid. Reopen the Session or contact Sales support.");
+  return result.data;
+}
 
 export function SalesSessionWorkspace(props: {
   readonly sessionId: string;
@@ -44,7 +75,7 @@ function SalesSessionWorkspaceState({
   const router = useRouter();
   const [cancelled, setCancelled] = useState(false);
   const [workspace, setWorkspace] =
-    useState<SalesSessionWorkspaceResponse | null>(null);
+    useState<z.infer<typeof workspaceSchema> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [verification, setVerification] = useState<string | null>(null);
@@ -98,9 +129,8 @@ function SalesSessionWorkspaceState({
     const token = lifecycle.current.token;
     try {
       const response = await authenticatedRequest(token)(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace`, { cache: "no-store" });
-      const next = await response.json() as SalesSessionWorkspaceResponse;
+      const next = await readWorkspace(response, sessionId, "The Session summary could not be reread.");
       if (!lifecycle.current.active || lifecycle.current.token !== token) return;
-      if (!response.ok || next.summary?.id !== sessionId) throw new Error("summary_unavailable");
       setWorkspace(next);
     } catch {
       if (lifecycle.current.active && lifecycle.current.token === token) setVerification("The Session summary could not be reread. Showing the last known summary; reopen the Session to read its current End.");
@@ -126,14 +156,7 @@ function SalesSessionWorkspaceState({
       { cache: "no-store" },
     )
       .then(async (response) => {
-        const body =
-          (await response.json()) as SalesSessionWorkspaceResponse & {
-            error?: string;
-          };
-        if (!response.ok)
-          throw new Error(
-            body.error ?? "The Sales Session could not be loaded.",
-          );
+        const body = await readWorkspace(response, sessionId, "The Sales Session could not be loaded.");
         if (lifecycle.current.active && lifecycle.current.token === token)
           setWorkspace(body);
       })
@@ -188,13 +211,7 @@ function SalesSessionWorkspaceState({
           `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace`,
           { cache: "no-store" },
         );
-        const next = (await reread.json()) as SalesSessionWorkspaceResponse & {
-          error?: string;
-        };
-        if (!reread.ok)
-          throw new Error(
-            next.error ?? "The refreshed Sales Session could not be read.",
-          );
+        const next = await readWorkspace(reread, sessionId, "The refreshed Sales Session could not be read.");
         if (lifecycle.current.active && lifecycle.current.token === token) {
           setWorkspace(next);
           if (next.summary.experience.freshness !== "fresh") {
@@ -228,10 +245,7 @@ function SalesSessionWorkspaceState({
   useEffect(() => {
     areaHeading.current?.focus();
   }, [area, workspace?.summary.id]);
-  const activity = (workspace?.activityGroups ?? []).map((group) => ({
-    ...group,
-    steps: group.steps ?? [],
-  }));
+  const activity = workspace?.activityGroups ?? [];
   const retryAutomaticRefresh = async () => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
@@ -265,13 +279,7 @@ function SalesSessionWorkspaceState({
         `/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace`,
         { cache: "no-store" },
       );
-      const next = (await reread.json()) as SalesSessionWorkspaceResponse & {
-        error?: string;
-      };
-      if (!reread.ok)
-        throw new Error(
-          next.error ?? "The refreshed Sales Session could not be read.",
-        );
+      const next = await readWorkspace(reread, sessionId, "The refreshed Sales Session could not be read.");
       if (lifecycle.current.active && lifecycle.current.token === token) {
         setWorkspace(next);
         if (next.summary.experience.freshness !== "fresh") {
@@ -444,7 +452,8 @@ function SalesSessionWorkspaceState({
           </button>
         </div>
         {automaticRefresh ? (
-          <p aria-live="polite">
+          <p aria-live="polite" style={refreshOutcome === "failure" ? alertPanelStyle.warning : undefined}>
+            {refreshOutcome === "failure" && <strong>Warning </strong>}
             {automaticRefresh}{" "}
             {refreshOutcome === "failure" ? (
               <>

@@ -18,6 +18,35 @@ const data = { summary: { id: "session-1", sessionName: "Acme enablement", revis
 describe("Sales Session workspace", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+  it("explains an incomplete initial workspace and links back to Sessions", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(Response.json({
+      ...data, summary: { ...data.summary, experience: undefined },
+    }));
+    render(<SalesSessionWorkspace sessionId="session-1" area="details" queueHref="/sales?tab=sessions" />);
+    expect((await screen.findByRole("alert")).textContent).toContain("Reopen the Session");
+    expect(screen.getByRole("link", { name: "Back to Sessions" }).getAttribute("href")).toBe("/sales?tab=sessions");
+  });
+
+  it("keeps the last good workspace through incomplete refresh reads and recovers on Retry", async () => {
+    const stale = { ...data, summary: { ...data.summary, experience: { ...data.summary.experience, freshness: "predicted" } } };
+    const malformed = { ...data, summary: { ...data.summary, experience: undefined } };
+    const refreshed = { ...data, summary: { ...data.summary, sessionName: "Updated session" } };
+    const reads = [stale, malformed, malformed, refreshed];
+    vi.spyOn(window, "fetch").mockImplementation(async (input) =>
+      Response.json(String(input).endsWith("/workspace") ? reads.shift() : {}),
+    );
+    const user = userEvent.setup();
+    render(<SalesSessionWorkspace sessionId="session-1" area="details" queueHref="/sales?tab=sessions" />);
+    await screen.findByText(/workspace response was incomplete/);
+    expect(screen.getByRole("heading", { name: "Acme enablement" })).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText(/workspace response was incomplete/);
+    expect(screen.getByText(data.summary.end)).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByRole("heading", { name: "Updated session" });
+    expect(screen.queryByText(/workspace response was incomplete/)).toBeNull();
+  });
+
   it("refreshes an estimated workspace, exposes failure support, and retries with a local reread", async () => {
     const user = userEvent.setup();
     let releaseFailure!: () => void;
@@ -457,13 +486,17 @@ describe("Sales Session workspace", () => {
     let resolvePost!: (value: Response) => void;
     const post = new Promise<Response>((resolve) => { resolvePost = resolve; });
     const stale = { ...data, summary: { ...data.summary, experience: { value: "notStarted", source: "schedule_prediction", freshness: "predicted" } } };
-    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).includes("refresh?mode=automatic") ? post : new Response(JSON.stringify(stale), { status: 200 }));
+    const replacement = { ...data, summary: { ...data.summary, id: "session-2", sessionName: "Replacement session" } };
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("refresh?mode=automatic")) return post;
+      return Response.json(String(input).includes("/session-2/") ? replacement : stale);
+    });
     const rendered = render(<StrictMode><SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
     await screen.findByRole("heading", { name: "Participants" });
     rendered.rerender(<StrictMode><SalesSessionWorkspace sessionId="session-2" area="participants" queueHref="/sales?tab=sessions" /></StrictMode>);
     await act(async () => { resolvePost(new Response(JSON.stringify({ correlationId: "old-refresh" }), { status: 200 })); });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.queryByRole("heading", { name: "Acme enablement" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Replacement session" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Participants" })).not.toBeNull();
   });
 
